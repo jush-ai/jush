@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { fillText, truncate } from '@jush-ai/utils'
 import { markdownPlainText } from '@jush-ai/web-ui/markdown/plain-text'
 import { deviceTitleIn, requestTitleIn } from '@jush-ai/web-ui/permissions/title-words'
-import { pushMessageSchema, type PushMessage } from '../api/generated/web-api'
+import { pushMessageSchema, type PushMessage } from '@jush-ai/protocol'
 
 /**
  * A push notification as the page's service worker shows it: the backend sends

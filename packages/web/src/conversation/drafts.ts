@@ -1,7 +1,6 @@
 import { z } from 'zod'
-import { schemaRefusal, workflowChoiceSchema } from '@jush-ai/protocol'
+import { schemaRefusal, workflowChoiceSchema, conversationSummarySchema, draftFileSchema } from '@jush-ai/protocol'
 import { waitingCommentSchema } from '@jush-ai/web-ui/agent/comments/comments'
-import { conversationSummarySchema, draftFileSchema } from '../api/generated/web-api'
 import { messageEditStateSchema } from '@jush-ai/web-ui/agent/message-editing'
 import { modelSettingsSchema } from '@jush-ai/web-ui/agent/model-selection'
 import { copiedStoredFileSchema } from '@jush-ai/web-ui/agent/message-input/copied-message'

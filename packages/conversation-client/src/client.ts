@@ -905,14 +905,14 @@ export class ConversationClient {
     return this.agentsVersion ? { ...this.agentsVersion } : null
   }
 
+  /** The agents' entries the client holds, the root's and every subagent's and side question's, as copies. */
+  agentEntries(): AgentEntry[] {
+    return structuredClone([...this.agents.values()])
+  }
+
   /** The accepted steers not yet in the transcript, as copies. */
   pendingSteers(): PendingSteer[] {
     return structuredClone(this.pending)
-  }
-
-  /** The message the root's running turn started with, until its turn writes it, as a copy. */
-  startingMessage(): QueuedMessage | null {
-    return structuredClone(this.starting)
   }
 
   /** The calls the root's model is writing, as copies. */

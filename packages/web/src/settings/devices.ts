@@ -7,10 +7,8 @@ import type { HeadlineText } from '@jush-ai/web-ui/ui/ui-text'
 import { errorCode, errorFields, reportError, shownError, type ShownError } from '@jush-ai/web-ui/infra/errors'
 import { showToast } from '@jush-ai/web-ui/infra/toast'
 import { pageLog } from '@jush-ai/web-ui/infra/log'
-import { known, useProduct } from '../state/product'
-import { cloudDeviceIn } from '../state/devices'
-import { ApiError, apiRequest, jsonBody, readResponse } from '../api/client'
 import {
+  known,
   cloudResetAnswerSchema,
   deviceAnswerSchema,
   deviceElevationSchema,
@@ -18,7 +16,10 @@ import {
   type CloudReset,
   type ChangeDevice,
   type DeviceRoute,
-} from '../api/generated/web-api'
+} from '@jush-ai/protocol'
+import { useProduct } from '../state/product'
+import { cloudDeviceIn } from '../state/devices'
+import { ApiError, apiRequest, jsonBody, readResponse } from '../api/client'
 
 export const useDeviceSettings = defineStore('device-settings', () => {
   const product = useProduct()

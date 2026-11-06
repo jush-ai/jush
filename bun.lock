@@ -159,6 +159,15 @@
         "zod": "^4.0.0",
       },
     },
+    "packages/sdk": {
+      "name": "@jush-ai/sdk",
+      "version": "0.24.0",
+      "dependencies": {
+        "@jush-ai/conversation-client": "workspace:^",
+        "@jush-ai/protocol": "workspace:^",
+        "zod": "^4.0.0",
+      },
+    },
     "packages/site": {
       "name": "@jush-ai/site",
       "version": "0.0.0",
@@ -598,6 +607,8 @@
     "@jush-ai/plugin-widget": ["@jush-ai/plugin-widget@workspace:crates/plugin-widget/page"],
 
     "@jush-ai/protocol": ["@jush-ai/protocol@workspace:packages/protocol"],
+
+    "@jush-ai/sdk": ["@jush-ai/sdk@workspace:packages/sdk"],
 
     "@jush-ai/site": ["@jush-ai/site@workspace:packages/site"],
 

@@ -5,7 +5,7 @@ import type { KeepPicture } from '@jush-ai/web-ui/agent/comments/pictures'
 import { coded, environmental } from '@jush-ai/web-ui/infra/errors'
 import { PAGE_HEADER, PAGE_ID } from '@jush-ai/web-ui/infra/log'
 import { apiError, apiRequest, apiUrl, invalidResponse, readResponse, untilReached } from './client'
-import { type AttachmentDto, attachmentAnswerSchema, attachmentCheckAnswerSchema } from './generated/web-api'
+import { type AttachmentDto, attachmentAnswerSchema, attachmentCheckAnswerSchema } from '@jush-ai/protocol'
 
 /**
  * Where the page loads a blob of the user's own, seen as `mediaType`: a message's

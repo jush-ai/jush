@@ -9,17 +9,17 @@
  * (`WatchChannel`). This module opens their connections and reads what they
  * bring against its schema.
  */
-import { schemaRefusal } from '@jush-ai/protocol'
+import {
+  schemaRefusal,
+  fileWatchMessageSchema,
+  type ConversationWatchRequest,
+  type FileWatchRequest,
+} from '@jush-ai/protocol'
 import type { DeviceFiles } from '@jush-ai/web-ui/files/file-cache'
 import { WatchChannel, type WatchLink, type WatchLinkHandlers, type WatchRequest } from '@jush-ai/web-ui/files/watch-channel'
 import { reportError } from '@jush-ai/web-ui/infra/errors'
 import { t } from './locales/text'
 import { openLane, type LaneTarget } from '@jush-ai/web-ui/transport/page-connection'
-import {
-  fileWatchMessageSchema,
-  type ConversationWatchRequest,
-  type FileWatchRequest,
-} from '../api/generated/web-api'
 
 /** Opens a connection of a conversation's watch. */
 export type OpenConversationWatchLink = (conversationId: string, handlers: WatchLinkHandlers) => WatchLink
