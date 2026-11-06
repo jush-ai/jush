@@ -22,7 +22,8 @@ use axum::extract::State;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{any, get};
 use jush_backend_database::update::Update;
-use jush_backend_runners::{native, public_url::PublicUrl};
+use jush_backend_runners::native;
+use jush_core_devices::public_url::PublicUrl;
 use jush_web_api_protocol::state::UpdateState;
 
 use super::assets;

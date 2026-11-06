@@ -1,5 +1,5 @@
 //! A process provider's command-line tool
-//! (`crates/backend-user-shard/src/conversation/subscription_cli.rs`).
+//! (`crates/core/src/conversation/subscription_cli.rs`).
 //!
 //! The routes:
 //!
@@ -24,9 +24,9 @@ use super::error::ApiError;
 use super::gate::AuthUser;
 use super::providers::scoped;
 use super::query::QueryParams;
-use jush_backend_user_shard::conversation::subscription_cli::start_install;
+use jush_core::conversation::subscription_cli::start_install;
 use jush_backend_user_shard::services::Services;
-use jush_backend_user_shard::shard::Shards;
+use jush_backend_user_shard::pool::Shards;
 
 /// The entry the path names, with the CLI its provider runs as a process; an
 /// entry whose provider runs none has no tool to read or install.

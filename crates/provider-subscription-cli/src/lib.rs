@@ -87,7 +87,7 @@ const CLOSE_GRACE: Duration = Duration::from_secs(5);
 /// SIGKILL five seconds later, and waits for its end.
 ///
 /// It is how anything that holds a CLI process closes it: a runtime, a sign-in
-/// or the backend's relay of a process to another user's shard.
+/// or the backend's relay of a process to another user's core.
 pub async fn close_process(
     control: Box<dyn ProcessControl>,
     exit: Shared<LocalBoxFuture<'static, ProcessEnd>>,

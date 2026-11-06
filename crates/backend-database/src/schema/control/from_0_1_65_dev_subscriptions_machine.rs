@@ -12,7 +12,7 @@
 
 use rusqlite::Transaction;
 
-use super::super::{Migration, ReadBlob, corrupt_text};
+use super::super::{ControlSteps, Migration, corrupt_text};
 
 pub(super) const MIGRATION: Migration = Migration::Code(control_from_0_1_65_dev_subscriptions_machine);
 
@@ -25,7 +25,7 @@ const TEXT: [(&str, &str); 3] = [
 
 fn control_from_0_1_65_dev_subscriptions_machine(
     transaction: &Transaction<'_>,
-    _: &dyn ReadBlob,
+    _: &dyn ControlSteps,
 ) -> rusqlite::Result<()> {
     let version: i64 = transaction.pragma_query_value(None, "schema_version", |row| row.get(0))?;
     transaction.pragma_update(None, "writable_schema", true)?;

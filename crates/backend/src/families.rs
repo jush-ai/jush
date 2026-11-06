@@ -13,7 +13,7 @@ use jush_provider_registry::families::{
     ProviderFamily,
 };
 use jush_provider_anthropic_api::{AnthropicConfig, AnthropicProvider};
-use jush_backend_user_shard::conversation::subscription_cli::MachineSlot;
+use jush_core::conversation::subscription_cli::MachineSlot;
 use jush_provider_antigravity::{AntigravityConfig, AntigravityProvider};
 use jush_provider_claude_code::{ClaudeCodeConfig, ClaudeCodeProvider, MachineState};
 use jush_provider_subscription_cli::{Cli, Placement};
@@ -30,7 +30,7 @@ use jush_provider_minimax::{MinimaxConfig, MinimaxProvider, Region};
 use jush_provider_openai_api::{OpenAiConfig, OpenAiProvider};
 use jush_provider_relay::borrow::{Borrowed, server_name};
 use jush_provider_relay::key::ShareKey;
-use jush_backend_runners::public_url::PublicUrl;
+use jush_core_devices::public_url::PublicUrl;
 use jush_shared_types::{AudioShape, CacheTtl, ImageShape, VideoShape, WireApi};
 use jush_web_api_protocol::providers::CredentialKind;
 
@@ -499,7 +499,7 @@ impl ProviderFamily for GrokBuildFamily {
 /// CLI's own login, whose requests run the CLI on the Subscriptions machine.
 pub struct ClaudeCodeFamily {
     /// The machine a sign-in and a usage probe run on, once the backend's
-    /// shards started; a session's processes reach it through their shard.
+    /// shards started; a session's processes reach it through their core.
     machine: MachineSlot,
     /// What the family keeps of the machine, which every provider it builds
     /// shares.

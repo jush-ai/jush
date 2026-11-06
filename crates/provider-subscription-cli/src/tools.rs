@@ -8,7 +8,7 @@
 //! The server is built with rmcp, the official Rust MCP SDK, because the
 //! protocol's types, the `initialize` handshake and version negotiation are the
 //! library's job, and in its local mode because its state lives on the user's
-//! shard, one thread. It is reached through an in-memory transport, whose
+//! core, one thread. It is reached through an in-memory transport, whose
 //! messages the provider carries to and from its CLI. rmcp handles each request
 //! on its own task, so `ping` and `tools/list` are answered while a call waits.
 

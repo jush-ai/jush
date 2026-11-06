@@ -1,7 +1,7 @@
-//! The services every shard is given (`crates/backend/src/lib.rs`).
+//! The services every core is given (`crates/backend/src/lib.rs`).
 //!
 //! They span users, or are needed before the user is known. The edge and every
-//! shard share them, over the storage they are opened on.
+//! core share them, over the storage they are opened on.
 
 use std::path::Path;
 use std::sync::Arc;
@@ -12,17 +12,18 @@ use jush_backend_accounts::login_limiter::LoginLimiter;
 use jush_backend_accounts::passwords::{HashError, PasswordHasher};
 use jush_backend_accounts::push::{PublicPushTransport, PushKey, PushTransport, Pusher};
 use jush_backend_accounts::sessions::WebSessions;
-use jush_backend_blobs::blobs::BlobStores;
+use jush_core_blobs::blobs::BlobStores;
 use jush_backend_cloud::CloudServices;
-use jush_backend_database::StorageError;
+use jush_core_store::StorageError;
 use jush_backend_database::control::ControlService;
-use jush_backend_database::conversations::{self, ConversationStores};
-use jush_backend_database::search::SearchIndexes;
+use jush_backend_database::core_stores::CoreStores;
+use jush_core_store::conversations::ConversationBlobs;
+use jush_core_store::schema::ReadBlob;
 use jush_backend_database::server_log::ServerLog;
 use jush_shared_types::BlobRef;
-use jush_web_api_protocol::ids::ConversationId;
-use jush_backend_device_access::stream::UserStreams;
-use jush_backend_page_sync::SyncRegistry;
+use jush_web_api_protocol::ids::UserId;
+use jush_core_device_access::stream::UserStreams;
+use jush_core_sync::SyncRegistry;
 use jush_plugin_host::{Registry, RegistryError};
 use jush_provider_registry::registry::ProviderRegistry;
 use jush_provider_registry::catalog_cache::ModelCatalogCache;
@@ -31,18 +32,24 @@ use jush_provider_claude_code::releases::ClaudeDistribution;
 use jush_provider_subscription_cli::FollowedReleases;
 use jush_provider_registry::families::FamilyRegistry;
 use jush_provider_registry::vendors::VendorCatalog;
-use jush_backend_providers::vault::entries::{VaultReseal, SeededAccount, Vault};
-use jush_backend_providers::vault::logins::{LoginFlows, LoginTiming};
-use jush_backend_providers::vault::operations::ProviderOperations;
+use jush_backend_database::schema::ControlSteps;
+use jush_core_providers::vault::entries::{SeededAccount, Vault, VaultReseal, VaultStores};
+use jush_core_store::store::CoreStore;
+use jush_web_api_protocol::ids::ProviderId;
+use jush_web_api_protocol::settings::InstanceMode;
+use futures_util::future::BoxFuture;
+use jush_core_providers::vault::logins::{LoginFlows, LoginTiming};
+use jush_core_providers::vault::operations::ProviderOperations;
 use jush_provider_registry::quotas::AccountQuotas;
 use jush_provider_registry::store::RegistryStore;
-use jush_backend_providers::vault::seal::VaultKey;
+use jush_core_providers::vault::seal::VaultKey;
 use jush_backend_runners::claims::PendingClaims;
-use jush_backend_runners::devices::Returning;
-use jush_backend_runners::native::NativeCatalog;
+use jush_core_devices::devices::Returning;
+use jush_backend_runners::native::{NativeCatalog, ServedPackages};
+use jush_core_devices::packages::Packages;
 use jush_backend_runners::install::RunnerReleases;
 use jush_backend_runners::prefetch::Prefetches;
-use jush_backend_runners::public_url::PublicUrl;
+use jush_core_devices::public_url::PublicUrl;
 use jush_runner_protocol::direct::StunUrl;
 use jush_plugin_interface::PluginFactory;
 use jush_provider_common::media_catalog::MediaCatalog;
@@ -50,45 +57,30 @@ use jush_provider_common::models_dev::ModelsDevClient;
 use jush_shared_types::Clock;
 use object_store::ObjectStore;
 
-use crate::conversation::subscription_cli::{CliInstalls, CliReleaseReaders, MachineSlot};
-use crate::tuning::{ConversationTuning, LifecycleTuning, MediaTuning, PageTuning, RunnerTuning};
+use jush_core::conversation::subscription_cli::{CliInstalls, CliReleaseReaders, MachineSlot};
+use jush_core::services::CoreServices;
+use jush_core::tuning::{ConversationTuning, LifecycleTuning, MediaTuning, RunnerTuning};
+use crate::tuning::PageTuning;
 
 const CONTROL_DATABASE: &str = "control.sqlite";
-pub(crate) const CONVERSATION_DATABASES: &str = "conversations";
-pub(crate) const SEARCH_INDEXES: &str = "search";
 
 /// The services that span users, or that are needed before the user is
-/// known. The edge and every shard share them.
+/// known. The edge and every core share them.
 pub struct Services {
-    /// The wall clock the backend reads times from.
-    pub clock: Arc<dyn Clock>,
+    /// What the users' cores share.
+    pub core: Arc<CoreServices>,
     pub control: ControlService,
-    pub conversations: ConversationStores,
-    /// Each user's search index, which the user's shard keeps.
-    pub search: SearchIndexes,
-    pub blobs: BlobStores,
+    /// Each user's core store.
+    pub stores: CoreStores,
     pub hasher: PasswordHasher,
     pub sessions: WebSessions,
     pub limiter: LoginLimiter,
     pub email: EmailChanges,
     /// The users' push subscriptions, and the sending to them.
     pub push: Pusher,
-    pub vault: Vault,
     /// The account the master account's entry of its family holds from each
     /// start and from setup, a development backend's only (`crates/xtask/src/dev/mod.rs`).
     pub master_account: Option<SeededAccount>,
-    pub provider_registry: Arc<ProviderRegistry>,
-    /// The catalog of image and video models (`crates/provider-common/src/media_catalog.rs`).
-    pub media: MediaCatalog,
-    /// The vendors' releases of each CLI on the Subscriptions machine, which
-    /// it follows.
-    pub cli_releases: CliReleaseReaders,
-    /// The outcome of the CLI installs no conversation asked for.
-    pub cli_installs: CliInstalls,
-    /// The Subscriptions machine, set as the shards start.
-    pub subscriptions_machine: MachineSlot,
-    pub operations: Arc<ProviderOperations>,
-    pub logins: Arc<LoginFlows>,
     /// Runners waiting to be paired, which have no user yet.
     pub claims: PendingClaims,
     /// The log, which the runners' and the pages' lines are stored in
@@ -99,26 +91,13 @@ pub struct Services {
     pub data_dir: std::path::PathBuf,
     /// What the server keeps, as last measured (`crates/backend-user-shard/src/server_storage.rs`).
     pub server_storage: crate::server_storage::ServerStorage,
-    /// The calls the schedules' URLs took this minute.
-    pub hook_limits: crate::schedules::HookLimits,
-    pub runners: RunnerTuning,
-    pub conversation_tuning: ConversationTuning,
     /// How the sockets to a page are timed.
     pub pages: PageTuning,
-    /// How a video's job is waited for.
-    pub media_tuning: MediaTuning,
-    /// The command packages each shard's catalog is built from.
+    /// The command packages each core's catalog is built from.
     pub native: NativeCatalog,
-    /// The backend's plugins, checked at startup (`crates/plugin-host/src/lib.rs`).
-    pub plugins: Arc<Registry>,
-    /// The user streams a page may open.
-    pub user_streams: UserStreams,
     /// The machine manager's client, the Cloud capacity across users and
     /// the Cloud's settings.
-    pub cloud: CloudServices,
-    /// Where runners and Cloud guests reach this backend, and where a
-    /// borrowing server reaches an entry this one lends.
-    pub public_url: PublicUrl,
+    pub cloud: Arc<CloudServices>,
     /// The sessions and media calls other servers borrow this one's entries
     /// in, by share key, which revoking a key ends.
     pub lent: crate::provider_sharing::LentSessions,
@@ -129,23 +108,16 @@ pub struct Services {
     /// The runner release an upgrade announced as next, which the
     /// connected paired devices download ahead (`crates/runner/src/update.rs`).
     pub prefetches: Prefetches,
-    /// The STUN servers pages and runners ask for their public address
-    /// (`crates/runner-direct/src/lib.rs`).
-    pub stun: Vec<StunUrl>,
-    /// This run of the backend, chosen when the services start: the
-    /// revisions counted in memory compare only within one run.
-    pub run: String,
-    /// When a conversation's device resources are reclaimed.
-    pub lifecycle: LifecycleTuning,
-    /// Each user's open synchronization channels, which every change a
-    /// page shows marks.
-    pub sync: SyncRegistry,
-    /// The devices the backend's last shutdown disconnected, which device
-    /// operations wait for in the grace after the start
-    /// (`crates/runner-client/src/device_jobs.rs`).
-    pub returning: Arc<Returning>,
     /// The server's updates, Settings › Updates.
     pub upgrades: Arc<crate::upgrades::Upgrades>,
+}
+
+impl std::ops::Deref for Services {
+    type Target = CoreServices;
+
+    fn deref(&self) -> &CoreServices {
+        &self.core
+    }
 }
 
 /// What the provider services start with.
@@ -163,7 +135,7 @@ pub struct ProviderSetup {
     pub claude_releases: url::Url,
     /// The Antigravity distribution.
     pub antigravity_releases: url::Url,
-    /// Where the Subscriptions machine is, which the master's shard puts there
+    /// Where the Subscriptions machine is, which the master's core puts there
     /// as it starts and every CLI's family reads too.
     pub subscriptions_machine: MachineSlot,
     pub logins: LoginTiming,
@@ -233,46 +205,98 @@ pub enum ServicesError {
 #[derive(Clone)]
 pub struct Storage {
     pub control: ControlService,
-    pub conversations: ConversationStores,
-    pub search: SearchIndexes,
+    pub stores: CoreStores,
     pub blobs: BlobStores,
 }
 
-/// The blobs a conversation database's migration reads: those of the
-/// conversation owner's namespace.
-struct OwnersBlobs {
+/// The blobs a conversation database's migration reads: those of its user's
+/// namespace.
+/// What the control database's migrations ask: the data directory, and the
+/// vault's key that seals a value again.
+struct ServerReseal {
+    vault: VaultReseal,
+    data_directory: std::path::PathBuf,
+}
+
+impl ControlSteps for ServerReseal {
+    fn data_directory(&self) -> &Path {
+        &self.data_directory
+    }
+
+    fn provider_config(&self, id: &ProviderId, family: &str, sealed: &[u8]) -> Result<Vec<u8>, String> {
+        self.vault.provider_config(id, family, sealed)
+    }
+
+    fn schedule_secret(&self, id: &str, sealed: &[u8]) -> Result<Vec<u8>, String> {
+        self.vault.schedule_secret(id, sealed)
+    }
+
+    fn provider_endpoint_on_device(
+        &self,
+        id: &ProviderId,
+        sealed: &[u8],
+        owned: &dyn Fn(&str) -> bool,
+    ) -> Result<Option<(String, Vec<u8>)>, String> {
+        self.vault.provider_endpoint_on_device(id, sealed, owned)
+    }
+
+    fn provider_config_format_3(&self, id: &ProviderId, sealed: &[u8]) -> Result<Option<Vec<u8>>, String> {
+        self.vault.provider_config_format_3(id, sealed)
+    }
+}
+
+/// The users' cores, whose entries the vault keeps, with the control
+/// database that names the users, the master and the mode.
+struct ServerVaultStores {
     control: ControlService,
-    blobs: BlobStores,
+    stores: CoreStores,
+}
+
+impl VaultStores for ServerVaultStores {
+    fn store_of<'a>(&'a self, user: &'a UserId) -> BoxFuture<'a, Result<CoreStore, StorageError>> {
+        Box::pin(self.stores.of(user))
+    }
+
+    fn users(&self) -> BoxFuture<'_, Result<Vec<UserId>, StorageError>> {
+        Box::pin(self.control.user_ids())
+    }
+
+    fn master(&self) -> BoxFuture<'_, Result<Option<UserId>, StorageError>> {
+        Box::pin(self.control.master())
+    }
+
+    fn keep_mode(&self, mode: InstanceMode) -> BoxFuture<'_, Result<(), StorageError>> {
+        Box::pin(self.control.set_instance_mode(mode))
+    }
+}
+
+/// The blobs a conversation database's migration reads: those of its user.
+struct MigrationBlobs {
+    blobs: jush_core_blobs::blobs::UserBlobs,
     /// The backend's runtime, which the reads run on.
     runtime: tokio::runtime::Handle,
 }
 
-impl conversations::ConversationBlobs for OwnersBlobs {
-    fn read(&self, conversation: &ConversationId, blob: &BlobRef) -> Result<Option<Bytes>, String> {
+impl MigrationBlobs {
+    fn new(blobs: jush_core_blobs::blobs::UserBlobs, runtime: tokio::runtime::Handle) -> Arc<ConversationBlobs> {
+        Arc::new(Self { blobs, runtime })
+    }
+}
+
+impl ReadBlob for MigrationBlobs {
+    fn read(&self, blob: &BlobRef) -> Result<Option<Bytes>, String> {
         // A migration runs on its database's thread, outside the runtime,
         // and its transaction waits for the read: it blocks on it there.
-        self.runtime.block_on(async {
-            let record = self
-                .control
-                .conversation(conversation.clone())
-                .await
-                .map_err(|error| error.to_string())?;
-            let Some(record) = record else {
-                return Ok(None);
-            };
-            self.blobs
-                .for_user(&record.owner)
-                .get(blob)
-                .await
-                .map_err(|error| error.to_string())
-        })
+        self.runtime
+            .block_on(self.blobs.get(blob))
+            .map_err(|error| error.to_string())
     }
 }
 
 /// A database that did not close.
 #[derive(Debug, thiserror::Error)]
 pub enum CloseError {
-    #[error("a conversation database did not close: {0}")]
+    #[error("a user's database did not close: {0}")]
     Conversation(StorageError),
     #[error("the control database did not close: {0}")]
     Control(StorageError),
@@ -282,7 +306,7 @@ impl Storage {
     /// The bytes of the databases in `data_dir` that the next start
     /// migrates or converts; none when all have the current form.
     pub fn due(data_dir: &Path) -> Result<Option<jush_backend_database::update::Due>, StorageError> {
-        jush_backend_database::update::due(&data_dir.join(CONTROL_DATABASE), &data_dir.join(CONVERSATION_DATABASES))
+        jush_backend_database::update::due(&data_dir.join(CONTROL_DATABASE), data_dir)
     }
 
     /// The databases in `data_dir`, beside the object store `objects`; an
@@ -296,53 +320,29 @@ impl Storage {
         let control = ControlService::open(
             &data_dir.join(CONTROL_DATABASE),
             clock.clone(),
-            Arc::new(VaultReseal::new(vault)),
+            Arc::new(ServerReseal {
+                vault: VaultReseal::new(vault),
+                data_directory: data_dir.to_owned(),
+            }),
         )
         .await?;
-        let rest = async {
-            let blobs = BlobStores::new(objects, clock.clone());
-            let conversations = ConversationStores::open(
-                data_dir.join(CONVERSATION_DATABASES),
-                conversations::MAX_WRITERS,
-                Arc::new(OwnersBlobs {
-                    control: control.clone(),
-                    blobs: blobs.clone(),
-                    runtime: tokio::runtime::Handle::current(),
-                }),
-            )
-            .await?;
-            let search = SearchIndexes::open(data_dir.join(SEARCH_INDEXES)).await?;
-            Ok::<_, StorageError>((conversations, search, blobs))
-        }
-        .await;
-        match rest {
-            Ok((conversations, search, blobs)) => Ok(Self {
-                control,
-                conversations,
-                search,
-                blobs,
-            }),
-            Err(error) => {
-                // Opening the rest left no connection open; the control
-                // database has one.
-                if let Err(failure) = control.close().await {
-                    tracing::error!(
-                        event = "control_db.close_failed",
-                        after = "start_failed",
-                        error = &failure as &dyn std::error::Error,
-                        "the control database did not close after a failed start"
-                    );
-                }
-                Err(error)
-            }
-        }
+        let blobs = BlobStores::new(objects, clock.clone());
+        // The reads of a migration run on the backend's runtime.
+        let runtime = tokio::runtime::Handle::current();
+        let read = blobs.clone();
+        let stores = CoreStores::new(
+            data_dir.to_owned(),
+            clock.clone(),
+            Arc::new(move |user: &UserId| MigrationBlobs::new(read.for_user(user), runtime.clone())),
+        );
+        Ok(Self { control, stores, blobs })
     }
 
-    /// Closes the conversation databases, then the control database, and
+    /// Closes the users' core stores, then the control database, and
     /// answers every step that failed.
     pub async fn close(&self) -> Vec<CloseError> {
         let mut failures: Vec<CloseError> = self
-            .conversations
+            .stores
             .close()
             .await
             .into_iter()
@@ -366,17 +366,20 @@ impl Services {
     ) -> Result<Self, ServicesError> {
         let Storage {
             control,
-            conversations,
-            search,
+            stores,
             blobs,
         } = storage;
-        let native = &settings.native;
+        let packages: Arc<dyn Packages> = Arc::new(ServedPackages {
+            native: settings.native.clone(),
+            backend: settings.public_url.clone(),
+        });
         let plugins = Registry::new(settings.plugins, |operation| {
-            native.serves(&operation.package, &[operation.operation.as_str()])
+            packages.serves(&operation.package, &[operation.operation.as_str()])
         })?;
         let hasher = PasswordHasher::new().await?;
         let clock = providers.clock.clone();
-        let returning = Arc::new(Returning::take(&control).await?);
+        let cores: Vec<CoreStore> = stores.all(&control).await?.into_iter().map(|(_, store)| store).collect();
+        let returning = Arc::new(Returning::take(&cores).await?);
         let edge = tokio::runtime::Handle::current();
         // The shared services' own client; each shard thread builds its own.
         let http = reqwest::Client::builder()
@@ -400,7 +403,17 @@ impl Services {
         // The log opened before the database, and trims from now on.
         settings.log.set_limits(control.log_retention().await?.into());
         let mode = control.instance_mode().await?;
-        let vault = Vault::new(control.clone(), keys.vault, mode, settings.shared_subscriptions, sync.clone());
+        let vault = Vault::new(
+            Arc::new(ServerVaultStores {
+                control: control.clone(),
+                stores: stores.clone(),
+            }),
+            keys.vault,
+            mode,
+            settings.shared_subscriptions,
+            sync.clone(),
+        )
+        .await?;
         // A data directory that predates the development sign-in, or holds
         // an earlier one, is brought to the current one before anything
         // infers with it.
@@ -430,7 +443,7 @@ impl Services {
         let announced = sync.clone();
         edge.spawn(async move {
             while catalogs.changed().await.is_ok() {
-                announced.mark_everyone(&jush_backend_page_sync::Part::Providers);
+                announced.mark_everyone(&jush_core_sync::Part::Providers);
             }
         });
         let claude_releases = FollowedReleases::new(
@@ -468,7 +481,7 @@ impl Services {
         let announced = sync.clone();
         tokio::spawn(async move {
             while models.changed().await.is_ok() {
-                announced.mark_everyone(&jush_backend_page_sync::Part::Models);
+                announced.mark_everyone(&jush_core_sync::Part::Models);
             }
         });
         let operations = Arc::new(ProviderOperations::default());
@@ -480,24 +493,11 @@ impl Services {
             clock.clone(),
             sync.clone(),
         );
-        Ok(Self {
+        let core = Arc::new(CoreServices {
+            public_url: settings.public_url,
             clock,
-            sessions: WebSessions::new(control.clone()),
-            limiter: LoginLimiter::new(),
-            email: EmailChanges::new(
-                control.clone(),
-                hasher.clone(),
-                settings.mail,
-                keys.email_codes,
-            ),
-            push,
-            hasher,
-            control,
-            conversations,
-            search,
             blobs,
             vault,
-            master_account: providers.master_account,
             provider_registry,
             media,
             cli_releases,
@@ -505,34 +505,51 @@ impl Services {
             subscriptions_machine: providers.subscriptions_machine,
             operations,
             logins,
-            claims: PendingClaims::new(settings.runners.claims_per_minute),
-            log: settings.log,
-            data_dir: settings.data_dir,
-            server_storage: crate::server_storage::ServerStorage::default(),
-            hook_limits: crate::schedules::HookLimits::default(),
+            hook_limits: jush_core::schedules::HookLimits::default(),
             runners: settings.runners,
             conversation_tuning: settings.conversations,
-            pages: settings.pages,
             media_tuning: settings.media_tuning,
             user_streams: UserStreams::new(
                 plugins
                     .streams()
                     .map(|stream| (stream.name.as_str(), &stream.operation)),
-                &settings.native,
+                packages.as_ref(),
             ),
-            native: settings.native,
+            packages,
             plugins: Arc::new(plugins),
-            cloud: settings.cloud,
-            public_url: settings.public_url,
-            lent: Default::default(),
-            web_build: settings.web_build,
-            runner_releases: settings.runner_releases,
-            prefetches: Prefetches::default(),
             stun: settings.stun,
             run: uuid::Uuid::new_v4().to_string(),
             lifecycle: settings.lifecycle,
             sync,
             returning,
+        });
+        Ok(Self {
+            core,
+            sessions: WebSessions::new(control.clone()),
+            limiter: LoginLimiter::new(),
+            email: EmailChanges::new(
+                control.clone(),
+                stores.clone(),
+                hasher.clone(),
+                settings.mail,
+                keys.email_codes,
+            ),
+            push,
+            hasher,
+            claims: PendingClaims::new(control.clone(), settings.runners.claims_per_minute),
+            control,
+            stores,
+            master_account: providers.master_account,
+            log: settings.log,
+            data_dir: settings.data_dir,
+            server_storage: crate::server_storage::ServerStorage::default(),
+            pages: settings.pages,
+            native: settings.native,
+            cloud: Arc::new(settings.cloud),
+            lent: Default::default(),
+            web_build: settings.web_build,
+            runner_releases: settings.runner_releases,
+            prefetches: Prefetches::default(),
             upgrades,
         })
     }
@@ -542,14 +559,14 @@ impl Services {
     /// enforces it. The master's choice changes them, and so does what the
     /// machine manager enforces with each isolation.
     pub fn isolation_changed(&self) {
-        self.sync.mark_everyone(&jush_backend_page_sync::Part::CloudIsolation);
-        self.sync.mark_everyone(&jush_backend_page_sync::Part::Users);
+        self.sync.mark_everyone(&jush_core_sync::Part::CloudIsolation);
+        self.sync.mark_everyone(&jush_core_sync::Part::Users);
     }
 
     /// Tells Settings › Cloud that a runtime's download moved on, which
     /// changes nothing Settings › Users shows.
     pub fn download_changed(&self) {
-        self.sync.mark_everyone(&jush_backend_page_sync::Part::CloudIsolation);
+        self.sync.mark_everyone(&jush_core_sync::Part::CloudIsolation);
     }
 
     /// Cancels the logins, drains the catalog refreshes and quota

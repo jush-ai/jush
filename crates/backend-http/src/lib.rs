@@ -2,16 +2,16 @@
 //! extractors and body limits, error codes and the web app build.
 //!
 //! Handlers are thin: they parse, authenticate, check ownership, and call a
-//! shared service or a shard. That is why the edge is axum, whose requirement
+//! shared service or a core. That is why the edge is axum, whose requirement
 //! that a handler's future be `Send` therefore costs nothing, and whose
 //! extractors, tower middleware and socket-free router tests come with it.
 //!
 //! # Ownership
 //!
-//! The edge checks ownership before it hands a request to a shard: it resolves
+//! The edge checks ownership before it hands a request to a core: it resolves
 //! the caller from the cookie, loads the conversation, device, project or
 //! provider entry the path names, and answers 404 when it belongs to someone
-//! else. A request therefore reaches only its owner's shard, which checks a
+//! else. A request therefore reaches only its owner's core, which checks a
 //! conversation's owner again whenever it loads the record.
 //!
 //! # Runners
@@ -130,7 +130,7 @@ pub use self::assets::{WebBuildError, web_build};
 pub use self::install::Site;
 use self::listener::{EdgeListener, Peer};
 use jush_backend_user_shard::services::Services;
-use jush_backend_user_shard::shard::Shards;
+use jush_backend_user_shard::pool::Shards;
 
 /// The listener and the server over it.
 pub struct Edge {
@@ -238,7 +238,7 @@ impl Edge {
     ) -> io::Result<Listening> {
         let tcp = TcpListener::bind(address).await?.tap_io(listener::without_delay);
         let local_addr = tcp.local_addr()?;
-        let public = jush_backend_runners::public_url::PublicUrl::default();
+        let public = jush_core_devices::public_url::PublicUrl::default();
         public.listening(public_url, local_addr);
         let routes = Arc::new(std::sync::RwLock::new(update::routes(update, web_directory, public)));
         let closing = CancellationToken::new();

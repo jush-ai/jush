@@ -1,4 +1,4 @@
-//! One user's plugins on the user's shard.
+//! One user's plugins on the user's core.
 //!
 //! The module holds:
 //!
@@ -6,7 +6,7 @@
 //!   conversations and which page states, page calls and user streams exist,
 //!   and which of their features, which narrows the toolset
 //!   (`crate::features`).
-//! - An instance of each plugin on, made at its first request after the shard
+//! - An instance of each plugin on, made at its first request after the core
 //!   started or the plugin was turned on, and dropped, with every task it
 //!   started, when it is turned off. A conversation's deletion or fork reaches
 //!   a plugin that keeps something of a conversation on or off, through an
@@ -99,7 +99,7 @@ impl MediaCall {
 
 /// What the product does for the plugins' port: the operations that reach
 /// a conversation's devices through its device access, and the user's blobs.
-/// The user's shard implements it.
+/// The user's core implements it.
 pub trait ProductPort {
     /// Runs `operation` once on `device`, one the conversation reaches, or on
     /// its primary device without one, for the user, waking it or not as
@@ -218,7 +218,7 @@ pub trait ProductPort {
     /// What `sealed` holds as that secret; none when it does not open.
     fn open(&self, user: &UserId, plugin: &str, name: &str, sealed: &[u8]) -> Option<Vec<u8>>;
 
-    /// The client every outbound request of the plugins goes through: the shard's, which sends only
+    /// The client every outbound request of the plugins goes through: the core's, which sends only
     /// `https` and follows no redirect away from it.
     fn web_client(&self) -> reqwest::Client;
 
@@ -229,9 +229,9 @@ pub trait ProductPort {
     /// The wall clock.
     fn now(&self) -> Timestamp;
 
-    /// Runs `work` as a task of the user's shard, which the shard's close
+    /// Runs `work` as a task of the user's core, which the core's close
     /// waits for: work that runs to its end though whoever started it went
-    /// away, such as a token renewal that asked its vendor. A shard already
+    /// away, such as a token renewal that asked its vendor. A core already
     /// gone drops `work` unstarted.
     fn spawn(&self, work: LocalBoxFuture<'static, ()>);
 }
@@ -368,7 +368,7 @@ pub(crate) struct Shared {
     pub(crate) sign_ins: SignIns,
     changes: Rc<dyn PluginChanges>,
     /// Whether the user has each plugin on, by its index, once read: every
-    /// switch goes through this shard, so the copy stays current.
+    /// switch goes through this core, so the copy stays current.
     enabled: RefCell<Option<Vec<bool>>>,
     /// Whether the user has each feature of each plugin on, by the
     /// plugin's index and the feature's, once read, as `enabled` is.
@@ -382,10 +382,10 @@ pub(crate) struct Shared {
     /// of date (`crates/runner-direct/src/lib.rs`).
     switched: RefCell<CancellationToken>,
     /// Each plugin's device directories for the user, by its index, once
-    /// read: every change goes through this shard.
+    /// read: every change goes through this core.
     directories: RefCell<Option<Vec<Vec<DeviceDirectory>>>>,
     /// How many times each plugin's conversation state changed since the
-    /// shard started, by the plugin's index and the conversation; a pair
+    /// core started, by the plugin's index and the conversation; a pair
     /// without an entry has changed none.
     revisions: RefCell<HashMap<(usize, ConversationId), u64>>,
     /// The conversations that run, as the shard last said.
@@ -510,7 +510,7 @@ impl Shared {
         if let Some(enabled) = &*self.enabled.borrow() {
             return Ok(enabled.clone());
         }
-        let choices = self.store.switches(self.user.clone()).await?;
+        let choices = self.store.switches().await?;
         let enabled: Vec<bool> = self
             .registry
             .plugins
@@ -532,7 +532,7 @@ impl Shared {
         if let Some(features) = &*self.features.borrow() {
             return Ok(features.clone());
         }
-        let choices = self.store.feature_switches(self.user.clone()).await?;
+        let choices = self.store.feature_switches().await?;
         let features: Vec<Vec<bool>> = self
             .registry
             .plugins
@@ -703,7 +703,7 @@ impl Shared {
         if let Some(directories) = &*self.directories.borrow() {
             return Ok(directories.clone());
         }
-        let mut stored = self.store.directories(self.user.clone()).await?;
+        let mut stored = self.store.directories().await?;
         let directories: Vec<Vec<DeviceDirectory>> = self
             .registry
             .plugins
@@ -725,7 +725,6 @@ impl Shared {
         let mut current = self.directories().await.map_err(storage)?;
         self.store
             .set_directories(
-                self.user.clone(),
                 self.plugin_id(plugin),
                 directories.clone(),
             )
@@ -890,7 +889,7 @@ impl UserPlugins {
         }
         self.0
             .store
-            .set_switch(self.0.user.clone(), plugin.to_owned(), enabled)
+            .set_switch(plugin.to_owned(), enabled)
             .await?;
         current[index] = enabled;
         self.0.enabled.replace(Some(current.clone()));
@@ -939,7 +938,7 @@ impl UserPlugins {
         }
         self.0
             .store
-            .set_feature_switch(self.0.user.clone(), plugin.to_owned(), feature.to_owned(), enabled)
+            .set_feature_switch(plugin.to_owned(), feature.to_owned(), enabled)
             .await?;
         current[index][position] = enabled;
         self.0.features.replace(Some(current));
@@ -998,7 +997,7 @@ impl UserPlugins {
         let closed = self
             .0
             .store
-            .close_tab_kinds(self.0.user.clone(), page.tab_kinds.clone())
+            .close_tab_kinds(page.tab_kinds.clone())
             .await?;
         for conversation in closed {
             self.0.changes.conversation_changed(conversation);
@@ -1708,7 +1707,7 @@ impl RequestPort {
             PortMessage::ReadValue { key } => {
                 let value = shared
                     .store
-                    .value(shared.user.clone(), shared.plugin_id(self.plugin), key)
+                    .value(shared.plugin_id(self.plugin), key)
                     .await
                     .map_err(storage)?;
                 PortAnswer::Value {
@@ -1718,7 +1717,7 @@ impl RequestPort {
             PortMessage::ListValues => {
                 let values = shared
                     .store
-                    .values(shared.user.clone(), shared.plugin_id(self.plugin))
+                    .values(shared.plugin_id(self.plugin))
                     .await
                     .map_err(storage)?;
                 PortAnswer::Values {
@@ -1735,7 +1734,6 @@ impl RequestPort {
                 blobs,
             } => {
                 let write = ValueWrite {
-                    user: shared.user.clone(),
                     plugin: shared.plugin_id(self.plugin),
                     key,
                     document: value,
@@ -1756,7 +1754,6 @@ impl RequestPort {
                 let removed = shared
                     .store
                     .remove_value(
-                        shared.user.clone(),
                         shared.plugin_id(self.plugin),
                         key,
                         revision,
@@ -1880,7 +1877,7 @@ impl RequestPort {
                 tree: product.device_git_fetch(&device, &url, &marker).await?,
             },
             PortMessage::Workspaces => {
-                let workspaces = shared.store.workspaces(shared.user.clone()).await.map_err(storage)?;
+                let workspaces = shared.store.workspaces().await.map_err(storage)?;
                 let current = match &self.conversation {
                     Some(conversation) => shared
                         .store

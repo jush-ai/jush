@@ -15,8 +15,8 @@ use jush_provider_registry::families::family_name;
 use jush_provider_registry::registry::RegistryError;
 use jush_shared_types::AudioShape;
 use jush_provider_registry::entry::ProviderEntry;
-use jush_backend_providers::vault::entries::Vault;
-use jush_backend_providers::vault::operations::OperationGuard;
+use jush_core_providers::vault::entries::Vault;
+use jush_core_providers::vault::operations::OperationGuard;
 use jush_provider_common::Provider;
 use jush_provider_common::quota::{ProbeAsk, QuotaError};
 use jush_web_api_protocol::auth::UserDto;
@@ -30,9 +30,9 @@ use jush_web_api_protocol::providers::{
 use super::body::{JsonBody, OptionalJsonBody};
 use super::error::ApiError;
 use super::gate::AuthUser;
-use jush_backend_user_shard::provider_settings::ProviderRefusal;
+use jush_core::provider_settings::ProviderRefusal;
 use jush_backend_user_shard::services::Services;
-use jush_backend_user_shard::shard::Shards;
+use jush_backend_user_shard::pool::Shards;
 
 /// The entry the path names, when the caller infers with it and manages
 /// it; one they only infer with is refused, and any other answers like a
@@ -211,13 +211,16 @@ pub(super) async fn update(
 
 /// Deletes an entry with its accounts, catalog and quota snapshots.
 pub(super) async fn delete(
-    State(services): State<Arc<Services>>,
+    State(shards): State<Shards>,
     AuthUser(user): AuthUser,
     Path(id): Path<String>,
 ) -> Result<StatusCode, ApiError> {
-    services
-        .delete_provider(&user, &id)
-        .await
+    shards
+        .of(&user.id.clone())
+        .call(move |core, _| async move {
+            core.services().delete_provider(core.starter(), &user, &id).await
+        })
+        .await?
         .map_err(refused)?;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -305,7 +308,7 @@ pub(super) async fn quota(
 }
 
 /// One real request to the model the body names, with the account it names
-/// or the active one, on the acting user's shard.
+/// or the active one, on the acting user's core.
 pub(super) async fn test(
     State(services): State<Arc<Services>>,
     State(shards): State<Shards>,
@@ -320,8 +323,8 @@ pub(super) async fn test(
     let model = request.model_id;
     let result = shards
         .of(&user.id)
-        .call(move |shard, cancel| async move {
-            shard
+        .call(move |core, cancel| async move {
+            core
                 .test_provider(entry, provider, account, model, cancel)
                 .await
         })
