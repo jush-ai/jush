@@ -13,7 +13,7 @@ import {
   type SavedMessage,
   type SavedSave,
   type SavedWrite,
-} from './generated/web-api'
+} from '@jush-ai/protocol'
 
 /** A conversation's messages saved for later. */
 function savedPath(conversationId: string, messageId?: string): string {

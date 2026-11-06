@@ -10,7 +10,7 @@ import {
   type CredentialDto,
   type CredentialPatch,
   type NewCredential,
-} from '../api/generated/web-api'
+} from '@jush-ai/protocol'
 import { confirmationHost } from '../auth/handoff'
 import { useResources } from '../state/resources'
 import { useHeldList, useProduct, type Answer } from '../state/product'

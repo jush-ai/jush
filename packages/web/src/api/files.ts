@@ -23,7 +23,7 @@ import {
   type HtmlRequest,
   type LinkTarget,
   type SearchRequest,
-} from './generated/web-api'
+} from '@jush-ai/protocol'
 import { searchEvents } from './file-search'
 import { uploadBytes } from './uploads'
 import { t } from './locales/text'

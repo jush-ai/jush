@@ -6,7 +6,7 @@ import MoveConversationDialog from '@jush-ai/web-ui/targets/MoveConversationDial
 import { useMoveQuestion } from '@jush-ai/web-ui/targets/move-question'
 import { homePath } from '@jush-ai/web-ui/files/paths'
 import { appOverlayStore } from '@jush-ai/web-ui/overlay/appOverlay'
-import type { ConversationTarget } from '../api/generated/web-api'
+import type { ConversationTarget } from '@jush-ai/protocol'
 import type { Conversation, Project } from '../state/types'
 import { useResources } from '../state/resources'
 import { targetKindOf, deviceLabel } from '../state/devices'
