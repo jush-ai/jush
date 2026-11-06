@@ -132,6 +132,12 @@ pub fn module(header: &str) -> String {
         count(jush_web_api_protocol::MAX_PAGE_MESSAGE_BYTES)
     )
     .expect("writing to a string");
+    writeln!(
+        source,
+        "export const MAX_PLUGIN_MESSAGE_BYTES = {}",
+        count(jush_web_api_protocol::MAX_PLUGIN_MESSAGE_BYTES)
+    )
+    .expect("writing to a string");
 
     {
         use jush_shared_lanes as connection;

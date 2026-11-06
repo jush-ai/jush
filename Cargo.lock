@@ -5764,6 +5764,7 @@ dependencies = [
 name = "jush-device-paths"
 version = "0.1.65"
 dependencies = [
+ "schemars",
  "serde",
  "typed-path",
 ]
