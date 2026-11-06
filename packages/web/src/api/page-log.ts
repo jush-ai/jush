@@ -1,5 +1,5 @@
 import type { PageLogAnswer, PageLogBody } from '@jush-ai/web-ui/infra/log'
-import type { PageLog } from './generated/web-api'
+import type { PageLog } from '@jush-ai/protocol'
 import { ApiError, REQUEST_ID_HEADER, apiRequest, jsonBody } from './client'
 
 /** The statuses by which the backend refuses lines as not well formed; any other answer leaves them to wait. */

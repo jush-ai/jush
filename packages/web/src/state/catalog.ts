@@ -6,13 +6,17 @@ import type {
 } from '@jush-ai/web-ui/settings/types'
 import { providerLogo } from '@jush-ai/web-ui/settings/vendor-logos'
 import { onImages } from '@jush-ai/web-ui/settings/window-name'
-import { appliedContextLimit, type AuthState, type QuotaSnapshot, type RuntimeState, type WireApi } from '@jush-ai/protocol'
-import type {
-  AccountDto,
-  CatalogModel,
-  CatalogProvider,
-  ProviderState,
-} from '../api/generated/web-api'
+import {
+  appliedContextLimit,
+  type AuthState,
+  type QuotaSnapshot,
+  type RuntimeState,
+  type WireApi,
+  type AccountDto,
+  type CatalogModel,
+  type CatalogProvider,
+  type ProviderState,
+} from '@jush-ai/protocol'
 
 /**
  * The package of the CLI that `providerId`'s requests start on the Cloud, by
