@@ -228,6 +228,13 @@
         "vite": "^8.0.16",
       },
     },
+    "packages/web-components": {
+      "name": "@jush-ai/web-components",
+      "version": "0.24.0",
+      "devDependencies": {
+        "@jush-ai/web": "workspace:^",
+      },
+    },
     "packages/web-gallery": {
       "name": "@jush-ai/web-gallery",
       "version": "0.24.0",
@@ -615,6 +622,8 @@
     "@jush-ai/utils": ["@jush-ai/utils@workspace:packages/utils"],
 
     "@jush-ai/web": ["@jush-ai/web@workspace:packages/web"],
+
+    "@jush-ai/web-components": ["@jush-ai/web-components@workspace:packages/web-components"],
 
     "@jush-ai/web-gallery": ["@jush-ai/web-gallery@workspace:packages/web-gallery"],
 
