@@ -44,7 +44,9 @@ use jush_runner_client::{
     socket_frame,
 };
 use jush_device_interface::{DeviceIdentity, DeviceKey};
-use jush_runner_protocol::wire::{self, AutostartUnavailable, DeviceArtifact, Elevation, Hardware, Inbound, OperatingSystem};
+use jush_runner_protocol::wire::{
+    self, AutostartUnavailable, DeviceArtifact, Elevation, Hardware, Inbound, OperatingSystem, RunnerPlatform,
+};
 use jush_runner_protocol::values::BackendUrl;
 use jush_web_api_protocol::devices::{DeviceDto, DeviceKind, DeviceLogo, DeviceMark, DeviceState};
 use jush_web_api_protocol::ids::DeviceId;
@@ -1113,10 +1115,10 @@ impl DeviceRecorder {
         Self { store, marks }
     }
 
-    /// Records what `device`'s runner said in its hello: its operating system,
-    /// its machine, its release, its instance, its home and why it will not start by itself
-    /// after a restart, and that it was connected just now. It advances the
-    /// execution contexts the report changes
+    /// Records what `device`'s runner said in its hello: its platform and
+    /// operating system, its machine, its release, its instance, its home and
+    /// why it will not start by itself after a restart, and that it was
+    /// connected just now. It advances the execution contexts the report changes
     /// (`crates/core-store/src/selection.rs`).
     ///
     /// Answers the directories the runner resolves before a paired device's
@@ -1125,6 +1127,7 @@ impl DeviceRecorder {
     pub async fn hello(
         &self,
         device: DeviceId,
+        platform: RunnerPlatform,
         os: OperatingSystem,
         hardware: Hardware,
         version: String,
@@ -1135,7 +1138,7 @@ impl DeviceRecorder {
     ) -> Option<FirstHome> {
         let first = match self
             .store
-            .set_device_runner(device.clone(), os, hardware, version, instance, home, autostart_unavailable, elevation)
+            .set_device_runner(device.clone(), platform, os, hardware, version, instance, home, autostart_unavailable, elevation)
             .await
         {
             Ok(first) => first,

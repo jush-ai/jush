@@ -126,7 +126,7 @@ use jush_runner_process::{
     local_socket,
     stdio::{self, standard_file},
 };
-use jush_runner_process::backend::Backend;
+use jush_runner_process::backend::{Backend, CHANNEL_URL, Channel};
 use jush_runner_protocol::{
     boot::{BACKEND_SOCKET, ManagedBoot, TEMPORARY_DIRECTORY},
     values::BackendUrl,
@@ -312,6 +312,13 @@ enum Action {
         /// runner the installer or `start` starts in the background does.
         #[arg(long, hide = true)]
         log: bool,
+        /// Speaks to the backend over the standard input and output, which
+        /// whoever started the runner carries to its core; the runner ends
+        /// once they do. Its installation is the directory `--home` names,
+        /// one for each device, since nothing on the stream tells one device's
+        /// runner from another's.
+        #[arg(long, conflicts_with_all = ["backend", "managed_boot", "log"], requires = "home")]
+        stdio: bool,
     },
     /// Reports whether the installation's runner is active; exits with 3
     /// when it runs another release.
@@ -382,7 +389,7 @@ struct Installation {
     backend: Option<BackendUrl>,
     /// The installation's directory; one per backend under
     /// `~/.jush/runner` by default.
-    #[arg(long = "home", env = jush_runner_protocol::installation::HOME_ENV, hide = true)]
+    #[arg(long = "home", env = jush_runner_protocol::installation::HOME_ENV)]
     home: Option<PathBuf>,
     /// This runner's release, which `status` compares with the active one.
     #[arg(long, env = jush_runner_protocol::release::RELEASE_ENV, hide = true)]
@@ -390,7 +397,7 @@ struct Installation {
 }
 
 async fn runner(cli: Cli) -> io::Result<u8> {
-    let (installation, boot_path, name, managed, artifacts, log, removing) = match cli.action {
+    let (mut installation, boot_path, name, managed, artifacts, log, channel, removing) = match cli.action {
         Action::Run {
             installation,
             managed_boot,
@@ -398,13 +405,17 @@ async fn runner(cli: Cli) -> io::Result<u8> {
             managed,
             artifacts,
             log,
+            stdio,
         } => {
-            // First of all: until it leaves, the terminal reaches it.
+            // First of all: until it leaves, the terminal reaches it, and
+            // until it takes them, its standard input and output are open
+            // to anything.
             #[cfg(unix)]
             if log && let console::Departure::Restarted = console::leave_terminal()? {
                 return Ok(0);
             }
-            (installation, managed_boot, name, managed, artifacts, log, false)
+            let channel = stdio.then(console::take_channel).transpose()?;
+            (installation, managed_boot, name, managed, artifacts, log, channel, false)
         }
         Action::Status { installation } => {
             let state = RunnerState::open(directory(&installation, None)?).await?;
@@ -499,7 +510,7 @@ async fn runner(cli: Cli) -> io::Result<u8> {
                 // backend, then removes the installation.
                 Some(lease) => {
                     lease.release()?;
-                    (installation, None, None, None, None, false, true)
+                    (installation, None, None, None, None, false, None, true)
                 }
             }
         }
@@ -513,6 +524,11 @@ async fn runner(cli: Cli) -> io::Result<u8> {
         }
         None => None,
     };
+    // A runner on a channel belongs to the backend at the channel's URL,
+    // whose installation it runs in.
+    if channel.is_some() {
+        installation.backend = Some(CHANNEL_URL.parse().map_err(io::Error::other)?);
+    }
     let mut directory = directory(&installation, boot.as_ref())?;
     let backend = boot
         .as_ref()
@@ -580,9 +596,11 @@ async fn runner(cli: Cli) -> io::Result<u8> {
         Some(executable) => executable,
         None => std::env::current_exe()?,
     };
-    // A managed guest's runner comes with its image, never from an
-    // installer (`crates/runner/src/update.rs`).
+    // A managed guest's runner comes with its image, and one on a channel
+    // with whoever started it, never from an installer
+    // (`crates/runner/src/update.rs`).
     let installed = match &boot {
+        _ if channel.is_some() => None,
         Some(_) => None,
         None => update::Installed::of(
             &directory,
@@ -606,9 +624,10 @@ async fn runner(cli: Cli) -> io::Result<u8> {
             Err(error) => unsettled = Some(error),
         }
     }
-    // A managed guest is never paired, so nobody removes its runner; one that
-    // `uninstall` runs is being removed.
-    let removal = (boot.is_none() && !removing)
+    // A managed guest is never paired, so nobody removes its runner, and
+    // whoever started one on a channel ends it; one that `uninstall` runs is
+    // being removed.
+    let removal = (boot.is_none() && channel.is_none() && !removing)
         .then(|| removal::command(&directory, installed.is_some(), &executable));
     // An installer's installation has the launcher its registration runs.
     let autostart = match &installed {
@@ -728,15 +747,20 @@ async fn runner(cli: Cli) -> io::Result<u8> {
     let installation_directory = directory.clone();
     // A Cloud's runner reaches its backend through the socket the machine
     // manager mounted, or the abstract socket its boot names
-    // (`crates/backend-http/src/lib.rs`).
-    let backend = match &boot {
+    // (`crates/backend-http/src/lib.rs`); one on a channel, through the
+    // channel.
+    let backend = match (&boot, channel) {
+        (_, Some((input, output))) => Backend::over(Channel::open(tokio::io::join(input, output)).await?),
         #[cfg(target_os = "linux")]
-        Some(ManagedBoot {
-            abstract_socket: Some(name),
-            ..
-        }) => Backend::through(backend, jush_runner_protocol::boot::abstract_socket_path(name)),
-        Some(_) => Backend::through(backend, PathBuf::from(BACKEND_SOCKET)),
-        None => Backend::at(backend),
+        (
+            Some(ManagedBoot {
+                abstract_socket: Some(name),
+                ..
+            }),
+            None,
+        ) => Backend::through(backend, jush_runner_protocol::boot::abstract_socket_path(name)),
+        (Some(_), None) => Backend::through(backend, PathBuf::from(BACKEND_SOCKET)),
+        (None, None) => Backend::at(backend),
     };
     let options = Options {
         backend,
@@ -817,7 +841,8 @@ async fn runner(cli: Cli) -> io::Result<u8> {
             | Ending::Uninstalled(_)
             | Ending::Held
             | Ending::HandedOver
-            | Ending::Unstartable,
+            | Ending::Unstartable
+            | Ending::ChannelEnded,
         ) => Ok(0),
         // The task waits for this runner's end to start the elevated one;
         // a task that cannot be started leaves the restart to the loop.

@@ -22,7 +22,7 @@ use axum::extract::State;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{any, get};
 use jush_backend_database::update::Update;
-use jush_backend_runners::native;
+use jush_core_devices::packages::ARTIFACT_ROUTE;
 use jush_core_devices::public_url::PublicUrl;
 use jush_web_api_protocol::state::UpdateState;
 
@@ -44,7 +44,7 @@ pub(crate) fn routes(update: Arc<Update>, web_directory: Option<PathBuf>, public
         "/install.sh",
         "/install.ps1",
         "/runner-artifacts/{*rest}",
-        &format!("{}/{{*rest}}", native::ROUTE),
+        &format!("{ARTIFACT_ROUTE}/{{*rest}}"),
     ] {
         app = app.route(path, any(not_yet));
     }
