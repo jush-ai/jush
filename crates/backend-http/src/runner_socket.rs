@@ -20,7 +20,7 @@ use jush_backend_runners::codes::ClaimCode;
 use jush_core_devices::devices::{RunnerSocket, send};
 
 use jush_backend_user_shard::services::Services;
-use jush_backend_user_shard::pool::Shards;
+use jush_core::pool::Shards;
 use jush_core::KeptJobs;
 
 /// Serves a runner's socket until it is handed to a core or closes.

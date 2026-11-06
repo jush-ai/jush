@@ -42,7 +42,7 @@ use url::Url;
 
 use super::AppState;
 use super::cookies::Https;
-use super::error::ApiError;
+use jush_core_api::error::ApiError;
 
 /// How the backend is reached from outside, and what it serves besides the
 /// API.
@@ -246,7 +246,7 @@ async fn counted(state: &AppState, device: Option<TokenDevice>, stored: Stored) 
     let (served, serving) = tokio::sync::watch::channel(download);
     let id = device.id;
     let told = state
-        .shards
+        .api.shards
         .of(&device.owner)
         .call(move |core, _| async move { core.runner_downloading(id, serving) })
         .await;

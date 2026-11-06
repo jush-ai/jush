@@ -10,7 +10,7 @@
 use std::time::Duration;
 
 use jush_backend_database::server_log::ServerLog;
-use jush_backend_user_shard::pool::Shards;
+use jush_core::pool::Shards;
 use jush_core::lane::{open_connections, open_lanes};
 use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System};
 

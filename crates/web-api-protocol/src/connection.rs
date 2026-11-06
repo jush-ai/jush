@@ -55,6 +55,9 @@ pub enum LaneTarget {
     /// kept, which the backend gives back while it is the same user's and
     /// unexpired.
     Debug { resume: Option<String> },
+    /// What the core asks of the program that opened it
+    /// (`crates/web-api-protocol/src/starter.rs`); only that program opens it.
+    Starter,
 }
 
 /// Why the backend refused a lane's open: the status and the error answer a

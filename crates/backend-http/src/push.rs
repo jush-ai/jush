@@ -19,9 +19,9 @@ use jush_backend_user_shard::services::Services;
 use jush_web_api_protocol::error::ErrorCode;
 use jush_web_api_protocol::push::{PushKey, PushSubscriptionBody};
 
-use super::body::JsonBody;
-use super::conversations::owned;
-use super::error::ApiError;
+use jush_core_api::body::JsonBody;
+use jush_core_api::conversations::owned;
+use jush_core_api::error::ApiError;
 use super::gate::{AuthUser, CurrentSession};
 
 /// `GET /push/key`.
