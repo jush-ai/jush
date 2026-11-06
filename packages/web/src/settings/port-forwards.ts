@@ -4,7 +4,7 @@ import { defineStore } from 'pinia'
 import { reportError } from '@jush-ai/web-ui/infra/errors'
 import type { ForwardDevice, PortForwardChange, SettingsPortForward } from '@jush-ai/web-ui/settings/port-forwards'
 import { apiRequest, ApiError, jsonBody, readResponse } from '../api/client'
-import { portForwardAnswerSchema, type PortForwardDto, type PortForwardPatch } from '../api/generated/web-api'
+import { portForwardAnswerSchema, type PortForwardDto, type PortForwardPatch } from '@jush-ai/protocol'
 import { useHeldList, useProduct, type Answer } from '../state/product'
 import { deviceMarkOf, targetKindOf, deviceLabel } from '../state/devices'
 

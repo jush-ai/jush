@@ -1,4 +1,4 @@
-import type { DeviceDto, DeviceKind } from '../api/generated/web-api'
+import type { DeviceDto, DeviceKind } from '@jush-ai/protocol'
 import { shownMark, type DeviceMark } from '@jush-ai/web-ui/devices/mark'
 import type { TargetKind } from '@jush-ai/web-ui/targets/types'
 import { t as shared } from '@jush-ai/web-ui/locales/text'

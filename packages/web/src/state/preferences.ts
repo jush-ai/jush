@@ -1,18 +1,18 @@
 import { computed } from 'vue'
 import { defineStore } from 'pinia'
-import { IDLE_COMPACTION_CONTEXT } from '@jush-ai/protocol'
-import { SerialQueue } from '@jush-ai/utils'
-import { reportError } from '@jush-ai/web-ui/infra/errors'
-import { t } from './locales/text'
-import { apiRequest, jsonBody, readResponse } from '../api/client'
 import {
+  IDLE_COMPACTION_CONTEXT,
   userPreferencesSchema,
   type BrowserLocale,
   type ContextLimitChange,
   type Preferences,
   type PreferencesPatch,
   type ShortcutsPatch,
-} from '../api/generated/web-api'
+} from '@jush-ai/protocol'
+import { SerialQueue } from '@jush-ai/utils'
+import { reportError } from '@jush-ai/web-ui/infra/errors'
+import { t } from './locales/text'
+import { apiRequest, jsonBody, readResponse } from '../api/client'
 import { useProduct, type Answer, type ProductChange } from './product'
 import { appShortcuts } from '@jush-ai/web-ui/settings/shortcuts'
 import { shortcutSet } from '@jush-ai/web-ui/ui/shortcut'

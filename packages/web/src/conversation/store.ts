@@ -107,7 +107,7 @@ import {
   type SidebarReorder,
   type ScheduleChange,
   type SuggestedReplyUse,
-} from '../api/generated/web-api'
+} from '@jush-ai/protocol'
 import type { WorkflowChoice } from '@jush-ai/protocol'
 import { isEmptyMessage, joinMessageContent, storedMessageContent } from '@jush-ai/web-ui/agent/message-input/message-content'
 import { startingChoices, startingWorkflow, type RememberedChoices } from '@jush-ai/web-ui/agent/starting-choices'
@@ -115,8 +115,9 @@ import type { WorkflowList } from '@jush-ai/web-ui/agent/workflow-menu'
 import { blobPicture, commentFileIds, createConversationUploads, pendingFileIds, referenced, sendingFileIds } from './uploads'
 import { useWorkspaces } from '../state/workspaces'
 import { useResources } from '../state/resources'
-import { known, useProduct, type ProductChange } from '../state/product'
-import type { PageState } from '../state/lists'
+import { known } from '@jush-ai/protocol'
+import { useProduct, type ProductChange } from '../state/product'
+import type { PageState } from '@jush-ai/protocol'
 import { usePreferences } from '../state/preferences'
 import { useSession } from '../auth/session'
 import type { Conversation, PendingSend, ProductAttachment } from '../state/types'

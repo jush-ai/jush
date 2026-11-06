@@ -17,7 +17,7 @@ import type {
   PasskeyDto,
   RegistrationResponseJson,
   RequestOptionsJson,
-} from '../api/generated/web-api'
+} from '@jush-ai/protocol'
 
 /** Whether this browser has WebAuthn at all. */
 export function browserHasPasskeys(): boolean {

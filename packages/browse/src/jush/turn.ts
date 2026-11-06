@@ -11,7 +11,7 @@
 // `jush.message` waits only for the turn its message starts, which the root's
 // latest ended turn names once it ends.
 import type { Page } from 'playwright'
-import { conversationDetailSchema, type TurnOutcome } from '@jush-ai/web/src/api/generated/web-api'
+import { conversationDetailSchema, type TurnOutcome } from '@jush-ai/protocol'
 import type { Slot } from '../slot'
 import { Failure, webBase, type Tool } from '../tool'
 
