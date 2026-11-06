@@ -4,7 +4,7 @@
 //! never wakes the Cloud and asks no one: the machine manager pushes the
 //! sizes and the image, and the page shows what it last said.
 
-use jush_backend_database::StorageError;
+use jush_core_store::StorageError;
 use jush_backend_database::managed::ManagedOperation;
 use jush_machine_manager_protocol::{DeviceId, Isolation as MachineIsolation, MoveStatus};
 use jush_web_api_protocol::cloud::{
@@ -12,11 +12,11 @@ use jush_web_api_protocol::cloud::{
 };
 use jush_web_api_protocol::settings::Isolation;
 
-use crate::CloudShard;
+use crate::CloudCore;
 
-impl dyn CloudShard {
+impl dyn CloudCore {
     pub async fn cloud_status(&self) -> Result<CloudStatus, StorageError> {
-        let Some(device) = self.control().managed_device(self.user().clone()).await? else {
+        let Some(device) = self.store().managed_device().await? else {
             return Ok(CloudStatus {
                 device: None,
                 state: CloudState::Unallocated,

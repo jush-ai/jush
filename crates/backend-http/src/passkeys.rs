@@ -13,7 +13,7 @@ use axum_extra::extract::CookieJar;
 use jush_backend_accounts::passkeys::{
     self, IssueRefusal, Refusal, RelyingParty, passkey_list,
 };
-use jush_backend_page_sync::Part;
+use jush_core_sync::Part;
 use jush_backend_user_shard::services::Services;
 use jush_web_api_protocol::auth::{Identity, UserDto};
 use jush_web_api_protocol::error::ErrorCode;
