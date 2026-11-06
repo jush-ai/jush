@@ -1,4 +1,10 @@
-import type { ReplyBlockFacts } from '@jush-ai/protocol'
+import {
+  sharedConversationSchema,
+  sharedTranscriptPageSchema,
+  type ReplyBlockFacts,
+  type SharedConversation,
+  type SharedTranscriptPage,
+} from '@jush-ai/protocol'
 import { oneRunPerKey } from '@jush-ai/utils'
 import type { BlobUrl } from '@jush-ai/web-ui/agent/media-source'
 import { pageBeside, shownWindow } from '@jush-ai/web-ui/agent/history'
@@ -7,12 +13,6 @@ import type { SharedItem } from '@jush-ai/web-ui/share/shared-items'
 import { addWindow, type HeldTranscript } from '@jush-ai/web-ui/transport/protocol'
 import { ApiError, apiRequest, apiUrl, readResponse } from '../api/client'
 import { createReading } from '../conversation/reading'
-import {
-  sharedConversationSchema,
-  sharedTranscriptPageSchema,
-  type SharedConversation,
-  type SharedTranscriptPage,
-} from '../api/generated/web-api'
 
 /**
  * The public routes of share `token`, the only ones its page calls: the page's

@@ -19,8 +19,12 @@ import {
   transcriptPageSchema,
   wholeBlockSchema,
   type TranscriptPage,
-} from '../api/generated/web-api'
-import type { Block, CacheChart, ConversationAttachment, InstructionEntry, ProviderFailureFacts } from '@jush-ai/protocol'
+  type Block,
+  type CacheChart,
+  type ConversationAttachment,
+  type InstructionEntry,
+  type ProviderFailureFacts,
+} from '@jush-ai/protocol'
 import { describeAttachments, describeReplyBlocks } from './activity'
 import { viewRead } from '@jush-ai/web-ui/infra/view-timing'
 

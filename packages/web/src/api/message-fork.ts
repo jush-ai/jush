@@ -1,6 +1,6 @@
 import type { MessageForkRequest } from '@jush-ai/web-ui/agent/message-fork'
 import { apiRequest, jsonBody, readResponse } from './client'
-import { forkAnswerSchema, type ForkRequest } from './generated/web-api'
+import { forkAnswerSchema, type ForkRequest } from '@jush-ai/protocol'
 
 export async function forkConversation(sourceId: string, request: MessageForkRequest, signal: AbortSignal) {
   const response = await apiRequest(`/conversations/${encodeURIComponent(sourceId)}/fork`, {
