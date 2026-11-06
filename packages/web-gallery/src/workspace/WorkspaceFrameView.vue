@@ -6,7 +6,7 @@ import AppSidebar from '@jush-ai/web-ui/sidebar/AppSidebar.vue'
 import ChatSession from '@jush-ai/web-ui/agent/ChatSession.vue'
 import { provideLiveCalls } from '@jush-ai/web-ui/agent/live-calls'
 import { useCallTerminals } from '@jush-ai/web-ui/agent/terminals'
-import { provideMediaViewer } from '@jush-ai/web-ui/files/media-viewer'
+import { pageMediaViewer, provideMediaViewer } from '@jush-ai/web-ui/files/media-viewer'
 import { providePageHost, sidebarEntries } from '@jush-ai/web-ui/plugins/page'
 import { appShortcuts } from '@jush-ai/web-ui/settings/shortcuts'
 import GalleryComposer from '../components/GalleryComposer.vue'
@@ -74,12 +74,12 @@ const files = galleryConversationFiles(project.source, (target) => {
 })
 
 // A picture or a video a message shows opens in Attachments, as the product's does.
-provideMediaViewer({
+provideMediaViewer(pageMediaViewer({
   reveal: () => {
     work.openIn({ intent: 'media', payload: {} })
     return true
   },
-})
+}))
 
 const sidebarOpen = ref(false)
 const projects = ref(demoProjects())

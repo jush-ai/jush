@@ -1,0 +1,31 @@
+{
+  "name": "@jush-ai/web-components",
+  "description": "Jush's conversation view as a custom element, for a program's page that runs Jush's agents with @jush-ai/sdk.",
+  "version": "0.24.0",
+  "private": false,
+  "type": "module",
+  "exports": {
+    ".": "./dist/jush-web-components.js",
+    "./style.css": "./dist/jush-web-components.css"
+  },
+  "devDependencies": {
+    "@jush-ai/web": "workspace:^"
+  },
+  "license": "Apache-2.0",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "bun run --cwd ../web vite build --mode elements"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jush-ai/jush.git",
+    "directory": "packages/web-components"
+  },
+  "homepage": "https://github.com/jush-ai/jush/tree/main/packages/web-components#readme",
+  "bugs": "https://github.com/jush-ai/jush/issues"
+}
