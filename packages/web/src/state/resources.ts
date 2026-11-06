@@ -95,7 +95,7 @@ export const useResources = defineStore('resources', () => {
   const sidebarOpen = ref(false)
 
   watch(
-    () => session.user?.id,
+    () => session.owner,
     (id) => {
       controller.abort()
       controller = new AbortController()
@@ -111,8 +111,8 @@ export const useResources = defineStore('resources', () => {
   watch(
     local,
     (value) => {
-      if (session.user) {
-        writeLocalState(session.user.id, value)
+      if (session.owner) {
+        writeLocalState(session.owner, value)
       }
     },
     { deep: true },
