@@ -31,10 +31,10 @@ use jush_web_api_protocol::providers::{NewShareKey, ShareKeys};
 use futures_util::{SinkExt as _, StreamExt as _, future};
 
 use super::AppState;
-use super::body::read_within;
-use super::error::ApiError;
+use jush_core_api::body::read_within;
+use jush_core_api::error::ApiError;
 use super::gate::AuthUser;
-use super::providers::refused;
+use jush_core_api::providers::refused;
 use jush_backend_user_shard::lent_media::LentMedia;
 use jush_backend_user_shard::provider_sharing::ProviderSharing;
 
@@ -129,7 +129,7 @@ pub(super) async fn provider(
     let user = borrowing.key.created_by.clone();
     let key = borrowing.key.id.clone();
     let lent = state
-        .shards
+        .api.shards
         .of(&user)
         .call(move |core, _| async move { core.lent(borrowing).await })
         .await;
@@ -187,7 +187,7 @@ pub(super) async fn media(
     };
     let user = borrowing.key.created_by.clone();
     let taken = state
-        .shards
+        .api.shards
         .of(&user)
         .call(move |core, _| async move { core.lent_media(borrowing, kind, call).await })
         .await;
@@ -235,7 +235,7 @@ pub(super) async fn socket(
         Ok(borrowing) => borrowing,
         Err(response) => return response,
     };
-    let shards = state.shards.clone();
+    let shards = state.api.shards.clone();
     upgrade
         .max_message_size(MESSAGE_BYTES)
         .max_frame_size(MESSAGE_BYTES)
