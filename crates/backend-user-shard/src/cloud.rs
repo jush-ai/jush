@@ -7,7 +7,7 @@ use jush_backend_cloud::user_core::CloudOfCore;
 use jush_web_api_protocol::ids::DeviceId;
 use tokio::sync::mpsc;
 
-use crate::pool::Shards;
+use jush_core::pool::Shards;
 use crate::services::Services;
 
 /// Routes each death the machine manager reports to the core of the

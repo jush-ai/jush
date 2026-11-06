@@ -52,7 +52,9 @@ use url::Url;
 
 use super::Site;
 use super::cookies::{self, SESSION_COOKIE};
-use super::error::ApiError;
+use super::session_caller::SessionCaller;
+use jush_core_api::caller::{Caller, CallerOf};
+use jush_core_api::error::ApiError;
 use jush_backend_user_shard::services::Services;
 
 /// Fetch Metadata's header that says where a web browser's request comes
@@ -242,20 +244,48 @@ pub(super) async fn session(
     if session.user.chooses_password && !opens_before_password_choice(request.method(), request.uri().path()) {
         return ApiError::password_choice_required().into_response();
     }
+    let hash = TokenHash::of(&token);
     request.extensions_mut().insert(CurrentSession {
-        token: TokenHash::of(&token),
-        id: session.id,
+        token: hash.clone(),
+        id: session.id.clone(),
         verified_at: session.verified_at,
     });
-    request.extensions_mut().insert(AuthUser(session.user));
+    request.extensions_mut().insert(AuthUser(session.user.clone()));
+    let expires_at = session.expires_at;
+    let renewed = session.renewed;
+    let caller: Arc<dyn Caller> = Arc::new(SessionCaller::new(services.clone(), hash, session));
+    request.extensions_mut().insert(CallerOf(caller));
     let response = next.run(request).await;
     // A handler that sets the session cookie itself, as logout removes it,
     // decides the cookie.
-    if sets_session_cookie(&response) || !(session.renewed || earlier) {
+    if sets_session_cookie(&response) || !(renewed || earlier) {
         return response;
     }
-    let renewed = jar.add(cookies::session(&token, session.expires_at, https));
+    let renewed = jar.add(cookies::session(&token, expires_at, https));
     (renewed, response).into_response()
+}
+
+/// Passes the upgrade of a page connection whose cookie names a live
+/// session, with the session as its caller, without renewing it: only
+/// requests renew a session. A missing or ended session answers 401
+/// `unauthenticated`.
+pub(super) async fn page_connection(
+    State(services): State<Arc<Services>>,
+    jar: CookieJar,
+    mut request: Request,
+    next: Next,
+) -> Response {
+    let Some(token) = cookies::session_token(&jar).map(|(token, _)| TokenHash::of(&token)) else {
+        return ApiError::unauthenticated().into_response();
+    };
+    let session = match services.sessions.check(&token).await {
+        Ok(Some(session)) => session,
+        Ok(None) => return ApiError::unauthenticated().into_response(),
+        Err(error) => return ApiError::from(error).into_response(),
+    };
+    let caller: Arc<dyn Caller> = Arc::new(SessionCaller::new(services, token, session));
+    request.extensions_mut().insert(CallerOf(caller));
+    next.run(request).await
 }
 
 /// Whether a request opens for an account still to choose its password: reading who

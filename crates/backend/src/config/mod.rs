@@ -81,8 +81,8 @@ use jush_plugin_interface::PluginFactory;
 use jush_provider_common::media_catalog;
 use jush_provider_common::models_dev::ModelsDevClient;
 
-use jush_backend_user_shard::pool::ShardPlacement;
-use jush_backend_user_shard::tuning::PageTuning;
+use jush_core::pool::ShardPlacement;
+use jush_core_api::connection::PageTuning;
 use jush_core::tuning::{ConversationTuning, LifecycleTuning, MediaTuning, RunnerTuning};
 
 use self::secret::InstanceSecret;
@@ -532,7 +532,7 @@ impl BackendConfig {
         machines_socket: PathBuf,
     ) -> Self {
         let claude_machine = MachineSlot::default();
-        let plugins = crate::plugins::builtin(&data_dir);
+        let plugins = jush_core::builtins::plugins(&data_dir);
         Self {
             log: ServerLog::detached(&data_dir),
             data_dir,
@@ -552,7 +552,7 @@ impl BackendConfig {
             account_mail: None,
             clock: Arc::new(SystemClock),
             shards: ShardPlacement::Threads(NonZeroUsize::MIN),
-            families: crate::families::builtin(claude_machine.clone()),
+            families: jush_core::builtins::families(claude_machine.clone()),
             claude_machine,
             plugins,
             models_dev_url: ModelsDevClient::DEFAULT_URL

@@ -13,8 +13,8 @@ bench = false
 
 [dependencies]
 jush-core = { path = "../core" }
+jush-core-api = { path = "../core-api" }
 jush-core-devices = { path = "../core-devices" }
-jush-conversation-lane-protocol = { path = "../conversation-lane-protocol" }
 jush-backend-accounts = { path = "../backend-accounts" }
 jush-backend-cloud = { path = "../backend-cloud" }
 jush-core-device-access = { path = "../core-device-access" }
@@ -46,8 +46,6 @@ object_store.workspace = true
 sysinfo = { version = "0.39", default-features = false, features = ["disk"] }
 rand = "0.9"
 reqwest = { workspace = true, features = ["rustls", "stream"] }
-serde_json.workspace = true
-sha2 = "0.10"
 thiserror.workspace = true
 semver.workspace = true
 tokio.workspace = true

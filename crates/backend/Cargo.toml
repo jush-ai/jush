@@ -23,6 +23,7 @@ jush-shared-cli = { path = "../shared-cli" }
 jush-backend-accounts = { path = "../backend-accounts" }
 jush-backend-cloud = { path = "../backend-cloud" }
 jush-backend-http = { path = "../backend-http" }
+jush-core-api = { path = "../core-api" }
 jush-core-device-access = { path = "../core-device-access" }
 jush-core-blobs = { path = "../core-blobs" }
 jush-core-providers = { path = "../core-providers" }
@@ -31,32 +32,18 @@ jush-backend-user-shard = { path = "../backend-user-shard" }
 jush-core = { path = "../core" }
 jush-backend-database = { path = "../backend-database" }
 jush-core-store = { path = "../core-store" }
-jush-plugin-browser = { path = "../plugin-browser/plugin" }
-jush-plugin-mobile = { path = "../plugin-mobile/plugin" }
-jush-plugin-file = { path = "../plugin-file/plugin" }
 jush-plugin-interface = { path = "../plugin-interface" }
-jush-plugin-skills = { path = "../plugin-skills/plugin" }
-jush-plugin-web = { path = "../plugin-web/plugin" }
-jush-plugin-image = { path = "../plugin-image/plugin" }
-jush-plugin-widget = { path = "../plugin-widget/plugin" }
-jush-plugin-video = { path = "../plugin-video/plugin" }
-jush-plugin-audio = { path = "../plugin-audio/plugin" }
-jush-plugin-changes = { path = "../plugin-changes/plugin" }
-jush-plugin-file-browser = { path = "../plugin-file-browser/plugin" }
 jush-command-package-browser-protocol = { path = "../plugin-browser/protocol" }
 jush-command-declarations = { path = "../command-declarations" }
 jush-shared-types = { path = "../shared-types" }
 jush-shared-gates = { path = "../shared-gates" }
 jush-provider-common = { path = "../provider-common" }
 jush-provider-registry = { path = "../provider-registry" }
-jush-provider-anthropic-api = { path = "../provider-anthropic-api" }
 jush-provider-claude-code = { path = "../provider-claude-code" }
 jush-provider-codex = { path = "../provider-codex" }
 jush-provider-google = { path = "../provider-google" }
-jush-provider-elevenlabs = { path = "../provider-elevenlabs" }
 jush-provider-bytedance = { path = "../provider-bytedance" }
 jush-provider-minimax = { path = "../provider-minimax" }
-jush-provider-grok-build = { path = "../provider-grok-build" }
 jush-provider-openai-api = { path = "../provider-openai-api" }
 jush-provider-relay = { path = "../provider-relay" }
 jush-web-api-protocol = { path = "../web-api-protocol" }
@@ -64,14 +51,10 @@ jush-web-api-protocol = { path = "../web-api-protocol" }
 # the record of a server update's steps.
 jush-runner-protocol = { path = "../runner-protocol" }
 clap = { version = "4", features = ["derive", "env"] }
-hex = "0.4"
-hkdf = "0.12"
-rand = "0.9"
 sd-notify = "0.5"
 serde_json.workspace = true
 # The resident memory of the backend's own process, which its resource sample logs.
 sysinfo = { version = "0.39", default-features = false, features = ["system"] }
-sha2 = "0.10"
 thiserror.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true

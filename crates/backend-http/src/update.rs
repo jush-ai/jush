@@ -27,7 +27,7 @@ use jush_core_devices::public_url::PublicUrl;
 use jush_web_api_protocol::state::UpdateState;
 
 use super::assets;
-use super::error::ApiError;
+use jush_core_api::error::ApiError;
 
 /// `GET /api/update`.
 pub(crate) async fn read(State(update): State<Arc<Update>>) -> Json<UpdateState> {
