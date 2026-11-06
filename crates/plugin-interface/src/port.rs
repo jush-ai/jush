@@ -18,13 +18,14 @@ use crate::{
     VideoAsk, VideoStep, WebFailure, WebRequest, WebResponse,
 };
 use futures_util::future::LocalBoxFuture;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 use tokio_util::sync::{CancellationToken, WaitForCancellationFuture};
 
 /// One operation a plugin asks of Jush.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(
     tag = "type",
     rename_all = "snake_case",
@@ -49,6 +50,7 @@ pub enum PortMessage {
         key: String,
         value: Value,
         #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[schemars(range(max = jush_shared_types::MAX_SAFE_INTEGER))]
         revision: Option<u64>,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         blobs: Vec<BlobRef>,
@@ -56,6 +58,7 @@ pub enum PortMessage {
     /// Removes `key` if its revision is still `revision`.
     RemoveValue {
         key: String,
+        #[schemars(range(max = jush_shared_types::MAX_SAFE_INTEGER))]
         revision: u64,
     },
     /// Stores `bytes` in the user's blob namespace.
@@ -112,6 +115,7 @@ pub enum PortMessage {
     /// reported of the request's conversation, at the package's `revision`.
     WriteReport {
         device: String,
+        #[schemars(range(max = jush_shared_types::MAX_SAFE_INTEGER))]
         revision: u64,
         value: Value,
     },
@@ -169,11 +173,13 @@ pub enum PortMessage {
         name: SecretName,
         value: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[schemars(range(max = jush_shared_types::MAX_SAFE_INTEGER))]
         revision: Option<u64>,
     },
     /// Removes the secret `name` if its revision is still `revision`.
     RemoveSecret {
         name: SecretName,
+        #[schemars(range(max = jush_shared_types::MAX_SAFE_INTEGER))]
         revision: u64,
     },
     /// Sends one outbound HTTPS request.
@@ -231,7 +237,7 @@ pub enum PortMessage {
 }
 
 /// The answer to one [`PortMessage`].
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(
     tag = "type",
     rename_all = "snake_case",
@@ -251,6 +257,7 @@ pub enum PortAnswer {
     },
     /// The value's new revision.
     Written {
+        #[schemars(range(max = jush_shared_types::MAX_SAFE_INTEGER))]
         revision: u64,
     },
     /// The name of a blob the plugin put.
@@ -295,7 +302,7 @@ pub enum PortAnswer {
         work: Work,
     },
     Workspaces {
-        workspaces: Workspaces,
+        workspaces: UserWorkspaces,
     },
     Devices {
         devices: Vec<DeviceName>,
@@ -308,6 +315,7 @@ pub enum PortAnswer {
     },
     /// The work's revision once a change is in it.
     WorkRevision {
+        #[schemars(range(max = jush_shared_types::MAX_SAFE_INTEGER))]
         revision: u64,
     },
     /// The listed ids whose tabs the user closed, once a mirroring is in
@@ -392,16 +400,17 @@ impl PortAnswer {
 }
 
 /// What a plugin's package on a device last reported of a conversation.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct StoredReport {
     /// The package's own count of its changes.
+    #[schemars(range(max = jush_shared_types::MAX_SAFE_INTEGER))]
     pub revision: u64,
     pub value: Value,
 }
 
 /// What a plugin's package on `device` last reported of a conversation.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct DeviceReport {
     pub device: DeviceId,
@@ -409,17 +418,18 @@ pub struct DeviceReport {
 }
 
 /// A stored value and the revision a write of it names.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct StoredValue {
     pub value: Value,
+    #[schemars(range(max = jush_shared_types::MAX_SAFE_INTEGER))]
     pub revision: u64,
 }
 
 /// A directory the plugin keeps on every device its user's jobs run on, or
 /// only on those the jobs of one workspace's conversations run on
 /// (`crates/core-device-access/src/plugin_files.rs`).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct DeviceDirectory {
     /// 1 to 64 lowercase letters, digits and hyphens, unique in the set.
@@ -433,9 +443,9 @@ pub struct DeviceDirectory {
 
 /// The user's workspaces, in the user's order, and the one a request's
 /// conversation is in.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct Workspaces {
+pub struct UserWorkspaces {
     pub workspaces: Vec<WorkspaceName>,
     /// None for a request of no conversation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -443,7 +453,7 @@ pub struct Workspaces {
 }
 
 /// A paired device of the user's.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct DeviceName {
     pub id: DeviceId,
@@ -453,7 +463,7 @@ pub struct DeviceName {
 }
 
 /// A commit's tree as a device's `git` read it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct GitTree {
     pub commit: String,
@@ -463,7 +473,7 @@ pub struct GitTree {
     pub files: Vec<GitFile>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct GitEntry {
     /// In the repository, with `/` between its parts.
@@ -471,7 +481,7 @@ pub struct GitEntry {
     pub executable: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct GitFile {
     pub path: String,
@@ -480,7 +490,7 @@ pub struct GitFile {
 }
 
 /// Why a device's `git` answered nothing.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, thiserror::Error)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, thiserror::Error, JsonSchema)]
 #[serde(
     tag = "type",
     rename_all = "snake_case",
@@ -500,7 +510,7 @@ pub enum GitRefusal {
 }
 
 /// A workspace and its name as Jush's commands say it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct WorkspaceName {
     pub id: WorkspaceId,
@@ -572,7 +582,7 @@ impl DeviceDirectory {
 }
 
 /// A file of a [`DeviceDirectory`], whose bytes are a blob the plugin put.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct DirectoryFile {
     /// Relative, with `/` between its parts.
@@ -582,7 +592,7 @@ pub struct DirectoryFile {
 }
 
 /// Where a directory of the set is on every device.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct DirectoryPath {
     pub name: String,
@@ -593,7 +603,7 @@ pub struct DirectoryPath {
 /// What a package call does on the device, which decides whether it wakes a
 /// stopped Cloud and whether it is activity (`backend-user-shard`'s
 /// `crates/core/src/lifecycle/mod.rs`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum CallKind {
     /// Work the user starts, such as opening a tab: it wakes a stopped
@@ -609,7 +619,7 @@ pub enum CallKind {
 }
 
 /// Why Jush refused a port operation.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, thiserror::Error)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, thiserror::Error, JsonSchema)]
 #[serde(
     tag = "type",
     rename_all = "snake_case",
@@ -714,6 +724,13 @@ impl PluginPort {
             Rc::new(RpcMessages(self.transport.clone())),
             self.cancel.clone(),
         )
+    }
+
+    /// Sends `message` as it is and answers what came back, for a plugin
+    /// that carries its port's messages elsewhere, such as a program's over
+    /// a wire.
+    pub fn relay(&self, message: PortMessage) -> LocalBoxFuture<'_, Result<PortAnswer, PortError>> {
+        self.transport.request(message)
     }
 
     /// Completes once the request is stopped.
@@ -945,7 +962,7 @@ impl PluginPort {
     }
 
     /// The user's workspaces, and the one the request's conversation is in.
-    pub async fn workspaces(&self) -> Result<Workspaces, PortFailure> {
+    pub async fn workspaces(&self) -> Result<UserWorkspaces, PortFailure> {
         match self.ask(PortMessage::Workspaces).await? {
             PortAnswer::Workspaces { workspaces } => Ok(workspaces),
             answer => Err(unexpected("workspaces", &answer)),

@@ -29,6 +29,7 @@ use std::rc::Rc;
 use jush_command_declarations::NativeOperation;
 use jush_command_package_browser_protocol::browser::{BrowserMessage, TabsChange};
 use jush_command_package_browser_protocol::{PACKAGE, live};
+use jush_plugin_interface::UserId;
 use jush_plugin_interface::{
     CommandPlugin, Manifest, Placement, Plugin, PluginError, PluginFactory,
     PluginId, PluginPort, Reply, Request, Scope, Stream,
@@ -69,7 +70,7 @@ impl PluginFactory for Browser {
         &self.manifest
     }
 
-    fn instance(&self) -> Rc<dyn Plugin> {
+    fn instance(&self, _: &UserId) -> Rc<dyn Plugin> {
         Rc::new(Instance {
             commands: commands(),
             work: tabs::Work::default(),
