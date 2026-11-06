@@ -17,20 +17,11 @@ import { createApp, shallowRef, watch } from 'vue'
 import { until } from '@vueuse/core'
 import { createPinia, disposePinia } from 'pinia'
 import { createRouter, createWebHistory } from 'vue-router'
-import {
-  applyProductAppearance,
-  applyTranscriptTextSize,
-  productAppearance,
-} from '@jush-ai/web-ui/theme/productAppearance'
-import {
-  appThemeStore,
-  applyThemeToDocument,
-  setThemeChoice,
-} from '@jush-ai/web-ui/theme/appTheme'
+import { appThemeStore } from '@jush-ai/web-ui/theme/appTheme'
 import { followThemeColor } from '@jush-ai/web-ui/theme/themeColor'
 import { installPhonePage } from '@jush-ai/web-ui/ui/phone-page'
 import { createPageI18n, setPageLanguage } from '@jush-ai/web-ui/i18n/text'
-import { keepShownLanguage, lastShownLanguage, resolveLanguage } from '@jush-ai/web-ui/i18n/languages'
+import { lastShownLanguage, resolveLanguage } from '@jush-ai/web-ui/i18n/languages'
 import { errorFields, reportPageErrorsWith, showUnexpectedErrors } from '@jush-ai/web-ui/infra/errors'
 import { reportUncaughtErrors } from '@jush-ai/web-ui/infra/uncaught'
 import { logPageError, logPageWith, pageLog, pageLogSignedIn } from '@jush-ai/web-ui/infra/log'
@@ -46,6 +37,7 @@ import { startAccountCache } from './state/offline'
 import { accountTaken, forgetAccount, takeAccount } from './state/account-data'
 import { onOwnerChange } from './state/account-owner'
 import { usePreferences } from './state/preferences'
+import { followAppearance, followLanguage } from './state/look'
 import { useNotifications } from './state/notifications'
 import { useWork } from './conversation/work'
 import { apiRequest, apiUrl, onSessionExpired } from './api/client'
@@ -302,44 +294,9 @@ router.beforeEach(async (to) => {
   }
   return to.path === '/login' ? true : signInAddress(to.fullPath)
 })
-for (const [axis, value] of Object.entries(productAppearance)) {
-  document.documentElement.setAttribute(`data-${axis}`, value)
-}
-// Each value is put on the document when it changes, not each time the
-// product's state does: the appearance is made anew for every message of
-// the sync channel, and an attribute written again, even unchanged, tells
-// what watches the document's appearance to draw again.
-const stopAppearance = watch(
-  [
-    () => resources.appearance.tone,
-    () => resources.appearance.accent,
-    () => resources.appearance.fontSize,
-    () => resources.appearance.theme,
-  ],
-  ([tone, accent, fontSize, theme]) => {
-    applyProductAppearance({ tone, accent })
-    applyTranscriptTextSize(fontSize)
-    setThemeChoice(theme)
-  },
-  { immediate: true },
-)
-const stopTheme = applyThemeToDocument()
+const stopAppearance = followAppearance(resources)
 const stopThemeColor = followThemeColor()
-// The page speaks the language the user chose, or with System the first of
-// the browser's that Jush speaks; a change of either, the choice made on
-// another page included, applies at once.
-const stopLanguage = watch(
-  () => (product.snapshot ? resolveLanguage(preferences.language, browserLanguages.value) : null),
-  (language) => {
-    // Until the preferences arrive the page stays in the language it
-    // started in.
-    if (language !== null) {
-      setPageLanguage(language)
-      keepShownLanguage(language)
-    }
-  },
-  { immediate: true },
-)
+const stopLanguage = followLanguage(product, preferences, browserLanguages)
 // The page reports its own facts when they may have changed: once the
 // stored preferences first arrive, when its theme changes, and on the events
 // below; never because the stored ones changed, which another page or the
@@ -418,7 +375,6 @@ if (import.meta.hot) {
     stopExpiry()
     stopChoice()
     stopAppearance()
-    stopTheme()
     stopThemeColor()
     stopLanguage()
     stopLocale()
