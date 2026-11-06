@@ -17,17 +17,20 @@ path = "src/main.rs"
 test = false
 
 [dependencies]
+jush-core-devices = { path = "../core-devices" }
 jush-shared-artifacts = { path = "../shared-artifacts" }
 jush-shared-cli = { path = "../shared-cli" }
 jush-backend-accounts = { path = "../backend-accounts" }
 jush-backend-cloud = { path = "../backend-cloud" }
 jush-backend-http = { path = "../backend-http" }
-jush-backend-device-access = { path = "../backend-device-access" }
-jush-backend-blobs = { path = "../backend-blobs" }
-jush-backend-providers = { path = "../backend-providers" }
+jush-core-device-access = { path = "../core-device-access" }
+jush-core-blobs = { path = "../core-blobs" }
+jush-core-providers = { path = "../core-providers" }
 jush-backend-runners = { path = "../backend-runners" }
 jush-backend-user-shard = { path = "../backend-user-shard" }
+jush-core = { path = "../core" }
 jush-backend-database = { path = "../backend-database" }
+jush-core-store = { path = "../core-store" }
 jush-plugin-browser = { path = "../plugin-browser/plugin" }
 jush-plugin-mobile = { path = "../plugin-mobile/plugin" }
 jush-plugin-file = { path = "../plugin-file/plugin" }

@@ -536,13 +536,13 @@ pub fn sent_whole(source: &str) -> bool {
 pub const SIDE_QUESTIONS_SOURCE: &str = "side_questions";
 
 /// The context source of the documents the main agent pinned
-/// (`crates/backend-user-shard/src/conversation/pins.rs`). No plugin may be
-/// named so: a plugin's id has no `_`.
+/// (`crates/core/src/conversation/pins.rs`). No plugin may be named so: a
+/// plugin's id has no `_`.
 pub const PINNED_DOCUMENTS_SOURCE: &str = "pinned_documents";
 
 /// The context source of the user's local time, which each turn starts
-/// with (`crates/backend-user-shard/src/conversation/user_time.rs`). No
-/// plugin may be named so: a plugin's id has no `_`.
+/// with (`crates/core/src/conversation/user_time.rs`). No plugin may be
+/// named so: a plugin's id has no `_`.
 pub const USER_TIME_SOURCE: &str = "user_time";
 
 /// The context source of the conversation's execution context, which
@@ -578,7 +578,7 @@ pub enum InstructionEntry {
         path: String,
     },
     /// The instructions of the workflow the conversation chose
-    /// (`crates/backend-user-shard/src/conversation/workflows.rs`): its name, and its file's
+    /// (`crates/core/src/conversation/workflows.rs`): its name, and its file's
     /// path on the device.
     Workflow {
         #[garde(skip)]
@@ -752,7 +752,7 @@ pub enum StoppedBy {
 }
 
 /// How a command ended, as the conversation's record of its output keeps
-/// it (`crates/backend-database/src/command_outputs.rs`).
+/// it (`crates/core-store/src/command_outputs.rs`).
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema, garde::Validate)]
 #[serde(
     tag = "kind",

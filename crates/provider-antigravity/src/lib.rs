@@ -21,7 +21,7 @@
 //!   failures are read from its text (`failure.rs`).
 //!
 //! ```text
-//! backend (user's shard)          Subscriptions machine
+//! backend (user's core)           Subscriptions machine
 //! +--------------------+          +----------------------------------+
 //! | AntigravityRuntime | start    | agy acp --agent jush             |
 //! |   ACP lines <------+--------->|   HOME = processes/<id>/         |

@@ -316,7 +316,7 @@ pub(crate) struct Written {
 }
 
 impl Written {
-    /// Writes the session of `request`'s blocks, off the shard.
+    /// Writes the session of `request`'s blocks, off the core.
     pub(crate) async fn of(
         shared: &Shared,
         request: &InferenceRequest,
@@ -843,7 +843,7 @@ impl LiveCli {
 
     /// Writes the SDK MCP server's `reply` as the answer to control request
     /// `request_id`. A reply may carry a tool's images, so it is serialized
-    /// off the shard.
+    /// off the core.
     async fn reply(
         &mut self,
         request_id: String,

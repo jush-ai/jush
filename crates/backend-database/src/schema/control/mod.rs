@@ -101,6 +101,7 @@ mod from_0_1_5979_port_forward_routes;
 mod from_0_1_5979_suggested_reply_history;
 mod from_0_1_5979_suggested_reply_words;
 mod from_0_1_5979_conversation_work;
+mod from_0_1_65_one_core_per_user;
 
 pub(super) const HISTORY: &[Shipped] = &[
     Shipped {
@@ -469,5 +470,9 @@ pub(super) const HISTORY: &[Shipped] = &[
     Shipped {
         sql: include_str!("from_0_1_65_dev_interrupted_roots.sql"),
         migration: from_0_1_65_dev_interrupted_roots::MIGRATION,
+    },
+    Shipped {
+        sql: include_str!("from_0_1_65_one_core_per_user.sql"),
+        migration: from_0_1_65_one_core_per_user::MIGRATION,
     },
 ];

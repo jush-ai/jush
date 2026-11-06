@@ -11,7 +11,7 @@ use jush_backend_accounts::email_change::{StartOutcome, StartRefusal};
 use jush_backend_accounts::passkeys::relying_party_id;
 use jush_backend_database::accounts::ChallengeOutcome;
 use jush_backend_database::accounts::TokenHash;
-use jush_backend_page_sync::Part;
+use jush_core_sync::Part;
 use jush_web_api_protocol::auth::{
     Credentials, EmailChangeConfirm, EmailChangeStart, EmailChangeStarted, Identity, NicknamePatch,
     PasswordChange, SetupRequest, SetupStatus,

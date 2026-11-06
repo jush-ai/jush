@@ -20,7 +20,7 @@ use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use jush_backend_accounts::passwords::generate_first_password;
 use jush_backend_database::accounts::Account;
-use jush_backend_page_sync::Part;
+use jush_core_sync::Part;
 use jush_web_api_protocol::auth::{Role, UserDto};
 use jush_web_api_protocol::error::ErrorCode;
 use jush_web_api_protocol::ids::UserId;
@@ -188,7 +188,7 @@ pub(super) async fn change(
                 state
                     .shards
                     .of(&user)
-                    .call(|shard, _| async move { shard.disconnect_runners("the account was disabled").await })
+                    .call(|core, _| async move { core.disconnect_runners("the account was disabled").await })
                     .await??;
             }
         }

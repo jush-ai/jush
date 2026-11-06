@@ -1,12 +1,12 @@
 //! A conversation's permission route: a decision on one of its undecided
-//! requests, in the user's shard; its metadata carries the requests.
+//! requests, in the user's core; its metadata carries the requests.
 //!
 //! An archived conversation refuses a decision.
 
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
-use jush_backend_database::permissions::AnswerProblem;
-use jush_backend_permissions::{PermissionError, decide as decide_request};
+use jush_core_store::permissions::AnswerProblem;
+use jush_core_permissions::{PermissionError, decide as decide_request};
 use jush_web_api_protocol::error::ErrorCode;
 use jush_web_api_protocol::permissions::{
     DecidePermission, PermissionRequestId,
@@ -35,9 +35,9 @@ pub(super) async fn decide(
     state
         .shards
         .of(&user.id)
-        .call(move |shard, _| async move {
+        .call(move |core, _| async move {
             decide_request(
-                shard.permission_shard(),
+                core.permission_core(),
                 &conversation,
                 request,
                 decision,

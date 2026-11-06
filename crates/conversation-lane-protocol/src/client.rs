@@ -33,10 +33,10 @@ pub enum ClientFrame {
     ///
     /// It names `draft`, the revision of the draft the page holds, so the
     /// backend sends a draft only when it changes past it
-    /// (`crates/backend-user-shard/src/conversation/socket.rs`), and
-    /// `follows`, each value the page holds and follows from the open on,
-    /// with the version it holds. The open sends no data of the conversation:
-    /// the page read it by its routes before it opened the socket.
+    /// (`crates/core/src/conversation/lane.rs`), and `follows`, each value
+    /// the page holds and follows from the open on, with the version it
+    /// holds. The open sends no data of the conversation: the page read it by
+    /// its routes before it opened the socket.
     Open {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[garde(range(max = MAX_SAFE_INTEGER))]

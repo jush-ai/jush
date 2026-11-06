@@ -13,7 +13,7 @@
 //!   sends a stream pipe's over a lane of its pipe connection.
 //! - The sink's runner gets them.
 //! - The edge copies them between the requests and the pipe's ends.
-//! - The pipe records are the device owner's shard's.
+//! - The pipe records are the device owner's core's.
 //!
 //! Pipes have no size limit and no idle timeout: a quiet command's pipe stays
 //! open for as long as its command runs.
@@ -28,7 +28,8 @@ use axum_extra::TypedHeader;
 use axum_extra::headers::{Authorization, Range};
 use axum_extra::headers::authorization::Bearer;
 use jush_backend_database::accounts::TokenHash;
-use jush_backend_database::devices::DeviceRecord;
+use jush_core_store::StorageError;
+use jush_web_api_protocol::ids::{DeviceId, UserId};
 use jush_runner_client::{
     ChunkEnd, ChunkRefusal, DeviceChunk, DeviceSource, PipeRefusal, SourceBreak, SourceMessage, accept_call_sink,
     offer_response,
@@ -48,7 +49,7 @@ use super::error::ApiError;
 use super::install::{current_runner_release, range_start};
 use super::listener::Peer;
 use super::runner_socket::accept;
-use jush_backend_runners::devices::RunnerSocket;
+use jush_core_devices::devices::RunnerSocket;
 
 /// `WS /api/runner`: the socket carries MessagePack frames of at most the
 /// wire's limit; a larger one closes it. A backend with runner releases
@@ -120,20 +121,30 @@ pub(super) fn token_header(headers: &HeaderMap) -> Option<&axum::http::HeaderVal
     headers.get(TOKEN_HEADER).or_else(|| headers.get(renamed::TOKEN_HEADER))
 }
 
+/// The device a runner's token names, and the user whose core holds it.
+#[derive(Clone)]
+pub(super) struct TokenDevice {
+    pub(super) owner: UserId,
+    pub(super) id: DeviceId,
+}
+
 /// The paired device whose token a runner's request carries in
 /// `Jush-Runner-Token`: none for a request without one, from a runner of a
 /// release before 0.1.14, or with one no paired device holds.
-pub(super) async fn paired_device(state: &AppState, headers: &HeaderMap) -> Option<DeviceRecord> {
+pub(super) async fn paired_device(state: &AppState, headers: &HeaderMap) -> Option<TokenDevice> {
     let token = token_header(headers)
         .and_then(|value| value.to_str().ok())
         .and_then(|value| DeviceToken::try_from(value.to_owned()).ok())?;
-    match state
-        .services
-        .control
-        .device_by_token(TokenHash::of(token.expose()))
-        .await
-    {
-        Ok(Some(device)) if device.kind == DeviceKind::User => Some(device),
+    let services = &state.services;
+    let read = async {
+        let Some((id, owner)) = services.control.device_by_token(TokenHash::of(token.expose())).await? else {
+            return Ok(None);
+        };
+        let device = services.stores.of(&owner).await?.device(id).await?;
+        Ok::<_, StorageError>(device.map(|device| (owner, device)))
+    };
+    match read.await {
+        Ok(Some((owner, device))) if device.kind == DeviceKind::User => Some(TokenDevice { owner, id: device.id }),
         Ok(_) => None,
         Err(error) => {
             // What the device's runner asked for goes ahead; its device shows
@@ -158,8 +169,8 @@ async fn updating(state: &AppState, headers: &HeaderMap) {
     let id = device.id;
     let shown = state
         .shards
-        .of(&device.user)
-        .call(move |shard, _| async move { shard.runner_updating(&id) })
+        .of(&device.owner)
+        .call(move |core, _| async move { core.runner_updating(&id) })
         .await;
     // A closing backend shows nothing more.
     let _ = shown;
@@ -226,12 +237,12 @@ pub(super) async fn get(
         Ok(device) => device,
         Err(refusal) => return *refusal,
     };
-    let owner = device.user.clone();
+    let owner = device.owner.clone();
     let claimed = state
         .shards
         .of(&owner)
-        .call_while_closing(move |shard, _| async move {
-            shard.pipes().claim_sink(&id, device.id.as_str())
+        .call_while_closing(move |core, _| async move {
+            core.pipes().claim_sink(&id, device.id.as_str())
         })
         .await;
     let sink = match claimed {
@@ -267,12 +278,12 @@ pub(super) async fn call_output(
         Ok(device) => device,
         Err(refusal) => return *refusal,
     };
-    let owner = device.user.clone();
+    let owner = device.owner.clone();
     let sink = state
         .shards
         .of(&owner)
-        .call_while_closing(move |shard, _| async move {
-            shard.devices().session(&device.id).call_output(shard.pipes(), &id)
+        .call_while_closing(move |core, _| async move {
+            core.devices().session(&device.id).call_output(core.pipes(), &id)
         })
         .await;
     match sink {
@@ -298,12 +309,12 @@ pub(super) async fn offer(
         Ok(device) => device,
         Err(refusal) => return *refusal,
     };
-    let owner = device.user.clone();
+    let owner = device.owner.clone();
     let offered = state
         .shards
         .of(&owner)
-        .call_while_closing(move |shard, _| async move {
-            shard.pipes().offers().bytes(&id, device.id.as_str())
+        .call_while_closing(move |core, _| async move {
+            core.pipes().offers().bytes(&id, device.id.as_str())
         })
         .await;
     match offered {
@@ -321,14 +332,14 @@ pub(super) async fn offer(
 pub(super) async fn claim_source(
     state: &AppState,
     id: String,
-    device: DeviceRecord,
+    device: TokenDevice,
 ) -> Result<DeviceSource, (StatusCode, String)> {
-    let owner = device.user.clone();
+    let owner = device.owner.clone();
     let claimed = state
         .shards
         .of(&owner)
-        .call_while_closing(move |shard, _| async move {
-            shard.pipes().claim_source(&id, device.id.as_str())
+        .call_while_closing(move |core, _| async move {
+            core.pipes().claim_source(&id, device.id.as_str())
         })
         .await;
     match claimed {
@@ -350,12 +361,12 @@ pub(super) async fn head(
         Ok(device) => device,
         Err(refusal) => return *refusal,
     };
-    let owner = device.user.clone();
+    let owner = device.owner.clone();
     let taken = state
         .shards
         .of(&owner)
-        .call_while_closing(move |shard, _| async move {
-            shard.pipes().taken_by(&id, device.id.as_str())
+        .call_while_closing(move |core, _| async move {
+            core.pipes().taken_by(&id, device.id.as_str())
         })
         .await;
     match taken {
@@ -370,15 +381,15 @@ pub(super) async fn head(
 async fn claim_chunk(
     state: &AppState,
     id: String,
-    device: DeviceRecord,
+    device: TokenDevice,
     offset: u64,
 ) -> Result<DeviceChunk, Box<Response>> {
-    let owner = device.user.clone();
+    let owner = device.owner.clone();
     let claimed = state
         .shards
         .of(&owner)
-        .call_while_closing(move |shard, _| async move {
-            shard.pipes().claim_chunk(&id, device.id.as_str(), offset)
+        .call_while_closing(move |core, _| async move {
+            core.pipes().claim_chunk(&id, device.id.as_str(), offset)
         })
         .await;
     match claimed {
@@ -397,7 +408,7 @@ async fn claim_chunk(
 pub(super) async fn device_of(
     state: &AppState,
     authorization: Option<TypedHeader<Authorization<Bearer>>>,
-) -> Result<DeviceRecord, Box<Response>> {
+) -> Result<TokenDevice, Box<Response>> {
     let unauthorized =
         || Box::new((StatusCode::UNAUTHORIZED, "device token required").into_response());
     let TypedHeader(Authorization(bearer)) = authorization.ok_or_else(unauthorized)?;
@@ -407,7 +418,7 @@ pub(super) async fn device_of(
         .device_by_token(TokenHash::of(bearer.token()))
         .await
     {
-        Ok(Some(device)) => Ok(device),
+        Ok(Some((id, owner))) => Ok(TokenDevice { owner, id }),
         Ok(None) => Err(unauthorized()),
         Err(error) => {
             tracing::error!(

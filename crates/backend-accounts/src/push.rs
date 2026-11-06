@@ -23,7 +23,7 @@ use std::time::Duration;
 
 use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use jush_backend_database::StorageError;
+use jush_core_store::StorageError;
 use jush_backend_database::control::ControlService;
 use jush_backend_database::push::{PutPush, StoredPushSubscription};
 use jush_web_api_protocol::ids::UserId;

@@ -16,19 +16,19 @@ use crate::request_id;
 use jush_backend_accounts::email_change::EmailChangeError;
 use jush_backend_accounts::passkeys::PasskeyError;
 use jush_backend_accounts::passwords::HashError;
-use jush_backend_blobs::ObjectError;
+use jush_core_blobs::ObjectError;
 use jush_backend_cloud::machine::CloudError;
-use jush_backend_database::StorageError;
+use jush_core_store::StorageError;
 use jush_provider_registry::registry::RegistryError;
-use jush_backend_providers::vault::accounts::AccountRefusal;
-use jush_backend_providers::vault::logins::LoginRefusal;
-use jush_backend_runners::files::{TextError, TextRefusal};
+use jush_core_providers::vault::accounts::AccountRefusal;
+use jush_core_providers::vault::logins::LoginRefusal;
+use jush_core_devices::files::{TextError, TextRefusal};
 use jush_device_interface::DeviceError;
 use jush_shared_types::ReadAt;
 
-use jush_backend_device_access::access::{DeviceAccessError, device_error_code};
-use jush_backend_device_access::stream::StreamError;
-use jush_backend_user_shard::shard::ShardUnavailable;
+use jush_core_device_access::access::{DeviceAccessError, device_error_code};
+use jush_core_device_access::stream::StreamError;
+use jush_core::cores::CoreUnavailable;
 
 /// The header that carries the device's number a read answer was read at.
 pub(crate) const READ_AT: HeaderName = HeaderName::from_static("x-jush-read-at");
@@ -394,11 +394,11 @@ impl IntoResponse for ApiError {
     }
 }
 
-impl From<ShardUnavailable> for ApiError {
-    fn from(error: ShardUnavailable) -> Self {
+impl From<CoreUnavailable> for ApiError {
+    fn from(error: CoreUnavailable) -> Self {
         match error {
-            ShardUnavailable::Closing => Self::backend_closing(),
-            ShardUnavailable::Failed => Self::internal(&error),
+            CoreUnavailable::Closing => Self::backend_closing(),
+            CoreUnavailable::Failed => Self::internal(&error),
         }
     }
 }

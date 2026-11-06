@@ -19,7 +19,7 @@ import { ICON_PX } from '@jush-ai/web-ui/ui/icon-metrics'
 /**
  * A subscription sign-in, as the vendor's own flow: a device code confirmed in a
  * web browser, or the vendor's sign-in page, whose code the user pastes back
- * (`crates/backend-providers/src/lib.rs`); or a refresh token another app of the
+ * (`crates/core-providers/src/lib.rs`); or a refresh token another app of the
  * vendor's holds, which the user pastes. Owns nothing; the host drives the phase.
  *
  * A family with more than one way to sign in shows them under the title, the

@@ -27,7 +27,7 @@
 //! provider's family builds, since only the family knows its provider's type:
 //!
 //! ```text
-//! backend (user's shard)                      the CLI's provider
+//! backend (user's core)                      the CLI's provider
 //!   registry: own provider + placement ---->  family builds the runtime
 //!   Placement::start <------ a run needs a process
 //!     wake or admit the machine, ensure the CLI, hand over an earlier sign-in
@@ -184,7 +184,7 @@ impl WorkLease {
 }
 
 /// Starts the processes of one CLI for a runtime, a sign-in or a usage probe,
-/// on a machine the placement chooses. It lives on the shard of the user whose
+/// on a machine the placement chooses. It lives on the core of the user whose
 /// work it serves.
 pub trait Placement {
     /// Starts a new CLI process for `work`.

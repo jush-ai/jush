@@ -12,10 +12,10 @@ use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use jush_provider_registry::families::family_name;
-use jush_backend_providers::vault::accounts;
+use jush_core_providers::vault::accounts;
 use jush_web_api_protocol::error::ErrorCode;
 use jush_web_api_protocol::ids::{CredentialId, LoginId};
-use jush_backend_providers::vault::logins::CodeRefusal;
+use jush_core_providers::vault::logins::CodeRefusal;
 use jush_provider_common::Secret;
 use jush_web_api_protocol::providers::{
     AccountOrder, Accounts, ActivateAccount, ActiveAccount, CodeTaken, CredentialKind, LoginAnswer, LoginCode,
@@ -27,7 +27,7 @@ use super::error::ApiError;
 use super::gate::AuthUser;
 use super::request_id;
 use super::providers::{managed, reserve, scoped};
-use jush_backend_providers::vault::entries::Vault;
+use jush_core_providers::vault::entries::Vault;
 use jush_backend_user_shard::services::Services;
 
 /// The entry's accounts; a user who only infers sees none.

@@ -22,7 +22,7 @@
 //! tools run, the CLI handing each call back to the agent.
 //!
 //! ```text
-//! backend (user's shard)       Subscriptions machine (nobody has a shell)
+//! backend (user's core)       Subscriptions machine (nobody has a shell)
 //! +--------------------+       +------------------------------------+
 //! | ClaudeCodeRuntime  | start | runner                             |
 //! |   Placement -------+------>|   CLI process, cwd ~/run           |

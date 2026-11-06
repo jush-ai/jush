@@ -43,7 +43,7 @@ use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use axum_extra::extract::CookieJar;
 use jush_backend_database::accounts::TokenHash;
-use jush_backend_page_sync::Part;
+use jush_core_sync::Part;
 use jush_shared_types::Timestamp;
 use jush_web_api_protocol::auth::{Role, UserDto};
 use jush_web_api_protocol::error::ErrorCode;

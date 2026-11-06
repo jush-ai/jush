@@ -31,7 +31,7 @@ use axum::Json;
 use axum::extract::{Path, Request, State};
 use axum::http::StatusCode;
 use base64::Engine as _;
-use jush_backend_user_shard::shard::lane::{Lane, LaneClose, LaneEnd, LaneMessage, LaneReader};
+use jush_core::lane::{Lane, LaneClose, LaneEnd, LaneMessage, LaneReader};
 use jush_shared_types::Timestamp;
 use jush_web_api_protocol::MAX_PAGE_MESSAGE_BYTES;
 use jush_web_api_protocol::debug::{

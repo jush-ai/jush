@@ -25,7 +25,7 @@ use sha2::Sha256;
 
 use jush_backend_accounts::email_change::CodeKey;
 use jush_backend_accounts::push::PushKey;
-use jush_backend_providers::vault::seal::VaultKey;
+use jush_core_providers::vault::seal::VaultKey;
 
 const FILE: &str = "instance-secret";
 // The labels keep the product's name of when they were chosen: each derives

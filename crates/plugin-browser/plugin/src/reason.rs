@@ -54,7 +54,7 @@ pub enum ControlReason {
     CaptureFailed,
     CaptureStopped,
     AppNotOpened,
-    // The conversation's device access (`crates/backend-device-access/src/access.rs`).
+    // The conversation's device access (`crates/core-device-access/src/access.rs`).
     ConversationNotFound,
     ConversationArchived,
     ConversationBusy,

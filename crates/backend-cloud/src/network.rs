@@ -2,7 +2,7 @@
 //! database stores as the master wrote it, turned into the rules the machine
 //! manager applies (`crates/machine-manager-protocol/src/network.rs`).
 
-use jush_backend_database::StorageError;
+use jush_core_store::StorageError;
 pub use jush_machine_manager_protocol::network::AllowedError;
 use jush_machine_manager_protocol::{
     Allowed, NetworkRules, SetNetworkRulesParams,

@@ -1,4 +1,4 @@
-//! `GET /api/blobs/:sha256` (`crates/backend-device-access/src/uploads.rs`): the
+//! `GET /api/blobs/:sha256` (`crates/core-device-access/src/uploads.rs`): the
 //! bytes a media reference names, from the caller's own namespace.
 //!
 //! - A name is a content hash, so the answer never changes and the user's
@@ -21,7 +21,7 @@ use jush_web_api_protocol::error::ErrorCode;
 use super::content::content_headers;
 use super::error::ApiError;
 use super::gate::AuthUser;
-use jush_backend_device_access::transfer::RangeAnswer;
+use jush_core_device_access::transfer::RangeAnswer;
 use jush_backend_user_shard::services::Services;
 
 pub(super) async fn blob(

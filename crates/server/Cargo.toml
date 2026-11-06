@@ -15,6 +15,7 @@ bench = false
 [dependencies]
 clap = { version = "4", features = ["derive"] }
 jush-backend-database = { path = "../backend-database" }
+jush-core-store = { path = "../core-store" }
 jush-machine-manager-protocol = { path = "../machine-manager-protocol" }
 # The next runner release's record and the backend's management
 # socket.
