@@ -13,6 +13,7 @@ use jush_backend_user_shard::services::Services;
 use jush_core::Core;
 use jush_core_api::caller::{Caller, CallerPage, Gone};
 use jush_core_api::error::ApiError;
+use jush_core_api::plugin_lanes::PluginLanes;
 use jush_core_api::starter_lane::StarterLane;
 use jush_web_api_protocol::connection::LaneTarget;
 use jush_web_api_protocol::ids::UserId;
@@ -108,6 +109,10 @@ impl Caller for SessionCaller {
     }
 
     fn starter_lane(&self) -> Option<Arc<StarterLane>> {
+        None
+    }
+
+    fn plugin_lanes(&self) -> Option<Arc<PluginLanes>> {
         None
     }
 

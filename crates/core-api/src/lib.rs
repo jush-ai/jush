@@ -48,6 +48,7 @@ mod pipe_connection;
 pub mod process;
 mod permissions;
 mod pins;
+pub mod plugin_lanes;
 pub mod plugins;
 mod port_forwards;
 mod projects;

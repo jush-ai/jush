@@ -36,7 +36,7 @@ use jush_plugin_interface::{
     AskedVideo, AudioAsk, AudioVoices, Feature, ImageAsk, MadeAudio, MadeImage, MediaListing, MediaRefusal, VideoAsk,
     VideoStep, CallKind, DirectoryPath, DeviceDirectory, Plugin, PluginError, PluginId, PluginPort,
     PluginTransport, PortAnswer, PortFailure, PortMessage, PortRefusal, Reply, Request, Scope, StoredReport,
-    StoredValue, Workspaces, DeviceName, GitTree,
+    StoredValue, UserWorkspaces, DeviceName, GitTree,
 };
 use jush_device_interface::{DeviceFile, DeviceRead};
 use jush_shared_types::{B64Bytes, BlobRef, MediaKind, NodeId, Timestamp, TurnId};
@@ -451,7 +451,7 @@ impl Shared {
         let live = match self.live(plugin, &enabled) {
             Some(live) => live,
             None if lifecycle => Live {
-                instance: self.registry.plugins[plugin].factory.instance(),
+                instance: self.registry.plugins[plugin].factory.instance(&self.user),
                 ended: CancellationToken::new(),
             },
             None => {
@@ -479,7 +479,7 @@ impl Shared {
         }
         let mut lives = self.lives.borrow_mut();
         let live = lives[plugin].get_or_insert_with(|| Live {
-            instance: self.registry.plugins[plugin].factory.instance(),
+            instance: self.registry.plugins[plugin].factory.instance(&self.user),
             ended: CancellationToken::new(),
         });
         Some(live.clone())
@@ -1839,7 +1839,7 @@ impl RequestPort {
                     None => None,
                 };
                 PortAnswer::Workspaces {
-                    workspaces: Workspaces { workspaces, current },
+                    workspaces: UserWorkspaces { workspaces, current },
                 }
             }
             PortMessage::WorkTabs => {
