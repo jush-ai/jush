@@ -72,7 +72,6 @@ use jush_backend_user_shard::services::{
 };
 use jush_core::pool::ShardPool;
 use jush_core::services::CoreSettings;
-use jush_backend_runners::native::ServedPackages;
 use jush_core_api::api::Api;
 use jush_backend_user_shard::cloud::{route_deaths, route_statuses};
 use tokio_util::task::AbortOnDropHandle;
@@ -480,10 +479,7 @@ impl Backend {
             families: config
                 .families
                 .with(jush_provider_relay::borrow::FAMILY, RelayFamily(public_url.clone())),
-            packages: Arc::new(ServedPackages {
-                native: config.native.clone(),
-                backend: public_url.clone(),
-            }),
+            packages: Arc::new(config.native.clone()),
             public_url,
             clock: config.clock,
             plugins: config.plugins,

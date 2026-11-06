@@ -29,6 +29,7 @@ use crate::{
     state::{ActiveRunner, RunnerConfig, RunnerState},
 };
 use jush_runner_command_packages::ResidentRegistry;
+use futures_util::FutureExt as _;
 use jush_runner_jobs::scratch::Scratch;
 use jush_runner_jobs::commands::{
     contexts::{ContextPaths, Contexts},
@@ -126,6 +127,9 @@ pub enum Ending {
     /// The installation's state is one no start can change, which the log
     /// says.
     Unstartable,
+    /// The channel the runner was given ended: its jobs go on for the
+    /// runner that starts next in the installation to take over.
+    ChannelEnded,
 }
 
 pub async fn run(options: Options, stop: CancellationToken) -> io::Result<Ending> {
@@ -331,9 +335,10 @@ pub async fn run(options: Options, stop: CancellationToken) -> io::Result<Ending
         never = revocation_window(&registered) => match never {},
     };
     // A runner that updates leaves its jobs to its successor, as one that
-    // hands over to its elevated self does; one that ends otherwise stops
-    // them (`crates/runner/src/connection/kept.rs`).
-    if matches!(outcome, Ok(Ending::Replaced(_) | Ending::Elevated)) {
+    // hands over to its elevated self does, and one whose channel ended to
+    // the next runner; one that ends otherwise stops them
+    // (`crates/runner/src/connection/kept.rs`).
+    if matches!(outcome, Ok(Ending::Replaced(_) | Ending::Elevated | Ending::ChannelEnded)) {
         kept.leave().await;
     } else {
         kept.close().await;
@@ -368,6 +373,7 @@ pub async fn run(options: Options, stop: CancellationToken) -> io::Result<Ending
             Ok(Ending::HandedOver) => "handed_over",
             Ok(Ending::Elevated) => "elevated",
             Ok(Ending::Unstartable) => "unstartable",
+            Ok(Ending::ChannelEnded) => "channel_ended",
             Err(_) => "failed",
         },
         ms = started.elapsed().as_millis() as u64,
@@ -403,6 +409,10 @@ async fn reconnect(registered: &Registered, kept: &mut Kept) -> io::Result<Endin
             || (management.draining.is_cancelled() && kept.jobs.is_empty())
         {
             return Ok(Ending::Stopped);
+        }
+        // A channel that ended is never reached again.
+        if registered.backend.ended().now_or_never().is_some() {
+            return Ok(Ending::ChannelEnded);
         }
         management.set_phase(Phase::Connecting);
         attempt += 1;
@@ -531,6 +541,7 @@ async fn reconnect(registered: &Registered, kept: &mut Kept) -> io::Result<Endin
                 _ = management.stop.cancelled() => return Ok(Ending::Stopped),
                 _ = management.draining.cancelled(), if idle => return Ok(Ending::Stopped),
                 _ = management.elevated.cancelled() => return Ok(Ending::Elevated),
+                () = registered.backend.ended() => return Ok(Ending::ChannelEnded),
                 () = &mut waited => break,
                 event = kept.next() => kept.handle(event, None, registered).await,
             }
