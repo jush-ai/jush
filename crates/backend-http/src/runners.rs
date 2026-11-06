@@ -45,9 +45,9 @@ use futures_util::StreamExt as _;
 use tracing::Instrument as _;
 
 use super::AppState;
-use super::error::ApiError;
+use jush_core_api::error::ApiError;
 use super::install::{current_runner_release, range_start};
-use super::listener::Peer;
+use jush_core_api::peer::Peer;
 use super::runner_socket::accept;
 use jush_core_devices::devices::RunnerSocket;
 
@@ -78,7 +78,7 @@ pub(super) async fn socket(
         .max_message_size(LINK_FRAME_BYTES)
         .max_frame_size(LINK_FRAME_BYTES)
         .on_upgrade(move |socket| {
-            accept(state.services, state.shards, RunnerSocket::new(socket, peer.control.write_progress()))
+            accept(state.services, state.api.shards, RunnerSocket::new(socket, peer.control.write_progress()))
                 .instrument(span)
         }))
 }
@@ -168,7 +168,7 @@ async fn updating(state: &AppState, headers: &HeaderMap) {
     };
     let id = device.id;
     let shown = state
-        .shards
+        .api.shards
         .of(&device.owner)
         .call(move |core, _| async move { core.runner_updating(&id) })
         .await;
@@ -239,7 +239,7 @@ pub(super) async fn get(
     };
     let owner = device.owner.clone();
     let claimed = state
-        .shards
+        .api.shards
         .of(&owner)
         .call_while_closing(move |core, _| async move {
             core.pipes().claim_sink(&id, device.id.as_str())
@@ -280,7 +280,7 @@ pub(super) async fn call_output(
     };
     let owner = device.owner.clone();
     let sink = state
-        .shards
+        .api.shards
         .of(&owner)
         .call_while_closing(move |core, _| async move {
             core.devices().session(&device.id).call_output(core.pipes(), &id)
@@ -311,7 +311,7 @@ pub(super) async fn offer(
     };
     let owner = device.owner.clone();
     let offered = state
-        .shards
+        .api.shards
         .of(&owner)
         .call_while_closing(move |core, _| async move {
             core.pipes().offers().bytes(&id, device.id.as_str())
@@ -336,7 +336,7 @@ pub(super) async fn claim_source(
 ) -> Result<DeviceSource, (StatusCode, String)> {
     let owner = device.owner.clone();
     let claimed = state
-        .shards
+        .api.shards
         .of(&owner)
         .call_while_closing(move |core, _| async move {
             core.pipes().claim_source(&id, device.id.as_str())
@@ -363,7 +363,7 @@ pub(super) async fn head(
     };
     let owner = device.owner.clone();
     let taken = state
-        .shards
+        .api.shards
         .of(&owner)
         .call_while_closing(move |core, _| async move {
             core.pipes().taken_by(&id, device.id.as_str())
@@ -386,7 +386,7 @@ async fn claim_chunk(
 ) -> Result<DeviceChunk, Box<Response>> {
     let owner = device.owner.clone();
     let claimed = state
-        .shards
+        .api.shards
         .of(&owner)
         .call_while_closing(move |core, _| async move {
             core.pipes().claim_chunk(&id, device.id.as_str(), offset)

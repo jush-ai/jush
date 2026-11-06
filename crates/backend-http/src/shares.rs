@@ -14,8 +14,7 @@
 use std::collections::BTreeSet;
 use axum::Json;
 use axum::extract::{Path, RawQuery, State};
-use axum::http::header::{CACHE_CONTROL, REFERRER_POLICY};
-use axum::http::{HeaderMap, HeaderName, HeaderValue, StatusCode};
+use axum::http::{HeaderMap, StatusCode};
 use axum::response::Response;
 use jush_backend_database::shares::ShareRecord;
 use jush_core::conversation::{named_blocks, reply_block_facts};
@@ -34,14 +33,14 @@ use jush_web_api_protocol::attachments::ConversationAttachment;
 use jush_core_store::conversation_attachments::AttachmentNumber;
 
 use super::AppState;
-use super::blobs::blob_answer;
-use super::body::JsonBody;
+use jush_core_api::blobs::blob_answer;
+use jush_core_api::body::JsonBody;
 use jush_plugin_host::PageCallError;
-use super::conversations::owned;
-use super::error::ApiError;
+use jush_core_api::conversations::owned;
+use jush_core_api::error::ApiError;
 use super::gate::AuthUser;
-use super::history::block_answer;
-use super::query::QueryParams;
+use jush_core_api::history::block_answer;
+use jush_core_api::query::QueryParams;
 use jush_backend_user_shard::shares::ConversationSharing;
 
 /// `POST /conversations/:id/shares { kind, blockId? }`: the conversation's
@@ -55,7 +54,7 @@ pub(super) async fn list(
 ) -> Result<Json<ConversationShares>, ApiError> {
     let record = owned(&state.services, &user.id, &id).await?;
     let shares = state
-        .shards
+        .api.shards
         .of(&user.id)
         .call(move |core, _| async move { core.starter().conversation_shares(&record.id).await })
         .await??;
@@ -70,7 +69,7 @@ pub(super) async fn create(
 ) -> Result<Json<ShareAnswer>, ApiError> {
     let conversation = ConversationId::try_from(id).map_err(|_| refused(ShareRefusal::NoConversation))?;
     let share = state
-        .shards
+        .api.shards
         .of(&user.id)
         .call(move |core, _| async move { core.share(conversation, target).await })
         .await?
@@ -87,7 +86,7 @@ pub(super) async fn update(
 ) -> Result<Json<ShareAnswer>, ApiError> {
     let (conversation, token) = owner_path(id, token)?;
     let share = state
-        .shards
+        .api.shards
         .of(&user.id)
         .call(move |core, _| async move { core.update_share(conversation, token).await })
         .await?
@@ -103,7 +102,7 @@ pub(super) async fn remove(
 ) -> Result<StatusCode, ApiError> {
     let (conversation, token) = owner_path(id, token)?;
     state
-        .shards
+        .api.shards
         .of(&user.id)
         .call(move |core, _| async move { core.stop_sharing(conversation, token).await })
         .await?
@@ -175,7 +174,7 @@ pub(super) async fn block_document(
     let share = found(&state.services, token).await?;
     let owner = share.owner.clone();
     let answer = state
-        .shards
+        .api.shards
         .of(&owner)
         .call(move |core, cancel| async move {
             if !core.shows_block(&share, tag.clone(), id.clone()).await.map_err(BlockError::Storage)? {
@@ -188,7 +187,7 @@ pub(super) async fn block_document(
         Ok(Some(document)) => Ok(Some(document)),
         Ok(None) => Err(not_found()),
         Err(BlockError::Storage(error)) => Err(ApiError::conversation_unreadable(error)),
-        Err(BlockError::Call(error)) => Err(super::plugins::refused(error)),
+        Err(BlockError::Call(error)) => Err(jush_core_api::plugins::refused(error)),
     }
 }
 
@@ -210,7 +209,7 @@ pub(super) async fn read(
         ShareTarget::ReplyBlock { tag, id, .. } => {
             let (tag, id) = (tag.clone(), id.clone());
             let facts = state
-                .shards
+                .api.shards
                 .of(&share.owner)
                 .call(move |core, _| async move {
                     if !core.plugins().reply_block_on(&tag).await.unwrap_or(false) {
@@ -244,7 +243,7 @@ pub(super) async fn attachment(
     let number: AttachmentNumber = attachment.parse().map_err(|_| not_found())?;
     let owner = share.owner.clone();
     let row = state
-        .shards
+        .api.shards
         .of(&owner)
         .call(move |core, _| async move { core.shared_attachment(&share, number).await })
         .await?
@@ -266,7 +265,7 @@ pub(super) async fn transcript(
     // for what the list does not hold.
     let QueryParams(query) = query.map_err(|_| not_found())?;
     let owner = share.owner.clone();
-    let core = state.shards.of(&owner);
+    let core = state.api.shards.of(&owner);
     let read = core
         .call(move |core, _| async move { core.share_page(&share, query).await })
         .await?
@@ -344,7 +343,7 @@ pub(super) async fn block(
     let block = BlockId::try_from(block).map_err(|_| not_found())?;
     let owner = share.owner.clone();
     let read = state
-        .shards
+        .api.shards
         .of(&owner)
         .call(move |core, _| async move { core.share_block(&share, block).await })
         .await?
@@ -366,7 +365,7 @@ pub(super) async fn blob(
     let blob = BlobRef::try_from(name).map_err(|_| not_found())?;
     let owner = share.owner.clone();
     let bytes = state
-        .shards
+        .api.shards
         .of(&owner)
         .call(move |core, _| async move { core.share_blob(&share, blob).await })
         .await?
@@ -376,17 +375,4 @@ pub(super) async fn blob(
         })?
         .ok_or_else(not_found)?;
     Ok(blob_answer(&bytes, query.as_deref(), &request))
-}
-
-/// What every answer of the public routes carries: not indexed, no referrer that would
-/// carry the token, and kept by no cache, so a removed share is not served from one.
-pub(super) async fn public_headers(mut response: Response) -> Response {
-    let headers = response.headers_mut();
-    headers.insert(
-        HeaderName::from_static("x-robots-tag"),
-        HeaderValue::from_static("noindex, nofollow"),
-    );
-    headers.insert(REFERRER_POLICY, HeaderValue::from_static("no-referrer"));
-    headers.insert(CACHE_CONTROL, HeaderValue::from_static("private, no-store"));
-    response
 }

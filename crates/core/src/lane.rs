@@ -30,26 +30,12 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use axum::body::Bytes;
-use jush_core_store::tokens::TokenHash;
-use jush_shared_types::{RequestId, Timestamp};
-use jush_web_api_protocol::auth::UserDto;
-use jush_web_api_protocol::sessions::SessionId;
+use jush_shared_types::RequestId;
 use jush_web_api_protocol::connection::LANE_CREDIT;
 use jush_web_api_protocol::ids::{ConversationId, DeviceId, UserId};
 use tokio::sync::{mpsc, oneshot};
 use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
-
-/// The session a page's connection opened with: its token's hash, its user,
-/// and when it expires unless a request renews it. The connection ends with
-/// it, every lane with the connection.
-#[derive(Debug, Clone)]
-pub struct PageSession {
-    pub id: SessionId,
-    pub token: TokenHash,
-    pub user: UserDto,
-    pub expires_at: Timestamp,
-}
 
 /// What a lane is for, as its log lines name it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -60,6 +46,7 @@ pub enum LaneKind {
     Signaling,
     UserStream,
     Debug,
+    Starter,
 }
 
 impl LaneKind {
@@ -71,6 +58,7 @@ impl LaneKind {
             Self::Signaling => "signaling",
             Self::UserStream => "user_stream",
             Self::Debug => "debug",
+            Self::Starter => "starter",
         }
     }
 
