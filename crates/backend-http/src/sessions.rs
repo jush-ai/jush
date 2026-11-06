@@ -14,7 +14,7 @@ use axum::response::{IntoResponse, Response};
 use axum_extra::extract::CookieJar;
 use jush_backend_accounts::passkeys;
 use jush_backend_accounts::sessions::{DeviceSession, SignOut, Spend};
-use jush_backend_page_sync::Part;
+use jush_core_sync::Part;
 use jush_backend_user_shard::services::Services;
 use jush_web_api_protocol::error::ErrorCode;
 use jush_web_api_protocol::ids::UserId;

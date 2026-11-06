@@ -11,7 +11,7 @@
 //!   asked the same way;
 //! - the user's move of the conversation, which the user tells the root of;
 //! - Jush's notice that a move the agent asked for failed
-//!   (`crates/backend-device-access/src/transition.rs`).
+//!   (`crates/core-device-access/src/transition.rs`).
 //!
 //! It is structured input, neither a human message nor the receiving agent's
 //! output. The supervisor supplies the sender from the invoking node, so a
@@ -175,7 +175,7 @@ pub enum AgentMessageEvent {
     },
     /// Jush's notice that a move the recipient asked for failed, which left
     /// the conversation where it was; the receipt row says `reason` after
-    /// *Move failed* (`crates/backend-device-access/src/transition.rs`).
+    /// *Move failed* (`crates/core-device-access/src/transition.rs`).
     MoveFailed {
         /// Why, as the message's text says it: `the project no longer exists`.
         #[garde(length(min = 1))]

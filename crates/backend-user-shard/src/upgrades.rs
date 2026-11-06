@@ -31,10 +31,10 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex, PoisonError, Weak};
 use std::time::{Duration, Instant};
 
-use jush_backend_database::StorageError;
+use jush_core_store::StorageError;
 use jush_backend_database::control::ControlService;
 use jush_backend_database::update::Update;
-use jush_backend_page_sync::{Part, SyncRegistry};
+use jush_core_sync::{Part, SyncRegistry};
 use jush_runner_protocol::release::{
     PREPARE_REQUEST_NAME, StepProgress, StepState, UpdateRecord, UpgradeNotice, UpgradeStepKind,
 };

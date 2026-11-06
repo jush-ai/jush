@@ -12,19 +12,22 @@ doctest = false
 bench = false
 
 [dependencies]
+jush-core-devices = { path = "../core-devices" }
 jush-conversation-lane-protocol = { path = "../conversation-lane-protocol" }
 jush-agent-store = { path = "../agent-store" }
 jush-shared-artifacts = { path = "../shared-artifacts" }
 jush-backend-accounts = { path = "../backend-accounts" }
 jush-backend-cloud = { path = "../backend-cloud" }
-jush-backend-device-access = { path = "../backend-device-access" }
-jush-backend-blobs = { path = "../backend-blobs" }
-jush-backend-providers = { path = "../backend-providers" }
+jush-core-device-access = { path = "../core-device-access" }
+jush-core-blobs = { path = "../core-blobs" }
+jush-core-providers = { path = "../core-providers" }
 jush-backend-runners = { path = "../backend-runners" }
 jush-backend-user-shard = { path = "../backend-user-shard" }
+jush-core = { path = "../core" }
 jush-backend-database = { path = "../backend-database" }
-jush-backend-page-sync = { path = "../backend-page-sync" }
-jush-backend-permissions = { path = "../backend-permissions" }
+jush-core-store = { path = "../core-store" }
+jush-core-sync = { path = "../core-sync" }
+jush-core-permissions = { path = "../core-permissions" }
 jush-plugin-host = { path = "../plugin-host" }
 jush-plugin-interface = { path = "../plugin-interface" }
 jush-command-protocol = { path = "../command-protocol" }

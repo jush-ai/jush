@@ -69,22 +69,21 @@ use tracing_subscriber::filter::Targets;
 use url::Url;
 
 use jush_backend_accounts::email_change::AccountMail;
-use jush_backend_blobs::store::{S3Config, Storage};
+use jush_core_blobs::store::{S3Config, Storage};
 use jush_backend_cloud::tuning::CloudTuning;
-use jush_backend_user_shard::conversation::claude_cli::MachineSlot;
+use jush_core::conversation::claude_cli::MachineSlot;
 use jush_provider_claude_code::releases::DEFAULT_RELEASES_URL;
 use jush_provider_registry::families::FamilyRegistry;
-use jush_backend_providers::vault::entries::SeededAccount;
-use jush_backend_providers::vault::logins::LoginTiming;
+use jush_core_providers::vault::entries::SeededAccount;
+use jush_core_providers::vault::logins::LoginTiming;
 use jush_backend_runners::native::NativeCatalog;
 use jush_plugin_interface::PluginFactory;
 use jush_provider_common::media_catalog;
 use jush_provider_common::models_dev::ModelsDevClient;
 
-use jush_backend_user_shard::shard::ShardPlacement;
-use jush_backend_user_shard::tuning::{
-    ConversationTuning, LifecycleTuning, MediaTuning, PageTuning, RunnerTuning,
-};
+use jush_backend_user_shard::pool::ShardPlacement;
+use jush_backend_user_shard::tuning::PageTuning;
+use jush_core::tuning::{ConversationTuning, LifecycleTuning, MediaTuning, RunnerTuning};
 
 use self::secret::InstanceSecret;
 
@@ -268,7 +267,7 @@ pub struct Config {
     pub log: Targets,
 }
 
-/// Where the one object store lives (`crates/backend-blobs/src/store.rs`).
+/// Where the one object store lives (`crates/core-blobs/src/store.rs`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
 pub enum StorageKind {
     Local,
@@ -296,7 +295,7 @@ pub enum ConfigError {
     #[error("{0} names an S3 bucket, and JUSH_STORAGE is local")]
     S3Unused(&'static str),
     #[error("{0}")]
-    S3(#[from] jush_backend_blobs::store::S3ConfigError),
+    S3(#[from] jush_core_blobs::store::S3ConfigError),
     /// The reason never quotes the file, which holds tokens.
     #[error("--dev-codex-account {}: {reason}", path.display())]
     DevCodexAccount { path: PathBuf, reason: String },

@@ -8,7 +8,7 @@ use axum::Json;
 use axum::extract::State;
 use axum::http::StatusCode;
 use jush_backend_user_shard::services::Services;
-use jush_backend_user_shard::shard::Shards;
+use jush_backend_user_shard::pool::Shards;
 use jush_backend_user_shard::upgrades::RunRefused;
 use jush_web_api_protocol::error::ErrorCode;
 use jush_web_api_protocol::server_upgrade::{RunUpgrade, ServerUpgrade, SetPrepareAhead, SetUpgradeChannel, WorkingAgents};

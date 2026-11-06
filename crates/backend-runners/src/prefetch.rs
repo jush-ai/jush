@@ -16,7 +16,7 @@ use tokio::sync::watch;
 use jush_runner_client::CommandCatalog;
 
 use crate::native::{NativeCatalog, StoredBytes};
-use crate::public_url::PublicUrl;
+use jush_core_devices::public_url::PublicUrl;
 use crate::sourcing::Sourcing;
 
 /// The runner release announced as next: its record, where its executables

@@ -40,7 +40,7 @@ use jush_web_api_protocol::sessions::{HandoffCode, HandoffId, ProductPath, Sessi
 use jiff::SignedDuration;
 use url::Url;
 
-use jush_backend_database::StorageError;
+use jush_core_store::StorageError;
 use jush_backend_database::accounts::{ResolvedSession, SessionPolicy, TokenHash};
 use jush_backend_database::control::ControlService;
 use jush_backend_database::web_sessions::{HandoffIssue, NewSession};
