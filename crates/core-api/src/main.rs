@@ -7,7 +7,8 @@
 //!
 //! `JUSH_PUBLIC_URL` says where the program's server forwards the process's
 //! routes; without it, the cores offer neither a plugin's OAuth nor a
-//! schedule's URL.
+//! schedule's URL. `JUSH_RELEASE` names the release whose command packages
+//! the cores' runners run, as the server's does; without it, they run none.
 
 use std::env::VarError;
 use std::process::ExitCode;
@@ -43,8 +44,9 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
+    let release = std::env::var_os("JUSH_RELEASE").map(std::path::PathBuf::from);
     let connection = tokio::io::join(tokio::io::stdin(), tokio::io::stdout());
-    match runtime.block_on(jush_core_api::process::run(connection, public_url)) {
+    match runtime.block_on(jush_core_api::process::run(connection, public_url, release)) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             tracing::error!(
