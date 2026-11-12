@@ -38,7 +38,7 @@ pub(crate) async fn open(
             "No stream has that name",
         )
     };
-    let Some(binding) = state.services.user_streams.get(&name).cloned() else {
+    let Some(binding) = state.services.user_streams().get(&name).cloned() else {
         return Err(unknown());
     };
     // A device that is no device's is none the conversation reaches.

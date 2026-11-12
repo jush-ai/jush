@@ -15,7 +15,7 @@ use jush_shared_types::BlobRef;
 use jush_core_device_access::stream::UserStreams;
 use jush_core_store::StorageError;
 use jush_core_sync::SyncRegistry;
-use jush_plugin_host::{Registry, RegistryError};
+use jush_plugin_host::{Plugins, RegistryError};
 use jush_plugin_interface::PluginFactory;
 use jush_provider_registry::catalog_cache::ModelCatalogCache;
 use jush_provider_registry::families::FamilyRegistry;
@@ -144,10 +144,9 @@ pub struct CoreServices {
     pub media_tuning: MediaTuning,
     /// The same packages as the cores run them, at this backend's address.
     pub packages: Arc<dyn Packages>,
-    /// The backend's plugins, checked at startup (`crates/plugin-host/src/lib.rs`).
-    pub plugins: Arc<Registry>,
-    /// The user streams a page may open.
-    pub user_streams: UserStreams,
+    /// The program's plugins (`crates/plugin-host/src/lib.rs`): those linked
+    /// into it, checked at startup, and those it declares while it runs.
+    pub plugins: Arc<Plugins>,
     /// The STUN servers pages and runners ask for their public address
     /// (`crates/runner-direct/src/lib.rs`).
     pub stun: Vec<StunUrl>,
@@ -198,9 +197,10 @@ impl CoreServices {
             lifecycle,
             stun,
         } = settings;
-        let plugins = Registry::new(plugins, |operation| {
-            packages.serves(&operation.package, &[operation.operation.as_str()])
-        })?;
+        let served = packages.clone();
+        let plugins = Arc::new(Plugins::new(plugins, move |operation| {
+            served.serves(&operation.package, &[operation.operation.as_str()])
+        })?);
         let edge = tokio::runtime::Handle::current();
         // The shared services' own client; each core's thread builds its own.
         let http = reqwest::Client::builder()
@@ -291,20 +291,24 @@ impl CoreServices {
             runners,
             conversation_tuning: conversations,
             media_tuning,
-            user_streams: UserStreams::new(
-                plugins
-                    .streams()
-                    .map(|stream| (stream.name.as_str(), &stream.operation)),
-                packages.as_ref(),
-            ),
             packages,
-            plugins: Arc::new(plugins),
+            plugins,
             stun,
             run: uuid::Uuid::new_v4().to_string(),
             lifecycle,
             sync,
             returning: Arc::new(Returning::default()),
         })
+    }
+
+    /// The user streams a page may open: those the program's plugins
+    /// declare now that its packages serve.
+    pub fn user_streams(&self) -> UserStreams {
+        let registry = self.plugins.current();
+        UserStreams::new(
+            registry.streams().map(|stream| (stream.name.as_str(), &stream.operation)),
+            self.packages.as_ref(),
+        )
     }
 
     /// Cancels the logins, drains the catalog refreshes and quota

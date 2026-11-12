@@ -28,7 +28,7 @@ use jush_agent_store::media::HeldMedia;
 use jush_agent_store::{AgentTreeStore, NodeRecord, Placement, SideOf, StoreError};
 use jush_conversation_lane_protocol::{AgentEntry, CacheChart, Version};
 use jush_agent_tools::{
-    CALL_WINDOW_MS, ContextSource, DeviceResolver, ProfileModel, ShellEnvironmentFactory,
+    CALL_WINDOW_MS, ContextSources, DeviceResolver, ProfileModel, ShellEnvironmentFactory,
     SubagentSource, Toolset, ToolsetSource, Unavailable,
 };
 use jush_agent_transcript::{ForkEnd, IdSource};
@@ -211,7 +211,7 @@ pub struct ServerDeps<H: DeviceResolver> {
     /// Where a node's shell tools run.
     pub devices: Rc<H>,
     /// What the model must learn before each request, in this order.
-    pub context: Rc<[Rc<dyn ContextSource>]>,
+    pub context: Rc<dyn ContextSources>,
     pub providers: Rc<dyn ProviderResolver>,
     /// Makes each node's shell environment on each device it uses.
     pub shells: Rc<dyn ShellEnvironmentFactory<H::Device>>,

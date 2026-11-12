@@ -39,7 +39,7 @@ use jush_core_store::devices::{DeviceRecord, ManagedMachine};
 use jush_backend_database::managed::ManagedOperation;
 use jush_core_sync::{Part, UserMarks};
 use jush_runner_client::Admission;
-use jush_backend_runners::codes::new_device_token;
+use jush_core_devices::codes::new_device_token;
 use jush_device_interface::{DeviceError, DeviceErrorKind};
 use jush_backend_database::control::ControlService;
 use jush_machine_manager_protocol::{
