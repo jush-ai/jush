@@ -255,6 +255,9 @@ pub(crate) enum Waited {
 pub(crate) struct LiveCli {
     shared: Arc<Shared>,
     key: ProcessKey,
+    /// The system prompt the process started with, which the CLI reads
+    /// once: a request with another needs a new process.
+    system_prompt: String,
     /// The process's control and its own directory, which go with it.
     handle: HeldProcess,
     /// How the process ended, awaited as often as needed.
@@ -424,6 +427,7 @@ impl LiveCli {
         Ok(Self {
             shared: shared.clone(),
             key: ProcessKey::of(request),
+            system_prompt: request.system_prompt.clone(),
             handle: HeldProcess::of(control, exit.clone(), Some(config)),
             exit,
             lines: FramedRead::new(
@@ -486,7 +490,8 @@ impl LiveCli {
     ///
     /// It can when all of these hold:
     ///
-    /// - it still runs, for the same session, model and thinking setting;
+    /// - it still runs, for the same session, model, thinking setting and
+    ///   system prompt;
     /// - it has an MCP server when the request offers tools;
     /// - the transcript continues what it received;
     /// - the request gives it something to answer: results for the calls it
@@ -506,15 +511,16 @@ impl LiveCli {
 
     /// Whether the process could go on with `request`, whatever its input.
     ///
-    /// It could when it still runs, for the same session, model and thinking
-    /// setting, it has an MCP server when the request offers tools, and the
-    /// transcript continues what it received.
+    /// It could when it still runs, for the same session, model, thinking
+    /// setting and system prompt, it has an MCP server when the request
+    /// offers tools, and the transcript continues what it received.
     pub(crate) fn continues(&self, request: &InferenceRequest) -> bool {
         let running = self.exit.clone().now_or_never().is_none();
         let offers_tools = self.mcp.is_some() || request.tools.is_empty();
         running
             && offers_tools
             && self.key == ProcessKey::of(request)
+            && self.system_prompt == request.system_prompt
             && !self.sent.diverged(&request.items)
     }
 
