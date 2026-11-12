@@ -12,13 +12,21 @@
 //!    `-- conversation browser . one per conversation: absent | left |
 //!          |                    starting | ready | closing; admits commands,
 //!          |                    runs release
-//!          `-- Chrome environment: process tree, profile, CDP event pump
-//!                |-- tab registry ..... tabs, handles, openers; snapshot
-//!                |-- capture channel .. the capture extension's connection
-//!                |-- live hub ......... viewers, captures, screen, viewports
+//!          `-- environment ......... on its profile's Chrome: process tree,
+//!                |                   profile, CDP event pump, capture channel,
+//!                |                   screen; shared by the profile's
+//!                |                   conversations
+//!                |-- tab registry ..... its tabs, handles, openers; snapshot
+//!                |-- live hub ......... viewers, captures, viewports
 //!                `-- each tab ......... operation lock and its session; debug
 //!                                       connections; console; open dialog
 //! ```
+//!
+//! A conversation's browser runs on the profile its commands name, which
+//! other conversations on the device may name too, or on one of its own. When
+//! a command names another profile than the browser runs on, the owner
+//! retires that browser, its tabs closing, before it answers, and the next
+//! starts on the profile named.
 //!
 //! Each piece of state has one owner task; others send requests or read its
 //! snapshot. Every task started for an environment belongs to it, and
@@ -40,8 +48,9 @@
 //!   release cancels the commands that run (`cancelled`) before it retires. A
 //!   command still running when another closes the last tab fails with
 //!   `browser_lost`. A browser whose tabs ended is not restored: the next
-//!   `tab.new` starts one with none. The conversation's profile stays, so its
-//!   sign-ins, cookies and site storage carry over to the next browser.
+//!   `tab.new` starts one with none. The profile stays, so its sign-ins,
+//!   cookies and site storage carry over to the next browser. Its Chrome
+//!   stops with the last conversation's browser on it.
 //! - A failed cleanup keeps another environment from starting over the
 //!   unresolved owner. After a completed one the next `tab.new` may start a
 //!   fresh browser.
@@ -71,13 +80,13 @@ use jush_command_package_browser_chrome::driver::{
 use jush_command_package_browser_chrome::page::actions::TabResult;
 use jush_command_package_browser_chrome::tabs::{
     downloads::Downloads,
-    environment::{BrowserEnvironment, LaunchOptions, with_browser},
+    environment::{BrowserEnvironment, LaunchOptions, ProfileBrowsers, with_browser},
     registry::Closed,
 };
 use jush_command_package_browser_chrome::tabs::registry::Snapshot;
 use jush_command_package_browser_protocol::OperationError;
 use jush_command_protocol::{
-    ColorScheme, CommandError, CommandLocale, Completion, ConversationRequest, ConversationStatus,
+    BrowserProfile, ColorScheme, CommandError, CommandLocale, Completion, ConversationRequest, ConversationStatus,
 };
 use jush_command_sdk::{ConversationContext, InvocationContext, Messages, Numbers, ResidentError};
 use jush_command_package_browser_protocol::browser::{BrowserMessage, TabsChange};
@@ -194,7 +203,21 @@ pub(crate) struct Starting {
     pub(crate) resume: Vec<RecordedTab>,
 }
 
+/// The profile a command names, as its job saw the conversation's choice:
+/// its directory, and how many times the conversation had changed it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Naming {
+    profile: std::path::PathBuf,
+    revision: u64,
+}
+
 enum Request {
+    /// The profile a command names, which a later revision than the
+    /// browser's moves it to, before the command asks for the browser.
+    Name {
+        naming: Naming,
+        reply: oneshot::Sender<Result<()>>,
+    },
     /// The browser, started first when `start` says who starts it.
     Environment {
         start: Option<Starting>,
@@ -215,17 +238,22 @@ enum Request {
 }
 
 impl ConversationBrowser {
-    /// The browser of `conversation`, whose every Chrome runs on `profile`
-    /// and puts its complete downloads into the folder `downloads`,
-    /// whose tabs take their numbers from `numbers` across every browser it
-    /// starts, and whose changes `messages` tells the plugin of while its
-    /// owner runs. The record of its tabs at `record` that an earlier
-    /// resident left starts the browser at once, with them.
+    /// The browser of `conversation`, among the resident's `browsers`, whose
+    /// complete downloads go into the folder `downloads`, whose tabs take
+    /// their numbers from `numbers` across every browser it starts, and
+    /// whose changes `messages` tells the plugin of while its
+    /// owner runs. Its Chrome runs on the profile `naming` names, or on the
+    /// one the record of its tabs at `record` ran on, or on its `own`. That
+    /// record, which an earlier resident left, starts the browser at once,
+    /// with its tabs, unless the command names a later profile: those tabs
+    /// close as a change of profile closes them.
     fn start(
         tasks: &TaskTracker,
         chrome: Chrome,
+        browsers: ProfileBrowsers,
         conversation: String,
-        profile: std::path::PathBuf,
+        own: std::path::PathBuf,
+        naming: Option<Naming>,
         downloads: std::path::PathBuf,
         record: std::path::PathBuf,
         numbers: TabNumbers,
@@ -237,20 +265,32 @@ impl ConversationBrowser {
         let cancellation = CancellationToken::new();
         let left = TabRecord::read(&record);
         let downloads = Downloads::new(downloads);
-        let owner = Owner {
+        let ran = left.as_ref().map_or_else(
+            || Naming { profile: own.clone(), revision: 0 },
+            |left| Naming {
+                profile: left.profile.clone().unwrap_or_else(|| own.clone()),
+                revision: left.revision,
+            },
+        );
+        let mut owner = Owner {
             state: State::Absent,
             chrome,
-            profile,
+            browsers,
+            own,
+            naming: ran,
             downloads: downloads.clone(),
             record,
             listed: numbers.watch_changes(),
-            recorded: left.clone(),
+            recorded: left,
             numbers: numbers.clone(),
             published,
             released: cancellation.clone(),
             tasks: tasks.clone(),
         };
-        let resume = left.map(|left| Starting {
+        if let Some(naming) = naming {
+            owner.name(naming);
+        }
+        let resume = owner.recorded.clone().map(|left| Starting {
             locale: left.locale,
             color_scheme: left.color_scheme,
             resume: left.tabs,
@@ -298,6 +338,12 @@ impl ConversationBrowser {
     /// the last browser's tabs wait for the next resident, which lists them.
     fn unlisted(&self) -> Option<(u64, Vec<protocol::BrowserTab>)> {
         (*self.lifecycle.borrow() != Lifecycle::Left).then(|| (self.numbers.list_number(), Vec::new()))
+    }
+
+    /// Hands the owner the profile a command names, before the command asks
+    /// for the browser.
+    async fn name(&self, naming: Naming) -> Result<()> {
+        self.ask(|reply| Request::Name { naming, reply }, &CancellationToken::new()).await
     }
 
     /// Admits an invocation, unless the conversation's release has begun.
@@ -426,8 +472,13 @@ impl ConversationBrowser {
 struct Owner {
     state: State,
     chrome: Chrome,
-    /// The conversation's profile, which every browser it starts runs on.
-    profile: std::path::PathBuf,
+    /// The resident's Chromes, one per profile.
+    browsers: ProfileBrowsers,
+    /// The conversation's own profile, in its scratch directory.
+    own: std::path::PathBuf,
+    /// The profile the next browser runs on, as the latest revision the
+    /// conversation's commands named it.
+    naming: Naming,
     /// The conversation's downloads, which every browser it starts adds to.
     downloads: Downloads,
     /// Where the record of its tabs is (`crate::tab_record`).
@@ -457,6 +508,8 @@ enum State {
 }
 
 struct Running {
+    /// The profile it runs on.
+    naming: Naming,
     ready: watch::Receiver<Readiness>,
     stop: CancellationToken,
     task: JoinHandle<Result<()>>,
@@ -607,6 +660,10 @@ impl Owner {
 
     async fn handle(&mut self, request: Request) {
         match request {
+            Request::Name { naming, reply } => {
+                self.name(naming);
+                let _gone = reply.send(Ok(()));
+            }
             Request::Environment { start, reply } => {
                 let answer = self.environment(start).await;
                 let _gone = reply.send(answer);
@@ -642,13 +699,19 @@ impl Owner {
         &mut self,
         start: Option<Starting>,
     ) -> Result<Option<watch::Receiver<Readiness>>> {
-        if let State::Running(running) = &self.state
-            && (running.task.is_finished() || (start.is_some() && running.leaving()))
-        {
-            // A browser that ended, or one on its way out when an open
-            // starts the next, is joined first: a failed cleanup must not
-            // leave an owner unresolved under a new browser.
-            self.retire().await?;
+        if let State::Running(running) = &self.state {
+            // The conversation names another profile now: its tabs on the
+            // one before close, as a release closes them.
+            let moved = running.naming.profile != self.naming.profile;
+            if running.task.is_finished() || (start.is_some() && running.leaving()) || moved {
+                // A browser that ended, or one on its way out when an open
+                // starts the next, is joined first: a failed cleanup must not
+                // leave an owner unresolved under a new browser.
+                self.retire().await?;
+                if moved {
+                    self.forget_record();
+                }
+            }
         }
         match &self.state {
             State::Ended { .. } => Err(BrowserError::Closed),
@@ -686,7 +749,9 @@ impl Owner {
         let stop = CancellationToken::new();
         let (publish, ready) = watch::channel(None);
         let chrome = self.chrome.clone();
-        let profile = self.profile.clone();
+        let browsers = self.browsers.clone();
+        let naming = self.naming.clone();
+        let profile = naming.profile.clone();
         let downloads = self.downloads.clone();
         let numbers = self.numbers.clone();
         let owner_stop = stop.clone();
@@ -704,6 +769,7 @@ impl Owner {
                     resume,
                 } = starting;
                 with_browser(
+                    &browsers,
                     LaunchOptions::pinned(installation, profile, downloads, locale, color_scheme)?,
                     numbers,
                     owner_stop.clone(),
@@ -751,6 +817,7 @@ impl Owner {
             result
         });
         self.state = State::Running(Running {
+            naming,
             ready: ready.clone(),
             stop,
             task,
@@ -831,7 +898,14 @@ impl Owner {
         let Some(environment) = running.environment() else {
             return;
         };
-        let record = TabRecord::of(&environment.latest(), &running.locale, running.color_scheme);
+        let profile = (running.naming.profile != self.own).then(|| running.naming.profile.clone());
+        let record = TabRecord::of(
+            &environment.latest(),
+            &running.locale,
+            running.color_scheme,
+            profile,
+            running.naming.revision,
+        );
         if self.recorded == record {
             return;
         }
@@ -842,6 +916,30 @@ impl Owner {
             }
             None => self.forget_record(),
         }
+    }
+
+    /// Takes the profile a command names, unless the conversation had
+    /// changed it more times than the command's job saw. A browser that
+    /// runs moves at its next command (`environment`); tabs that wait in a
+    /// record for this resident close.
+    fn name(&mut self, naming: Naming) {
+        if naming.revision < self.naming.revision || naming == self.naming {
+            return;
+        }
+        match &mut self.state {
+            // The same profile: what the browser leaves records the later
+            // revision.
+            State::Running(running) if running.naming.profile == naming.profile => {
+                running.naming.revision = naming.revision;
+            }
+            State::Running(_) => {}
+            State::Absent | State::Ended { .. } => {
+                if naming.profile != self.naming.profile && self.recorded.is_some() {
+                    self.forget_record();
+                }
+            }
+        }
+        self.naming = naming;
     }
 
     /// Removes the record: the browser's tabs ended.
@@ -986,10 +1084,13 @@ impl jush_command_package_browser_chrome::live::viewer::ViewedBrowser for Conver
 
 /// Requests to the conversations' owner.
 enum Find {
-    /// The conversation's browser, made on first use.
+    /// The conversation's browser, made on first use, with the profile the
+    /// invocation names, which a stream that reaches the runner directly
+    /// does not.
     Admit {
         conversation: String,
-        reply: oneshot::Sender<Arc<ConversationBrowser>>,
+        profile: Option<BrowserProfile>,
+        reply: oneshot::Sender<(Arc<ConversationBrowser>, Option<Naming>)>,
     },
     /// The conversation's browser, if it has one.
     Lookup {
@@ -1193,6 +1294,8 @@ struct Kept {
     /// installation.
     scratch_root: Option<std::path::PathBuf>,
     codec: Arc<dyn Codec>,
+    /// The home of the device's user, where named browser profiles are.
+    user_home: Option<std::path::PathBuf>,
 }
 
 impl Kept {
@@ -1203,8 +1306,17 @@ impl Kept {
         ))
     }
 
-    fn profile(&self, conversation: &str) -> std::path::PathBuf {
-        jush_command_protocol::browser_profile_directory(self.scratch_root.as_deref(), conversation)
+    /// The profile `named`, in the user's home, or the conversation's own
+    /// without a name or a home.
+    fn profile(&self, conversation: &str, named: Option<&str>) -> std::path::PathBuf {
+        match (named, &self.user_home) {
+            (Some(name), Some(home)) => jush_command_protocol::named_browser_profile(home, name),
+            (Some(name), None) => {
+                tracing::warn!(event = "browser_profile.no_home", profile = name, "the conversation's browser runs on its own profile: the device's user has no home for the profile it names");
+                jush_command_protocol::browser_profile_directory(self.scratch_root.as_deref(), conversation)
+            }
+            (None, _) => jush_command_protocol::browser_profile_directory(self.scratch_root.as_deref(), conversation),
+        }
     }
 
     fn downloads(&self, conversation: &str) -> std::path::PathBuf {
@@ -1228,28 +1340,46 @@ async fn serve(
     kept: Kept,
 ) {
     let mut browsers: HashMap<String, Arc<ConversationBrowser>> = HashMap::new();
+    let profiles = ProfileBrowsers::default();
     // A requester that left needs no answer.
     while let Some(request) = requests.recv().await {
         match request {
             Find::Admit {
                 conversation,
+                profile,
                 reply,
             } => {
+                let naming = profile.map(|named| Naming {
+                    profile: kept.profile(&conversation, named.name.as_deref()),
+                    revision: named.revision,
+                });
                 let browser = browsers
                     .entry(conversation.clone())
                     .or_insert_with(|| {
                         let tabs =
                             TabNumbers::from_source(numbers.borrow().clone(), conversation.clone());
                         let library = kept.library(&conversation);
-                        let profile = kept.profile(&conversation);
+                        let own = kept.profile(&conversation, None);
                         let downloads = kept.downloads(&conversation);
                         // The conversation's first call to this resident
                         // takes back what an earlier one left open.
                         let record = kept.tab_record(&conversation);
-                        ConversationBrowser::start(&tasks, chrome.clone(), conversation, profile, downloads, record, tabs, messages.clone(), library)
+                        ConversationBrowser::start(
+                            &tasks,
+                            chrome.clone(),
+                            profiles.clone(),
+                            conversation,
+                            own,
+                            naming.clone(),
+                            downloads,
+                            record,
+                            tabs,
+                            messages.clone(),
+                            library,
+                        )
                     })
                     .clone();
-                let _gone = reply.send(browser);
+                let _gone = reply.send((browser, naming));
             }
             Find::Lookup {
                 conversation,
@@ -1293,7 +1423,12 @@ impl Conversations {
         let tasks = TaskTracker::new();
         let (numbers, source) = watch::channel(None);
         let (messages, sender) = watch::channel(None);
-        let kept = Kept { scratch_root, codec };
+        let kept = Kept {
+            scratch_root,
+            codec,
+            // As the runner reads it (`crates/runner/src/main.rs`).
+            user_home: std::env::home_dir().filter(|home| !home.as_os_str().is_empty()),
+        };
         tasks.spawn_traced(serve(receiver, tasks.clone(), chrome.clone(), source, sender, kept));
         Self {
             requests,
@@ -1363,14 +1498,21 @@ impl Conversations {
         context: &InvocationContext,
     ) -> std::result::Result<(Arc<ConversationBrowser>, TaskTrackerToken), ResidentError> {
         let conversation = context.request.context.conversation.clone();
-        let browser = self
+        let profile = context.request.context.browser_profile.clone();
+        let (browser, naming) = self
             .ask(|reply| Find::Admit {
                 conversation,
+                profile,
                 reply,
             })
             .await
             .ok_or(ResidentError::Cancelled)?;
         let command = browser.admit().ok_or(ResidentError::Cancelled)?;
+        // The browser moves to the profile the command names, if a later
+        // one, before the command asks for it.
+        if let Some(naming) = naming {
+            browser.name(naming).await.map_err(|_| ResidentError::Cancelled)?;
+        }
         Ok((browser, command))
     }
 

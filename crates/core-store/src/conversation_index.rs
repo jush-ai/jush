@@ -18,7 +18,7 @@
 
 use jush_shared_types::{ModelSelection, Timestamp, WorkflowChoice};
 use jush_web_api_protocol::conversations::{ConversationTarget, ModelChoice};
-use jush_web_api_protocol::ids::{ConversationId, DeviceId, ProjectId, WorkspaceId};
+use jush_web_api_protocol::ids::{BrowserProfileName, ConversationId, DeviceId, ProjectId, WorkspaceId};
 use rusqlite::{Connection, OptionalExtension, Row, params};
 use serde::{Deserialize, Serialize};
 
@@ -78,6 +78,12 @@ pub struct ConversationRecord {
     pub unread_permission_requests: u64,
     /// Whether it has a schedule, which the sidebar marks.
     pub scheduled: bool,
+    /// The browser profile it names, whose Chrome its browser shares with
+    /// every conversation that names it on the device; none for a profile
+    /// of its own.
+    pub browser_profile: Option<BrowserProfileName>,
+    /// How many times its browser profile changed.
+    pub browser_profile_revision: u64,
 }
 
 impl ConversationRecord {
@@ -199,6 +205,8 @@ pub enum RecordChange {
     Model(ModelSelection),
     /// The conversation's new Workflow menu choice.
     Workflow(WorkflowChoice),
+    /// The browser profile it names now; none for a profile of its own.
+    BrowserProfile(Option<BrowserProfileName>),
     /// A device of the user's attached; one attached already stays as it is.
     Attach(AttachedDeviceRecord),
     /// A detach of an attached device; a device that is not attached
@@ -244,6 +252,7 @@ pub struct ConversationStart {
     /// Its Workflow menu choice, which a new conversation is given before
     /// its first message.
     pub workflow: WorkflowChoice,
+    pub browser_profile: Option<BrowserProfileName>,
 }
 
 impl ConversationStart {
@@ -257,6 +266,7 @@ impl ConversationStart {
             target: ConversationTarget::Cloud { path: None },
             model: None,
             workflow: WorkflowChoice::Default,
+            browser_profile: None,
         }
     }
 }
@@ -283,7 +293,7 @@ const CONVERSATION_ORDER: &str = "archived_at DESC, pinned DESC, sort_order, id"
 const CONVERSATION_COLUMNS: &str = "id, workspace_id, title, title_origin, archived_at, pinned, read_revision,
      asked_end_revision, asked_end_failed, target_kind, target_device_id,
      target_path, target_project_id, target_worktree_name, target_worktree_path, context_version, model, workflow_kind,
-     workflow_id, workflow_worktree, created_at, updated_at, devices_revision,
+     workflow_id, workflow_worktree, created_at, updated_at, devices_revision, browser_profile, browser_profile_revision,
      COALESCE((SELECT revision FROM conversation_drafts WHERE conversation_id = conversations.id), 0) AS draft_revision,
      COALESCE((SELECT saved_revision FROM conversation_drafts WHERE conversation_id = conversations.id), 0) AS saved_revision,
      (SELECT count(*) FROM saved_messages
@@ -417,6 +427,7 @@ impl CoreStore {
                     target: &selection,
                     model: start.model.as_ref(),
                     workflow: &workflow,
+                    browser_profile: start.browser_profile.as_ref(),
                     context_version: 0,
                     at: now,
                 },
@@ -702,6 +713,11 @@ impl CoreStore {
                         params![id.as_str(), kind, workflow, worktree],
                     )?
                 }
+                RecordChange::BrowserProfile(profile) => transaction.execute(
+                    "UPDATE conversations SET browser_profile = ?2, browser_profile_revision = browser_profile_revision + 1
+                     WHERE id = ?1 AND browser_profile IS NOT ?2",
+                    params![id.as_str(), profile.as_ref().map(BrowserProfileName::as_str)],
+                )?,
                 RecordChange::Attach(attached) => {
                     if insert_attached_device(&transaction, &id, attached, now)? {
                         advance_context(&transaction, &id)?;
@@ -828,6 +844,7 @@ pub struct NewConversation<'a> {
     pub target: &'a Selection,
     pub model: Option<&'a ModelSelection>,
     pub workflow: &'a WorkflowChoice,
+    pub browser_profile: Option<&'a BrowserProfileName>,
     /// The execution-context revision it starts at: 0, or a Fork's source's
     /// at the Fork, which the context blocks its copied transcript name.
     pub context_version: u64,
@@ -847,10 +864,10 @@ pub fn insert_conversation(
         "INSERT INTO conversations (id, title, title_origin, pinned, sort_order,
            read_revision, target_kind, target_device_id, target_path, target_project_id, context_version,
            model, created_at, updated_at, workflow_kind, workflow_id, target_worktree_name, target_worktree_path,
-           workflow_worktree, workspace_id)
+           workflow_worktree, workspace_id, browser_profile)
          VALUES (?1, ?2, ?3, ?10,
            (SELECT COALESCE(MIN(sort_order), 0) - 1 FROM conversations),
-           0, ?4, ?5, ?6, ?7, ?13, ?8, ?9, ?9, ?11, ?12, ?14, ?15, ?16, ?17)
+           0, ?4, ?5, ?6, ?7, ?13, ?8, ?9, ?9, ?11, ?12, ?14, ?15, ?16, ?17, ?18)
          ON CONFLICT (id) DO NOTHING",
         params![
             new.id.as_str(),
@@ -870,7 +887,8 @@ pub fn insert_conversation(
             target.worktree_name,
             target.worktree_path,
             workflow_worktree,
-            new.workspace.as_str()
+            new.workspace.as_str(),
+            new.browser_profile.map(BrowserProfileName::as_str)
         ],
     )?;
     Ok(inserted)
@@ -1006,6 +1024,15 @@ fn conversation_row(row: &Row<'_>) -> Result<ConversationRecord, StorageError> {
             u64::try_from(row.get::<_, i64>("unread_permission_requests")?),
         )?,
         scheduled: row.get("scheduled")?,
+        browser_profile: row
+            .get::<_, Option<String>>("browser_profile")?
+            .map(|name| decode(TABLE, "browser_profile", BrowserProfileName::try_from(name)))
+            .transpose()?,
+        browser_profile_revision: decode(
+            TABLE,
+            "browser_profile_revision",
+            u64::try_from(row.get::<_, i64>("browser_profile_revision")?),
+        )?,
     })
 }
 
