@@ -217,6 +217,23 @@ The loop ends when you leave it or the conversation closes.
 `conversation.close()` stops following the conversation; its agents go on in
 the core, and the next action follows it again.
 
+`conversation.agents` lists the conversation's agents: the root, whose id is
+the conversation's, and each subagent, with its role, phase and queue. The
+`agents` and `agent` events say they changed.
+
+`conversation.sendToAgent(node, text)` sends a message to one subagent, named
+by its id in `conversation.agents`. A subagent at work takes it as a steer, an
+idle one starts a turn with it, and one that ended is resumed with it. Give
+the message an id when you may send it again, such as after a lost answer:
+the subagent takes a message once, however often it arrives.
+
+```ts
+const tester = conversation.agents.find((agent) => agent.role.kind === 'subagent' && agent.role.profile === 'tester')
+if (tester) {
+  await conversation.sendToAgent(tester.id, 'The build finished.', 'reminder-7')
+}
+```
+
 ## Permission requests
 
 A command that acts on Jush itself, such as `jush credentials`, which hands

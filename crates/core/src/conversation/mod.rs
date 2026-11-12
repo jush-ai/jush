@@ -41,6 +41,7 @@ mod runs_on;
 pub mod side_questions;
 pub mod search;
 pub mod settings;
+pub mod subagent_messages;
 mod lane;
 mod metadata_changes;
 mod summary;
@@ -74,6 +75,7 @@ pub use self::attachment_facts::{attachment_facts, named_blocks, replies, reply_
 pub use self::failure_facts::failure_facts;
 pub use self::fork::{ForkRefusal, recover_forks};
 pub use self::announcement::AgentsError;
+pub(crate) use self::lane::TreeRefusal;
 pub(crate) use self::product::CoreDevices;
 pub use self::providers::{lent_limits, lent_runtime};
 use self::product::{
