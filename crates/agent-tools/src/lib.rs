@@ -116,8 +116,8 @@ pub use result::{
     Look, Moved, VIEW_CHARS, interrupted_look, look_text, report_media, report_output, whole_look_text, whole_status,
 };
 pub use product::{
-    ChosenWorkflow, ContextAnswer, ContextSource, SeenBlock, ConversationProfiles, EFFORT_OFF, DeviceAsk, DeviceResolver,
-    ListedWorkflow, Named, WorkflowChild, WorkflowListing,
+    ChosenWorkflow, ContextAnswer, ContextSource, ContextSources, SeenBlock, ConversationProfiles, EFFORT_OFF,
+    DeviceAsk, DeviceResolver, ListedWorkflow, Named, WorkflowChild, WorkflowListing,
     ModelChoice, ModelEdit, NewProfileDraft, NodeContext, Profile, ProfileEdit, ProfileModel,
     SubagentSettings, SubagentSource, TIER_DEFAULT, Toolset, ToolsetSource, Unavailable, runs_on,
 };

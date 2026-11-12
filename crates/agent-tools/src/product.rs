@@ -574,6 +574,12 @@ pub struct SeenBlock<'a> {
     pub current: bool,
 }
 
+/// The product's context sources as they are now, in their order: a plugin
+/// the program declares while it runs is one from then on.
+pub trait ContextSources {
+    fn sources(&self) -> Rc<[Rc<dyn ContextSource>]>;
+}
+
 /// One source of what the model must learn before a request, such as the
 /// conversation's execution context, the instructions or a plugin.
 ///

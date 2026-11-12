@@ -18,7 +18,6 @@ jush-core-devices = { path = "../core-devices" }
 jush-core-idle-watch = { path = "../core-idle-watch" }
 jush-core-providers = { path = "../core-providers" }
 jush-provider-registry = { path = "../provider-registry" }
-jush-backend-runners = { path = "../backend-runners" }
 jush-backend-database = { path = "../backend-database" }
 jush-core-store = { path = "../core-store" }
 jush-core-sync = { path = "../core-sync" }
