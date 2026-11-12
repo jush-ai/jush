@@ -9,7 +9,7 @@
 
 use jush_shared_types::{BlockId, ModelSelection, Timestamp, WorkflowChoice};
 use jush_web_api_protocol::conversations::ConversationTarget;
-use jush_web_api_protocol::ids::ConversationId;
+use jush_web_api_protocol::ids::{BrowserProfileName, ConversationId};
 use rusqlite::{Connection, OptionalExtension, Row, params};
 use serde::{Deserialize, Serialize};
 
@@ -55,6 +55,11 @@ pub struct ForkMetadata {
     /// keeps the model (`crates/core/src/conversation/workflows.rs`).
     #[garde(dive)]
     pub workflow: WorkflowChoice,
+    /// The browser profile the source names, which the destination keeps
+    /// as it keeps the model; absent for a profile of its own.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[garde(skip)]
+    pub browser_profile: Option<BrowserProfileName>,
     #[garde(skip)]
     pub created_at: Timestamp,
     #[garde(dive)]
@@ -200,6 +205,7 @@ impl CoreStore {
                     target: &selection,
                     model: metadata.model.as_ref(),
                     workflow: &metadata.workflow,
+                    browser_profile: metadata.browser_profile.as_ref(),
                     context_version: metadata.context_version,
                     at: metadata.created_at,
                 },

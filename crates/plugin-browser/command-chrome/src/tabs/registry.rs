@@ -165,6 +165,14 @@ impl Tabs {
         .await
     }
 
+    /// Seals the registry, which admits no tab from now on, and answers the
+    /// pages it holds, each with its tab once it is one, and how many
+    /// creations are still in flight: what an environment that ends on a
+    /// Chrome that runs on closes.
+    pub(crate) async fn seal(&self) -> Result<(Vec<(TargetId, Option<BrowserTab>)>, usize)> {
+        self.ask(|reply| Request::Seal { reply }).await
+    }
+
     /// Keeps the environment from retiring while a batch of temporary tabs
     /// collects its results.
     pub async fn hold(&self) -> Result<Hold> {
@@ -187,6 +195,13 @@ impl Tabs {
     /// each is registered and can be operated, in the order they opened.
     pub async fn popups(&self, opener: TargetId) -> Result<Vec<TabId>> {
         self.ask(|reply| Request::Popups { opener, reply }).await
+    }
+
+    /// Whether one of the registry's pages opened `target`, a page open or
+    /// closed since, as a link's new tab that turned into a download and
+    /// closed.
+    pub(crate) async fn popup(&self, target: TargetId) -> Result<bool> {
+        self.ask(|reply| Request::Popup { target, reply }).await
     }
 
     /// The latest snapshot, once the owner has registered every tab it
@@ -275,6 +290,9 @@ enum Request {
         id: Option<TabId>,
         reply: oneshot::Sender<Result<BrowserTab>>,
     },
+    Seal {
+        reply: oneshot::Sender<Result<(Vec<(TargetId, Option<BrowserTab>)>, usize)>>,
+    },
     Close {
         target: TargetId,
         deadline: Instant,
@@ -296,6 +314,11 @@ enum Request {
     Popups {
         opener: TargetId,
         reply: oneshot::Sender<Result<Vec<TabId>>>,
+    },
+    /// Whether one of the pages opened `target`; answered at once.
+    Popup {
+        target: TargetId,
+        reply: oneshot::Sender<Result<bool>>,
     },
     /// Takes the pages' current titles from Chrome's target list.
     Retitle { reply: oneshot::Sender<Result<()>> },
@@ -434,6 +457,11 @@ impl<T: Clone> Book<T> {
         }
         seen.title.clone_into(&mut entry.title);
         matches!(entry.stage, Stage::Live { .. })
+    }
+
+    /// Whether the registry records `target`.
+    fn is_known(&self, target: &TargetId) -> bool {
+        self.entries.contains_key(target)
     }
 
     fn is_pending(&self, target: &TargetId) -> bool {
@@ -608,6 +636,22 @@ impl<T: Clone> Book<T> {
             Stage::Pending => self.openers.contains_key(target),
             Stage::Unusable => false,
         }
+    }
+
+    /// The pages that keep the environment from being empty, each with its
+    /// tab once it is live.
+    fn held(&self) -> Vec<(TargetId, Option<T>)> {
+        self.entries
+            .iter()
+            .filter(|(target, entry)| self.counts(target, entry))
+            .map(|(target, entry)| {
+                let tab = match &entry.stage {
+                    Stage::Live { tab, .. } => Some(tab.clone()),
+                    Stage::Pending | Stage::Setup | Stage::Unusable => None,
+                };
+                (target.clone(), tab)
+            })
+            .collect()
     }
 
     /// Whether `target` is the one tab left, with none being created and no
@@ -1029,6 +1073,10 @@ impl Owner {
                 }
             },
             Request::Ready { target, tab, reply } => self.ready(target, tab, reply),
+            Request::Seal { reply } => {
+                self.book.sealed = true;
+                let _gone = reply.send(Ok((self.book.held(), self.book.creating)));
+            }
             Request::Close {
                 target,
                 deadline,
@@ -1053,6 +1101,9 @@ impl Owner {
             Request::Settled { reply } => {
                 self.settle();
                 let _gone = reply.send(Ok(self.book.sealed));
+            }
+            Request::Popup { target, reply } => {
+                let _left = reply.send(Ok(self.book.opener(&target).is_some()));
             }
             Request::OpenedBy { opener, reply } => {
                 let _left = reply.send(Ok(self.book.opened(&opener)));
@@ -1096,10 +1147,21 @@ impl Owner {
     /// named when first seen, with its opener, so that the action that
     /// opened it can name it; one that cannot be named is closed. The
     /// registry's own creations are named when set up.
+    ///
+    /// Other environments share the Chrome: a popup whose opener is not one
+    /// of this registry's pages is theirs and left out. A page without an
+    /// opener stays pending, uncounted, unless it is one of the registry's
+    /// own creations.
     async fn found(&mut self, info: &TargetInfo) {
         let Some(seen) = Sighting::of(info) else {
             return;
         };
+        if let Some(opener) = seen.opener
+            && self.book.public_id(opener).is_none()
+            && !self.book.is_known(seen.target)
+        {
+            return;
+        }
         if self.book.found(&seen) {
             self.publish();
         }
@@ -1131,6 +1193,10 @@ impl Owner {
         };
         // One of the registry's own creations, which its creator sets up.
         let Some(opener) = opener else { return };
+        // A popup of another environment's page.
+        if self.book.public_id(&opener).is_none() {
+            return;
+        }
         let (id, opener_id) = match self.name_popup(target, &opener).await {
             Ok(ids) => ids,
             Err(error) => {
@@ -1356,7 +1422,7 @@ impl Owner {
 
 /// Stops the tab's loading and asks Chrome to destroy it, without running its
 /// `beforeunload` hooks.
-async fn close_target(browser: &BrowserHandle, tab: &BrowserTab, deadline: Instant) -> Result<()> {
+pub(crate) async fn close_target(browser: &BrowserHandle, tab: &BrowserTab, deadline: Instant) -> Result<()> {
     // A debugger paused in the page lets go before the page closes.
     let cleanup = tab.state.debug.release().await;
     let closed = tokio::time::timeout_at(deadline, async {
