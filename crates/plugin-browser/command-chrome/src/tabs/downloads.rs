@@ -20,14 +20,22 @@
 //! - The agent is told of every download, whoever started it: the user and
 //!   the agent share the browser, and a download a page starts later, in a
 //!   frame or a new tab, has no command to belong to.
+//! - A Chrome that conversations naming one profile share gives each download
+//!   to the conversation whose tab started it ([`Routes`]): its file goes to
+//!   that conversation's folder, also once the conversation left the Chrome.
+//!   One that no conversation's tab holds is the conversation's when the
+//!   Chrome serves only one.
 //! - A suggested file name is data, never permission for path traversal.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 
 use chromiumoxide::cdp::browser_protocol::{
     browser::{DownloadProgressState, EventDownloadProgress, EventDownloadWillBegin},
     page::FrameId,
+    target::TargetId,
 };
 use futures_util::{FutureExt as _, StreamExt};
 use tokio::sync::watch;
@@ -84,62 +92,6 @@ impl Downloads {
         }
     }
 
-    /// Follows the downloads of the browser `handle` reaches, which Chrome
-    /// writes into `partial`, until `ended`; then those in progress end
-    /// canceled, since Chrome and its partial files are gone.
-    pub(crate) async fn follow(
-        &self,
-        handle: &BrowserHandle,
-        tabs: Tabs,
-        partial: PathBuf,
-        tasks: &TaskTracker,
-        ended: CancellationToken,
-    ) -> Result<()> {
-        let browser = handle.call()?;
-        let mut beginnings = browser.event_listener::<EventDownloadWillBegin>().await?;
-        let mut progress = browser.event_listener::<EventDownloadProgress>().await?;
-        drop(browser);
-        let follower = self.clone();
-        let finders = tasks.clone();
-        tasks.spawn_traced(async move {
-            loop {
-                tokio::select! {
-                    // Chrome tells a download's beginning before its progress.
-                    biased;
-                    beginning = beginnings.next() => match beginning {
-                        Some(Ok(beginning)) => follower.begin(&tabs, &beginning, &finders).await,
-                        // A lagged listener lost a beginning; that download goes unlisted.
-                        Some(Err(_)) => {}
-                        None => break,
-                    },
-                    event = progress.next() => match event {
-                        Some(Ok(event)) => follower.advance(&partial, &event).await,
-                        // A lagged listener lost a progress; the next one says where it stands.
-                        Some(Err(_)) => {}
-                        None => break,
-                    },
-                    _ = ended.cancelled() => break,
-                }
-            }
-            // A download Chrome completed before it ended is named: its file
-            // stays until the retirement empties the directory.
-            while let Some(Some(Ok(event))) = progress.next().now_or_never() {
-                follower.advance(&partial, &event).await;
-            }
-            // One browser runs at a time, so every download in progress was
-            // this one's.
-            follower.list.send_if_modified(|list| {
-                let mut ended = false;
-                for download in list.iter_mut().filter(|download| download.state == DownloadState::InProgress) {
-                    download.state = DownloadState::Canceled;
-                    ended = true;
-                }
-                ended
-            });
-        });
-        Ok(())
-    }
-
     /// The folder complete downloads are in.
     pub fn folder(&self) -> &Path {
         &self.folder
@@ -183,40 +135,9 @@ impl Downloads {
     /// download has. A main frame's id is its tab's, which finds most tabs at
     /// once; a frame's tab is found apart, so the list never waits on a tab.
     async fn begin(&self, tabs: &Tabs, beginning: &EventDownloadWillBegin, finders: &TaskTracker) {
-        let suggested = file_name(&beginning.suggested_filename);
-        let mut name = suggested.clone();
-        for number in 1..NUMBERED {
-            let listed = self
-                .list
-                .borrow()
-                .iter()
-                .any(|download| download.state == DownloadState::InProgress && download.name == name);
-            if !listed && !tokio::fs::try_exists(self.folder.join(&name)).await.unwrap_or(true) {
-                break;
-            }
-            name = numbered(&suggested, number);
-        }
-        let listed = tabs.latest();
-        let tab = listed
-            .tabs
-            .iter()
-            .find(|listed| listed.tab.page().target_id().as_ref() == beginning.frame_id.as_ref())
-            .map(|listed| listed.tab.id().clone());
+        let tab = main_frame_tab(tabs, &beginning.frame_id);
         let found = tab.is_some();
-        self.list.send_modify(|list| {
-            list.push(Download {
-                id: beginning.guid.clone(),
-                tab,
-                name,
-                state: DownloadState::InProgress,
-                received: 0,
-                total: 0,
-                path: None,
-                began: SystemTime::now(),
-                suggested,
-                told: false,
-            });
-        });
+        self.begin_in(tab, beginning).await;
         if found {
             return;
         }
@@ -235,6 +156,55 @@ impl Downloads {
                 }
                 None => false,
             });
+        });
+    }
+
+    /// Lists a download that begins in the tab `tab`, under a name no file
+    /// and no other download has.
+    async fn begin_in(&self, tab: Option<TabId>, beginning: &EventDownloadWillBegin) {
+        let suggested = file_name(&beginning.suggested_filename);
+        let mut name = suggested.clone();
+        for number in 1..NUMBERED {
+            let listed = self
+                .list
+                .borrow()
+                .iter()
+                .any(|download| download.state == DownloadState::InProgress && download.name == name);
+            if !listed && !tokio::fs::try_exists(self.folder.join(&name)).await.unwrap_or(true) {
+                break;
+            }
+            name = numbered(&suggested, number);
+        }
+        self.list.send_modify(|list| {
+            list.push(Download {
+                id: beginning.guid.clone(),
+                tab,
+                name,
+                state: DownloadState::InProgress,
+                received: 0,
+                total: 0,
+                path: None,
+                began: SystemTime::now(),
+                suggested,
+                told: false,
+            });
+        });
+    }
+
+    /// Ends the download `id` canceled while it is in progress: its Chrome
+    /// and its partial file are gone.
+    fn cancel(&self, id: &str) {
+        self.list.send_if_modified(|list| {
+            match list
+                .iter_mut()
+                .find(|download| download.id == id && download.state == DownloadState::InProgress)
+            {
+                Some(download) => {
+                    download.state = DownloadState::Canceled;
+                    true
+                }
+                None => false,
+            }
         });
     }
 
@@ -286,6 +256,179 @@ impl Downloads {
             true
         });
     }
+}
+
+/// Where the downloads of one Chrome go: to the conversation whose tab
+/// started each, among the conversations whose browsers run on it.
+#[derive(Clone, Default)]
+pub(crate) struct Routes {
+    routing: Arc<Mutex<Routing>>,
+}
+
+#[derive(Default)]
+struct Routing {
+    /// The environments on the Chrome now, by their numbers: each one's tabs
+    /// and its conversation's downloads.
+    environments: Vec<(u64, Tabs, Downloads)>,
+    /// The conversation of each download of the Chrome, once known.
+    owners: HashMap<String, Downloads>,
+    /// The latest progress of each download whose conversation is still
+    /// being found, which it takes once found.
+    waiting: HashMap<String, EventDownloadProgress>,
+}
+
+impl Routes {
+    fn routing(&self) -> std::sync::MutexGuard<'_, Routing> {
+        self.routing.lock().expect("the downloads' routing is intact")
+    }
+
+    /// Gives the environment `number` the downloads its `tabs` start, which
+    /// go to `downloads`.
+    pub(crate) fn join(&self, number: u64, tabs: Tabs, downloads: Downloads) {
+        self.routing().environments.push((number, tabs, downloads));
+    }
+
+    /// Takes the environment `number` out of the routing. Its downloads in
+    /// progress go on into its conversation's folder while the Chrome runs.
+    pub(crate) fn leave(&self, number: u64) {
+        self.routing().environments.retain(|(each, _, _)| *each != number);
+    }
+
+    /// Follows the downloads of the Chrome `handle` reaches, which it writes
+    /// into `partial`, until `ended`; then those in progress end canceled,
+    /// since Chrome and its partial files are gone.
+    pub(crate) async fn follow(
+        &self,
+        handle: &BrowserHandle,
+        partial: PathBuf,
+        tasks: &TaskTracker,
+        ended: CancellationToken,
+    ) -> Result<()> {
+        let browser = handle.call()?;
+        let mut beginnings = browser.event_listener::<EventDownloadWillBegin>().await?;
+        let mut progress = browser.event_listener::<EventDownloadProgress>().await?;
+        drop(browser);
+        let routes = self.clone();
+        let finders = tasks.clone();
+        tasks.spawn_traced(async move {
+            loop {
+                tokio::select! {
+                    // Chrome tells a download's beginning before its progress.
+                    biased;
+                    beginning = beginnings.next() => match beginning {
+                        Some(Ok(beginning)) => routes.begin(&partial, &beginning, &finders).await,
+                        // A lagged listener lost a beginning; that download goes unlisted.
+                        Some(Err(_)) => {}
+                        None => break,
+                    },
+                    event = progress.next() => match event {
+                        Some(Ok(event)) => routes.advance(&partial, &event).await,
+                        // A lagged listener lost a progress; the next one says where it stands.
+                        Some(Err(_)) => {}
+                        None => break,
+                    },
+                    _ = ended.cancelled() => break,
+                }
+            }
+            // A download Chrome completed before it ended is named: its file
+            // stays until the retirement empties the directory.
+            while let Some(Some(Ok(event))) = progress.next().now_or_never() {
+                routes.advance(&partial, &event).await;
+            }
+            let owners = std::mem::take(&mut routes.routing().owners);
+            for (id, downloads) in owners {
+                downloads.cancel(&id);
+            }
+        });
+        Ok(())
+    }
+
+    /// Gives a download that begins to its conversation: the one whose tab
+    /// is the frame, at once; the Chrome's only one, which finds a frame's
+    /// tab apart; or, when several share the Chrome, found apart, so the
+    /// follow never waits on a tab: the one whose page opened the frame's,
+    /// else the one whose tab holds the frame.
+    async fn begin(&self, partial: &Path, beginning: &EventDownloadWillBegin, finders: &TaskTracker) {
+        let environments = self.routing().environments.clone();
+        for (_, tabs, downloads) in &environments {
+            if let Some(tab) = main_frame_tab(tabs, &beginning.frame_id) {
+                self.routing().owners.insert(beginning.guid.clone(), downloads.clone());
+                downloads.begin_in(Some(tab), beginning).await;
+                return;
+            }
+        }
+        if let [(_, tabs, downloads)] = environments.as_slice() {
+            self.routing().owners.insert(beginning.guid.clone(), downloads.clone());
+            downloads.begin(tabs, beginning, finders).await;
+            return;
+        }
+        let routes = self.clone();
+        let partial = partial.to_owned();
+        let beginning = beginning.clone();
+        finders.spawn_traced(async move {
+            // A link's new tab that turned into the download, which Chrome
+            // closes then, is gone from every list but its opener's record.
+            let page = TargetId::new(beginning.frame_id.as_ref());
+            let mut found = None;
+            for (_, tabs, downloads) in &environments {
+                if tabs.popup(page.clone()).await.unwrap_or(false) {
+                    found = Some((main_frame_tab(tabs, &beginning.frame_id), downloads));
+                    break;
+                }
+            }
+            if found.is_none() {
+                for (_, tabs, downloads) in &environments {
+                    if let Some(tab) = owner(tabs, &beginning.frame_id).await {
+                        found = Some((Some(tab.id().clone()), downloads));
+                        break;
+                    }
+                }
+            }
+            let Some((tab, downloads)) = found else {
+                // No conversation's page holds it: its file stays under
+                // Chrome's id, which the retirement removes.
+                routes.routing().waiting.remove(&beginning.guid);
+                tracing::warn!(event = "browser_download.unowned", guid = %beginning.guid, "a download no conversation's tab started was left");
+                return;
+            };
+            downloads.begin_in(tab, &beginning).await;
+            let waiting = {
+                let mut routing = routes.routing();
+                routing.owners.insert(beginning.guid.clone(), downloads.clone());
+                routing.waiting.remove(&beginning.guid)
+            };
+            if let Some(event) = waiting {
+                downloads.advance(&partial, &event).await;
+            }
+        });
+    }
+
+    /// Takes a download's progress to its conversation, or keeps it while
+    /// its conversation is being found.
+    async fn advance(&self, partial: &Path, event: &EventDownloadProgress) {
+        let owner = {
+            let mut routing = self.routing();
+            match routing.owners.get(&event.guid) {
+                Some(downloads) => Some(downloads.clone()),
+                None => {
+                    routing.waiting.insert(event.guid.clone(), event.clone());
+                    None
+                }
+            }
+        };
+        if let Some(downloads) = owner {
+            downloads.advance(partial, event).await;
+        }
+    }
+}
+
+/// The tab whose main frame is `frame`: a main frame's id is its target's.
+fn main_frame_tab(tabs: &Tabs, frame: &FrameId) -> Option<TabId> {
+    tabs.latest()
+        .tabs
+        .iter()
+        .find(|listed| listed.tab.page().target_id().as_ref() == frame.as_ref())
+        .map(|listed| listed.tab.id().clone())
 }
 
 /// The tab whose page holds `frame`, cross-site frames included. A main

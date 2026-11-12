@@ -22,6 +22,7 @@ import {
 import {
   conversationDetailSchema,
   conversationFrameSchema,
+  conversationUpdateSchema,
   subagentMessageAnswerSchema,
   transcriptPageSchema,
   type AbortResult,
@@ -29,6 +30,8 @@ import {
   type Block,
   type ClientContent,
   type ConversationMetadata,
+  type ConversationPatch,
+  type ConversationUpdate,
   type PermissionRequest,
   type RequestedValues,
   type TurnOutcome,
@@ -196,6 +199,15 @@ export class Conversation {
   async send(input: Input, messageId: string = randomUUID()): Promise<void> {
     const client = await this.open()
     await client.submit(content(input), messageId)
+  }
+
+  /**
+   * Changes what `patch` names of the conversation, as the app's settings
+   * change it, and resolves with how each field went: one field can be
+   * refused while the others apply.
+   */
+  async update(patch: ConversationPatch): Promise<ConversationUpdate> {
+    return this.routes.json('PATCH', `/conversations/${encodeURIComponent(this.id)}`, conversationUpdateSchema, patch)
   }
 
   /**
