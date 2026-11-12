@@ -40,7 +40,7 @@ use jush_shared_types::{AgentMessage, BlockId, Clock, ModelSelection, NodeId, Se
 use futures_util::future::{LocalBoxFuture, join_all};
 use tokio_util::task::TaskTracker;
 
-pub use connection::{Connection, Follows, FrameRx, Outgoing};
+pub use connection::{Connection, Follows, FrameRx, Outgoing, Taken};
 pub use content::{ContentError, ContentResolver, FileReference, ResolvedFiles, resolve_content};
 pub use tree::{AskError, KeptAgents, SideCard, Tree, side_instruction};
 
