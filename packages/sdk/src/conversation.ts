@@ -252,7 +252,11 @@ export class Conversation {
     return this.client?.agentEntries() ?? []
   }
 
-  /** Sends a message; resolves once it is in the transcript or the queue. */
+  /**
+   * Sends a message; resolves once it is in the transcript or the queue.
+   * The conversation takes it once however often it is sent under
+   * `messageId`, which messages and steers share.
+   */
   async send(input: Input, messageId: string = randomUUID()): Promise<void> {
     const client = await this.open()
     await client.submit(content(input), messageId)
@@ -280,10 +284,14 @@ export class Conversation {
     return id
   }
 
-  /** Steers the running turn with `input`; resolves once the turn took it. */
-  async steer(input: Input): Promise<void> {
+  /**
+   * Steers the running turn with `input`; resolves once the turn took it.
+   * The conversation takes it once however often it is sent under
+   * `steerId`, which messages and steers share.
+   */
+  async steer(input: Input, steerId: string = randomUUID()): Promise<void> {
     const client = await this.open()
-    await client.steer(content(input))
+    await client.steer(content(input), steerId)
   }
 
   async abort(): Promise<AbortResult> {
