@@ -53,8 +53,8 @@ use serde_json::{Map, Value};
 use tokio_util::sync::CancellationToken;
 use url::Url;
 
-use crate::Registry;
 use crate::commands::compose;
+use crate::registry::{Plugins, Registry};
 use crate::oauth::{Callback, CallbackError, SignIns};
 use crate::web;
 
@@ -337,6 +337,17 @@ pub struct Switched {
     pub released: Vec<String>,
 }
 
+/// What a core does once its user's plugins adopted the program's newest
+/// ([`UserPlugins::adopt`]).
+pub struct Adopted {
+    /// The plugins declared, declared again or removed since the last
+    /// adoption.
+    pub changed: Vec<PluginId>,
+    /// The packages the removed plugins bound that no plugin on binds, whose
+    /// residents stop.
+    pub released: Vec<String>,
+}
+
 /// The commands and revision of the plugins a user has on, which a
 /// conversation's tree opens with.
 pub struct PluginToolset {
@@ -357,22 +368,27 @@ struct Live {
 
 /// What every request of the user's plugins shares.
 pub(crate) struct Shared {
-    pub(crate) registry: Arc<Registry>,
+    /// The program's plugins, whose newest registry each read takes.
+    plugins: Arc<Plugins>,
+    /// The registry the core adopted last, which the next adoption tells
+    /// what changed against.
+    adopted: RefCell<Arc<Registry>>,
     pub(crate) user: UserId,
     /// The instance of each plugin the user has on, by its index, once a
     /// request made it.
-    lives: RefCell<Vec<Option<Live>>>,
+    lives: RefCell<HashMap<usize, Live>>,
     pub(crate) product: Rc<dyn ProductPort>,
     pub(crate) store: Rc<dyn PluginStore>,
     /// The user's OAuth sign-ins under way, and the turns of their renewals.
     pub(crate) sign_ins: SignIns,
     changes: Rc<dyn PluginChanges>,
-    /// Whether the user has each plugin on, by its index, once read: every
-    /// switch goes through this core, so the copy stays current.
-    enabled: RefCell<Option<Vec<bool>>>,
-    /// Whether the user has each feature of each plugin on, by the
-    /// plugin's index and the feature's, once read, as `enabled` is.
-    features: RefCell<Option<Vec<Vec<bool>>>>,
+    /// The user's choice of each plugin, by its id, once read: every switch
+    /// goes through this core, so the copy stays current. A plugin the user
+    /// never chose for is on.
+    switches: RefCell<Option<BTreeMap<String, bool>>>,
+    /// The user's choice of each feature, by the plugin's id and the
+    /// feature's, once read, as `switches` is.
+    feature_switches: RefCell<Option<BTreeMap<(String, String), bool>>>,
     /// Held by a switch of a plugin or of a feature from its read of the
     /// choices until it applied its own, so two switches at once never
     /// apply one over the other.
@@ -381,9 +397,9 @@ pub(crate) struct Shared {
     /// what a direct channel's introduction told of the user's streams out
     /// of date (`crates/runner-direct/src/lib.rs`).
     switched: RefCell<CancellationToken>,
-    /// Each plugin's device directories for the user, by its index, once
-    /// read: every change goes through this core.
-    directories: RefCell<Option<Vec<Vec<DeviceDirectory>>>>,
+    /// Each plugin's device directories for the user, by its id, once read:
+    /// every change goes through this core.
+    directories: RefCell<Option<BTreeMap<String, Vec<DeviceDirectory>>>>,
     /// How many times each plugin's conversation state changed since the
     /// core started, by the plugin's index and the conversation; a pair
     /// without an entry has changed none.
@@ -396,6 +412,11 @@ pub(crate) struct Shared {
 }
 
 impl Shared {
+    /// The program's plugins now.
+    pub(crate) fn registry(&self) -> Arc<Registry> {
+        self.plugins.current()
+    }
+
     /// Sends `request` to plugin `plugin`, with a port for the request's
     /// conversation and, for a command, the call's rpc port.
     pub(crate) async fn request(
@@ -458,7 +479,8 @@ impl Shared {
             media_asked: std::cell::Cell::new(0),
             video: RefCell::new(None),
         };
-        let enabled = self.enabled().await.map_err(PluginError::failed)?;
+        let registry = self.registry();
+        let enabled = self.enabled(&registry).await.map_err(PluginError::failed)?;
         // A conversation's deletion or fork reaches a plugin that is off too,
         // through an instance made for it alone, so what it keeps of the
         // conversation follows the conversation whatever the switch says; so
@@ -468,10 +490,11 @@ impl Shared {
             request,
             Request::ConversationDeleted { .. } | Request::ConversationForked { .. } | Request::ReplyBlocks { .. }
         );
-        let live = match self.live(plugin, &enabled) {
+        let live = match self.live(&registry, plugin, &enabled) {
             Some(live) => live,
-            None if lifecycle => Live {
-                instance: self.registry.plugins[plugin].factory.instance(&self.user),
+            // A removed plugin keeps nothing of a conversation any more.
+            None if lifecycle && !registry.plugins[plugin].removed => Live {
+                instance: registry.plugins[plugin].factory.instance(&self.user),
                 ended: CancellationToken::new(),
             },
             None => {
@@ -492,49 +515,55 @@ impl Shared {
     }
 
     /// The instance of plugin `plugin`, made now when it has none; none
-    /// while `enabled`, the user's switches, has it off.
-    fn live(&self, plugin: usize, enabled: &[bool]) -> Option<Live> {
+    /// while `enabled`, the user's switches in `registry`, has it off.
+    fn live(&self, registry: &Registry, plugin: usize, enabled: &[bool]) -> Option<Live> {
         if !enabled[plugin] {
             return None;
         }
         let mut lives = self.lives.borrow_mut();
-        let live = lives[plugin].get_or_insert_with(|| Live {
-            instance: self.registry.plugins[plugin].factory.instance(&self.user),
+        let live = lives.entry(plugin).or_insert_with(|| Live {
+            instance: registry.plugins[plugin].factory.instance(&self.user),
             ended: CancellationToken::new(),
         });
         Some(live.clone())
     }
 
-    /// Whether the user has each plugin on, by its index.
-    async fn enabled(&self) -> Result<Vec<bool>, StoreError> {
-        if let Some(enabled) = &*self.enabled.borrow() {
-            return Ok(enabled.clone());
+    /// The user's choices of the plugins, by their ids.
+    async fn switches(&self) -> Result<BTreeMap<String, bool>, StoreError> {
+        if let Some(switches) = &*self.switches.borrow() {
+            return Ok(switches.clone());
         }
-        let choices = self.store.switches().await?;
-        let enabled: Vec<bool> = self
-            .registry
+        let switches = self.store.switches().await?;
+        self.switches.replace(Some(switches.clone()));
+        Ok(switches)
+    }
+
+    /// Whether the user has each plugin of `registry` on, by its index: a
+    /// removed one is off.
+    async fn enabled(&self, registry: &Registry) -> Result<Vec<bool>, StoreError> {
+        let switches = self.switches().await?;
+        Ok(registry
             .plugins
             .iter()
             .map(|registered| {
-                choices
-                    .get(registered.id().as_str())
-                    .copied()
-                    .unwrap_or(true)
+                !registered.removed && switches.get(registered.id().as_str()).copied().unwrap_or(true)
             })
-            .collect();
-        self.enabled.replace(Some(enabled.clone()));
-        Ok(enabled)
+            .collect())
     }
 
-    /// Whether the user has each feature of each plugin on, by the plugin's
-    /// index and the feature's.
-    async fn features(&self) -> Result<Vec<Vec<bool>>, StoreError> {
-        if let Some(features) = &*self.features.borrow() {
-            return Ok(features.clone());
-        }
-        let choices = self.store.feature_switches().await?;
-        let features: Vec<Vec<bool>> = self
-            .registry
+    /// Whether the user has each feature of each plugin of `registry` on,
+    /// by the plugin's index and the feature's.
+    async fn features(&self, registry: &Registry) -> Result<Vec<Vec<bool>>, StoreError> {
+        let cached = self.feature_switches.borrow().clone();
+        let switches = match cached {
+            Some(switches) => switches,
+            None => {
+                let switches = self.store.feature_switches().await?;
+                self.feature_switches.replace(Some(switches.clone()));
+                switches
+            }
+        };
+        Ok(registry
             .plugins
             .iter()
             .map(|registered| {
@@ -545,20 +574,18 @@ impl Shared {
                     .features
                     .iter()
                     .map(|feature| {
-                        choices
+                        switches
                             .get(&(plugin.to_owned(), feature.id.clone()))
                             .copied()
                             .unwrap_or(feature.on_by_default)
                     })
                     .collect()
             })
-            .collect();
-        self.features.replace(Some(features.clone()));
-        Ok(features)
+            .collect())
     }
 
     pub(crate) fn plugin_id(&self, plugin: usize) -> String {
-        self.registry.plugins[plugin].id().as_str().to_owned()
+        self.registry().plugins[plugin].id().as_str().to_owned()
     }
 
     /// The device the conversation works on, from the records: none for a
@@ -652,9 +679,9 @@ impl Shared {
             return;
         };
         let Some(owner) = self
-            .registry
+            .registry()
             .kind_owner(&tab.kind)
-            .filter(|owner| enabled[*owner])
+            .filter(|owner| enabled.get(*owner).copied().unwrap_or(false))
         else {
             return;
         };
@@ -698,18 +725,12 @@ impl Shared {
         });
     }
 
-    /// Each plugin's device directories, by its index.
-    async fn directories(&self) -> Result<Vec<Vec<DeviceDirectory>>, StoreError> {
+    /// Each plugin's device directories, by its id.
+    async fn directories(&self) -> Result<BTreeMap<String, Vec<DeviceDirectory>>, StoreError> {
         if let Some(directories) = &*self.directories.borrow() {
             return Ok(directories.clone());
         }
-        let mut stored = self.store.directories().await?;
-        let directories: Vec<Vec<DeviceDirectory>> = self
-            .registry
-            .plugins
-            .iter()
-            .map(|registered| stored.remove(registered.id().as_str()).unwrap_or_default())
-            .collect();
+        let directories = self.store.directories().await?;
         self.directories.replace(Some(directories.clone()));
         Ok(directories)
     }
@@ -723,14 +744,12 @@ impl Shared {
     ) -> Result<Vec<DirectoryPath>, PortFailure> {
         DeviceDirectory::check_set(&directories).map_err(PortError::Failed)?;
         let mut current = self.directories().await.map_err(storage)?;
+        let registry = self.registry();
+        let id = registry.plugins[plugin].id();
         self.store
-            .set_directories(
-                self.plugin_id(plugin),
-                directories.clone(),
-            )
+            .set_directories(id.as_str().to_owned(), directories.clone())
             .await
             .map_err(storage)?;
-        let id = self.registry.plugins[plugin].id();
         let paths = directories
             .iter()
             .map(|directory| DirectoryPath {
@@ -738,7 +757,7 @@ impl Shared {
                 path: directory.path(id),
             })
             .collect();
-        current[plugin] = directories;
+        current.insert(id.as_str().to_owned(), directories);
         self.directories.replace(Some(current));
         self.product.directories_changed();
         Ok(paths)
@@ -760,28 +779,28 @@ pub enum Lost<'a> {
 }
 
 impl UserPlugins {
-    /// An instance of every plugin of `registry` for `user`, whose port
+    /// An instance of every plugin of `plugins` for `user`, whose port
     /// reaches `product`, the user's values in `store` and the user's
     /// pages through `changes`.
     pub fn new(
-        registry: Arc<Registry>,
+        plugins: Arc<Plugins>,
         user: UserId,
         product: Rc<dyn ProductPort>,
         store: Rc<dyn PluginStore>,
         changes: Rc<dyn PluginChanges>,
     ) -> Self {
-        let lives = registry.plugins.iter().map(|_| None).collect();
-        let sign_ins = SignIns::new(registry.plugins.len());
+        let adopted = RefCell::new(plugins.current());
         Self(Rc::new(Shared {
-            registry,
+            plugins,
+            adopted,
             user,
-            lives: RefCell::new(lives),
+            lives: RefCell::default(),
             product,
             store,
-            sign_ins,
+            sign_ins: SignIns::default(),
             changes,
-            enabled: RefCell::new(None),
-            features: RefCell::new(None),
+            switches: RefCell::new(None),
+            feature_switches: RefCell::new(None),
             switching: tokio::sync::Mutex::new(()),
             switched: RefCell::default(),
             directories: RefCell::new(None),
@@ -833,40 +852,82 @@ impl UserPlugins {
         });
     }
 
-    /// Whether the user has each plugin on, by its index.
-    async fn enabled(&self) -> Result<Vec<bool>, StoreError> {
-        self.0.enabled().await
+    /// Whether the user has each plugin of `registry` on, by its index.
+    async fn enabled(&self, registry: &Registry) -> Result<Vec<bool>, StoreError> {
+        self.0.enabled(registry).await
     }
 
-    /// The backend's plugins with whether the user has each on, for the
+    /// The program's plugins with whether the user has each on, for the
     /// settings page.
     pub async fn entries(&self) -> Result<Vec<PluginEntry>, StoreError> {
-        let enabled = self.enabled().await?;
-        let features = self.0.features().await?;
-        Ok(self
-            .0
-            .registry
-            .plugins
-            .iter()
-            .zip(enabled)
-            .zip(features)
-            .map(|((registered, enabled), features)| {
+        let registry = self.0.registry();
+        let enabled = self.enabled(&registry).await?;
+        let features = self.0.features(&registry).await?;
+        Ok(registry
+            .present()
+            .map(|(index, registered)| {
                 let manifest = registered.factory.manifest();
                 PluginEntry {
                     id: manifest.id.to_string(),
                     name: manifest.name.clone(),
                     description: manifest.description.clone(),
-                    enabled,
+                    enabled: enabled[index],
                     features: manifest
                         .features
                         .iter()
-                        .zip(features)
-                        .map(|(feature, on)| (feature.id.clone(), on))
+                        .zip(&features[index])
+                        .map(|(feature, on)| (feature.id.clone(), *on))
                         .collect(),
                     packages: registered.packages.iter().cloned().collect(),
                 }
             })
             .collect())
+    }
+
+    /// Takes the program's plugins as they are now, after a declaration
+    /// or a removal of one of its plugins: a removed plugin loses its
+    /// instance, its tabs and its packages, as one the user turns off does,
+    /// and the plugin list is marked as changed. Answers what the product
+    /// does next, or none when nothing changed since the last adoption.
+    ///
+    /// A plugin declared again keeps its instance, and the requests it has
+    /// under way go on.
+    pub async fn adopt(&self) -> Result<Option<Adopted>, StoreError> {
+        let _switching = self.0.switching.lock().await;
+        let registry = self.0.registry();
+        let before = self.0.adopted.borrow().clone();
+        if Arc::ptr_eq(&before, &registry) {
+            return Ok(None);
+        }
+        let mut changed = Vec::new();
+        let mut removed = Vec::new();
+        for (index, registered) in registry.plugins.iter().enumerate() {
+            let held = before.plugins.get(index);
+            let same = held.is_some_and(|held| held.removed == registered.removed && held.declaration == registered.declaration);
+            if same {
+                continue;
+            }
+            changed.push(registered.id().clone());
+            if registered.removed {
+                removed.push(index);
+            }
+        }
+        let enabled = self.enabled(&registry).await?;
+        let mut packages = Vec::new();
+        for &index in &removed {
+            if let Some(live) = self.0.lives.borrow_mut().remove(&index) {
+                live.ended.cancel();
+            }
+            self.close_tabs(&registry, index).await?;
+            packages.extend(registry.plugins[index].packages.iter());
+        }
+        let released = Self::unbound(&registry, &enabled, packages.into_iter());
+        // Only now: an adoption that failed is made again by the next one.
+        self.0.adopted.replace(registry);
+        let switched = std::mem::take(&mut *self.0.switched.borrow_mut());
+        switched.cancel();
+        self.0.changes.plugins_changed();
+        Ok(Some(Adopted { changed, released }))
     }
 
     /// Turns `plugin` on or off for the user, and marks the plugin list and
@@ -879,11 +940,12 @@ impl UserPlugins {
     /// its kinds in every conversation's work, an archived one's included.
     /// Its durable data stays.
     pub async fn switch(&self, plugin: &str, enabled: bool) -> Result<Option<Switched>, SwitchError> {
-        let Some((index, registered)) = self.0.registry.plugin(plugin) else {
+        let registry = self.0.registry();
+        let Some((index, registered)) = registry.plugin(plugin) else {
             return Err(SwitchError::UnknownPlugin(plugin.to_owned()));
         };
         let _switching = self.0.switching.lock().await;
-        let mut current = self.enabled().await?;
+        let mut current = self.enabled(&registry).await?;
         if current[index] == enabled {
             return Ok(None);
         }
@@ -892,14 +954,16 @@ impl UserPlugins {
             .set_switch(plugin.to_owned(), enabled)
             .await?;
         current[index] = enabled;
-        self.0.enabled.replace(Some(current.clone()));
+        let mut switches = self.0.switches().await?;
+        switches.insert(plugin.to_owned(), enabled);
+        self.0.switches.replace(Some(switches));
         let mut released = Vec::new();
         if !enabled {
-            if let Some(live) = self.0.lives.borrow_mut()[index].take() {
+            if let Some(live) = self.0.lives.borrow_mut().remove(&index) {
                 live.ended.cancel();
             }
-            self.close_tabs(index).await?;
-            released = Self::unbound(&self.0.registry, &current, registered.packages.iter());
+            self.close_tabs(&registry, index).await?;
+            released = Self::unbound(&registry, &current, registered.packages.iter());
         }
         let switched = std::mem::take(&mut *self.0.switched.borrow_mut());
         switched.cancel();
@@ -916,7 +980,8 @@ impl UserPlugins {
     /// takes its leaves out of the command set: the plugin's instance, its
     /// tabs and its packages stay.
     pub async fn switch_feature(&self, plugin: &str, feature: &str, enabled: bool) -> Result<bool, SwitchError> {
-        let Some((index, registered)) = self.0.registry.plugin(plugin) else {
+        let registry = self.0.registry();
+        let Some((index, registered)) = registry.plugin(plugin) else {
             return Err(SwitchError::UnknownPlugin(plugin.to_owned()));
         };
         let Some(position) = registered
@@ -932,7 +997,7 @@ impl UserPlugins {
             });
         };
         let _switching = self.0.switching.lock().await;
-        let mut current = self.0.features().await?;
+        let current = self.0.features(&registry).await?;
         if current[index][position] == enabled {
             return Ok(false);
         }
@@ -940,8 +1005,9 @@ impl UserPlugins {
             .store
             .set_feature_switch(plugin.to_owned(), feature.to_owned(), enabled)
             .await?;
-        current[index][position] = enabled;
-        self.0.features.replace(Some(current));
+        if let Some(switches) = &mut *self.0.feature_switches.borrow_mut() {
+            switches.insert((plugin.to_owned(), feature.to_owned()), enabled);
+        }
         let switched = std::mem::take(&mut *self.0.switched.borrow_mut());
         switched.cancel();
         self.0.changes.plugins_changed();
@@ -954,15 +1020,15 @@ impl UserPlugins {
     /// one. A list of what is off, not of what is on, since a device also runs
     /// packages no plugin binds.
     pub async fn stopped_packages(&self) -> Result<Vec<String>, StoreError> {
-        let current = self.enabled().await?;
-        let registry = &self.0.registry;
+        let registry = self.0.registry();
+        let current = self.enabled(&registry).await?;
         let off = registry
             .plugins
             .iter()
             .enumerate()
             .filter(|(index, _)| !current[*index])
             .flat_map(|(_, registered)| registered.packages.iter());
-        Ok(Self::unbound(registry, &current, off))
+        Ok(Self::unbound(&registry, &current, off))
     }
 
     /// Of `packages`, those that no plugin turned on in `current` binds. A
@@ -990,8 +1056,8 @@ impl UserPlugins {
     /// Removes the tabs of plugin `plugin`'s kinds from every work of the
     /// user's conversations, archived ones included, and marks the entry in the
     /// list of each that changed.
-    async fn close_tabs(&self, plugin: usize) -> Result<(), StoreError> {
-        let Some(page) = &self.0.registry.plugins[plugin].page else {
+    async fn close_tabs(&self, registry: &Registry, plugin: usize) -> Result<(), StoreError> {
+        let Some(page) = &registry.plugins[plugin].page else {
             return Ok(());
         };
         let closed = self
@@ -1008,36 +1074,37 @@ impl UserPlugins {
     /// The toolset of the plugins the user has on: their commands, with the
     /// product's `product` groups under `jush`.
     pub async fn toolset(&self, product: Vec<GroupBuilder>) -> Result<PluginToolset, StoreError> {
-        let enabled = self.enabled().await?;
-        let features = self.0.features().await?;
+        let registry = self.0.registry();
+        let enabled = self.enabled(&registry).await?;
+        let features = self.0.features(&registry).await?;
         let on = |index: usize, feature: &Feature| {
-            let declared = &self.0.registry.plugins[index].factory.manifest().features;
+            let declared = &registry.plugins[index].factory.manifest().features;
             declared
                 .iter()
                 .position(|candidate| candidate.id == feature.id)
                 .is_some_and(|position| features[index][position])
         };
-        let commands = compose(&self.0.registry, Some(&self.0), product, |index| enabled[index], on)
-            .expect("the plugins' commands were checked at startup");
+        let commands = compose(&registry, Some(&self.0), product, |index| enabled[index], on)
+            .expect("the plugins' commands were checked as they were registered");
         Ok(PluginToolset {
             commands,
-            revision: self.revision_of(&enabled, &features),
+            revision: Self::revision_of(&registry, &enabled, &features),
         })
     }
 
     /// The revision of the toolset the user's plugins give now.
     pub async fn revision(&self) -> Result<String, StoreError> {
-        let enabled = self.enabled().await?;
-        let features = self.0.features().await?;
-        Ok(self.revision_of(&enabled, &features))
+        let registry = self.0.registry();
+        let enabled = self.enabled(&registry).await?;
+        let features = self.0.features(&registry).await?;
+        Ok(Self::revision_of(&registry, &enabled, &features))
     }
 
-    /// The plugins on that have commands, each with the features it has
-    /// off, such as `web!search`.
-    fn revision_of(&self, enabled: &[bool], features: &[Vec<bool>]) -> String {
-        let parts: Vec<String> = self
-            .0
-            .registry
+    /// The plugins on that have commands, each with the number of its
+    /// program's declaration of it and the features it has off, such as
+    /// `web!search` or `chat@3`.
+    fn revision_of(registry: &Registry, enabled: &[bool], features: &[Vec<bool>]) -> String {
+        let parts: Vec<String> = registry
             .plugins
             .iter()
             .zip(enabled)
@@ -1045,6 +1112,10 @@ impl UserPlugins {
             .filter(|((registered, enabled), _)| **enabled && !registered.commands.is_empty())
             .map(|((registered, _), on)| {
                 let mut part = registered.id().as_str().to_owned();
+                if let Some(declaration) = registered.declaration {
+                    part.push('@');
+                    part.push_str(&declaration.to_string());
+                }
                 for (feature, on) in registered.factory.manifest().features.iter().zip(on) {
                     if !on {
                         part.push('!');
@@ -1065,10 +1136,11 @@ impl UserPlugins {
         asked: ContextAsk,
         cancel: CancellationToken,
     ) -> Result<Option<String>, PluginError> {
-        let Some((index, _)) = self.0.registry.plugin(plugin.as_str()) else {
+        let registry = self.0.registry();
+        let Some((index, _)) = registry.plugin(plugin.as_str()) else {
             return Ok(None);
         };
-        let enabled = self.enabled().await.map_err(PluginError::failed)?;
+        let enabled = self.enabled(&registry).await.map_err(PluginError::failed)?;
         if !enabled[index] {
             return Ok(None);
         }
@@ -1096,10 +1168,11 @@ impl UserPlugins {
 
     /// Whether `plugin` declares a project search and the user has it on.
     pub async fn searches_projects(&self, plugin: &PluginId) -> Result<bool, StoreError> {
-        let Some((index, registered)) = self.0.registry.plugin(plugin.as_str()) else {
+        let registry = self.0.registry();
+        let Some((index, registered)) = registry.plugin(plugin.as_str()) else {
             return Ok(false);
         };
-        Ok(registered.factory.manifest().project_search && self.enabled().await?[index])
+        Ok(registered.factory.manifest().project_search && self.enabled(&registry).await?[index])
     }
 
     /// Asks `plugin`, which declares a project search, to search
@@ -1115,10 +1188,11 @@ impl UserPlugins {
         paths: jush_device_paths::DevicePaths,
         cancel: CancellationToken,
     ) -> Result<Option<(Value, Vec<WatchSubject>)>, PluginError> {
-        let Some((index, _)) = self.0.registry.plugin(plugin.as_str()) else {
+        let registry = self.0.registry();
+        let Some((index, _)) = registry.plugin(plugin.as_str()) else {
             return Ok(None);
         };
-        let enabled = self.enabled().await.map_err(PluginError::failed)?;
+        let enabled = self.enabled(&registry).await.map_err(PluginError::failed)?;
         if !enabled[index] {
             return Ok(None);
         }
@@ -1144,17 +1218,18 @@ impl UserPlugins {
     /// installs on each device in the background: a plugin the user has off
     /// has none, so a device loses its directories at its next installation.
     pub async fn directories(&self) -> Result<Vec<(PluginId, Vec<DeviceDirectory>)>, StoreError> {
-        let enabled = self.enabled().await?;
-        let directories = self.0.directories().await?;
-        Ok(self
-            .0
-            .registry
+        let registry = self.0.registry();
+        let enabled = self.enabled(&registry).await?;
+        let mut directories = self.0.directories().await?;
+        Ok(registry
             .plugins
             .iter()
-            .zip(directories)
             .zip(enabled)
-            .map(|((registered, directories), enabled)| {
-                let set = if enabled { directories } else { Vec::new() };
+            .map(|(registered, enabled)| {
+                let set = match directories.remove(registered.id().as_str()) {
+                    Some(set) if enabled => set,
+                    _ => Vec::new(),
+                };
                 (registered.id().clone(), set)
             })
             .collect())
@@ -1170,19 +1245,21 @@ impl UserPlugins {
     /// What ends the user stream `name` once its plugin is turned off; none
     /// while the user has its plugin off, when the stream does not exist.
     pub async fn stream_end(&self, name: &str) -> Result<Option<CancellationToken>, StoreError> {
-        let Some(index) = self.0.registry.stream_owner(name) else {
+        let registry = self.0.registry();
+        let Some(index) = registry.stream_owner(name) else {
             return Ok(None);
         };
-        let enabled = self.enabled().await?;
-        Ok(self.0.live(index, &enabled).map(|live| live.ended))
+        let enabled = self.enabled(&registry).await?;
+        Ok(self.0.live(&registry, index, &enabled).map(|live| live.ended))
     }
 
     /// The user state of each plugin the user has on that declares one, by
     /// id, for the product state.
     pub async fn page_states(&self) -> Result<BTreeMap<String, Value>, PluginError> {
-        let enabled = self.enabled().await.map_err(PluginError::failed)?;
+        let registry = self.0.registry();
+        let enabled = self.enabled(&registry).await.map_err(PluginError::failed)?;
         let mut states = BTreeMap::new();
-        for (index, registered) in self.0.registry.plugins.iter().enumerate() {
+        for (index, registered) in registry.present() {
             if enabled[index] && registered.state(Scope::User).is_some() {
                 // One plugin after another: the product state's read waits for them all.
                 let started = std::time::Instant::now();
@@ -1202,10 +1279,11 @@ impl UserPlugins {
     /// The user state of `plugin`; none for a plugin the user has off or
     /// whose page declares none.
     pub async fn page_state(&self, plugin: &str) -> Result<Option<Value>, PluginError> {
-        let Some((index, registered)) = self.0.registry.plugin(plugin) else {
+        let registry = self.0.registry();
+        let Some((index, registered)) = registry.plugin(plugin) else {
             return Ok(None);
         };
-        let enabled = self.enabled().await.map_err(PluginError::failed)?;
+        let enabled = self.enabled(&registry).await.map_err(PluginError::failed)?;
         if !enabled[index] || registered.state(Scope::User).is_none() {
             return Ok(None);
         }
@@ -1223,13 +1301,14 @@ impl UserPlugins {
         conversation: ConversationId,
         cancel: CancellationToken,
     ) -> Result<PluginStateAnswer, PageCallError> {
-        let Some((index, registered)) = self.0.registry.plugin(plugin) else {
+        let registry = self.0.registry();
+        let Some((index, registered)) = registry.plugin(plugin) else {
             return Err(PageCallError::UnknownPlugin(plugin.to_owned()));
         };
         if registered.state(Scope::Conversation).is_none() {
             return Err(PageCallError::UnknownPlugin(plugin.to_owned()));
         }
-        let enabled = self.enabled().await.map_err(PluginError::failed)?;
+        let enabled = self.enabled(&registry).await.map_err(PluginError::failed)?;
         if !enabled[index] {
             return Err(PageCallError::Disabled(plugin.to_owned()));
         }
@@ -1243,10 +1322,8 @@ impl UserPlugins {
     /// turning a plugin on changes no summary.
     pub fn plugin_revisions(&self, conversation: &ConversationId) -> Vec<PluginRevision> {
         self.0
-            .registry
-            .plugins
-            .iter()
-            .enumerate()
+            .registry()
+            .present()
             .filter(|(_, registered)| registered.state(Scope::Conversation).is_some())
             .map(|(index, registered)| PluginRevision {
                 plugin: registered.id().as_str().to_owned(),
@@ -1292,6 +1369,7 @@ impl UserPlugins {
         if plugins.is_empty() {
             return;
         }
+        let registry = self.0.registry();
         for conversation in conversations {
             let work = match self.0.store.work(conversation.clone()).await {
                 Ok(work) => work,
@@ -1303,7 +1381,7 @@ impl UserPlugins {
                 }
             };
             for &plugin in &plugins {
-                let registered = &self.0.registry.plugins[plugin];
+                let registered = &registry.plugins[plugin];
                 if !work.tabs.iter().any(|tab| registered.owns_kind(&tab.kind)) {
                     continue;
                 }
@@ -1383,7 +1461,7 @@ impl UserPlugins {
         let Some((plugin, _)) = self.reply_block(tag) else {
             return Ok(false);
         };
-        let enabled = self.enabled().await.map_err(PluginError::failed)?;
+        let enabled = self.enabled(&self.0.registry()).await.map_err(PluginError::failed)?;
         Ok(enabled[plugin])
     }
 
@@ -1403,7 +1481,7 @@ impl UserPlugins {
         if self.0.plugin_id(index) != plugin {
             return Ok(None);
         }
-        let enabled = self.enabled().await.map_err(PluginError::failed)?;
+        let enabled = self.enabled(&self.0.registry()).await.map_err(PluginError::failed)?;
         if !enabled[index] {
             return Err(PageCallError::Disabled(plugin.to_owned()));
         }
@@ -1417,7 +1495,7 @@ impl UserPlugins {
     /// The plugin whose page draws reply blocks of `tag`, by its index, and
     /// whether they have a document.
     fn reply_block(&self, tag: &str) -> Option<(usize, bool)> {
-        self.0.registry.plugins.iter().enumerate().find_map(|(index, registered)| {
+        self.0.registry().present().find_map(|(index, registered)| {
             let block = registered.page.as_ref()?.blocks.iter().find(|block| block.tag == tag)?;
             Some((index, block.document))
         })
@@ -1426,10 +1504,8 @@ impl UserPlugins {
     /// The plugins that keep something of a conversation, by their indices.
     fn keepers(&self) -> Vec<usize> {
         self.0
-            .registry
-            .plugins
-            .iter()
-            .enumerate()
+            .registry()
+            .present()
             .filter(|(_, registered)| registered.factory.manifest().conversations)
             .map(|(index, _)| index)
             .collect()
@@ -1442,18 +1518,16 @@ impl UserPlugins {
 
     /// The plugins `bound` takes that the user has on, by their indices.
     async fn receivers_of(&self, bound: impl Fn(&crate::registry::Registered) -> bool) -> Vec<usize> {
-        let enabled = match self.enabled().await {
+        let registry = self.0.registry();
+        let enabled = match self.enabled(&registry).await {
             Ok(enabled) => enabled,
             Err(error) => {
                 tracing::warn!(event = "package_message.receivers_failed", %error, "the plugins a package message is for could not be read");
                 return Vec::new();
             }
         };
-        self.0
-            .registry
-            .plugins
-            .iter()
-            .enumerate()
+        registry
+            .present()
             .filter(|(index, registered)| enabled[*index] && bound(registered))
             .map(|(index, _)| index)
             .collect()
@@ -1474,9 +1548,10 @@ impl UserPlugins {
         conversation: ConversationId,
         cancel: CancellationToken,
     ) -> Result<Vec<HeldState>, StoreError> {
-        let enabled = self.enabled().await?;
+        let registry = self.0.registry();
+        let enabled = self.enabled(&registry).await?;
         let mut states = Vec::new();
-        for (index, registered) in self.0.registry.plugins.iter().enumerate() {
+        for (index, registered) in registry.present() {
             let held = registered.state(Scope::Conversation).is_some_and(|state| state.held);
             if !enabled[index] || !held {
                 continue;
@@ -1514,12 +1589,11 @@ impl UserPlugins {
         conversation: ConversationId,
         changes: Vec<WorkChange>,
     ) -> Result<(u64, bool), WorkError> {
-        let enabled = self.enabled().await?;
+        let registry = self.0.registry();
+        let enabled = self.enabled(&registry).await?;
         for change in &changes {
             if let WorkChange::Create(create) = change {
-                let owned = self
-                    .0
-                    .registry
+                let owned = registry
                     .kind_owner(&create.kind)
                     .is_some_and(|owner| enabled[owner]);
                 if !owned {
@@ -1544,10 +1618,11 @@ impl UserPlugins {
         cancel: CancellationToken,
     ) -> Result<String, CallbackError> {
         let unknown = || CallbackError::UnknownPlugin(plugin.to_owned());
-        let Some((index, _)) = self.0.registry.plugin(plugin) else {
+        let registry = self.0.registry();
+        let Some((index, _)) = registry.plugin(plugin) else {
             return Err(unknown());
         };
-        if !self.enabled().await?[index] {
+        if !self.enabled(&registry).await?[index] {
             return Err(unknown());
         }
         self.0.oauth_callback(index, callback, &cancel).await
@@ -1583,10 +1658,11 @@ impl UserPlugins {
         call: PageCall,
         cancel: CancellationToken,
     ) -> Result<Value, PageCallError> {
-        let Some((index, registered)) = self.0.registry.plugin(&call.plugin) else {
+        let registry = self.0.registry();
+        let Some((index, registered)) = registry.plugin(&call.plugin) else {
             return Err(PageCallError::UnknownPlugin(call.plugin));
         };
-        let enabled = self.enabled().await.map_err(PluginError::failed)?;
+        let enabled = self.enabled(&registry).await.map_err(PluginError::failed)?;
         if !enabled[index] {
             return Err(PageCallError::Disabled(call.plugin));
         }
@@ -1794,7 +1870,8 @@ impl RequestPort {
                 kind,
                 device,
             } => {
-                let registered = &shared.registry.plugins[self.plugin];
+                let registry = shared.registry();
+                let registered = &registry.plugins[self.plugin];
                 if !registered.packages.contains(&operation.package) {
                     return Err(PortError::Unexpected {
                         asked: "package_call",
@@ -1891,7 +1968,8 @@ impl RequestPort {
                 }
             }
             PortMessage::WorkTabs => {
-                let registered = &shared.registry.plugins[self.plugin];
+                let registry = shared.registry();
+                let registered = &registry.plugins[self.plugin];
                 let mut work = shared
                     .store
                     .work(self.conversation()?.clone())
@@ -1901,7 +1979,7 @@ impl RequestPort {
                 PortAnswer::Work { work }
             }
             PortMessage::CreateWorkTab { tab } => {
-                if !shared.registry.plugins[self.plugin].owns_kind(&tab.kind) {
+                if !shared.registry().plugins[self.plugin].owns_kind(&tab.kind) {
                     return Err(WorkError::UnknownKind(tab.kind).refusal());
                 }
                 self.work_change(WorkChange::Create(tab)).await?
@@ -1915,7 +1993,8 @@ impl RequestPort {
                 self.work_change(WorkChange::Remove { id }).await?
             }
             PortMessage::MirrorWorkTabs { kind, tabs, device } => {
-                let registered = &shared.registry.plugins[self.plugin];
+                let registry = shared.registry();
+                let registered = &registry.plugins[self.plugin];
                 if let Some(other) = std::iter::once(&kind)
                     .chain(tabs.iter().map(|tab| &tab.kind))
                     .find(|kind| !registered.owns_kind(kind))
@@ -1950,7 +2029,8 @@ impl RequestPort {
                 PortAnswer::Done
             }
             PortMessage::SendRequest { request } => {
-                let id = shared.registry.plugins[self.plugin].id();
+                let registry = shared.registry();
+                let id = registry.plugins[self.plugin].id();
                 PortAnswer::Response {
                     response: web::send(&product.web_client(), id, request, &self.cancel).await?,
                 }
@@ -2053,7 +2133,8 @@ fn job_failure(message: &str) -> PortFailure {
             .work(self.conversation()?.clone())
             .await
             .map_err(storage)?;
-        let registered = &self.shared.registry.plugins[self.plugin];
+        let registry = self.shared.registry();
+        let registered = &registry.plugins[self.plugin];
         match work.tabs.iter().find(|tab| tab.id == id) {
             Some(tab) if !registered.owns_kind(&tab.kind) => {
                 Err(WorkError::UnknownKind(tab.kind.clone()).refusal())

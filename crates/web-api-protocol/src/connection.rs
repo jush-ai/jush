@@ -55,11 +55,11 @@ pub enum LaneTarget {
     /// kept, which the backend gives back while it is the same user's and
     /// unexpired.
     Debug { resume: Option<String> },
-    /// What the core asks of the program that opened it
-    /// (`crates/web-api-protocol/src/starter.rs`); only that program opens it.
+    /// What the core asks of a program that drives it
+    /// (`crates/web-api-protocol/src/starter.rs`); only a program opens it.
     Starter,
     /// The core's requests of the program's plugin `plugin`
-    /// (`crates/plugin-interface/src/wire.rs`); only the program opens it.
+    /// (`crates/plugin-interface/src/wire.rs`); only a program opens it.
     Plugin { plugin: String },
 }
 

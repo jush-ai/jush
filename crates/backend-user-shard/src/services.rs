@@ -17,15 +17,18 @@ use jush_core_store::StorageError;
 use jush_backend_database::control::ControlService;
 use jush_backend_database::core_stores::CoreStores;
 use jush_backend_database::server_log::ServerLog;
-use jush_web_api_protocol::ids::UserId;
+use jush_web_api_protocol::ids::{DeviceId, UserId};
 use jush_backend_database::schema::ControlSteps;
+use jush_core_store::devices::DeviceRecord;
+use jush_core_store::tokens::TokenHash;
+use jush_runner_protocol::wire::RunnerInfo;
 use jush_core_providers::vault::entries::{SeededAccount, VaultReseal, VaultStores};
 use jush_core_store::store::CoreStore;
 use jush_web_api_protocol::ids::ProviderId;
 use jush_web_api_protocol::settings::InstanceMode;
 use futures_util::future::BoxFuture;
 use jush_core_store::seal::VaultKey;
-use jush_backend_runners::claims::PendingClaims;
+use jush_core_devices::claims::{DeviceTokens, PendingClaims};
 use jush_backend_runners::native::NativeCatalog;
 use jush_backend_runners::install::RunnerReleases;
 use jush_backend_runners::prefetch::Prefetches;
@@ -53,8 +56,9 @@ pub struct Services {
     /// The account the master account's entry of its family holds from each
     /// start and from setup, a development backend's only (`crates/xtask/src/dev/mod.rs`).
     pub master_account: Option<SeededAccount>,
-    /// Runners waiting to be paired, which have no user yet.
-    pub claims: PendingClaims,
+    /// Runners waiting to be paired, which have no user yet; the routes'
+    /// (`Api::claims`) as well.
+    pub claims: Arc<PendingClaims>,
     /// The log, which the runners' and the pages' lines are stored in
     /// (`crates/backend-database/src/server_log/mod.rs`).
     pub log: ServerLog,
@@ -336,7 +340,7 @@ impl Services {
             ),
             push,
             hasher,
-            claims: PendingClaims::new(control.clone(), claims_per_minute),
+            claims: Arc::new(PendingClaims::new(ControlTokens(control.clone()), claims_per_minute)),
             control,
             stores,
             master_account: settings.master_account,
@@ -366,5 +370,41 @@ impl Services {
     /// changes nothing Settings › Users shows.
     pub fn download_changed(&self) {
         self.sync.mark_everyone(&jush_core_sync::Part::CloudIsolation);
+    }
+}
+
+/// The tokens a server keeps: in its control database, whose
+/// `device_owners` finds the device and the core of a runner's token among
+/// every user's (`crates/backend-http/src/runner_socket.rs`).
+struct ControlTokens(ControlService);
+
+impl DeviceTokens for ControlTokens {
+    fn create<'a>(
+        &'a self,
+        store: &'a CoreStore,
+        owner: &'a UserId,
+        id: DeviceId,
+        runner: &'a RunnerInfo,
+        token: TokenHash,
+    ) -> BoxFuture<'a, Result<DeviceRecord, StorageError>> {
+        Box::pin(async move {
+            // The routing row comes first: a device is never one no request
+            // reaches.
+            self.0.record_device_owner(id.clone(), owner.clone(), Some(token)).await?;
+            match store.create_device(id.clone(), runner.name.clone(), runner.platform, None).await {
+                Ok(device) => Ok(device),
+                Err(error) => {
+                    self.0.forget_device_owner(id).await?;
+                    Err(error)
+                }
+            }
+        })
+    }
+
+    fn delete<'a>(&'a self, store: &'a CoreStore, id: DeviceId) -> BoxFuture<'a, Result<(), StorageError>> {
+        Box::pin(async move {
+            store.delete_device(id.clone()).await?;
+            self.0.forget_device_owner(id).await
+        })
     }
 }

@@ -89,10 +89,17 @@ CREATE TABLE devices (
   storage TEXT,
   -- Whether its Windows runner runs elevated, as it last reported; none on
   -- another system, or before its runner first said.
-  elevation TEXT CHECK (elevation IN ('elevated', 'elevatable', 'unavailable'))
+  elevation TEXT CHECK (elevation IN ('elevated', 'elevatable', 'unavailable')),
+  -- The SHA-256 of its runner's token, in lowercase hexadecimal, when the
+  -- core finds the device of a runner that dials it, as a program's process
+  -- does; none when a server's control database finds it, or a channel
+  -- names it.
+  token_hash TEXT
 ) STRICT;
 
 CREATE UNIQUE INDEX devices_one_machine ON devices (machine) WHERE kind = 'managed';
+
+CREATE UNIQUE INDEX devices_token_hash ON devices (token_hash) WHERE token_hash IS NOT NULL;
 
 CREATE TABLE workspaces (
   id         TEXT PRIMARY KEY,
