@@ -22,8 +22,10 @@ import {
 import {
   conversationDetailSchema,
   conversationFrameSchema,
+  subagentMessageAnswerSchema,
   transcriptPageSchema,
   type AbortResult,
+  type AgentEntry,
   type Block,
   type ClientContent,
   type ConversationMetadata,
@@ -181,10 +183,32 @@ export class Conversation {
     return heldBlocks(this.transcript)
   }
 
+  /**
+   * The conversation's agents as its lane holds them: the root's entry,
+   * whose id is the conversation's, each subagent's, whose id `sendToAgent`
+   * takes, and each side question's. Empty until the lane opens.
+   */
+  get agents(): AgentEntry[] {
+    return this.client?.agentEntries() ?? []
+  }
+
   /** Sends a message; resolves once it is in the transcript or the queue. */
   async send(input: Input, messageId: string = randomUUID()): Promise<void> {
     const client = await this.open()
     await client.submit(content(input), messageId)
+  }
+
+  /**
+   * Sends `text` to the subagent `node`, the id of one of `agents` whose
+   * role is a subagent's, which takes it once however often it is sent
+   * under `messageId`: a live one as a steer, and an ended one is resumed
+   * with it. Resolves with the message's id, the one made for it when
+   * `messageId` is absent.
+   */
+  async sendToAgent(node: string, text: string, messageId?: string): Promise<string> {
+    const path = `/conversations/${encodeURIComponent(this.id)}/agents/${encodeURIComponent(node)}/messages`
+    const { id } = await this.routes.json('POST', path, subagentMessageAnswerSchema, { id: messageId, text })
+    return id
   }
 
   /** Steers the running turn with `input`; resolves once the turn took it. */
@@ -262,7 +286,7 @@ export class Conversation {
     if (!client?.heldAgents() || !client.holdsCurrent(this.id)) {
       return false
     }
-    const root = client.agentEntries().find((agent) => agent.role.kind === 'root')
+    const root = this.agents.find((agent) => agent.role.kind === 'root')
     const phase = root?.phase ?? 'idle'
     return (phase === 'idle' || phase === 'compacting_idle')
       && !root?.queue.some((message) => message.id === messageId)

@@ -278,7 +278,7 @@ pub enum Trigger {
     /// When the output of `command`, run every `everyMinutes` on the
     /// conversation's device in its directory, changes.
     Change {
-        #[garde(length(min = 1), custom(not_blank))]
+        #[garde(length(min = 1), custom(crate::not_blank))]
         command: String,
         #[garde(range(min = 1))]
         every_minutes: u32,
@@ -297,14 +297,6 @@ impl Trigger {
     /// Whether it takes a limit on runs a day: all but a time do.
     pub fn takes_limit(&self) -> bool {
         !matches!(self, Self::Time { .. })
-    }
-}
-
-fn not_blank(text: &str, _: &()) -> garde::Result {
-    if jush_shared_types::is_blank(text) {
-        Err(garde::Error::new("is blank"))
-    } else {
-        Ok(())
     }
 }
 
