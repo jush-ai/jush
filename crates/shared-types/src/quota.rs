@@ -159,6 +159,63 @@ impl QuotaWindow {
             scope: self.scope.clone(),
         }
     }
+
+    /// The window as an image's answer reports it: one of the account's
+    /// image windows, apart from its own window of the same name.
+    #[must_use]
+    pub fn of_images(mut self) -> Self {
+        self.id = images_window_id(&self.id);
+        self.scope = Some(QuotaScope {
+            kind: IMAGES_SCOPE.to_owned(),
+            label: None,
+        });
+        self
+    }
+
+    /// Whether the window counts for a request that `metered` says: one on
+    /// images only for an image.
+    pub fn counts_for(&self, metered: Metered) -> bool {
+        !self.on_images() || metered == Metered::Images
+    }
+
+    /// Whether the window is one of the account's image windows, which only
+    /// an image's answer reports.
+    pub fn on_images(&self) -> bool {
+        self.scope.as_ref().is_some_and(|scope| scope.kind == IMAGES_SCOPE)
+    }
+}
+
+impl QuotaSnapshot {
+    /// When the windows of what `metered` says were last read, the start of
+    /// the latest request that reported one: the account's own windows, or
+    /// its image windows. None when none of them says, as in a snapshot
+    /// stored before windows kept the time.
+    pub fn read_at(&self, metered: Metered) -> Option<Timestamp> {
+        self.windows
+            .iter()
+            .filter(|window| window.on_images() == (metered == Metered::Images))
+            .filter_map(|window| window.requested_at)
+            .max()
+    }
+}
+
+/// The scope of a window an image's answer reports (`QuotaScope::kind`).
+pub const IMAGES_SCOPE: &str = "images";
+
+/// The id of the image window an image's answer reports under the vendor's
+/// id `id`.
+pub fn images_window_id(id: &str) -> String {
+    format!("images:{id}")
+}
+
+/// What a request is for, which decides the windows its answer reports and
+/// those of an account that count for it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Metered {
+    /// Anything but an image, such as a turn: the account's own windows.
+    Account,
+    /// An image: the account's own windows and its image windows.
+    Images,
 }
 
 /// The unit of a window's amounts.

@@ -29,7 +29,8 @@ use jush_provider_common::{
 };
 use jush_provider_registry::rotation::{Candidate, Choice, Running, USED_UP_FOR_MS, window_used_up};
 use jush_shared_types::{
-    AccountSwitchCause, AgentAccount, Model, ModelSelection, NodeId, QuotaWindowName, Rotation, Timestamp, UnavailableSetting,
+    AccountSwitchCause, AgentAccount, Metered, Model, ModelSelection, NodeId, QuotaWindowName, Rotation, Timestamp,
+    UnavailableSetting,
     session_context_window,
 };
 use jush_web_api_protocol::conversations::ModelSettings;
@@ -581,7 +582,7 @@ impl ConversationRuntime {
             let kept = candidates
                 .iter()
                 .find(|candidate| candidate.id.as_str() == named.credential_id)
-                .filter(|candidate| !provider_registry.rotation().is_used_up(&entry.id, candidate, now))
+                .filter(|candidate| !provider_registry.rotation().is_used_up(&entry.id, candidate, Metered::Account, now))
                 .map(|candidate| candidate.id.clone());
             if let Some(kept) = kept {
                 self.keep(entry, kept.clone(), runs);
@@ -592,7 +593,7 @@ impl ConversationRuntime {
             .map(|named| named.credential_id.clone())
             .or_else(|| self.account.as_ref().map(ToString::to_string));
         let (choice, candidates) = provider_registry
-            .take_account(entry, model, &[])
+            .take_account(entry, model, Metered::Account, &[])
             .instrument(tracing::info_span!(
                 "account_choice",
                 conversation = self.scope.work.conversation().map(tracing::field::display),
@@ -608,7 +609,7 @@ impl ConversationRuntime {
                     // The account the agent kept was used up, removed or of another rotation.
                     let used_up = candidates.iter().any(|candidate| {
                         candidate.id.as_str() == previous
-                            && provider_registry.rotation().is_used_up(&entry.id, candidate, now)
+                            && provider_registry.rotation().is_used_up(&entry.id, candidate, Metered::Account, now)
                     });
                     tracing::info!(
                         event = "account.rotated",
@@ -684,7 +685,7 @@ impl ConversationRuntime {
                 .as_ref()
                 .and_then(|diagnostics| current.provider.read_failure(diagnostics, now).retry_at)
         });
-        let moment = named.or_else(|| self.current.as_ref()?.provider.quota()?.used_up_until(now));
+        let moment = named.or_else(|| self.current.as_ref()?.provider.quota()?.used_up_until(Metered::Account, now));
         let source = if moment.is_none() {
             "default"
         } else if named.is_some() {
@@ -694,7 +695,7 @@ impl ConversationRuntime {
         };
         let window = self.current.as_ref().and_then(|current| {
             let snapshot = current.provider.quota()?.latest()?;
-            window_used_up(&snapshot, &self.selection.model, moment)
+            window_used_up(&snapshot, &self.selection.model, Metered::Account, moment)
         });
         let until = moment.unwrap_or_else(|| {
             Timestamp::from_millisecond(now.as_millisecond() + USED_UP_FOR_MS)
@@ -703,7 +704,7 @@ impl ConversationRuntime {
         self.scope
             .services
             .provider_registry
-            .mark_used_up(&entry.id, &used_up, until, source);
+            .mark_used_up(&entry.id, &used_up, Metered::Account, until, source);
         Some((used_up, moment, window))
     }
 
@@ -751,7 +752,7 @@ impl ConversationRuntime {
         // choice, which then counts it nowhere.
         self.running = None;
         let (choice, candidates) = provider_registry
-            .take_account(&entry, &model, tried)
+            .take_account(&entry, &model, Metered::Account, tried)
             .instrument(tracing::info_span!(
                 "account_choice",
                 conversation = self.scope.work.conversation().map(tracing::field::display),

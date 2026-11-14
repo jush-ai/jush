@@ -24,7 +24,7 @@ use jush_conversation_lane_protocol::Failures;
 use jush_provider_common::Provider;
 use jush_provider_common::ErrorCode;
 use jush_shared_types::{
-    Block, ContinueWith, ErrorBlock, ProviderFailureFacts, Rotation, SignedOutAccount, Timestamp,
+    Block, ContinueWith, ErrorBlock, Metered, ProviderFailureFacts, Rotation, SignedOutAccount, Timestamp,
 };
 use jush_web_api_protocol::ids::{CredentialId, ProviderId};
 
@@ -124,7 +124,7 @@ async fn quota_moment(
         },
         None => reader.provider.clone(),
     };
-    provider.quota()?.used_up_until(error.created_at)
+    provider.quota()?.used_up_until(Metered::Account, error.created_at)
 }
 
 /// What a usage limit of `entry` adds from its accounts.
@@ -153,7 +153,7 @@ async fn account_facts(
                 .filter(|candidate| Some(&candidate.id) != entry.active())
                 .collect();
             facts.continue_with = rotation
-                .most_urgent(&entry.id, &others, model, now)
+                .most_urgent(&entry.id, &others, model, Metered::Account, now)
                 .and_then(|id| others.into_iter().find(|candidate| candidate.id == id))
                 .map(|candidate| ContinueWith {
                     credential_id: candidate.id.to_string(),
@@ -161,7 +161,7 @@ async fn account_facts(
                 });
         }
         Rotation::InOrder | Rotation::Smart => {
-            if let Some(earliest) = rotation.all_used_up(&entry.id, &candidates, model, now) {
+            if let Some(earliest) = rotation.all_used_up(&entry.id, &candidates, model, Metered::Account, now) {
                 facts.retry_at = earliest.or(facts.retry_at);
             }
         }
@@ -188,7 +188,7 @@ pub(crate) async fn rotation_has_room(vault: &Vault, provider_registry: &Provide
     let now = provider_registry.now();
     provider_registry
         .rotation()
-        .all_used_up(&reader.entry.id, &candidates, &error.model.model, now)
+        .all_used_up(&reader.entry.id, &candidates, &error.model.model, Metered::Account, now)
         .is_none()
 }
 

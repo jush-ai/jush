@@ -286,6 +286,15 @@ pub enum MediaKind {
 impl MediaKind {
     pub const ALL: [Self; 3] = [Self::Image, Self::Video, Self::Audio];
 
+    /// What a request of the kind is for, which decides the windows its
+    /// answer reports and those that count for it.
+    pub fn metered(self) -> crate::Metered {
+        match self {
+            Self::Image => crate::Metered::Images,
+            Self::Video | Self::Audio => crate::Metered::Account,
+        }
+    }
+
     /// The word for what the kind makes, as a sentence uses it: `images`,
     /// `videos`, `audio`.
     pub fn plural(self) -> &'static str {

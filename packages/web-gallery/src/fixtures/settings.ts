@@ -734,6 +734,15 @@ export function mockProviders(): MockProvider[] {
           quota: [
             { id: 'primary', name: windowNamed('limit', 5 * HOUR_SECONDS), used: 18, max: 100, resetsAt: ahead(2 * HOUR + 10 * MINUTE) },
             { id: 'secondary', name: windowNamed('limit', WEEK_SECONDS), used: 46, max: 100, resetsAt: ahead(4 * DAY) },
+            // Only the image endpoint's answers report it, which a refresh does not read.
+            {
+              id: 'images:primary',
+              name: { kind: 'limit', periodSeconds: DAY_SECONDS, scope: { kind: 'images', label: null } },
+              used: 12,
+              max: 100,
+              resetsAt: ahead(21 * HOUR + 36 * MINUTE),
+              readAt: ago(2 * HOUR + 24 * MINUTE),
+            },
           ],
         },
         { id: 'c2', label: 'alex@work.example', plan: 'Pro', active: false, quota: [] },

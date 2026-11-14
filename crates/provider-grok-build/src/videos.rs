@@ -48,7 +48,7 @@ impl VideoMaker for GrokVideos {
         Box::pin(async move {
             let shared = &*self.0;
             shared
-                .media_call()
+                .media_call(jush_shared_types::MediaKind::Video)
                 .post_json(http, &shared.video_generations_url, xai::encode(&request), |refused| {
                     shared.media_headers(http, refused)
                 })
@@ -63,7 +63,7 @@ impl VideoMaker for GrokVideos {
             let shared = &*self.0;
             let url = endpoint_url(&shared.proxy_url, &format!("/videos/{job}"));
             shared
-                .media_call()
+                .media_call(jush_shared_types::MediaKind::Video)
                 .send(http, Ask::get(&url), Holding::Json, |refused| shared.media_headers(http, refused))
                 .await
                 .and_then(|answered| xai::read_state(&answered.body))

@@ -53,11 +53,13 @@ pub(crate) enum ResetRead {
 
 /// The resets of `snapshot` that change what it shows: of windows with some
 /// use, whose value was read before the reset and that no read at a reset
-/// (`read`) has passed yet.
+/// (`read`) has passed yet. An image window is left out: a probe does not
+/// read it.
 fn unread_resets(snapshot: &QuotaSnapshot, read: Option<Timestamp>) -> impl Iterator<Item = Timestamp> + '_ {
     snapshot
         .windows
         .iter()
+        .filter(|window| !window.on_images())
         .filter(|window| window.used_percent.is_some_and(|used| used > 0.0))
         .filter_map(move |window| {
             let reset = window.resets_at?;

@@ -22,7 +22,8 @@
 use std::sync::{Arc, Mutex, PoisonError};
 
 use jush_shared_types::{
-    Clock, QuotaPlan, QuotaSeverity, QuotaSnapshot, QuotaWindow, SnapshotSource, Timestamp,
+    Clock, Metered, QuotaPlan, QuotaSeverity, QuotaSnapshot, QuotaWindow, SnapshotSource, Timestamp,
+    images_window_id,
 };
 use futures_util::future::BoxFuture;
 use http::{HeaderMap, StatusCode};
@@ -57,16 +58,17 @@ impl ProviderQuota {
         self.store.latest()
     }
 
-    /// When the account can be used again after a usage limit received at
-    /// `received_at`, as its kept snapshot says.
+    /// When the account can be used again for what `metered` says after a
+    /// usage limit received at `received_at`, as its kept snapshot says.
     ///
-    /// It is the latest reset still to come among the windows it shows used up,
-    /// since a request succeeds only once every one has reset; `None` when it
-    /// shows none.
-    pub fn used_up_until(&self, received_at: Timestamp) -> Option<Timestamp> {
+    /// It is the latest reset still to come among the windows that count for
+    /// it and that it shows used up, since a request succeeds only once every
+    /// one has reset; `None` when it shows none.
+    pub fn used_up_until(&self, metered: Metered, received_at: Timestamp) -> Option<Timestamp> {
         self.latest()?
             .windows
             .iter()
+            .filter(|window| window.counts_for(metered))
             .filter(|window| window.used_percent.is_some_and(|used| used >= 100.0))
             .filter_map(|window| window.resets_at)
             .filter(|reset| *reset > received_at)
@@ -118,7 +120,7 @@ impl ProviderQuota {
         observation: Observation<'_>,
         requested_at: Timestamp,
     ) -> Option<Vec<QuotaWindow>> {
-        let report = self.source.observe(observation)?;
+        let report = self.reported(observation)?;
         let windows = report.windows.clone();
         let observed_at = self.clock.now();
         let mut merged = Some(report);
@@ -133,7 +135,22 @@ impl ProviderQuota {
     /// snapshot, for a provider that merged them as it read the response
     /// and reports them to the usage ledger later.
     pub fn windows(&self, observation: Observation<'_>) -> Option<Vec<QuotaWindow>> {
-        self.source.observe(observation).map(|report| report.windows)
+        self.reported(observation).map(|report| report.windows)
+    }
+
+    /// What `observation` reports, as the account's image windows when it
+    /// answers an image: the same headers there describe the image limit, not
+    /// the account's own.
+    fn reported(&self, observation: Observation<'_>) -> Option<ObservedWindows> {
+        let report = self.source.observe(observation)?;
+        let images = matches!(observation, Observation::Response { metered: Metered::Images, .. });
+        if !images {
+            return Some(report);
+        }
+        Some(ObservedWindows {
+            windows: report.windows.into_iter().map(QuotaWindow::of_images).collect(),
+            absent: report.absent.iter().map(|id| images_window_id(id)).collect(),
+        })
     }
 
     /// [`Self::observe`] as the run's event for the usage ledger, none when
@@ -192,10 +209,13 @@ pub enum ProbeCost {
 /// A live response that may carry quota.
 #[derive(Debug, Clone, Copy)]
 pub enum Observation<'a> {
-    /// An HTTP response of the vendor's service, a refusal included.
+    /// An HTTP response of the vendor's service, a refusal included, to a
+    /// request for what `metered` says: the windows of an image's answer
+    /// are the account's image windows.
     Response {
         status: StatusCode,
         headers: &'a HeaderMap,
+        metered: Metered,
     },
     /// A line of a CLI's output.
     CliLine(&'a serde_json::Value),

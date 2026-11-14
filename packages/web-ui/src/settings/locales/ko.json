@@ -390,6 +390,12 @@
         "scope": "{scope} 한도",
         "unknown": "사용 한도"
       },
+      "images": {
+        "period": "{period} 이미지 한도",
+        "unknown": "이미지 한도",
+        "requests": "이미지 요청 속도",
+        "tokens": "이미지 토큰 속도"
+      },
       "credits": {
         "period": "{period} 크레딧",
         "unknown": "크레딧"

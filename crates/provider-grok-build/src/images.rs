@@ -9,7 +9,10 @@ use jush_provider_common::{
     Secret,
     credentials::AuthFailure,
     images::{ImageMaker, ImageRequest, MadeImage, read_data_answer, xai},
-    media::{MediaAnswer, MediaCall, MediaCredential, MediaFailure, MediaMaker, MediaModelInfo, MediaVendor, subscription_models},
+    media::{
+        MediaAnswer, MediaCall, MediaCredential, MediaFailure, MediaMaker, MediaModelInfo, MediaQuota, MediaVendor,
+        subscription_models,
+    },
     media_catalog::{Catalog, MediaKind, Subscription},
     json_body, read_http_failure,
 };
@@ -20,16 +23,19 @@ use serde::Serialize;
 use crate::{LABEL, Shared, request::identity_headers, run::with_usage_limit};
 
 impl Shared {
-    /// How the proxy's media requests are sent: with the account's token,
-    /// renewed once when refused, its usage limit read as a turn's is.
-    pub(crate) fn media_call(&self) -> MediaCall<'_> {
+    /// How the proxy's media requests of `kind` are sent: with the account's
+    /// token, renewed once when refused, its usage limit read as a turn's is.
+    pub(crate) fn media_call(&self, kind: jush_shared_types::MediaKind) -> MediaCall<'_> {
         MediaCall {
             label: LABEL,
             credential: MediaCredential::Account { family: crate::auth::FAMILY },
             reader: read_http_failure,
             used_up: with_usage_limit,
             clock: &*self.clock,
-            quota: Some(&self.quota),
+            quota: Some(MediaQuota {
+                quota: &self.quota,
+                metered: kind.metered(),
+            }),
         }
     }
 
@@ -121,7 +127,7 @@ impl ImageMaker for GrokImages {
                 &shared.image_edits_url
             };
             let answer = shared
-                .media_call()
+                .media_call(jush_shared_types::MediaKind::Image)
                 .post_json(http, url, encode(&request), |refused| shared.media_headers(http, refused))
                 .await
                 .and_then(|body| read_data_answer(&body));

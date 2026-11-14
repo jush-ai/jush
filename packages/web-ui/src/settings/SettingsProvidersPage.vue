@@ -103,6 +103,7 @@ import {
 import { formatTokens } from '../ui/token-count'
 import { useClock } from '../composables/useClock'
 import { hasReset } from './quota-window'
+import { onImages } from './window-name'
 import type { TitleText } from '../ui/ui-text'
 
 /**
@@ -257,14 +258,16 @@ const selected = computed(
 )
 /**
  * The selected entry's accounts with a full window that has not reset, which
- * wear Limit reached. It answers the same set while that holds, so the
- * clock's ticks update no row.
+ * wear Limit reached; a full image window leaves the account's turns, so it
+ * shows on its own row alone. It answers the same set while that holds, so
+ * the clock's ticks update no row.
  */
 const limitReached = computed<ReadonlySet<string>>((previous) => {
   const ids = new Set(
     (selected.value?.accounts ?? [])
       .filter((account) =>
-        account.quota.some((window) => window.used >= window.max && !hasReset(window, clock.value)),
+        account.quota.some((window) =>
+          !onImages(window.name) && window.used >= window.max && !hasReset(window, clock.value)),
       )
       .map((account) => account.id),
   )

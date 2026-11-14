@@ -39,6 +39,7 @@ import {
 } from './context-usage'
 import { instructionRows } from './instructions'
 import ContextCost from './ContextCost.vue'
+import { onImages } from '../settings/window-name'
 import { type CostRange, type CostShown, hasCost, shownRange, useCostRange, useCostWatch } from './context-cost'
 
 /**
@@ -147,6 +148,8 @@ const emit = defineEmits<{
  * the meter is not there.
  */
 const parts = keptComputed(() => contextCardParts(props.usage ?? null, props.limits ?? null, props.isCompacting === true))
+/** The account's windows the conversation's turns count against: an image window does not. */
+const turnWindows = computed(() => (props.limits?.windows ?? []).filter((window) => !onImages(window.name)))
 const rows = computed<ContextCardRow[]>(() => (parts.value.context && props.usage ? contextCardRows(props.usage) : []))
 const instructionList = computed(() => (parts.value.context ? instructionRows(props.instructions ?? []) : []))
 const filled = computed(() => (props.usage ? contextFilled(props.usage) : 0))
@@ -448,7 +451,7 @@ const ringColor = computed(() => {
                     </template>
                   </SectionRow>
                   <div class="px-3 pt-0.5">
-                    <ProviderQuota :windows="limits.windows" :observed-at="limits.observedAt" :error="limits.error" />
+                    <ProviderQuota :windows="turnWindows" :observed-at="limits.observedAt" :error="limits.error" />
                   </div>
                 </CardSection>
                 <CardSection v-if="instructionList.length">

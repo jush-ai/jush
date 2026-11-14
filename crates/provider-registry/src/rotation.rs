@@ -3,7 +3,9 @@
 //!
 //! The module tracks:
 //!
-//! - The accounts a vendor refused as used up, until their moment.
+//! - The accounts a vendor refused as used up, until their moment, for what
+//!   the refused request was for: an image's refusal leaves the turns
+//!   (`Metered`), as an image window counts for images alone.
 //! - How many agents run a turn on each account, so that agents started
 //!   together spread over the accounts before their snapshots change. An idle
 //!   agent keeps its account without counting on it.
@@ -43,7 +45,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
-use jush_shared_types::{Model, QuotaSnapshot, QuotaWindow, QuotaWindowName, Rotation, Timestamp};
+use jush_shared_types::{Metered, Model, QuotaSnapshot, QuotaWindow, QuotaWindowName, Rotation, Timestamp};
 use jush_web_api_protocol::ids::{CredentialId, ProviderId};
 
 /// How long an account whose failure and quota name no moment stays used up.
@@ -105,8 +107,9 @@ pub struct AccountRotation {
 
 #[derive(Debug, Default)]
 struct State {
-    /// The accounts a vendor refused as used up.
-    used_up: HashMap<Account, Mark>,
+    /// The accounts a vendor refused as used up, for what the refused
+    /// request was for: an image's refusal leaves the account's turns.
+    used_up: HashMap<(Account, Metered), Mark>,
     /// How many agents run a turn on each account. An idle agent keeps
     /// its account, but counts on none.
     running: HashMap<Account, usize>,
@@ -168,20 +171,21 @@ impl AccountRotation {
     }
 
     /// Takes an account of `entry` among `candidates` for a request of
-    /// `model` under `rotation`, other than those in `tried`, which refused
-    /// the request already, and counts the request as running on it. Manual
-    /// takes none: its requests use the active account.
+    /// `model` for what `metered` says under `rotation`, other than those in
+    /// `tried`, which refused the request already, and counts the request as
+    /// running on it. Manual takes none: its requests use the active account.
     pub fn take(
         self: &Arc<Self>,
         entry: &ProviderId,
         rotation: Rotation,
         candidates: &[Candidate],
         model: &Model,
+        metered: Metered,
         tried: &[CredentialId],
         now: Timestamp,
     ) -> Option<Choice> {
         let mut state = self.lock();
-        let rooms: Vec<Option<Room>> = rooms(&state, entry, candidates, model, now)
+        let rooms: Vec<Option<Room>> = rooms(&state, entry, candidates, model, metered, now)
             .into_iter()
             .zip(candidates)
             .map(|(room, candidate)| (!tried.contains(&candidate.id)).then_some(room))
@@ -264,10 +268,11 @@ impl AccountRotation {
         entry: &ProviderId,
         candidates: &[Candidate],
         model: &Model,
+        metered: Metered,
         now: Timestamp,
     ) -> Option<CredentialId> {
         let state = self.lock();
-        let rooms = rooms(&state, entry, candidates, model, now);
+        let rooms = rooms(&state, entry, candidates, model, metered, now);
         let running = |index: usize| {
             let key = (entry.clone(), candidates[index].id.clone());
             state.running.get(&key).copied().unwrap_or(0)
@@ -283,31 +288,39 @@ impl AccountRotation {
         entry: &ProviderId,
         candidates: &[Candidate],
         model: &Model,
+        metered: Metered,
         now: Timestamp,
     ) -> Option<Option<Timestamp>> {
-        let rooms = rooms(&self.lock(), entry, candidates, model, now);
+        let rooms = rooms(&self.lock(), entry, candidates, model, metered, now);
         (!rooms.iter().any(Room::usable)).then(|| earliest(&rooms))
     }
 
-    /// Whether a vendor refused `candidate` of `entry` as used up and the
-    /// refusal still holds at `now`.
-    pub fn is_used_up(&self, entry: &ProviderId, candidate: &Candidate, now: Timestamp) -> bool {
-        mark(&self.lock(), entry, candidate, now).is_some()
+    /// Whether a vendor refused `candidate` of `entry` as used up for what
+    /// `metered` says and the refusal still holds at `now`.
+    pub fn is_used_up(&self, entry: &ProviderId, candidate: &Candidate, metered: Metered, now: Timestamp) -> bool {
+        mark(&self.lock(), entry, candidate, metered, now).is_some()
     }
 
-    /// Marks `account` of `entry` used up until `until`, as its vendor said
-    /// at `at`.
-    pub fn mark_used_up(&self, entry: &ProviderId, account: &CredentialId, until: Timestamp, at: Timestamp) {
+    /// Marks `account` of `entry` used up for what `metered` says until
+    /// `until`, as its vendor said at `at`.
+    pub fn mark_used_up(
+        &self,
+        entry: &ProviderId,
+        account: &CredentialId,
+        metered: Metered,
+        until: Timestamp,
+        at: Timestamp,
+    ) {
         self.lock()
             .used_up
-            .insert((entry.clone(), account.clone()), Mark { until, at });
+            .insert(((entry.clone(), account.clone()), metered), Mark { until, at });
         self.changed(entry);
     }
 
     /// Forgets the marks of a deleted entry's accounts; their running
     /// counts go with the agents that run on them.
     pub fn forget_entry(&self, entry: &ProviderId) {
-        self.lock().used_up.retain(|(held, _), _| held != entry);
+        self.lock().used_up.retain(|((held, _), _), _| held != entry);
     }
 }
 
@@ -332,34 +345,52 @@ fn rooms(
     entry: &ProviderId,
     candidates: &[Candidate],
     model: &Model,
+    metered: Metered,
     now: Timestamp,
 ) -> Vec<Room> {
     candidates
         .iter()
         .map(|candidate| {
-            match mark(state, entry, candidate, now) {
+            match mark(state, entry, candidate, metered, now) {
                 Some(mark) => Room::UsedUp(Some(mark.until)),
-                None => account_room(candidate.snapshot.as_ref(), model, now),
+                None => account_room(candidate.snapshot.as_ref(), model, metered, now),
             }
         })
         .collect()
 }
 
-/// The vendor's refusal of `candidate` of `entry` that holds at `now`: one
-/// whose moment is still to come, and that no snapshot observed after it
-/// says more than.
-fn mark(state: &State, entry: &ProviderId, candidate: &Candidate, now: Timestamp) -> Option<Mark> {
-    state
-        .used_up
-        .get(&(entry.clone(), candidate.id.clone()))
-        .filter(|mark| mark.until > now)
-        .filter(|mark| {
-            candidate
-                .snapshot
-                .as_ref()
-                .is_none_or(|snapshot| snapshot.observed_at <= mark.at)
-        })
-        .copied()
+/// The vendor's refusal of `candidate` of `entry` that holds at `now` for
+/// what `metered` says: one whose moment is still to come, and that no read
+/// of the windows of what it refused, started after it, says more than. A
+/// refusal of the account's own holds for an image as well, as its own
+/// windows count for one; an image's refusal, the latest when both hold,
+/// only for an image.
+fn mark(state: &State, entry: &ProviderId, candidate: &Candidate, metered: Metered, now: Timestamp) -> Option<Mark> {
+    let held = |marked: Metered| {
+        state
+            .used_up
+            .get(&((entry.clone(), candidate.id.clone()), marked))
+            .filter(|mark| mark.until > now)
+            .filter(|mark| {
+                candidate.snapshot.as_ref().is_none_or(|snapshot| {
+                    // A snapshot stored before windows kept their time says
+                    // when it was observed; one without an image window says
+                    // nothing of images.
+                    let read = match marked {
+                        Metered::Account => snapshot.read_at(marked).or(Some(snapshot.observed_at)),
+                        Metered::Images => snapshot.read_at(marked),
+                    };
+                    read.is_none_or(|read| read <= mark.at)
+                })
+            })
+            .copied()
+    };
+    let own = held(Metered::Account);
+    let images = (metered == Metered::Images).then(|| held(Metered::Images)).flatten();
+    match (own, images) {
+        (Some(own), Some(images)) => Some(if images.until > own.until { images } else { own }),
+        (own, images) => own.or(images),
+    }
 }
 
 /// The standing of an account whose snapshot is `snapshot`, for `model`,
@@ -377,11 +408,11 @@ fn mark(state: &State, entry: &ProviderId, candidate: &Candidate, now: Timestamp
 /// - A window with a shorter period is short; one used `SHORT_WINDOW_FULL`
 ///   or more is nearly full. A window without a period beside one with a
 ///   period only says whether the account is used up.
-fn account_room(snapshot: Option<&QuotaSnapshot>, model: &Model, now: Timestamp) -> Room {
+fn account_room(snapshot: Option<&QuotaSnapshot>, model: &Model, metered: Metered, now: Timestamp) -> Room {
     let windows: Vec<&QuotaWindow> = snapshot
         .into_iter()
         .flat_map(|snapshot| &snapshot.windows)
-        .filter(|window| applies(window, model))
+        .filter(|window| applies(window, model) && window.counts_for(metered))
         .collect();
     let longest = windows
         .iter()
@@ -514,11 +545,20 @@ fn earliest(rooms: &[Room]) -> Option<Timestamp> {
 /// `model`, the one that resets at `moment` when several are; a window on
 /// another model is not the one the request reached. The line that says an
 /// agent moved names it.
-pub fn window_used_up(snapshot: &QuotaSnapshot, model: &Model, moment: Option<Timestamp>) -> Option<QuotaWindowName> {
+pub fn window_used_up(
+    snapshot: &QuotaSnapshot,
+    model: &Model,
+    metered: Metered,
+    moment: Option<Timestamp>,
+) -> Option<QuotaWindowName> {
     let used_up: Vec<&QuotaWindow> = snapshot
         .windows
         .iter()
-        .filter(|window| window.used_percent.is_some_and(|percent| percent >= 100.0) && applies(window, model))
+        .filter(|window| {
+            window.used_percent.is_some_and(|percent| percent >= 100.0)
+                && applies(window, model)
+                && window.counts_for(metered)
+        })
         .collect();
     used_up
         .iter()
