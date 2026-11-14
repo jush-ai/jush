@@ -40,9 +40,29 @@ export function windowNameInSentence(name: QuotaWindowName): string {
   return text
 }
 
+/**
+ * Whether the window is one of an account's image windows, which only an
+ * image's answer reports and which count for images alone
+ * (`crates/shared-types/src/quota.rs`).
+ */
+export function onImages(window: { scope?: { kind: string } | null }): boolean {
+  return window.scope?.kind === 'images'
+}
+
 /** The name from its parts, the scope's label passed through `scope`; a period of no length is unknown. */
 function named(name: QuotaWindowName, scope: (label: string) => string): string {
   const length = name.periodSeconds ? periodWord(name.periodSeconds) : null
+  // A window on images is named in the page's language, *Daily image limit*.
+  if (onImages(name)) {
+    switch (name.kind) {
+      case 'requests':
+        return t('quota.window.images.requests')
+      case 'tokens':
+        return t('quota.window.images.tokens')
+      default:
+        return length === null ? t('quota.window.images.unknown') : t('quota.window.images.period', { period: length })
+    }
+  }
   const model = name.scope?.label ?? null
   switch (name.kind) {
     case 'limit':

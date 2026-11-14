@@ -9,7 +9,7 @@
 use std::time::Duration;
 
 use bytes::Bytes;
-use jush_shared_types::{AudioKind, Clock, QuotaWindow, Timestamp, VendorTrace};
+use jush_shared_types::{AudioKind, Clock, Metered, QuotaWindow, Timestamp, VendorTrace};
 use futures_util::future::BoxFuture;
 use futures_util::stream::{BoxStream, StreamExt as _};
 use http::{HeaderMap, StatusCode};
@@ -501,7 +501,16 @@ pub struct MediaCall<'a> {
     pub clock: &'a dyn Clock,
     /// The account's quota, which each response's windows update, as a
     /// turn's do (`crates/provider-common/src/quota.rs`); none for a key.
-    pub quota: Option<&'a ProviderQuota>,
+    pub quota: Option<MediaQuota<'a>>,
+}
+
+/// The quota an account's media requests update.
+#[derive(Clone, Copy)]
+pub struct MediaQuota<'a> {
+    pub quota: &'a ProviderQuota,
+    /// What the requests make, which decides whose windows their answers
+    /// report: an image's are the account's image windows.
+    pub metered: Metered,
 }
 
 /// A successful answer: its status, such as 202 for a job still running,
@@ -651,10 +660,11 @@ impl MediaCall<'_> {
             let requested_at = self.clock.now();
             let response = follow(http, ask, &headers, &ask.url).await?;
             let status = response.status();
-            if let Some(quota) = self.quota {
+            if let Some(MediaQuota { quota, metered }) = self.quota {
                 let reported = quota.observe(Observation::Response {
                     status,
                     headers: response.headers(),
+                    metered,
                 }, requested_at);
                 // The row merges a window reported twice, as a turn's does.
                 observed.extend(reported.into_iter().flatten());

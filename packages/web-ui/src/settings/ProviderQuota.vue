@@ -5,6 +5,7 @@ import RequestIdLine from '../ui/RequestIdLine.vue'
 import { computed } from 'vue'
 import { useRelativeTime } from '../composables/useRelativeTime'
 import QuotaWindowRow from './QuotaWindowRow.vue'
+import QuotaReadRow from './QuotaReadRow.vue'
 import type { SettingsQuotaWindow } from './types'
 
 /**
@@ -28,6 +29,11 @@ const props = defineProps<{
 const ago = useRelativeTime(() => props.observedAt ?? new Date().toISOString())
 /** "Updated 3 minutes ago", under the windows. */
 const updated = computed(() => (props.observedAt ? t('quota.updatedAt', { when: ago.value }) : null))
+/** The windows the vendor's usage query reports, which a refresh reads. */
+const queried = computed(() => props.windows.filter((window) => window.readAt === undefined))
+/** The windows only a response reports, each with when it came. */
+const answered = computed(() =>
+  props.windows.filter((window): window is SettingsQuotaWindow & { readAt: string } => window.readAt !== undefined))
 </script>
 
 <template>
@@ -38,8 +44,9 @@ const updated = computed(() => (props.observedAt ? t('quota.updatedAt', { when: 
     </div>
     <span v-if="!windows.length">{{ t('quota.unavailable') }}</span>
     <div v-else class="flex flex-col gap-2.5">
-      <QuotaWindowRow v-for="window in windows" :key="window.id" :window="window" />
-      <p v-if="updated">{{ updated }}</p>
+      <QuotaWindowRow v-for="window in queried" :key="window.id" :window="window" />
+      <p v-if="updated && queried.length">{{ updated }}</p>
+      <QuotaReadRow v-for="window in answered" :key="window.id" :window="window" />
     </div>
   </div>
 </template>

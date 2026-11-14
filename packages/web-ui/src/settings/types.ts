@@ -354,6 +354,12 @@ export interface SettingsQuotaWindow {
   max: number
   /** When the window resets, as the vendor reported it; null when unknown. */
   resetsAt: string | null
+  /**
+   * For a window only a response reports, such as images', which the vendor's
+   * usage query leaves out: when that response came, as an ISO 8601
+   * timestamp. It shows under the window, apart from the account's update.
+   */
+  readAt?: string
 }
 
 export interface SettingsProviderAccount {

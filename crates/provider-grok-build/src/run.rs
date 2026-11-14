@@ -9,6 +9,7 @@
 
 use std::sync::Arc;
 
+use jush_shared_types::Metered;
 use jush_provider_common::{
     CallEvent, ErrorCode, HttpFailureRecord, InferenceRequest, ProviderEvent, ProviderFailure, VendorCall, encode_body,
     http_failure,
@@ -92,6 +93,7 @@ pub(crate) fn run(
             if let Some(observed) = shared.quota.observed(Observation::Response {
                 status: response.status(),
                 headers: response.headers(),
+                metered: Metered::Account,
             }, requested_at) {
                 yield observed;
             }

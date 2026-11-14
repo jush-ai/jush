@@ -390,6 +390,12 @@
         "scope": "{scope} 上限",
         "unknown": "使用上限"
       },
+      "images": {
+        "period": "{period}影像上限",
+        "unknown": "影像上限",
+        "requests": "影像請求速率",
+        "tokens": "影像 Token 速率"
+      },
       "credits": {
         "period": "{period}額度",
         "unknown": "額度"

@@ -26,7 +26,7 @@ use jush_provider_common::media::{MediaMaker, MediaModelInfo};
 use jush_provider_common::audio::AudioMaker;
 use jush_provider_common::videos::VideoMaker;
 use jush_provider_common::{DeviceRoute, ModelWires, Provider, ProviderHttp};
-use jush_shared_types::{AudioShape, CacheTtl, Clock, MediaKind, MediaShapes, Model, Rotation};
+use jush_shared_types::{AudioShape, CacheTtl, Clock, MediaKind, MediaShapes, Metered, Model, Rotation};
 use jush_web_api_protocol::ids::{CredentialId, ProviderId};
 use jush_provider_common::models_dev::ModelsDevError;
 use jush_web_api_protocol::providers::{ModelKind, ProviderDto, SETUP_MESSAGE, SetupPart, Vendor};
@@ -241,16 +241,27 @@ impl ProviderRegistry {
     /// `source` says where `until` comes from: `vendor_refusal` when the
     /// failure named it, `snapshot` when the account's quota did, `default`
     /// when neither did.
-    pub fn mark_used_up(&self, entry: &ProviderId, account: &CredentialId, until: jush_shared_types::Timestamp, source: &'static str) {
+    ///
+    /// `metered` says what the refused request was for: an image's refusal
+    /// leaves the account's turns.
+    pub fn mark_used_up(
+        &self,
+        entry: &ProviderId,
+        account: &CredentialId,
+        metered: Metered,
+        until: jush_shared_types::Timestamp,
+        source: &'static str,
+    ) {
         tracing::info!(
             event = "account.used_up",
             provider = %entry,
             account = %account,
+            metered = ?metered,
             until_ms = until.as_millisecond(),
             source,
             "an account was marked used up"
         );
-        self.rotation.mark_used_up(entry, account, until, self.clock.now());
+        self.rotation.mark_used_up(entry, account, metered, until, self.clock.now());
         self.quotas.used_up(entry, until);
     }
 
@@ -469,9 +480,12 @@ impl ProviderRegistry {
         let mut stale = Vec::new();
         for record in &records {
             let latest = self.quotas.latest(&entry.id, record);
-            let old = latest
-                .as_ref()
-                .is_none_or(|snapshot| now - snapshot.observed_at.as_millisecond() > SNAPSHOT_FRESH_MS);
+            // An image's answer leaves the account's own windows as old as
+            // they were.
+            let old = latest.as_ref().is_none_or(|snapshot| {
+                let read = snapshot.read_at(Metered::Account).unwrap_or(snapshot.observed_at);
+                now - read.as_millisecond() > SNAPSHOT_FRESH_MS
+            });
             if fresh && old {
                 stale.push((record.id.clone(), self.provider_of(entry, Some(&record.id)).await?));
             }
@@ -507,12 +521,14 @@ impl ProviderRegistry {
     }
 
     /// Takes an account of `entry` under its rotation for a request of
-    /// `model`, other than those in `tried`, which refused it already,
-    /// reading stale snapshots first for Smart; none for a Manual entry.
+    /// `model` for what `metered` says, other than those in `tried`, which
+    /// refused it already, reading stale snapshots first for Smart; none for
+    /// a Manual entry.
     pub async fn take_account(
         &self,
         entry: &ProviderEntry,
         model: &Model,
+        metered: Metered,
         tried: &[CredentialId],
     ) -> Result<(Option<Choice>, Vec<Candidate>), RegistryError> {
         let rotation = entry.rotation();
@@ -521,7 +537,7 @@ impl ProviderRegistry {
             .await?;
         let choice = self
             .rotation
-            .take(&entry.id, rotation, &candidates, model, tried, self.clock.now());
+            .take(&entry.id, rotation, &candidates, model, metered, tried, self.clock.now());
         Ok((choice, candidates))
     }
 

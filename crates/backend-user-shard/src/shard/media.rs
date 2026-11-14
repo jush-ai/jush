@@ -257,7 +257,7 @@ async fn standing(services: &Services, route: &Route, model: &str) -> Result<Sta
     }
     let now = provider_registry.now();
     // A mark a call left counts as a window does, with its moment.
-    Ok(match provider_registry.rotation().all_used_up(&entry.id, &candidates, &model_of(model), now) {
+    Ok(match provider_registry.rotation().all_used_up(&entry.id, &candidates, &model_of(model), route.kind.metered(), now) {
         Some(until) => Standing::UsedUp(until),
         None => Standing::Ready,
     })
@@ -1695,7 +1695,10 @@ pub(super) async fn on_accounts<T>(
             }
             Rotation::InOrder | Rotation::Smart => {
                 let (choice, _) =
-                    provider_registry.take_account(entry, model, &tried).await.map_err(|error| failed(&error))?;
+                    provider_registry
+                        .take_account(entry, model, route.kind.metered(), &tried)
+                        .await
+                        .map_err(|error| failed(&error))?;
                 match choice {
                     Some(Choice::Account(running)) => (running.account().clone(), Some(running)),
                     Some(Choice::AllTried) => return Err(used_up(last_moment, &last_trace)),
@@ -1730,7 +1733,7 @@ pub(super) async fn on_accounts<T>(
         };
         let now = services.clock.now();
         let moment = retry_at
-            .or_else(|| provider.quota()?.used_up_until(now))
+            .or_else(|| provider.quota()?.used_up_until(route.kind.metered(), now))
             .filter(|moment| *moment > now);
         let source = if moment.is_none() {
             "default"
@@ -1745,7 +1748,7 @@ pub(super) async fn on_accounts<T>(
         });
         // Used up as a turn's failure marks it, whatever the call does
         // next.
-        provider_registry.mark_used_up(&entry.id, &account, until, source);
+        provider_registry.mark_used_up(&entry.id, &account, route.kind.metered(), until, source);
         if rotation == Rotation::Manual {
             return Err(used_up(moment, &trace));
         }

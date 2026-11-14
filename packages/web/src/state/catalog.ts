@@ -5,7 +5,8 @@ import type {
   SettingsWireApi,
 } from '@jush-ai/web-ui/settings/types'
 import { providerLogo } from '@jush-ai/web-ui/settings/vendor-logos'
-import { appliedContextLimit, type AuthState, type RuntimeState, type WireApi } from '@jush-ai/protocol'
+import { onImages } from '@jush-ai/web-ui/settings/window-name'
+import { appliedContextLimit, type AuthState, type QuotaSnapshot, type RuntimeState, type WireApi } from '@jush-ai/protocol'
 import type {
   AccountDto,
   CatalogModel,
@@ -94,6 +95,19 @@ export function settingsModel(
 export interface Hidden {
   provider(providerId: string): boolean
   model(providerId: string, modelId: string): boolean
+}
+
+/**
+ * When `snapshot` last read the account's own windows: the start of the
+ * latest request that reported one, so an image's answer, which reports
+ * only image windows, leaves it; when the snapshot was observed for one
+ * stored before windows kept the time (`QuotaSnapshot::read_at`).
+ */
+function ownWindowsReadAt(snapshot: QuotaSnapshot): string {
+  const reads = snapshot.windows
+    .filter((window) => !onImages(window))
+    .flatMap((window) => (window.requestedAt ? [window.requestedAt] : []))
+  return reads.reduce((latest, read) => (Date.parse(read) > Date.parse(latest) ? read : latest), reads[0] ?? snapshot.observedAt)
 }
 
 /**
@@ -212,17 +226,21 @@ export function providerView(
           if (window.usedPercent === null) {
             return []
           }
+          const name = { kind: window.kind, periodSeconds: window.periodSeconds ?? null, scope: window.scope }
           return [
             {
               id: window.id,
-              name: { kind: window.kind, periodSeconds: window.periodSeconds ?? null, scope: window.scope },
+              name,
               used: window.usedPercent,
               max: 100,
               resetsAt: window.resetsAt,
+              // Only an image's answer reports an image window, which a
+              // refresh does not read: it shows when that answer came.
+              ...(onImages(name) && window.requestedAt ? { readAt: window.requestedAt } : {}),
             },
           ]
         }) ?? [],
-        quotaAt: account.quota?.observedAt ?? null,
+        quotaAt: account.quota ? ownWindowsReadAt(account.quota) : null,
       })) ?? [],
     rotation: entry.kind === 'subscription' ? entry.rotation : undefined,
     // A vendor's media models are the catalog's; a compatible API's are its list's, above.

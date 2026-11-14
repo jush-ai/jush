@@ -20,7 +20,7 @@ use jush_provider_common::{
         undecodable,
     },
 };
-use jush_shared_types::{QuotaWindow, Timestamp};
+use jush_shared_types::{Metered, QuotaWindow, Timestamp};
 use futures_util::{SinkExt, StreamExt, stream::LocalBoxStream};
 use http::{
     HeaderMap, HeaderValue, StatusCode,
@@ -168,6 +168,7 @@ async fn sse(
     observed.extend(shared.quota.observe(Observation::Response {
         status: response.status(),
         headers: response.headers(),
+        metered: Metered::Account,
     }, requested_at).into_iter().flatten());
     if !response.status().is_success() {
         let status = response.status();
@@ -232,6 +233,7 @@ async fn websocket(
             observed.extend(shared.quota.observe(Observation::Response {
                 status: response.status(),
                 headers: response.headers(),
+                metered: Metered::Account,
             }, requested_at).into_iter().flatten());
             let (parts, body) = (*response).into_parts();
             let body = String::from_utf8_lossy(body.as_deref().unwrap_or_default()).into_owned();
@@ -252,6 +254,7 @@ async fn websocket(
     observed.extend(shared.quota.observe(Observation::Response {
         status: response.status(),
         headers: response.headers(),
+        metered: Metered::Account,
     }, requested_at).into_iter().flatten());
     if let Err(error) = socket.send(Message::Text(message)).await {
         // The socket connected, so a failed send fails its stream before the

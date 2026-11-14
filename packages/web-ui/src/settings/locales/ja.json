@@ -390,6 +390,12 @@
         "scope": "{scope} の上限",
         "unknown": "利用上限"
       },
+      "images": {
+        "period": "{period}の画像上限",
+        "unknown": "画像上限",
+        "requests": "画像のリクエストレート",
+        "tokens": "画像のトークンレート"
+      },
       "credits": {
         "period": "{period}のクレジット",
         "unknown": "クレジット"

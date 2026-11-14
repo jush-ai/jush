@@ -157,8 +157,8 @@ pub use provider_state::{
     RuntimeState, VideoResolution, VideoShape, WireApi,
 };
 pub use quota::{
-    QuotaKind, QuotaPlan, QuotaScope, QuotaSeverity, QuotaSnapshot, QuotaUnit, QuotaWindow, QuotaWindowName,
-    SnapshotSource,
+    IMAGES_SCOPE, Metered, QuotaKind, QuotaPlan, QuotaScope, QuotaSeverity, QuotaSnapshot, QuotaUnit, QuotaWindow,
+    QuotaWindowName, SnapshotSource, images_window_id,
 };
 pub use kept::{KeptMessage, choose_kept, kept_words_budget, text_tokens};
 pub use read_at::ReadAt;

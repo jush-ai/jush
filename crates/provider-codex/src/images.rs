@@ -6,9 +6,13 @@
 //! the asked shape is sent.
 
 use bytes::Bytes;
+use jush_shared_types::Metered;
 use jush_provider_common::{
     images::{ImageMaker, ImageRequest, MadeImage, openai, read_data_answer},
-    media::{MediaAnswer, MediaCall, MediaCredential, MediaFailure, MediaMaker, MediaModelInfo, MediaVendor, subscription_models},
+    media::{
+        MediaAnswer, MediaCall, MediaCredential, MediaFailure, MediaMaker, MediaModelInfo, MediaQuota, MediaVendor,
+        subscription_models,
+    },
     media_catalog::{Catalog, MediaKind, Subscription},
     json_body,
 };
@@ -96,7 +100,10 @@ impl ImageMaker for CodexProvider {
                 reader: read_codex_failure,
                 used_up: with_usage_limit,
                 clock: &*shared.clock,
-                quota: Some(&shared.quota),
+                quota: Some(MediaQuota {
+                    quota: &shared.quota,
+                    metered: Metered::Images,
+                }),
             };
             call.post_json(http, url, encode(catalog, &request), |refused| async move {
                 let credentials = shared.auth.credentials(http, refused.as_ref()).await?;

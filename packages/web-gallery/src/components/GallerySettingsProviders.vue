@@ -34,7 +34,8 @@ import { providerOperation } from '@jush-ai/web-ui/settings/provider-operations'
 import { DAY, HOUR, MINUTE, ahead } from '../fixtures/time'
 import { galleryDevices } from '../fixtures/devices'
 import type { MenuDevice } from '@jush-ai/web-ui/targets/types'
-import type { SettingsDevice } from '@jush-ai/web-ui/settings/types'
+import type { SettingsDevice, SettingsQuotaWindow } from '@jush-ai/web-ui/settings/types'
+import { onImages } from '@jush-ai/web-ui/settings/window-name'
 import { HOUR_SECONDS, WEEK_SECONDS, reported, windowNamed } from '../fixtures/usage-limits'
 
 /**
@@ -306,7 +307,7 @@ function refreshUsage(p: SettingsProviderEntry, accountId: string) {
       delete usageFailures.value[p.id]?.[accountId]
       const account = p.accounts.find((candidate) => candidate.id === accountId)
       if (account) {
-        account.quota = account.quota.map((window) => reported(window, 1))
+        account.quota = account.quota.map(refreshed)
         account.quotaAt = new Date().toISOString()
         readAtReset(p, account)
       }
@@ -320,6 +321,14 @@ const READ_AFTER_RESET_MS = 30_000
 const LONGEST_TIMEOUT_MS = 2 ** 31 - 1
 const resetReads = new Map<string, number>()
 /**
+ * A window as a usage read reports it: a little further used, but an image
+ * window, which only an image's answer reports, as it was, as the product
+ * keeps it.
+ */
+function refreshed(quota: SettingsQuotaWindow): SettingsQuotaWindow {
+  return onImages(quota.name) ? quota : reported(quota, 1)
+}
+/**
  * The backend reads a signed-in account again 30 seconds after the earliest
  * reset of its windows with some use, as the product's does, and the page
  * shows the answer; here the answer is the vendor's next report.
@@ -329,6 +338,7 @@ function readAtReset(p: SettingsProviderEntry, account: SettingsProviderAccount)
   window.clearTimeout(resetReads.get(key))
   resetReads.delete(key)
   const resets = account.quota
+    .filter((quota) => !onImages(quota.name))
     .flatMap((window) => (window.resetsAt === null || window.used <= 0 ? [] : [Date.parse(window.resetsAt)]))
     .filter((at) => at > Date.now())
   if (account.signedOut || !resets.length) {
@@ -340,7 +350,7 @@ function readAtReset(p: SettingsProviderEntry, account: SettingsProviderAccount)
   }
   resetReads.set(key, window.setTimeout(() => {
     resetReads.delete(key)
-    account.quota = account.quota.map((window) => reported(window, 1))
+    account.quota = account.quota.map(refreshed)
     account.quotaAt = new Date().toISOString()
     readAtReset(p, account)
   }, wait))

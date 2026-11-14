@@ -390,6 +390,12 @@
         "scope": "{scope} limit",
         "unknown": "Usage limit"
       },
+      "images": {
+        "period": "{period} image limit",
+        "unknown": "Image limit",
+        "requests": "Image request rate",
+        "tokens": "Image token rate"
+      },
       "credits": {
         "period": "{period} credits",
         "unknown": "Credits"
