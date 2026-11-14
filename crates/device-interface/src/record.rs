@@ -38,6 +38,9 @@ pub struct CommandRecord {
     /// Whether the call started it as a service, a command that runs until
     /// stopped, which the conversation does not wait for.
     service: bool,
+    /// The name of the device its call named, which the pages' view of it
+    /// carries; none for one on its node's own device.
+    device: Option<Arc<str>>,
     started: Instant,
     /// When it ended; none while it runs. How long it ran stops there.
     ended: Option<Instant>,
@@ -100,6 +103,9 @@ pub struct PageView {
     pub title: String,
     pub script: Arc<str>,
     pub service: bool,
+    /// The name of the device its call named; none for one on its node's
+    /// own device.
+    pub device: Option<String>,
     pub state: PageState,
     pub tail: String,
     pub chars: u64,
@@ -202,6 +208,7 @@ impl CommandRecord {
             title,
             script: Arc::from(script),
             service,
+            device: None,
             started: now.checked_sub(running).unwrap_or(now),
             ended: None,
             last_output: now,
@@ -489,6 +496,14 @@ impl CommandRecord {
         }
     }
 
+    /// The command, as one that runs on the device its call named, `device`,
+    /// or on its node's own device for none.
+    #[must_use]
+    pub fn on_device(mut self, device: Option<Arc<str>>) -> Self {
+        self.device = device;
+        self
+    }
+
     /// The command as the pages see it now.
     pub fn page_view(&self) -> PageView {
         PageView {
@@ -497,6 +512,7 @@ impl CommandRecord {
             title: self.title.clone(),
             script: Arc::clone(&self.script),
             service: self.service,
+            device: self.device.as_deref().map(str::to_owned),
             state: match &self.phase {
                 Phase::Running => PageState::Running,
                 Phase::Waiting { device } => PageState::Waiting { device: device.clone() },

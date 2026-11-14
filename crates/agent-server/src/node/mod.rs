@@ -218,8 +218,8 @@ impl<H: DeviceResolver> Node<H> {
         }
     }
 
-    /// Stops a running command through the node's environment for the
-    /// conversation's current device, as a page's `shell_abort` asks.
+    /// Stops a running command through the node's environment that runs it,
+    /// on whichever device, as a page's `shell_abort` asks.
     pub(crate) async fn shell_abort(&self, command: &CommandId) -> Result<(), CallError> {
         self.runtime.shell_access().abort(command).await
     }

@@ -619,6 +619,16 @@ impl Devices {
             .await;
     }
 
+    /// Resolves once no live connection serves the device: at once while
+    /// none does.
+    pub async fn until_away(&self, device: &DeviceId) {
+        let mut link = self.slot(device).link.subscribe();
+        // The slot keeps the sender while the shard lives.
+        let _ = link
+            .wait_for(|link| !matches!(link, DeviceLink::Online(link) if !link.is_closed()))
+            .await;
+    }
+
     /// How long an operation that starts now waits for `device`'s runner:
     /// the rest of its wait while it is returning; none otherwise.
     pub fn returning(&self, device: &DeviceId) -> Option<Duration> {

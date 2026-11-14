@@ -311,10 +311,13 @@ the command's run on the device, the page's connection.
   - `{ think, ms }` is thinking and `{ say, ms }` is Markdown text. Either
     streams word by word over `ms` milliseconds, or arrives at once without
     `ms`.
-  - `{ run }` is a shell command, which ends the answer as a tool call. The
-    backend runs it and asks again, which takes the next answer. With
+  - `{ run }` is a shell command, which ends the answer as a tool call, with
+    the runs right after it as the same response's calls, which run
+    together. The backend runs them and asks again, which takes the next
+    answer. With
     `background: true` the call returns at once and the command runs on;
-    with `service: true` it returns once the command's output is quiet.
+    with `service: true` it returns once the command's output is quiet; with
+    `device: 'name'` it runs on that device of `jush device list`.
   - `{ wait }` is a pause of so many milliseconds.
 - **A turn's request that finds no answer queued** gets one line of text, so a
   turn always ends. The queue lives as long as the tool's server, which starts

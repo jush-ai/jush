@@ -1,5 +1,6 @@
 //! A node's shell environments: one per device the node used, keyed by the device's
-//! key.
+//! key and by whether the environment moves with the conversation, so one a call
+//! that named a device made is never the node's own on that device.
 //!
 //! Concurrent calls for one device make one environment, and a handle belongs to
 //! the environment that made it, so a `commandId` of another device's environment
@@ -51,6 +52,9 @@ pub enum Stopper {
 /// One device's environment, once made.
 pub(super) struct Slot {
     key: DeviceKey,
+    /// Whether its environment moves with the conversation
+    /// (`EnvironmentScope::follows`).
+    follows: bool,
     environment: OnceCell<Rc<dyn ShellEnvironment>>,
 }
 
@@ -71,13 +75,14 @@ impl Environments {
     pub(super) async fn resolve(
         &self,
         key: DeviceKey,
+        follows: bool,
         handle: Handle<'_>,
         create: impl Future<Output = Result<Rc<dyn ShellEnvironment>, DeviceError>>,
     ) -> Result<(Rc<Slot>, Rc<dyn ShellEnvironment>), String> {
         if self.disposed.get() {
             return Err(DISPOSED.to_owned());
         }
-        let slot = self.slot(key);
+        let slot = self.slot(key, follows);
         let environment = slot
             .environment
             .get_or_try_init(|| create)
@@ -91,20 +96,21 @@ impl Environments {
         }
         if let Handle::Command(command) = handle
             && let Some(owner) = self.owner(command)?
-            && owner.key != slot.key
+            && !Rc::ptr_eq(&owner, &slot)
         {
             return Err(format!("Command \"{command}\" belongs to a different device"));
         }
         Ok((slot, environment))
     }
 
-    fn slot(&self, key: DeviceKey) -> Rc<Slot> {
+    fn slot(&self, key: DeviceKey, follows: bool) -> Rc<Slot> {
         let mut slots = self.slots.borrow_mut();
-        if let Some(slot) = slots.iter().find(|slot| slot.key == key) {
+        if let Some(slot) = slots.iter().find(|slot| slot.key == key && slot.follows == follows) {
             return slot.clone();
         }
         let slot = Rc::new(Slot {
             key,
+            follows,
             environment: OnceCell::new(),
         });
         slots.push(slot.clone());

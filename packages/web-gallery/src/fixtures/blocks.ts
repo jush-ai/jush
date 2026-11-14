@@ -299,13 +299,14 @@ export const shellTool = toolCall({
 /**
  * A call that returned while its command runs on, one of the conversation's
  * running commands (the gallery's `Run the auth tests` job): its row
- * shimmers until the command's end arrives.
+ * shimmers until the command's end arrives. It runs on a device it named,
+ * which its prompt and its terminal's name.
  */
 export const returnedShellTool = toolCall({
   id: 'tool-shell-returned',
   toolName: 'shell',
   status: 'completed',
-  input: JSON.stringify({ script: 'bun test src/auth.test.ts', description: 'Run the auth tests' }),
+  input: JSON.stringify({ script: 'bun test src/auth.test.ts', description: 'Run the auth tests', device: 'build-box' }),
   view: shellView({
     commandId: '12',
     status: 'running',

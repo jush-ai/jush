@@ -13,6 +13,10 @@ const BACKGROUND: &str = "A command you do not wait for, such as a long build.";
 /// What `service` tells the model.
 const SERVICE: &str = "A command that runs until stopped, such as a development server.";
 
+/// What `device` tells the model.
+const DEVICE: &str =
+    "A device from `jush device list` to run on, attached first if needed; the conversation's own when left out.";
+
 /// What a call's `description` asks of the model: the title the user sees,
 /// which the model writes before the step runs.
 pub(super) const DESCRIPTION: &str = "The step's title the user sees, such as \"Run the type checker\".";
@@ -26,6 +30,11 @@ pub(super) struct ShellInput {
     pub(super) description: NonEmpty,
     #[schemars(description = "The script.")]
     pub(super) script: String,
+    // A string, not a nullable one, in the model's schema: leaving it out
+    // is how a call runs on the conversation's device.
+    #[serde(default)]
+    #[schemars(with = "String", length(min = 1), description = DEVICE)]
+    pub(super) device: Option<NonEmpty>,
     #[serde(default)]
     #[schemars(description = BACKGROUND)]
     pub(super) background: bool,

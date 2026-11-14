@@ -1,9 +1,9 @@
 //! The one tool, `shell`.
 //!
 //! It reaches its node's device through the product's resolver, a child's own
-//! and the conversation's current one for the root, and runs in the node's
-//! shell environment for that device, which the product
-//! makes. A tool never reaches into its session: it returns its outcome, and a
+//! and the conversation's current one for the root, or the device a call names
+//! with `device`, and runs in the node's shell environment for that device,
+//! which the product makes. A tool never reaches into its session: it returns its outcome, and a
 //! call that leaves its command running asks the session to watch it, so the
 //! command reports to the node.
 //!
@@ -116,8 +116,8 @@ pub use result::{
     Look, Moved, VIEW_CHARS, interrupted_look, look_text, report_media, report_output, whole_look_text, whole_status,
 };
 pub use product::{
-    ChosenWorkflow, ContextAnswer, ContextSource, ConversationProfiles, EFFORT_OFF, DeviceResolver,
-    ListedWorkflow, WorkflowChild, WorkflowListing,
+    ChosenWorkflow, ContextAnswer, ContextSource, ConversationProfiles, EFFORT_OFF, DeviceAsk, DeviceResolver,
+    ListedWorkflow, Named, WorkflowChild, WorkflowListing,
     ModelChoice, ModelEdit, NewProfileDraft, NodeContext, Profile, ProfileEdit, ProfileModel,
     SubagentSettings, SubagentSource, TIER_DEFAULT, Toolset, ToolsetSource, Unavailable, runs_on,
 };
@@ -157,6 +157,13 @@ pub struct EnvironmentScope<'a> {
     /// The node's agent number, as the model and its commands' context know
     /// it.
     pub agent: u64,
+    /// Whether the environment is on the device where the node works, which
+    /// for the root and a side question moves with the conversation; one on
+    /// a device a call named, or a subagent's, stays on its device.
+    pub follows: bool,
+    /// The name of the device a call named, which the pages' view of its
+    /// commands carries; none for the node's own device.
+    pub named: Option<&'a str>,
     /// The commands the environment's jobs offer: the node's.
     pub commands: &'a Rc<CommandSet>,
     /// Where the environment tells the pages of its commands, and learns
@@ -199,7 +206,7 @@ impl OwnPlacement for Option<Placement> {
 const SHELL: &str = "shell";
 
 /// What the `shell` tool does, as the model is told.
-const SHELL_DESCRIPTION: &str = "Run a shell script on the conversation's device. The call returns the output when the script ends; a command that moves to the background wakes you when it ends. background: true starts a command you do not wait for, such as a long build: the call returns at once, and its end wakes you. service: true runs a command until it is stopped, such as a server: the call returns once its output is quiet for 2 s, and only its exit wakes you. Calls in one response run in parallel.";
+const SHELL_DESCRIPTION: &str = "Run a shell script on the conversation's device, or with device on another one. The call returns the output when the script ends; a command that moves to the background wakes you when it ends. background: true starts a command you do not wait for, such as a long build: the call returns at once, and its end wakes you. service: true runs a command until it is stopped, such as a server: the call returns once its output is quiet for 2 s, and only its exit wakes you. Calls in one response run in parallel.";
 
 /// The definitions the model receives, made once: the `shell` tool alone.
 pub fn definitions() -> Arc<[ToolDefinition]> {
@@ -299,18 +306,34 @@ impl<'a, H: DeviceResolver> ShellAccess<'a, H> {
             self.devices.device(context).await
         }
         .map_err(|error| CallError::Failed(error.to_string()))?;
+        self.environment_of(handle, device, None).await
+    }
+
+    /// The node's environment on `device`: its own, which moves with the
+    /// conversation for the root and a side question, or, with `named`, the
+    /// one on a device a call named, which stays there
+    /// ([`EnvironmentScope::follows`]).
+    async fn environment_of(
+        &self,
+        handle: Handle<'_>,
+        device: Rc<H::Device>,
+        named: Option<&str>,
+    ) -> Result<(Rc<environments::Slot>, Rc<dyn ShellEnvironment>), CallError> {
         let commands = self.commands.borrow().clone();
+        let follows = named.is_none() && self.agent == 0;
         let scope = EnvironmentScope {
             root: self.root,
             node: self.node,
             agent: self.agent,
+            follows,
+            named,
             commands: &commands,
             feed: self.feed,
             numbers: self.numbers,
         };
         let key = device.key();
         self.environments
-            .resolve(key, handle, self.shells.create(scope, device))
+            .resolve(key, follows, handle, self.shells.create(scope, device))
             .await
             .map_err(CallError::Failed)
     }
@@ -369,12 +392,14 @@ impl<'a, H: DeviceResolver> ShellAccess<'a, H> {
         let began = std::time::Instant::now();
         let call_id = call.tool_use_id.clone();
         let turn = call.turn.clone();
+        let named = input.device.as_ref().map(|device| device.0.clone());
         let ended = |command: Option<&CommandId>, outcome: &'static str, moved: Option<&'static str>, exit: Option<i32>| {
             tracing::info!(
                 event = "shell_call.ended",
                 conversation = %self.root,
                 node = %self.node,
                 turn = %turn,
+                device = named.as_deref(),
                 call = call_id,
                 command = command.map(tracing::field::display),
                 outcome,
@@ -385,10 +410,43 @@ impl<'a, H: DeviceResolver> ShellAccess<'a, H> {
             );
         };
         let placement = self.placement_now();
-        let (_, environment) = self.environment(Handle::None, placement.as_ref()).await?;
+        let named = match &input.device {
+            None => Named::Own,
+            Some(device) => {
+                let context = NodeContext {
+                    node: self.node,
+                    root: self.root,
+                    placement: placement.as_ref(),
+                };
+                let ask = DeviceAsk {
+                    device: &device.0,
+                    call: &call.tool_use_id,
+                    script: &input.script,
+                };
+                match self.devices.named_device(context, ask).await {
+                    Ok(named) => named,
+                    // A device that is not there, offline or refused runs
+                    // nothing: the call's result says why.
+                    Err(error) => {
+                        ended(None, "failed_to_start", None, None);
+                        return Ok(ToolOutcome::error(error.message));
+                    }
+                }
+            }
+        };
+        let (environment, cwd) = match named {
+            Named::Own => (
+                self.environment(Handle::None, placement.as_ref()).await?.1,
+                placement.map(|placement| placement.directory),
+            ),
+            Named::Other { device, directory, name } => (
+                self.environment_of(Handle::None, device, Some(&name)).await?.1,
+                Some(directory),
+            ),
+        };
         let request = ExecRequest {
             script: input.script,
-            cwd: placement.map(|placement| placement.directory),
+            cwd,
             caller: JobCaller {
                 node: self.node.clone(),
                 tool_use_id: call.tool_use_id,
@@ -494,7 +552,21 @@ impl<'a, H: DeviceResolver> ShellAccess<'a, H> {
     /// (`crates/runner-client/src/device_jobs.rs`).
     pub async fn adopt(&self, running: &RunningCommand, ran: Duration) -> Result<(), CallError> {
         let placement = self.placement_now();
-        let (_, environment) = self.environment_on(Handle::None, placement.as_ref(), true).await?;
+        let context = NodeContext {
+            node: self.node,
+            root: self.root,
+            placement: placement.as_ref(),
+        };
+        // A command a call ran on a device it named is taken up there.
+        let named = self
+            .devices
+            .adopted_named_device(context, &running.device)
+            .await
+            .map_err(|error| CallError::Failed(error.to_string()))?;
+        let (_, environment) = match named {
+            Named::Other { device, name, .. } => self.environment_of(Handle::None, device, Some(&name)).await?,
+            Named::Own => self.environment_on(Handle::None, placement.as_ref(), true).await?,
+        };
         environment.adopt(TakenUp {
             command: running.command.clone(),
             job: running.job.clone(),
@@ -513,11 +585,17 @@ impl<'a, H: DeviceResolver> ShellAccess<'a, H> {
         Ok(())
     }
 
-    /// Stops a running command of the current device, as a page's stop does:
+    /// Stops a running command of the node, on whichever device it runs, as a page's stop does:
     /// its end's report says the user stopped it.
     pub async fn abort(&self, command: &CommandId) -> Result<(), CallError> {
-        let placement = self.placement_now();
-        let (_, environment) = self.environment(Handle::Command(command), placement.as_ref()).await?;
+        // A command on another device is its own environment's.
+        let environment = match self.environments.owning(command) {
+            Some(environment) => environment,
+            None => {
+                let placement = self.placement_now();
+                self.environment(Handle::Command(command), placement.as_ref()).await?.1
+            }
+        };
         self.environments.stopped_by(command, Stopper::User);
         environment.abort(command).await?;
         Ok(())

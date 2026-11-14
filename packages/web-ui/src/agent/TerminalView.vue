@@ -21,6 +21,7 @@ const { load, retry } = useXterm()
     :chars="terminal.chars"
     :running="terminal.phase === 'running'"
     :script="terminal.script"
+    :device="terminal.device"
   />
   <RegionStatus
     v-else

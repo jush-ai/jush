@@ -36,9 +36,9 @@
 //! sink in order with its bytes, naming the source's device from the record.
 
 use std::{
+    borrow::Cow,
     cell::{Cell, RefCell},
     collections::HashMap,
-    fmt::Display,
     future::{Future, pending},
     io,
     rc::{Rc, Weak},
@@ -86,6 +86,10 @@ pub(crate) type Sinks = Arc<Mutex<HashMap<Arc<str>, Arc<SinkSession>>>>;
 struct Slot {
     source: End,
     sink: End,
+    /// What the user calls each device end, which a failure of that end
+    /// names; none for an end the minter did not name.
+    source_name: Option<Arc<str>>,
+    sink_name: Option<Arc<str>>,
     source_arrived: bool,
     /// Whether the source's runner said its upload waits for its turn: the
     /// pipe then waits for it without the arrival window.
@@ -335,6 +339,8 @@ impl Pipes {
             Slot {
                 source: end(source),
                 sink: end(sink),
+                source_name: None,
+                sink_name: None,
                 source_arrived: false,
                 source_queued: false,
                 sink_arrived: false,
@@ -407,7 +413,7 @@ impl Pipes {
             writer: PipeWriter {
                 sender: Some(sender),
                 core: slot.core.clone(),
-                abandoned: "source HTTP request disconnected",
+                abandoned: slot.source_gone(),
             },
             device: device.into(),
             sink: slot.sink_told.subscribe(),
@@ -435,7 +441,7 @@ impl Pipes {
                 PipeWriter {
                     sender: Some(sender),
                     core: slot.core.clone(),
-                    abandoned: "source HTTP request disconnected",
+                    abandoned: slot.source_gone(),
                 }
             }
             // A chunk still sends: the next goes once it ended.
@@ -493,13 +499,18 @@ impl Pipes {
         let receiver = slot.receiver.take().ok_or(PipeRefusal::AlreadyConnected)?;
         slot.sink_arrived = true;
         slot.update_deadline();
+        let gone = slot
+            .sink_name
+            .as_ref()
+            .map(|name| Cow::Owned(format!("{name} went away while it read its input")));
         Ok(DeviceSink {
             reader: PipeReader {
                 receiver,
                 core: slot.core.clone(),
                 ended: false,
-                abandoned: Abandoned::Fail("sink HTTP request disconnected"),
+                abandoned: Abandoned::Fail(gone.clone().unwrap_or(Cow::Borrowed("sink HTTP request disconnected"))),
             },
+            gone,
         })
     }
 
@@ -573,7 +584,7 @@ impl Pipes {
             receiver,
             core: slot.core.clone(),
             ended: false,
-            abandoned: Abandoned::Fail("the call's output connection ended"),
+            abandoned: Abandoned::Fail(Cow::Borrowed("the call's output connection ended")),
         };
         Ok(Arc::new(SinkSession::new(
             id.into(),
@@ -626,6 +637,15 @@ impl Slot {
                 sink: sink.clone(),
                 route: self.route,
             }));
+        }
+    }
+
+    /// Why the pipe fails when its device source goes before its end: the
+    /// device by its name when the minter named it.
+    fn source_gone(&self) -> Cow<'static, str> {
+        match &self.source_name {
+            Some(name) => Cow::Owned(format!("{name} went away while it sent its output")),
+            None => Cow::Borrowed("source HTTP request disconnected"),
         }
     }
 
@@ -742,7 +762,7 @@ impl Pipe {
             Ok(PipeWriter {
                 sender: Some(sender),
                 core: slot.core.clone(),
-                abandoned: "the writer went away before the end",
+                abandoned: Cow::Borrowed("the writer went away before the end"),
             })
         })
     }
@@ -761,13 +781,15 @@ impl Pipe {
         })
     }
 
-    /// Names a device that will `GET` the pipe as its sink.
-    pub fn sink_to(&self, device: &str) -> Result<(), PipeError> {
+    /// Names a device that will `GET` the pipe as its sink, which the user
+    /// calls `name`.
+    pub fn sink_to(&self, device: &str, name: &str) -> Result<(), PipeError> {
         self.pipes.with_slot(&self.id, |slot| {
             if slot.sink != End::Open {
                 return Err(PipeError::AlreadyFixed("sink"));
             }
             slot.sink = End::Device(device.into());
+            slot.sink_name = Some(name.into());
             slot.sink_arrived = false;
             slot.update_deadline();
             slot.tell_sink();
@@ -776,13 +798,14 @@ impl Pipe {
     }
 
     /// Names a device that will `PUT` the pipe as its source, taking over a
-    /// source this process held.
-    pub fn source_from(&self, device: &str) -> Result<(), PipeError> {
+    /// source this process held, which the user calls `name`.
+    pub fn source_from(&self, device: &str, name: &str) -> Result<(), PipeError> {
         self.pipes.with_slot(&self.id, |slot| {
             if slot.source != End::Open {
                 return Err(PipeError::AlreadyFixed("source"));
             }
             slot.source = End::Device(device.into());
+            slot.source_name = Some(name.into());
             slot.source_arrived = false;
             slot.update_deadline();
             slot.tell_sink();
@@ -832,14 +855,14 @@ impl Pipe {
 }
 
 /// What dropping a reader before the end means.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 enum Abandoned {
     /// A reader in this process that stops early drained the pipe, as a
     /// closed pipe would.
     Drain,
     /// A device's response cut short, or a reader whose caller went away,
     /// fails the pipe.
-    Fail(&'static str),
+    Fail(Cow<'static, str>),
 }
 
 /// The sink's side of a pipe. Dropping it before the end drains the pipe.
@@ -896,7 +919,7 @@ impl PipeReader {
     /// rather than draining it: the source then learns that nobody waits
     /// for the rest, even while it sends nothing.
     pub fn failing_when_dropped(mut self, reason: &'static str) -> Self {
-        self.abandoned = Abandoned::Fail(reason);
+        self.abandoned = Abandoned::Fail(Cow::Borrowed(reason));
         self
     }
 
@@ -919,7 +942,7 @@ impl Drop for PipeReader {
         if self.ended {
             return;
         }
-        match self.abandoned {
+        match &self.abandoned {
             Abandoned::Drain => self.core.drain(),
             Abandoned::Fail(reason) => {
                 self.core.fail(reason);
@@ -934,7 +957,9 @@ impl Drop for PipeReader {
 pub struct PipeWriter {
     sender: Option<mpsc::Sender<Piece>>,
     core: Arc<Core>,
-    abandoned: &'static str,
+    /// Why the pipe failed when the writer goes before its end, and what a
+    /// broken upload's failure starts with.
+    abandoned: Cow<'static, str>,
 }
 
 impl PipeWriter {
@@ -973,7 +998,7 @@ impl PipeWriter {
 impl Drop for PipeWriter {
     fn drop(&mut self) {
         if self.sender.take().is_some() {
-            self.core.fail(self.abandoned);
+            self.core.fail(&self.abandoned);
         }
     }
 }
@@ -1198,6 +1223,16 @@ impl Drop for DeviceChunk {
     }
 }
 
+/// Why a device source's body broke off before its end.
+#[derive(Debug)]
+pub enum SourceBreak {
+    /// Its connection ended without a word: the device or its network went
+    /// away, which the pipe's failure says, naming the device when it can.
+    Gone(String),
+    /// Its runner said why, in its words.
+    Said(String),
+}
+
 /// A device's source end of a pipe, a `PUT` body or a stream pipe's
 /// WebSocket, for the edge to feed.
 pub struct DeviceSource {
@@ -1218,10 +1253,9 @@ impl DeviceSource {
     /// even when the sink stopped early, or failed, also mid-body. A move of a
     /// pipe that may not go direct fails it. Dropping the future before its end
     /// fails the pipe: the request went away.
-    pub async fn pump<S, E>(self, body: S) -> Result<(), PipeFailure>
+    pub async fn pump<S>(self, body: S) -> Result<(), PipeFailure>
     where
-        S: Stream<Item = Result<SourceMessage, E>>,
-        E: Display,
+        S: Stream<Item = Result<SourceMessage, SourceBreak>>,
     {
         let core = self.writer.core.clone();
         let mut writer = self.writer;
@@ -1258,8 +1292,12 @@ impl DeviceSource {
                         return core.done().await;
                     }
                 }
-                Some(Err(error)) => {
-                    writer.fail(&format!("source HTTP request disconnected: {error}"));
+                Some(Err(broke)) => {
+                    let reason = match broke {
+                        SourceBreak::Gone(why) => format!("{}: {why}", writer.abandoned),
+                        SourceBreak::Said(why) => why,
+                    };
+                    writer.fail(&reason);
                     return core.done().await;
                 }
             }
@@ -1272,6 +1310,9 @@ impl DeviceSource {
 /// A device's `GET` of a pipe's sink, for the edge to answer.
 pub struct DeviceSink {
     reader: PipeReader,
+    /// Why the pipe fails when the device goes before the end, naming it,
+    /// when the minter named it.
+    gone: Option<Cow<'static, str>>,
 }
 
 impl DeviceSink {
@@ -1294,7 +1335,11 @@ impl DeviceSink {
     /// fails it. A pipe the device drained by reporting that it stopped reading
     /// ([`Pipes::drain_from_device`]) ends the response with a whole end.
     pub fn into_frames(mut self) -> BoxStream<'static, Bytes> {
-        self.reader.abandoned = Abandoned::Fail("sink HTTP response disconnected before EOF");
+        self.reader.abandoned = Abandoned::Fail(
+            self.gone
+                .take()
+                .unwrap_or(Cow::Borrowed("sink HTTP response disconnected before EOF")),
+        );
         futures_util::stream::unfold(Some(self.reader), |reader| async move {
             let mut reader = reader?;
             let over = reader.core.done();

@@ -2,6 +2,8 @@ import { DEMO_BUN_TEST, DEMO_GIT_DIFF, DEMO_RG } from './terminal-output'
 import { endedTerminal, type EndedCommandEntry, type EndedOutputText, type TerminalRecord } from '@jush-ai/web-ui/agent/terminals'
 import { BASH_SCRIPT, steppedRunCall, LEFT_RUNNING_CALL, RUNNING_RUN_CALL, RUNNING_SHELL_DESCRIPTION, RUNNING_SHELL_SCRIPT, returnedShellTool, runningShellTool } from './blocks'
 import { ago } from './time'
+import { parseToolCallInput } from '@jush-ai/web-ui/agent/block-helpers'
+import { shellDevice } from '@jush-ai/web-ui/agent/tool-rendering'
 
 /**
  * The live command: the running call of the demo transcript started it, so
@@ -114,6 +116,8 @@ export function galleryTerminals(): TerminalRecord[] {
       startedAt: ago(60_000),
       output: DEMO_BUN_TEST,
       toolUseId: returnedShellTool.toolUseId,
+      // As its live frames say, the name of the device its call named.
+      device: shellDevice(parseToolCallInput(returnedShellTool)),
     },
     {
       id: 'term-rg',

@@ -12,7 +12,7 @@ import { commandStatusLine } from '../command-end'
 import ToolCallFace from './ToolCallFace.vue'
 import { toolRowIcon } from './tool-row-icon'
 import { useShellRow } from '../shell-row'
-import { shellTitle } from '../tool-rendering'
+import { shellDevice, shellTitle } from '../tool-rendering'
 import { splitMedia, toolMedia } from '../tool-media'
 import { codeColor, codeRuns } from '../../markdown/highlight'
 import { useMarkdownRenderVersion } from '../../markdown/render-version'
@@ -34,6 +34,11 @@ const commandColors = computed(() => {
   return { runs: codeRuns(command.value, 'bash'), text: codeColor('bash') }
 })
 const title = computed(() => shellTitle(props.input))
+/** The prompt before the script: `$`, after the device the call named, as a shell's names its host. */
+const prompt = computed(() => {
+  const device = shellDevice(props.input)
+  return device === undefined ? '$' : `${device} $`
+})
 const media = computed(() => splitMedia(toolMedia(props.block.output, title.value)))
 // A call whose command ran says how it ended in its tag and above its output,
 // so only a call that ran nothing, such as one the input check or the repeat
@@ -113,7 +118,7 @@ function toggleCommand(): void {
 
     <template #pinned>
       <div class="flex px-3 font-mono text-xs leading-5 text-fg-subtle">
-        <span class="mr-1 shrink-0 select-none text-fg-faint">$</span><!--
+        <span class="mr-1 shrink-0 select-none text-fg-faint">{{ prompt }}</span><!--
           A command longer than two lines shows two, the second ending in an
           ellipsis; a click shows it whole and another clamps it again. One
           that fits is no control: a click selects it whole for copying.

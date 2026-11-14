@@ -30,7 +30,8 @@ use axum_extra::headers::authorization::Bearer;
 use jush_backend_database::accounts::TokenHash;
 use jush_backend_database::devices::DeviceRecord;
 use jush_runner_client::{
-    ChunkEnd, ChunkRefusal, DeviceChunk, DeviceSource, PipeRefusal, SourceMessage, accept_call_sink, offer_response,
+    ChunkEnd, ChunkRefusal, DeviceChunk, DeviceSource, PipeRefusal, SourceBreak, SourceMessage, accept_call_sink,
+    offer_response,
 };
 use jush_runner_protocol::release::{
     RELEASE_HEADER, RunnerUpdate, TARGET_HEADER, TOKEN_HEADER, UpdateExecutable,
@@ -203,7 +204,9 @@ pub(super) async fn put(
         Ok(source) => source,
         Err(refusal) => return refusal.into_response(),
     };
-    let body = body.into_data_stream().map(|chunk| chunk.map(SourceMessage::Bytes));
+    let body = body
+        .into_data_stream()
+        .map(|chunk| chunk.map(SourceMessage::Bytes).map_err(|error| SourceBreak::Gone(error.to_string())));
     match source.pump(body).await {
         Ok(()) => (StatusCode::OK, "drained").into_response(),
         Err(failure) => (StatusCode::CONFLICT, failure.reason().to_owned()).into_response(),

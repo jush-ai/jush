@@ -686,6 +686,7 @@ impl AgentTreeStore for SqliteTreeStore {
                 .map(|mut row| RunningCommand {
                     place: row.places.remove(node).unwrap_or_default(),
                     command: row.command,
+                    device: row.device.to_string(),
                     job: row.job,
                     tool_use_id: row.tool_use_id,
                     turn: row.turn,

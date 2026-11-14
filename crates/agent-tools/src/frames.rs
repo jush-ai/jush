@@ -25,6 +25,7 @@ pub fn shell_status(view: PageView) -> ShellStatus {
         title: view.title,
         script: view.script.to_string(),
         service: view.service,
+        device: view.device,
         tail: view.tail,
         chars: view.chars,
         running_ms: view.running_ms,

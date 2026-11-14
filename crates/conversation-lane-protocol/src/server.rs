@@ -678,6 +678,11 @@ pub struct CommandView {
     /// for it.
     #[garde(skip)]
     pub service: bool,
+    /// The name of the device its call named, which its prompt names; absent
+    /// for one on its agent's own device.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[garde(skip)]
+    pub device: Option<String>,
     /// The last 4,096 characters of the pages' view of its output: its
     /// output in the order it reached the backend, with a note where the
     /// runner left some out.

@@ -4,8 +4,9 @@
 //!
 //! A node's device is the conversation's current primary device for the root, and
 //! its own for a subagent (`crates/agent-server/src/node/mod.rs`), which the
-//! device access admits and lets go at once. A node's environment on it is
-//! runner-client's:
+//! device access admits and lets go at once; a `shell` call that names a device
+//! runs in the node's environment on that one, which stays there. A node's
+//! environment on a device is runner-client's:
 //!
 //! - Each of its jobs runs inside the conversation's device access and is refused
 //!   once the conversation no longer reaches that device.
@@ -309,10 +310,11 @@ impl ShellEnvironmentFactory<RemoteDevice> for ShardShellEnvironments {
                 scope.feed.clone(),
                 scope.numbers.clone(),
             );
+            options.named = scope.named.map(Arc::from);
             options.access = Some(Rc::new(JobAccess {
                 shard: self.shard.clone(),
                 conversation: conversation.clone(),
-                follows: scope.agent == 0,
+                follows: scope.follows,
             }));
             let device = device_of(&remote.key())
                 .and_then(|device| DeviceId::try_from(device).ok())
