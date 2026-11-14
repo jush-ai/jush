@@ -122,6 +122,11 @@ pub struct ConversationSlot {
     /// time; an open of its tree takes the same turn, so it opens with the
     /// selection the record holds.
     pub settings: SerialGate,
+    /// Orders the `shell` calls that bring a device into the conversation,
+    /// one at a time, so a call that names a device another call is bringing
+    /// in finds it attached rather than asking the user again, which would
+    /// replace the other call's request.
+    pub bringing: SerialGate,
     /// Its running shell jobs, each with its device, the admission it holds
     /// when it holds one, and the request that stops it when that device is
     /// detached.
@@ -361,6 +366,7 @@ impl Conversations {
                     streams: ActivityGate::new(),
                     transfers: TransferSet::new(),
                     settings: SerialGate::new(),
+                    bringing: SerialGate::new(),
                     jobs: RefCell::default(),
                     jobs_ended: Notify::new(),
                     waiting: RefCell::default(),

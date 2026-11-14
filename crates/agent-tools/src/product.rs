@@ -432,6 +432,27 @@ impl SubagentSource for SubagentSettings {
     }
 }
 
+/// A `shell` call that names the device it runs on.
+#[derive(Debug, Clone, Copy)]
+pub struct DeviceAsk<'a> {
+    /// The device as the call names it: a name or an id from
+    /// `jush device list`.
+    pub device: &'a str,
+    /// The provider's id of the call, which a request to the user names.
+    pub call: &'a str,
+    /// The call's script, which a request to the user shows.
+    pub script: &'a str,
+}
+
+/// Where a `shell` call that names a device runs.
+pub enum Named<D> {
+    /// The node's own device, as if the call named none.
+    Own,
+    /// Another device, whose shell starts in `directory`, the one
+    /// `jush device list` shows for it, and which the user calls `name`.
+    Other { device: Rc<D>, directory: String, name: String },
+}
+
 /// The node a question is about.
 #[derive(Debug, Clone, Copy)]
 pub struct NodeContext<'a> {
@@ -478,6 +499,32 @@ pub trait DeviceResolver: 'static {
     /// reachable or waking it. By default the device itself.
     async fn adopted_device(&self, context: NodeContext<'_>) -> Result<Rc<Self::Device>, DeviceError> {
         self.device(context).await
+    }
+
+    /// Where a `shell` call that names a device runs: the device `ask`
+    /// names, by its name or id among the user's devices, and the directory
+    /// a shell starts in there; [`Named::Own`] for the node's own device,
+    /// where the call runs as one that names none. A device the conversation
+    /// does not reach yet is attached first, which asks the user and holds
+    /// the call until they answer; one that is offline fails the call. By
+    /// default there is none.
+    async fn named_device(&self, _context: NodeContext<'_>, _ask: DeviceAsk<'_>) -> Result<Named<Self::Device>, DeviceError> {
+        Err(DeviceError::new(
+            DeviceErrorKind::Unavailable,
+            "this agent runs no shell tools",
+        ))
+    }
+
+    /// The device a command the node ran on the device `device`, by its id,
+    /// is taken up on, which admits nothing, as [`Self::adopted_device`];
+    /// [`Named::Own`] for the node's own device, which `adopted_device`
+    /// answers. By default the node's own.
+    async fn adopted_named_device(
+        &self,
+        _context: NodeContext<'_>,
+        _device: &str,
+    ) -> Result<Named<Self::Device>, DeviceError> {
+        Ok(Named::Own)
     }
 
     /// The name of the device whose device is `device`, as the user's pages

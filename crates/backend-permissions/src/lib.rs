@@ -71,6 +71,9 @@
 //!   restart, leaves its request as it is. An Allow still grants the category
 //!   for the commands that come later.
 //!
+//! A `shell` call that names a device the conversation does not reach passes
+//! the same check for that device before its job starts ([`check_device`]).
+//!
 //! The crate decides whether a call is dispatched, and the shard dispatches it.
 //! The crate runs no handler, knows no plugin, reaches no device and sees no
 //! agent session and no `Shard`.
@@ -358,12 +361,74 @@ pub async fn check(
     need: Need<'_>,
     port: &RpcPort,
 ) -> Result<(), RpcError> {
+    let asking = asking(shard, invocation)?;
+    let Some(raised) = raise(shard, asking, need).await.map_err(RpcError::Failed)? else {
+        return Ok(());
+    };
+    port.awaits_user(true).await?;
+    let decided = held(raised.decided, port).await?;
+    decision(decided, &raised.action).map_err(RpcError::Failed)
+}
+
+/// The check of a `shell` call, `call` of the agent `node` whose script is
+/// `command`, that runs on the device `id`, before its job starts: the call
+/// passes when the conversation reaches the device, and otherwise holds until
+/// the user decides, as [`check`] holds an `rpc` call that brings a device.
+/// The call's drop leaves its request to the user.
+pub async fn check_device(
+    shard: &dyn PermissionShard,
+    conversation: &ConversationId,
+    node: &NodeId,
+    call: String,
+    command: String,
+    id: DeviceId,
+    name: String,
+) -> Result<(), String> {
+    let asking = Asking {
+        conversation: conversation.clone(),
+        agent: shard.asking_agent(conversation, node)?,
+        call,
+        command,
+    };
+    let Some(raised) = raise(shard, asking, Need::Device { id, name }).await? else {
+        return Ok(());
+    };
+    let decided = raised
+        .decided
+        .await
+        .map_err(|_| "the backend stopped while the call waited for the user's answer".to_owned())?;
+    decision(decided, &raised.action)
+}
+
+/// A request a call raised, which it waits on until the user decides.
+struct Raised {
+    decided: oneshot::Receiver<Decided>,
+    /// What the grant lets the conversation do, as the refusal says it.
+    action: String,
+    /// Withdraws the wait when the call goes.
+    _wait: Wait,
+}
+
+/// What the agent reads of a decision; nothing when the call passes.
+fn decision(decided: Decided, action: &str) -> Result<(), String> {
+    match decided {
+        Decided::Allowed => Ok(()),
+        Decided::Denied => Err(format!(
+            "the user denied this conversation permission to {action}; the command was not run"
+        )),
+        Decided::Replaced => Err("a newer run of this command asks the user instead; this one was not run".into()),
+    }
+}
+
+/// Raises the request of `asking` for `need` unless the conversation has it
+/// granted already: none when the call passes at once.
+async fn raise(shard: &dyn PermissionShard, asking: Asking, need: Need<'_>) -> Result<Option<Raised>, String> {
     let Asking {
         conversation,
         agent,
         call,
         command,
-    } = asking(shard, invocation)?;
+    } = asking;
     let (needed, action, ask) = match need {
         Need::Category(category) => {
             let action = category_action(shard, &category.id).await;
@@ -393,7 +458,7 @@ pub async fn check(
                 answer,
             },
         );
-    let _wait = Wait {
+    let wait = Wait {
         shard: shard.this(),
         conversation: conversation.clone(),
         request: request.clone(),
@@ -402,9 +467,9 @@ pub async fn check(
         .control()
         .check_permission(conversation.clone(), request.clone(), needed, command, agent)
         .await
-        .map_err(|error| RpcError::Failed(error.to_string()))?;
+        .map_err(|error| error.to_string())?;
     let Checked::Raised { replaced } = checked else {
-        return Ok(());
+        return Ok(None);
     };
     for older in &replaced {
         shard.waits().decided(older, Decided::Replaced);
@@ -412,16 +477,11 @@ pub async fn check(
     changed(shard, &conversation);
     shard.asked(&conversation, request, ask);
     shard.raised().await;
-    port.awaits_user(true).await?;
-    match held(decided, port).await? {
-        Decided::Allowed => Ok(()),
-        Decided::Denied => Err(RpcError::Failed(format!(
-            "the user denied this conversation permission to {action}; the command was not run"
-        ))),
-        Decided::Replaced => Err(RpcError::Failed(
-            "a newer run of this command asks the user instead; this one was not run".into(),
-        )),
-    }
+    Ok(Some(Raised {
+        decided,
+        action,
+        _wait: wait,
+    }))
 }
 
 /// Holds a call until `decided` ends its wait.

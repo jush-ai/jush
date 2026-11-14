@@ -21,6 +21,8 @@ const props = defineProps<{
    * page's line, not the output's.
    */
   script?: string
+  /** The device the command's call named, which its prompt names. */
+  device?: string
 }>()
 
 /**
@@ -97,7 +99,7 @@ function applyPrompt(): void {
   // blank, in its lines, while its region waits (`markdown/highlight.ts`).
   const script = props.script !== undefined && codeForm('bash') === 'held' ? props.script.replace(/[^\n]/g, ' ') : props.script
   const runs = props.script ? terminalCodeRuns(host, codeRuns(props.script.replace(/(\r?\n)+$/, ''), 'bash')) : []
-  const next = promptLine(script, promptColors, runs)
+  const next = promptLine(script, promptColors, runs, props.device)
   if (next === prompt) {
     return
   }
@@ -205,7 +207,7 @@ watch(
   (running) => applyCursor(running === true),
 )
 watch(terminalTheme, applyColors)
-watch(() => props.script, applyPrompt)
+watch(() => [props.script, props.device], applyPrompt)
 // Bash's parser's arrival colors the script anew, and the page's mode its
 // text color and its runs.
 watch(useMarkdownRenderVersion(), applyColors)

@@ -82,28 +82,28 @@ use crate::access::{DeviceRole, ReachableDevice};
 use crate::transition::ChangeRefusal;
 
 const SUMMARY: &str =
-    "The devices this conversation reaches: list them with their machines and how busy each is, show one in full or the primary one, run a command on another, pair a computer, attach or detach one, move this conversation to another device, forward a port from one device to another.";
+    "The devices this conversation reaches: list them with their machines and how busy each is, show one in full or the primary one, stream bytes to or from another, pair a computer, attach or detach one, move this conversation to another device, forward a port from one device to another.";
 
 /// The group's entry in the model's capability index.
-const ENTRY: &str = "Devices and their machines: list, show, run a command on another, attach, detach, move the conversation, forward ports, pair.";
+const ENTRY: &str = "Devices and their machines: list, show, stream bytes between two, attach, detach, move the conversation, forward ports, pair.";
 
 const MOVE_SUMMARY: &str = "Make another device where this conversation runs, or another directory there: `jush device move <device> <directory>`, the device by name or id from `jush device list` (`Cloud` for the user's Cloud), the directory an absolute path that exists there. The move applies at once: commands already running finish where they are, every later command runs there, and the device it leaves stays attached.";
 
-const ATTACH_SUMMARY: &str = "Attach one of the user's devices or the Cloud to this conversation, by name or id from `jush device list`, so `jush device shell --device` reaches it; `shell` and `move` attach one themselves.";
+const ATTACH_SUMMARY: &str = "Attach one of the user's devices or the Cloud to this conversation, by name or id from `jush device list`, so a `shell` call's `device` reaches it; that call, `jush device shell` and `jush device move` attach one themselves.";
 
 const INSTALL_COMMAND_SUMMARY: &str = "The command that installs the runner on a computer, as Add Device shows it; run it there and pass the pairing code it shows to `jush device pair`.";
 
-const PAIR_SUMMARY: &str = "Pair the computer whose installer shows `<code>` with the user's account and attach it to this conversation, so `jush device shell --device` reaches it.";
+const PAIR_SUMMARY: &str = "Pair the computer whose installer shows `<code>` with the user's account and attach it to this conversation, so a `shell` call's `device` reaches it.";
 
 const DETACH_SUMMARY: &str = "Detach an attached device, by name or id from `jush device list`, at once; this conversation's commands that run there end.";
 
-const LIST_SUMMARY: &str = "List the user's devices and the Cloud, each with what it is to this conversation: name, id, status (a stopped Cloud wakes for work), role (primary, attached, subagent for a device only a subagent works on, or none), its system, CPU, memory and disk with how busy each is now, and the directory commands start in. `jush device shell --device` and `jush device move` take any of them; one the conversation does not reach asks the user once.";
+const LIST_SUMMARY: &str = "List the user's devices and the Cloud, each with what it is to this conversation: name, id, status (a stopped Cloud wakes for work), role (primary, attached, subagent for a device only a subagent works on, or none), its system, CPU, memory and disk with how busy each is now, and the directory commands start in. A `shell` call's `device`, `jush device shell --device` and `jush device move` take any of them; one the conversation does not reach asks the user once.";
 
 const SHOW_SUMMARY: &str = "Show one device of `jush device list`, by name or id, in full: its system, processor, GPUs, memory, disk, uptime and runner release, with how busy it is now.";
 
-const CURRENT_SUMMARY: &str = "Show the primary device, where the shell tool's commands run: its name, id, status, project and directory.";
+const CURRENT_SUMMARY: &str = "Show the primary device, where a `shell` call without `device` runs: its name, id, status, project and directory.";
 
-const SHELL_SUMMARY: &str = "Run a script in another device's bash, as ssh does: `jush device shell --device <name|id> <script>`, or without the script argument, the script on stdin, so one with quotes of its own needs no escaping (`jush device shell --device ci <<'EOF'` … `EOF`). Any device `jush device list` shows: one this conversation does not reach is attached first, which asks the user once. The script starts in that device's directory, which `jush device list` shows and no `cd` changes. With a script argument, this command's stdin and stdout are the script's, byte-faithfully and streaming, so archives pipe cleanly both ways (`jush device shell --device ci \"tar c -C /work .\" | tar x`, `tar c . | jush device shell --device ci \"tar x -C /work\"`); a script read from stdin has no stdin of its own. stderr and the exit code pass through.";
+const SHELL_SUMMARY: &str = "Stream bytes between this device and another one's bash, as ssh does; to run a script on a device, a `shell` call with `device` runs it without this device in between. `jush device shell --device <name|id> <script>`, or without the script argument, the script on stdin, so one with quotes of its own needs no escaping (`jush device shell --device ci <<'EOF'` … `EOF`). Any device `jush device list` shows: one this conversation does not reach is attached first, which asks the user once. The script starts in that device's directory, which `jush device list` shows and no `cd` changes. With a script argument, this command's stdin and stdout are the script's, byte-faithfully and streaming, so archives pipe cleanly both ways (`jush device shell --device ci \"tar c -C /work .\" | tar x`, `tar c . | jush device shell --device ci \"tar x -C /work\"`); a script read from stdin has no stdin of its own. stderr and the exit code pass through.";
 
 /// The input of a leaf that takes none, such as `jush device list`.
 #[derive(Deserialize, JsonSchema)]
@@ -281,6 +281,46 @@ pub async fn resolve_device(
         .into_iter()
         .next()
         .ok_or_else(|| RpcError::Failed(format!("{wanted}: no device of this name or id (see `jush device list`)")))
+}
+
+/// The device `named` as the conversation reaches it, for a `shell` call that
+/// runs there (`crates/agent-tools/src/product.rs`).
+///
+/// A device the conversation does not reach yet, or reaches only through a
+/// subagent, is attached first once `allowed` passes it, which asks the user
+/// as the dispatch asks for an `rpc` call's `bringsDevice` argument. Such
+/// calls take turns ([`ConversationSlot::bringing`](crate::access::ConversationSlot)).
+pub async fn call_device(
+    shard: &dyn DeviceShard,
+    conversation: &ConversationId,
+    named: &NamedDevice,
+    allowed: impl AsyncFnOnce() -> Result<(), String>,
+) -> Result<ReachableDevice, String> {
+    let reached = async || {
+        reachable(shard, conversation)
+            .await
+            .map(|devices| {
+                devices
+                    .into_iter()
+                    .find(|each| each.device == named.device && each.role != DeviceRole::Agent)
+            })
+            .map_err(|error| error.to_string())
+    };
+    if let Some(device) = reached().await? {
+        return Ok(device);
+    }
+    let _turn = shard.conversations().slot(conversation).bringing.acquire().await;
+    // Another call brought it in while this one waited for its turn.
+    if let Some(device) = reached().await? {
+        return Ok(device);
+    }
+    allowed().await?;
+    attach_device(shard, conversation, &named.device, &named.name)
+        .await
+        .map_err(|error| error.to_string())?;
+    reached()
+        .await?
+        .ok_or_else(|| format!("{}: not reachable from this conversation (see `jush device list`)", named.name))
 }
 
 /// The device the dispatch resolved for the call's `bringsDevice` argument.
@@ -616,7 +656,7 @@ async fn attach(
         .map_err(|_| RpcError::Failed("the dispatch resolved no device".into()))?;
     let attached = attach_device(&*shard, &conversation, &device, &named.name).await?;
     port.stdout(format!(
-        "Attached {} as {attached}; run commands there with `jush device shell --device {attached} <script>`.\n",
+        "Attached {} as {attached}; run commands there with a `shell` call's `device: {attached}`.\n",
         named.name
     ))
     .await?;
@@ -975,10 +1015,10 @@ async fn run_on_device(
     };
     let device = target.device.as_str();
     if let Some(stdin) = &stdin {
-        stdin.sink_to(device).map_err(|error| error.to_string())?;
+        stdin.sink_to(device, &target.name).map_err(|error| error.to_string())?;
     }
     stdout
-        .source_from(device)
+        .source_from(device, &target.name)
         .map_err(|error| error.to_string())?;
     // Between two devices whose runners may talk directly, the bytes move to
     // their direct channel once it is up.
@@ -1055,7 +1095,25 @@ async fn run_on_device(
                 tokio::select! {
                     end = job.end() => end,
                     () = port.cancelled() => {
-                        stop(&job, &stdout, stdin.as_ref()).await
+                        stop(&job, &stdout, stdin.as_ref(), "command aborted", "the device's runner went away while the command ran").await
+                    }
+                    // Nobody reads what it writes any more, so it does not
+                    // run on unseen; a caller that comes back reads why.
+                    () = gone(shard, &invocation.device) => {
+                        tracing::info!(
+                            event = "device_shell.caller_lost",
+                            device_id = %target.device,
+                            caller = invocation.device.as_str(),
+                            "a device shell's far job stopped: its calling device went away"
+                        );
+                        let reason = format!("the script on {} was stopped: this device was away too long", target.name);
+                        stop(&job, &stdout, stdin.as_ref(), &reason, &reason).await
+                    }
+                    // A far device that goes silent, with no connection
+                    // that breaks, ends the call too.
+                    () = gone(shard, target.device.as_str()) => {
+                        let reason = format!("{} went away while the script ran", target.name);
+                        stop(&job, &stdout, stdin.as_ref(), &reason, &reason).await
                     }
                     reason = withdrawal.asked() => {
                         stdout.fail(&reason);
@@ -1127,14 +1185,32 @@ async fn run_on_device(
     }
 }
 
-/// Stops the far job as a stop does (`RemoteJob::stop`), except that a runner
-/// that is away ends it as lost: the call has to end, and its caller reads
-/// why. Its pipes fail with the command.
-async fn stop(job: &RemoteJob, stdout: &Pipe, stdin: Option<&Pipe>) -> JobEnd {
-    stdout.fail("command aborted");
-    if let Some(stdin) = stdin {
-        stdin.fail("command aborted");
+/// Resolves once `device` is away and did not come back within the wait its
+/// runner gets after a dropped connection, so a blip of the network ends
+/// nothing; never for a device that is no id. A connection that is closing
+/// ends first, so its close is not read as the device gone before its wait
+/// began.
+async fn gone(shard: &dyn DeviceShard, device: &str) {
+    let Ok(device) = DeviceId::try_from(device.to_owned()) else {
+        return std::future::pending().await;
+    };
+    loop {
+        shard.devices().until_away(&device).await;
+        shard.devices().settled(&device).await;
+        if !shard.devices().reached(&device).await {
+            return;
+        }
     }
-    job.stop_unless_away("the device's runner went away while the command ran").await
+}
+
+/// Stops the far job as a stop does (`RemoteJob::stop`), except that a runner
+/// that is away ends it as lost with `lost`: the call has to end, and its
+/// caller reads why. Its pipes fail with `reason`.
+async fn stop(job: &RemoteJob, stdout: &Pipe, stdin: Option<&Pipe>, reason: &str, lost: &str) -> JobEnd {
+    stdout.fail(reason);
+    if let Some(stdin) = stdin {
+        stdin.fail(reason);
+    }
+    job.stop_unless_away(lost).await
 }
 

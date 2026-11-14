@@ -56,7 +56,7 @@ pub use offers::offer_response;
 pub use output_records::{decode_output, encode_output};
 pub use pipes::{
     ARRIVAL, ChunkEnd, ChunkRefusal, DeviceChunk, DeviceSink, DeviceSource, Pipe, PipeError, PipeFailure, PipeReader, PipeRefusal,
-    PipeWriter, Pipes, SinkSession, SourceMessage,
+    PipeWriter, Pipes, SinkSession, SourceBreak, SourceMessage,
 };
 pub use session::{Beginning, DeviceSession};
 pub use remote_device::{

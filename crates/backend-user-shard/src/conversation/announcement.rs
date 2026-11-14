@@ -286,7 +286,7 @@ impl Shard {
     /// The attached devices as one line: each one's name, connection and
     /// directory, and how to reach them.
     fn attached_devices_line(&self, attached: &[AttachedDevice]) -> String {
-        const LIST: &str = "`jush device list` shows all of the user's devices; `jush device shell --device <name> <script>` runs a shell string on any of them, attaching it first.";
+        const LIST: &str = "`jush device list` shows all of the user's devices; a `shell` call with `device` runs on any of them, attaching it first.";
         if attached.is_empty() {
             return format!("{ATTACHED}none. {LIST}");
         }
@@ -367,7 +367,7 @@ fn switch_lines(
         let name = &departed.name;
         let from = switch.from.path();
         lines.push(format!(
-            "The previous device stays attached as \"{name}\": `jush device shell --device {name} <script>` runs a shell string there with byte-faithful stdio, starting in {from} (e.g. `jush device shell --device {name} \"tar c -C {from} .\" | tar x` pulls its files into the current directory)."
+            "The previous device stays attached as \"{name}\": a `shell` call with `device: {name}` runs there, starting in {from}, and `jush device shell --device {name}` streams bytes between it and here (e.g. `jush device shell --device {name} \"tar c -C {from} .\" | tar x` pulls its files into the current directory)."
         ));
     }
     if let (

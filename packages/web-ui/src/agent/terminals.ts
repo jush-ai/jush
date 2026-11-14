@@ -63,6 +63,12 @@ export interface TerminalRecord {
   waitingFor?: string
   /** The `shell` call that started it, known from its live frames. */
   toolUseId?: string
+  /**
+   * The name of the device its call named, which its prompt names, as its
+   * live frames say; absent for one on its agent's own device, and for one
+   * the page knows only from the conversation's list of ended commands.
+   */
+  device?: string
   /** The subagent that runs it; absent for the root's commands. */
   subagentId?: string
   /**
@@ -233,9 +239,16 @@ const RESET = '\x1b[0m'
  * typed: `$ ` and the script's first line, `> ` before each further line,
  * the prompt muted and the script highlighted as Bash by `runs`, in its
  * own color where no run colors it; the terminal wraps what is longer than
- * its width. No script, no line.
+ * its width. A command on a device its call named has the device's name
+ * before its first `$`, as a shell's prompt names its host. No script, no
+ * line.
  */
-export function promptLine(script: string | undefined, colors: PromptColors, runs: readonly PromptRun[] = []): string {
+export function promptLine(
+  script: string | undefined,
+  colors: PromptColors,
+  runs: readonly PromptRun[] = [],
+  device?: string,
+): string {
   const text = script?.replace(/(\r?\n)+$/, '')
   if (!text) {
     return ''
@@ -259,7 +272,8 @@ export function promptLine(script: string | undefined, colors: PromptColors, run
     }
     if (at < end)
       drawn += `${colors.script}${text.slice(at, end)}`
-    lines += `${colors.prompt}${index === 0 ? '$' : '>'}${RESET} ${drawn}${RESET}\n`
+    const sign = index === 0 ? (device === undefined ? '$' : `${device} $`) : '>'
+    lines += `${colors.prompt}${sign}${RESET} ${drawn}${RESET}\n`
   }
   return lines
 }
@@ -323,6 +337,7 @@ export function followFrame(
     stopping: status.status === 'running' && status.stopping ? true : undefined,
     waitingFor: status.status === 'running' ? status.waitingFor ?? undefined : undefined,
     toolUseId: status.toolUseId,
+    ...(status.device ? { device: status.device } : {}),
     ...(subagentId === undefined ? {} : { subagentId }),
     ...(status.service ? { service: true } : {}),
   }
@@ -441,7 +456,13 @@ export function useDockTerminals(
       if (entry !== undefined) {
         shown.add(terminal.id)
         const { outputRead: _unread, ...known } = entry
-        return [{ ...known, output: terminal.output, chars: terminal.chars, script: terminal.script ?? entry.script }]
+        return [{
+          ...known,
+          output: terminal.output,
+          chars: terminal.chars,
+          script: terminal.script ?? entry.script,
+          ...(terminal.device === undefined ? {} : { device: terminal.device }),
+        }]
       }
       if (terminal.toolUseId === undefined) {
         return [terminal]

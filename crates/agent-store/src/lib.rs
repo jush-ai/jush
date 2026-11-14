@@ -317,6 +317,8 @@ pub trait AgentTreeStore {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RunningCommand {
     pub command: CommandId,
+    /// The id of the device its job runs on.
+    pub device: String,
     pub job: String,
     pub tool_use_id: String,
     /// The turn of the call; none for a command recorded before records

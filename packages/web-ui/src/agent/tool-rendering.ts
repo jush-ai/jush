@@ -21,6 +21,14 @@ export function shellTitle(input: Record<string, unknown>): string {
 }
 
 /**
+ * The device a `shell` call named to run on, as the call wrote it; none for a
+ * call that runs on the conversation's device.
+ */
+export function shellDevice(input: Record<string, unknown>): string | undefined {
+  return nonEmptyString(input.device)
+}
+
+/**
  * The options of `jush shell status` that take a value, as the next word or
  * after `=`.
  */

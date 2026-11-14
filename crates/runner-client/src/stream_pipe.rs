@@ -17,7 +17,7 @@ use jush_runner_protocol::wire::{self, PIPE_IDLE, PIPE_SESSION_MESSAGE_BYTES, Pi
 use futures_util::{SinkExt as _, Stream, StreamExt as _};
 use std::{sync::Arc, time::Duration};
 
-use crate::{DeviceSource, SinkSession, SourceMessage};
+use crate::{DeviceSource, SinkSession, SourceBreak, SourceMessage};
 
 /// How long a runner has to say how many messages it delivered once its
 /// WebSocket opened.
@@ -68,15 +68,15 @@ where
                 Ok(PipeMove { to, at }) => {
                     return Some((Ok(SourceMessage::Moved { to, at }), Some(reader)));
                 }
-                Err(error) => format!("a stream pipe's text message is no move: {error}"),
+                Err(error) => SourceBreak::Said(format!("a stream pipe's text message is no move: {error}")),
             },
             Some(FromSource::Close { code, .. }) if code == close_code::NORMAL => return None,
             // The runner's own failure, in its words.
-            Some(FromSource::Close { code, reason }) if code == close_code::ERROR => reason,
+            Some(FromSource::Close { code, reason }) if code == close_code::ERROR => SourceBreak::Said(reason),
             Some(FromSource::Close { code, reason }) => {
-                format!("the runner closed the stream pipe ({code}): {reason}")
+                SourceBreak::Said(format!("the runner closed the stream pipe ({code}): {reason}"))
             }
-            None => "the stream pipe's connection ended without a close".to_owned(),
+            None => SourceBreak::Gone("the stream pipe's connection ended without a close".to_owned()),
         };
         Some((Err(failure), None))
     });

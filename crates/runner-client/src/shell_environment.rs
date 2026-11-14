@@ -205,6 +205,9 @@ pub struct EnvironmentOptions {
     pub output_limit: usize,
     /// The most of a binary final stdout a status carries.
     pub binary_limit: usize,
+    /// The name of the device a call named, which the pages' views of its
+    /// commands carry; none for its node's own device.
+    pub named: Option<Arc<str>>,
 }
 
 impl EnvironmentOptions {
@@ -225,6 +228,7 @@ impl EnvironmentOptions {
             initial_env: BTreeMap::new(),
             output_limit: DEFAULT_OUTPUT_LIMIT_BYTES,
             binary_limit: DEFAULT_BINARY_LIMIT_BYTES,
+            named: None,
         }
     }
 }
@@ -381,7 +385,8 @@ impl RemoteShellEnvironment {
             request.title.clone(),
             &request.script,
             request.service,
-        );
+        )
+        .on_device(self.0.options.named.clone());
         let (running, record) = self.hold(&command, record, cancel.child_token());
         let environment = self.clone();
         let task_command = command.clone();
@@ -430,7 +435,8 @@ impl RemoteShellEnvironment {
             service,
             running,
             seen,
-        );
+        )
+        .on_device(self.0.options.named.clone());
         let (running, record) = self.hold(&command, record, CancellationToken::new());
         let begin = match unsent {
             Some(UnsentStart { script, cwd, viewable }) => Begin::Start {

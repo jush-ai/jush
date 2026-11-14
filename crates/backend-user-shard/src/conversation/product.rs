@@ -12,7 +12,8 @@
 use std::rc::{Rc, Weak};
 
 use jush_agent_tools::{
-    ContextAnswer, ContextSource, ConversationProfiles, DeviceResolver, NewProfileDraft, NodeContext, Profile, WorkflowListing,
+    ContextAnswer, ContextSource, ConversationProfiles, DeviceAsk, DeviceResolver, Named, NewProfileDraft, NodeContext,
+    Profile, WorkflowListing,
     ProfileEdit, ProfileModel, SubagentSettings, SubagentSource, Toolset, ToolsetSource,
     runs_on as job_model,
 };
@@ -26,12 +27,15 @@ use jush_backend_device_access::device_commands::device_group;
 use super::organize::conversation_group;
 use super::pins::pin_group;
 use crate::shard::provider_commands::providers_group;
+use jush_backend_device_access::access::DeviceRole;
+use jush_backend_device_access::device_commands::{call_device, resolve_device};
 use jush_backend_device_access::{DeviceShard, conversation_of};
+use jush_web_api_protocol::devices::DeviceKind;
 use jush_plugin_host::ContextAsk;
 use jush_runner_client::RemoteDevice;
 use jush_agent_store::Placement;
 use jush_web_api_protocol::ids::DeviceId;
-use jush_device_interface::{DeviceError, DeviceErrorKind};
+use jush_device_interface::{Device as _, DeviceError, DeviceErrorKind};
 use jush_plugin_interface::{EXECUTION_SOURCE, PluginId};
 use jush_shared_types::TurnId;
 use jush_backend_database::StorageError;
@@ -300,6 +304,85 @@ impl DeviceResolver for ShardDevices {
         }
     }
 
+    async fn named_device(&self, context: NodeContext<'_>, ask: DeviceAsk<'_>) -> Result<Named<RemoteDevice>, DeviceError> {
+        let shard = self
+            .shard
+            .upgrade()
+            .ok_or_else(|| DeviceError::offline("the backend is shutting down"))?;
+        let conversation = conversation_of(context.root);
+        let named = resolve_device(shard.device_shard(), &conversation, ask.device)
+            .await
+            .map_err(|error| DeviceError::failed(None, error.to_string()))?;
+        if own_device(&shard, &conversation, context.placement).await?.as_ref() == Some(&named.device) {
+            return Ok(Named::Own);
+        }
+        let record = shard
+            .services()
+            .control
+            .device(named.device.clone())
+            .await
+            .map_err(|error| DeviceError::failed(None, error.to_string()))?
+            .ok_or_else(|| DeviceError::offline(format!("{} is gone", named.name)))?;
+        // A Cloud wakes for the work; a paired device that is away, past the
+        // wait a dropped connection gets, runs nothing now, and is not
+        // brought into the conversation for it.
+        if record.kind == DeviceKind::User && !shard.device_shard().devices().reached(&named.device).await {
+            return Err(shard.device_shard().offline(&record));
+        }
+        let reached = call_device(shard.device_shard(), &conversation, &named, async || {
+            jush_backend_permissions::check_device(
+                shard.permission_shard(),
+                &conversation,
+                context.node,
+                ask.call.to_owned(),
+                ask.script.to_owned(),
+                named.device.clone(),
+                named.name.clone(),
+            )
+            .await
+        })
+        .await
+        .map_err(|error| DeviceError::failed(None, error))?;
+        let device = shard.device_shard().agent_device(&conversation, &reached.device).await?;
+        Ok(Named::Other {
+            device,
+            directory: reached.path,
+            name: reached.name,
+        })
+    }
+
+    async fn adopted_named_device(
+        &self,
+        context: NodeContext<'_>,
+        device: &str,
+    ) -> Result<Named<RemoteDevice>, DeviceError> {
+        let shard = self
+            .shard
+            .upgrade()
+            .ok_or_else(|| DeviceError::offline("the backend is shutting down"))?;
+        let conversation = conversation_of(context.root);
+        let Ok(device) = DeviceId::try_from(device.to_owned()) else {
+            return Ok(Named::Own);
+        };
+        if own_device(&shard, &conversation, context.placement).await?.as_ref() == Some(&device) {
+            return Ok(Named::Own);
+        }
+        let name = shard
+            .services()
+            .control
+            .device(device.clone())
+            .await
+            .ok()
+            .flatten()
+            .map_or_else(|| device.to_string(), |record| record.name);
+        let remote = shard.device_shard().adopting_agent_device(&conversation, &device).await?;
+        Ok(Named::Other {
+            directory: remote.default_cwd().to_owned(),
+            device: remote,
+            name,
+        })
+    }
+
     async fn device_name(&self, device: &str) -> Option<String> {
         let shard = self.shard.upgrade()?;
         let device = DeviceId::try_from(device.to_owned()).ok()?;
@@ -317,6 +400,29 @@ impl DeviceResolver for ShardDevices {
             .await
             .map_err(|error| DeviceError::new(DeviceErrorKind::Failed { code: None }, error.to_string()))
     }
+}
+
+/// The device a node works on without naming one: a subagent's own, by its
+/// `placement`, and the conversation's primary device for the root and for a
+/// subagent that works where the conversation does; none for a Cloud never
+/// made.
+async fn own_device(
+    shard: &Shard,
+    conversation: &jush_web_api_protocol::ids::ConversationId,
+    placement: Option<&Placement>,
+) -> Result<Option<DeviceId>, DeviceError> {
+    if let Some(device) = agent_device(placement) {
+        return Ok(Some(device));
+    }
+    let devices = shard
+        .device_shard()
+        .conversation_devices(conversation)
+        .await
+        .map_err(|error| DeviceError::failed(None, error.to_string()))?;
+    Ok(devices
+        .into_iter()
+        .find(|each| each.role == DeviceRole::Primary)
+        .map(|each| each.device))
 }
 
 /// The device of a subagent's own device, by its `placement`; none for the

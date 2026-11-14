@@ -41,11 +41,13 @@ export type Step =
   /** Text, as Markdown, streamed over `ms` milliseconds, at once without. */
   | { say: string, ms?: number }
   /**
-   * A shell command, which ends the answer: the backend runs it and asks
-   * again. With `background` the call returns at once and the command runs
-   * on; with `service` it returns once the command's output is quiet.
+   * A shell command, which ends the answer, with the runs right after it as
+   * the same response's calls, which run together: the backend runs them
+   * and asks again. With `background` the call returns at once and the command runs
+   * on; with `service` it returns once the command's output is quiet; with
+   * `device` it runs on that device of `jush device list`.
    */
-  | { run: string, background?: boolean, service?: boolean }
+  | { run: string, background?: boolean, service?: boolean, device?: string }
   /** Nothing for this many milliseconds. */
   | { wait: number }
 
@@ -194,7 +196,7 @@ export class ScriptedModel {
     }
     let index = 0
     let stop = 'end_turn'
-    for (const step of steps) {
+    for (const [at, step] of steps.entries()) {
       if (gone.aborted) {
         return
       }
@@ -211,6 +213,12 @@ export class ScriptedModel {
         yield { type: 'content_block_delta', index, delta: { type: 'input_json_delta', partial_json: JSON.stringify(commandInput(shell, step)) } }
         yield { type: 'content_block_stop', index }
         stop = 'tool_use'
+        // Runs in a row are one response's calls, which run together.
+        const next = steps[at + 1]
+        if (next !== undefined && 'run' in next) {
+          index += 1
+          continue
+        }
         break
       }
       const thinking = 'think' in step
@@ -275,6 +283,9 @@ function commandInput(tool: OfferedTool, step: Extract<Step, { run: string }>): 
   }
   if (step.service) {
     input.service = true
+  }
+  if (step.device !== undefined) {
+    input.device = step.device
   }
   return input
 }
