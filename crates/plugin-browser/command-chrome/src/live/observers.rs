@@ -13,7 +13,6 @@
 
 use std::{
     collections::{BTreeMap, HashMap},
-    path::Path,
     sync::Arc,
 };
 
@@ -70,7 +69,7 @@ pub(crate) struct Observed {
     pub copies: broadcast::Sender<String>,
     /// Right clicks the page left to the browser, in the tab's CSS pixels.
     pub menus: broadcast::Sender<LiveMenu>,
-    /// The downloads the user started in the tab, the newest last.
+    /// The downloads started in the tab since it is watched, the newest last.
     pub downloads: watch::Sender<Vec<LiveDownload>>,
     /// Counts the tab's main documents: a new one ends the input held in the
     /// old one.
@@ -130,11 +129,11 @@ struct Observing {
 }
 
 /// Starts the observer of `tab` in every frame of it, cross-site frames in
-/// their own processes included, and follows the downloads its user starts
-/// into `downloads`, the browser's download directory; it ends with the tab.
+/// their own processes included, and follows the downloads that start in it
+/// among the conversation's `downloads`; it ends with the tab.
 pub(crate) async fn start(
     tab: &BrowserTab,
-    downloads: &Path,
+    downloads: &crate::tabs::downloads::Downloads,
     tasks: &TaskTracker,
 ) -> Result<Arc<Observed>> {
     let (heard, mut hearing) = mpsc::channel(64);
@@ -154,7 +153,7 @@ pub(crate) async fn start(
         downloads: watch::channel(Vec::new()).0,
         documents: watch::channel(0).0,
     });
-    crate::live::downloads::follow(tab, downloads.to_owned(), observed.downloads.clone(), tasks).await?;
+    crate::live::downloads::follow(tab, downloads, observed.downloads.clone(), tasks).await?;
     let mut pages = HashMap::from([(
         tab.page().target_id().clone(),
         Observing {

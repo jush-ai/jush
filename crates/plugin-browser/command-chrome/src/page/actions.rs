@@ -148,7 +148,7 @@ pub async fn command(
 /// page or wait for it, not those that only read it.
 const LISTED: &[&str] = &[
     "open", "back", "forward", "reload", "click", "move", "drag", "scroll", "fill", "type", "key", "check", "select",
-    "select-text", "wait", "upload", "download", "clipboard.write", "viewport.set", "viewport.reset",
+    "select-text", "wait", "upload", "clipboard.write", "viewport.set", "viewport.reset",
     "dialog.accept", "dialog.dismiss", "cdp.send", "webmcp.call",
 ];
 

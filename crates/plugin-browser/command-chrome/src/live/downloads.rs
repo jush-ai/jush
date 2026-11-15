@@ -1,179 +1,66 @@
-//! The downloads a user starts in a watched tab: the browser saves them in its
-//! download directory, as it saves the agent's, and each is named there after
-//! the file the page suggested once it is complete, so the device's files show it
-//! by its name. The page shows them as a browser's download bubble does.
+//! The downloads that start in a watched tab, as the page's download bubble
+//! shows them: the conversation's downloads (`crate::tabs::downloads`) of
+//! this tab since the tab is watched, the agent's and the user's alike, as a
+//! browser's bubble shows every download of its window.
 
-use std::path::{Path, PathBuf};
+use std::collections::HashSet;
 
-use chromiumoxide::cdp::browser_protocol::browser::{
-    DownloadProgressState, EventDownloadProgress, EventDownloadWillBegin,
-};
-use futures_util::StreamExt;
 use tokio::sync::watch;
 use tokio_util::task::TaskTracker;
 
 use crate::driver::operation::Result;
-use crate::tabs::tab::BrowserTab;
-use jush_command_package_browser_protocol::live::{DownloadState, LiveDownload, MAX_DOWNLOADS};
+use crate::tabs::{downloads::Downloads, tab::BrowserTab};
 use crate::traced::SpawnTraced as _;
+use jush_command_package_browser_protocol::live::{LiveDownload, MAX_DOWNLOADS};
 
-/// The longest file name the protocol carries, in characters.
-const NAME_CHARS: usize = 255;
-/// A name taken this many times over gives up on a numbered one.
-const NUMBERED: u32 = 1000;
-
-/// Follows the downloads that start in `tab` until it ends, into
-/// `downloads`. A download that starts while an agent's command holds the
-/// tab is the command's: its `download` saves and moves the file itself, and
-/// a click's download is not the user's.
+/// Follows the downloads that start in `tab` from now until it ends, into
+/// `bubble`: one that started before opens no bubble now.
 pub(crate) async fn follow(
     tab: &BrowserTab,
-    directory: PathBuf,
-    downloads: watch::Sender<Vec<LiveDownload>>,
+    downloads: &Downloads,
+    bubble: watch::Sender<Vec<LiveDownload>>,
     tasks: &TaskTracker,
 ) -> Result<()> {
-    let browser = tab.browser().call()?;
-    let mut beginnings = browser.event_listener::<EventDownloadWillBegin>().await?;
-    let mut progress = browser.event_listener::<EventDownloadProgress>().await?;
-    drop(browser);
+    let mut list = downloads.subscribe();
+    let earlier: HashSet<String> = list.borrow_and_update().iter().map(|download| download.id.clone()).collect();
     let tab = tab.clone();
     tasks.spawn_traced(async move {
         loop {
+            let shown: Vec<LiveDownload> = {
+                let list = list.borrow_and_update();
+                let mine: Vec<_> = list
+                    .iter()
+                    .filter(|download| download.tab.as_ref() == Some(tab.id()) && !earlier.contains(&download.id))
+                    .collect();
+                let excess = mine.len().saturating_sub(MAX_DOWNLOADS);
+                mine[excess..]
+                    .iter()
+                    .map(|download| LiveDownload {
+                        id: download.id.clone(),
+                        name: download.name.clone(),
+                        state: download.state,
+                        received: download.received,
+                        total: download.total,
+                        path: download
+                            .path
+                            .as_ref()
+                            .map(|path| path.to_string_lossy().into_owned())
+                            .unwrap_or_default(),
+                    })
+                    .collect()
+            };
+            bubble.send_if_modified(|current| {
+                if *current == shown {
+                    return false;
+                }
+                *current = shown;
+                true
+            });
             tokio::select! {
                 _ = tab.ended().cancelled() => break,
-                beginning = beginnings.next() => match beginning {
-                    Some(Ok(beginning)) => {
-                        if tab.state().gate.held() || !owns(&tab, &beginning.frame_id).await {
-                            continue;
-                        }
-                        let download = LiveDownload {
-                            id: beginning.guid.clone(),
-                            name: file_name(&beginning.suggested_filename),
-                            state: DownloadState::InProgress,
-                            received: 0,
-                            total: 0,
-                            path: String::new(),
-                        };
-                        downloads.send_modify(|list| {
-                            list.push(download);
-                            let excess = list.len().saturating_sub(MAX_DOWNLOADS);
-                            list.drain(..excess);
-                        });
-                    }
-                    // A lagged listener lost a beginning; the download goes on without a bubble.
-                    Some(Err(_)) => {}
-                    None => break,
-                },
-                event = progress.next() => match event {
-                    Some(Ok(event)) => advance(&directory, &downloads, &event).await,
-                    // A lagged listener lost a progress; the next one says where it stands.
-                    Some(Err(_)) => {}
-                    None => break,
-                },
+                changed = list.changed() => if changed.is_err() { break },
             }
         }
     });
     Ok(())
-}
-
-/// Whether `frame` is a document of `tab`, cross-site frames included.
-async fn owns(tab: &BrowserTab, frame: &chromiumoxide::cdp::browser_protocol::page::FrameId) -> bool {
-    match crate::driver::frames::capture(tab.page()).await {
-        Ok(snapshot) => snapshot.frames.iter().any(|document| &document.frame.id == frame),
-        // A tab going away keeps no downloads.
-        Err(_) => false,
-    }
-}
-
-/// Applies a progress event to the download it names, if it is one the user
-/// started: a complete one is named after its file.
-async fn advance(
-    directory: &Path,
-    downloads: &watch::Sender<Vec<LiveDownload>>,
-    event: &EventDownloadProgress,
-) {
-    let Some(name) = downloads
-        .borrow()
-        .iter()
-        .find(|download| download.id == event.guid && download.state == DownloadState::InProgress)
-        .map(|download| download.name.clone())
-    else {
-        return;
-    };
-    let received = event.received_bytes.max(0.0) as u64;
-    let total = event.total_bytes.max(0.0) as u64;
-    let (state, path) = match event.state {
-        DownloadProgressState::InProgress => (DownloadState::InProgress, String::new()),
-        DownloadProgressState::Canceled => (DownloadState::Canceled, String::new()),
-        DownloadProgressState::Completed => match name_file(directory, &event.guid, &name).await {
-            Ok(path) => (DownloadState::Complete, path.to_string_lossy().into_owned()),
-            Err(error) => {
-                // The file stays under the browser's own name, which the
-                // retirement removes; the bubble cannot offer it.
-                tracing::warn!(event = "live_view_download.failed", guid = %event.guid, %error, "a download could not be named");
-                (DownloadState::Canceled, String::new())
-            }
-        },
-    };
-    downloads.send_if_modified(|list| {
-        let Some(download) = list.iter_mut().find(|download| download.id == event.guid) else {
-            return false;
-        };
-        let next = LiveDownload {
-            state,
-            received,
-            // A complete file's size is what came, when the server never said it.
-            total: if total == 0 && state == DownloadState::Complete { received } else { total },
-            path,
-            ..download.clone()
-        };
-        if *download == next {
-            return false;
-        }
-        *download = next;
-        true
-    });
-}
-
-/// Moves the browser's file of the download `guid` to `name` in the same
-/// directory, numbered as a browser numbers a name already taken:
-/// `report (1).pdf`. A name is taken by linking, which never replaces a file.
-async fn name_file(directory: &Path, guid: &str, name: &str) -> std::io::Result<PathBuf> {
-    let source = directory.join(guid);
-    let (stem, extension) = match name.rsplit_once('.') {
-        Some((stem, extension)) if !stem.is_empty() => (stem, format!(".{extension}")),
-        _ => (name, String::new()),
-    };
-    for number in 0..NUMBERED {
-        let candidate = if number == 0 {
-            directory.join(name)
-        } else {
-            directory.join(format!("{stem} ({number}){extension}"))
-        };
-        match tokio::fs::hard_link(&source, &candidate).await {
-            Ok(()) => {
-                tokio::fs::remove_file(&source).await?;
-                return Ok(candidate);
-            }
-            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
-            Err(error) => return Err(error),
-        }
-    }
-    Err(std::io::Error::other(format!("every name for {name} is taken")))
-}
-
-/// The file name a page suggested, as data: its last component, without
-/// control characters, never empty, `.` or `..`.
-fn file_name(suggested: &str) -> String {
-    let last = suggested.rsplit(['/', '\\']).next().unwrap_or_default();
-    let cleaned: String = last
-        .chars()
-        .filter(|character| !character.is_control())
-        .take(NAME_CHARS)
-        .collect();
-    let trimmed = cleaned.trim();
-    if trimmed.is_empty() || trimmed == "." || trimmed == ".." {
-        return "download".to_owned();
-    }
-    trimmed.to_owned()
 }

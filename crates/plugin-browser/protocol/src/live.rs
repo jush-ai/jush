@@ -139,7 +139,7 @@ closed_set! {
 }
 
 closed_set! {
-    /// Where a download the user started in the page stands.
+    /// Where a download of the browser stands.
     pub enum DownloadState {
         InProgress = "inProgress",
         Complete = "complete",
@@ -406,8 +406,8 @@ pub struct LiveMenu {
     pub editable: bool,
 }
 
-/// A download the user started in the watched tab, as a browser's download
-/// bubble shows it.
+/// A download started in the watched tab, as a browser's download bubble
+/// shows it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, garde::Validate)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct LiveDownload {
@@ -541,7 +541,7 @@ pub enum LiveModuleMessage {
         #[garde(dive)]
         menu: LiveMenu,
     },
-    /// The downloads the user started in the tab, the newest last.
+    /// The downloads started in the tab since it is watched, the newest last.
     Downloads {
         #[garde(skip)]
         tab: TabId,

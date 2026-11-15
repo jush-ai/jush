@@ -70,6 +70,7 @@ use jush_command_package_browser_chrome::driver::{
 };
 use jush_command_package_browser_chrome::page::actions::TabResult;
 use jush_command_package_browser_chrome::tabs::{
+    downloads::Downloads,
     environment::{BrowserEnvironment, LaunchOptions, with_browser},
     registry::Closed,
 };
@@ -141,6 +142,23 @@ enum Lifecycle {
     Closing,
 }
 
+/// The lines that tell the agent of the conversation's downloads it has not
+/// heard of; none without any. `download` lists them instead.
+fn downloads_untold(browser: &ConversationBrowser, operation: &str) -> Option<String> {
+    let names: Vec<String> = browser
+        .downloads
+        .take_untold()
+        .into_iter()
+        .map(|download| download.name)
+        .collect();
+    (!names.is_empty() && operation != "download").then(|| {
+        jush_command_package_browser_chrome::driver::text::downloads_started(
+            &names,
+            &browser.downloads.folder().to_string_lossy(),
+        )
+    })
+}
+
 /// One conversation's browser, as its invocations reach it.
 struct ConversationBrowser {
     requests: mpsc::Sender<Request>,
@@ -154,6 +172,8 @@ struct ConversationBrowser {
     /// The conversation's recordings, which outlast each browser, and the
     /// tabs the running ones record.
     recordings: Recordings,
+    /// The conversation's downloads, which outlast each browser.
+    downloads: Downloads,
 }
 
 /// The conversation's recordings on this device.
@@ -195,7 +215,8 @@ enum Request {
 }
 
 impl ConversationBrowser {
-    /// The browser of `conversation`, whose every Chrome runs on `profile`,
+    /// The browser of `conversation`, whose every Chrome runs on `profile`
+    /// and puts its complete downloads into the folder `downloads`,
     /// whose tabs take their numbers from `numbers` across every browser it
     /// starts, and whose changes `messages` tells the plugin of while its
     /// owner runs. The record of its tabs at `record` that an earlier
@@ -205,6 +226,7 @@ impl ConversationBrowser {
         chrome: Chrome,
         conversation: String,
         profile: std::path::PathBuf,
+        downloads: std::path::PathBuf,
         record: std::path::PathBuf,
         numbers: TabNumbers,
         messages: watch::Receiver<Option<Messages>>,
@@ -214,10 +236,12 @@ impl ConversationBrowser {
         let (published, lifecycle) = watch::channel(Lifecycle::Absent);
         let cancellation = CancellationToken::new();
         let left = TabRecord::read(&record);
+        let downloads = Downloads::new(downloads);
         let owner = Owner {
             state: State::Absent,
             chrome,
             profile,
+            downloads: downloads.clone(),
             record,
             listed: numbers.watch_changes(),
             recorded: left.clone(),
@@ -252,6 +276,7 @@ impl ConversationBrowser {
                 library,
                 running: tokio::sync::Mutex::default(),
             },
+            downloads,
         });
         tasks.spawn_traced(announce(conversation, browser.clone(), messages, announced));
         browser
@@ -403,6 +428,8 @@ struct Owner {
     chrome: Chrome,
     /// The conversation's profile, which every browser it starts runs on.
     profile: std::path::PathBuf,
+    /// The conversation's downloads, which every browser it starts adds to.
+    downloads: Downloads,
     /// Where the record of its tabs is (`crate::tab_record`).
     record: std::path::PathBuf,
     /// Follows the changes of the tab list, which the record follows.
@@ -660,6 +687,7 @@ impl Owner {
         let (publish, ready) = watch::channel(None);
         let chrome = self.chrome.clone();
         let profile = self.profile.clone();
+        let downloads = self.downloads.clone();
         let numbers = self.numbers.clone();
         let owner_stop = stop.clone();
         let locale = starting.locale.clone();
@@ -676,7 +704,7 @@ impl Owner {
                     resume,
                 } = starting;
                 with_browser(
-                    LaunchOptions::pinned(installation, profile, locale, color_scheme)?,
+                    LaunchOptions::pinned(installation, profile, downloads, locale, color_scheme)?,
                     numbers,
                     owner_stop.clone(),
                     move |environment| async move {
@@ -1179,6 +1207,10 @@ impl Kept {
         jush_command_protocol::browser_profile_directory(self.scratch_root.as_deref(), conversation)
     }
 
+    fn downloads(&self, conversation: &str) -> std::path::PathBuf {
+        jush_command_protocol::browser_downloads_directory(self.scratch_root.as_deref(), conversation)
+    }
+
     fn tab_record(&self, conversation: &str) -> std::path::PathBuf {
         jush_command_protocol::browser_tab_record(self.scratch_root.as_deref(), conversation)
     }
@@ -1210,10 +1242,11 @@ async fn serve(
                             TabNumbers::from_source(numbers.borrow().clone(), conversation.clone());
                         let library = kept.library(&conversation);
                         let profile = kept.profile(&conversation);
+                        let downloads = kept.downloads(&conversation);
                         // The conversation's first call to this resident
                         // takes back what an earlier one left open.
                         let record = kept.tab_record(&conversation);
-                        ConversationBrowser::start(&tasks, chrome.clone(), conversation, profile, record, tabs, messages.clone(), library)
+                        ConversationBrowser::start(&tasks, chrome.clone(), conversation, profile, downloads, record, tabs, messages.clone(), library)
                     })
                     .clone();
                 let _gone = reply.send(browser);
@@ -1348,6 +1381,7 @@ impl Conversations {
         operation: std::result::Result<BrowserOperation, OperationError>,
     ) -> std::result::Result<Completion, ResidentError> {
         let json = context.request.json == Some(true);
+        let agent = context.request.context.caller.agent_number().is_some();
         let began = std::time::Instant::now();
         // How long the call waited for its browser, when it needed one.
         let mut environment_ms = None;
@@ -1414,6 +1448,19 @@ impl Conversations {
             error = failed.as_deref(),
             "a browser call ended"
         );
+        // An agent's command tells the downloads it has not heard of, whatever
+        // came of it, on stderr, so stdout stays the command's value: after
+        // its result, or before a failure's context and error.
+        let untold = if agent {
+            downloads_untold(browser, context.request.operation.as_str())
+        } else {
+            None
+        };
+        if result.is_err()
+            && let Some(lines) = &untold
+        {
+            context.output.stderr(Bytes::from(lines.clone())).await?;
+        }
         match result {
             Ok((stdout, captured)) => {
                 if let Some(captured) = captured {
@@ -1429,6 +1476,9 @@ impl Conversations {
                 }
                 if stdout.is_empty() {
                     context.output.stdout(stdout).await?;
+                }
+                if let Some(lines) = untold {
+                    context.output.stderr(Bytes::from(lines)).await?;
                 }
                 Ok(Completion {
                     exit_code: 0,
@@ -1587,6 +1637,16 @@ impl Conversations {
                 return record(browser, context, input).await;
             }
         }
+        if let BrowserOperation::Download(input) = command {
+            return Ok(CommandOutput::Json(
+                jush_command_package_browser_chrome::page::download::list(
+                    &browser.downloads,
+                    input.wait == Some(true),
+                    deadline,
+                )
+                .await?,
+            ));
+        }
         let starts = matches!(
             command,
             BrowserOperation::TabNew(_) | BrowserOperation::ContentFetch(_)
@@ -1732,16 +1792,6 @@ impl Conversations {
                 match command {
                     BrowserOperation::Upload(_) => Some(Box::pin(
                         jush_command_package_browser_chrome::page::upload::execute(
-                            context,
-                            &environment,
-                            Some(tab),
-                            command,
-                            cancellation,
-                            deadline,
-                        ),
-                    )),
-                    BrowserOperation::Download(_) => Some(Box::pin(
-                        jush_command_package_browser_chrome::page::download::execute(
                             context,
                             &environment,
                             Some(tab),

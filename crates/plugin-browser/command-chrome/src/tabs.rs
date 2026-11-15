@@ -7,6 +7,7 @@ use jush_command_package_browser_protocol::browser as protocol;
 
 pub mod debug;
 pub mod dialog;
+pub mod downloads;
 pub mod environment;
 pub mod favicon;
 pub mod history;

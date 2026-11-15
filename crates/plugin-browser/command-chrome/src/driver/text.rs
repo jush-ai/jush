@@ -25,6 +25,7 @@ use crate::driver::{
         WebmcpListResult,
     },
 };
+use jush_command_package_browser_protocol::live::DownloadState;
 
 /// The text of `operation`'s result `value`, whole: the shell that runs the
 /// command cuts what it shows.
@@ -627,15 +628,43 @@ fn upload(through: Option<String>, result: &UploadResult) -> String {
 }
 
 fn download(result: &DownloadResult) -> String {
-    let mut text = format!("Downloaded: {}\n", plain(&result.path));
-    if !result.suggested_filename.is_empty() {
-        text.push_str(&format!(
-            "Suggested filename: {}\n",
-            plain(&result.suggested_filename)
-        ));
+    let folder = plain(&result.folder);
+    if result.downloads.is_empty() {
+        return format!("No downloads. Downloads go to {folder}\n");
     }
-    text.push_str(&format!("Bytes: {}\n", result.bytes));
+    let mut text = table(
+        ["name", "state", "size", "path"],
+        result.downloads.iter().map(|download| {
+            let (state, size) = match download.state {
+                DownloadState::Complete => ("complete", format!("{} bytes", download.received)),
+                DownloadState::InProgress if download.total > 0 => (
+                    "in progress",
+                    format!("{} of {} MB", megabytes(download.received), megabytes(download.total)),
+                ),
+                DownloadState::InProgress => ("in progress", format!("{} MB", megabytes(download.received))),
+                DownloadState::Canceled => ("canceled", "-".to_owned()),
+            };
+            let path = if download.path.is_empty() { "-".to_owned() } else { plain(&download.path) };
+            [plain(&download.name), state.to_owned(), size, path]
+        }),
+    );
+    text.push_str(&format!("Folder: {folder}\n"));
     text
+}
+
+/// The lines that tell the agent of downloads it has not heard of, each by
+/// its file's name and the folder it goes to.
+pub fn downloads_started(names: &[String], folder: &str) -> String {
+    names
+        .iter()
+        .map(|name| {
+            format!(
+                "Download started: {}, into {} (`jush browser download` lists it)\n",
+                plain(name),
+                plain(folder)
+            )
+        })
+        .collect()
 }
 
 fn clipboard(result: &ClipboardReadResult) -> String {

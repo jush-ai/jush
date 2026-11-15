@@ -192,7 +192,7 @@ function shortcut(event: KeyboardEvent): void {
   }
 }
 
-/** The downloads the user started in this tab, the newest first, as a browser's bubble lists them. */
+/** The downloads started in this tab, the newest first, as a browser's bubble lists them. */
 const downloads = computed(() => [...props.session.downloadsOf(bound.value)].reverse())
 const bubble = ref(false)
 // A download that starts opens the bubble, as a browser shows a download it starts.
@@ -255,7 +255,7 @@ function stop(): void {
       @stop="stop"
     >
       <template v-if="viewport || downloads.length > 0" #trailing>
-        <!-- The downloads, once the user started one here, as a browser's toolbar shows them. -->
+        <!-- The downloads, once one started here, as a browser's toolbar shows them. -->
         <Dropdown v-if="downloads.length > 0" v-model:open="bubble" :overlay-store="overlays" class="shrink-0">
           <template #trigger="{ isOpen }">
             <Tooltip :content="t('downloads.title')" :disabled="isOpen">
