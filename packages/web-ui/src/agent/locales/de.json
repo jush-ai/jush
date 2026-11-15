@@ -282,6 +282,8 @@
     "continue": "Fortfahren",
     "continueWith": "Mit {label} fortfahren",
     "unpin": "Lösen",
+    "pinned": "Angeheftete Dokumente, {count}",
+    "pinnedElsewhere": "Auf {device}, dessen Dateien diese Seite nicht öffnet",
     "openProviders": "Anbieter öffnen",
     "outputTokens": "{tokens} Token | {tokens} Tokens",
     "tokenRate": "{rate} Tok./s",

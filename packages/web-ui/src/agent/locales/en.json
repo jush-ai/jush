@@ -282,6 +282,8 @@
     "continue": "Continue",
     "continueWith": "Continue with {label}",
     "unpin": "Unpin",
+    "pinned": "Pinned documents, {count}",
+    "pinnedElsewhere": "On {device}, whose files this page does not open",
     "openProviders": "Open Providers",
     "outputTokens": "{tokens} token | {tokens} tokens",
     "tokenRate": "{rate} tok/s",

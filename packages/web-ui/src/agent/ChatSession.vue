@@ -28,7 +28,7 @@ import SideQuestionWindow from './comments/SideQuestionWindow.vue'
 import SessionSurface from '@jush-ai/web-ui/agent/SessionSurface.vue'
 import SessionDock from '@jush-ai/web-ui/agent/SessionDock.vue'
 import SessionDockChip from '@jush-ai/web-ui/agent/SessionDockChip.vue'
-import PinnedDocumentChip, { type PinnedDocumentView } from '@jush-ai/web-ui/agent/PinnedDocumentChip.vue'
+import PinnedDocuments, { type PinnedDocumentView } from '@jush-ai/web-ui/agent/PinnedDocuments.vue'
 import SubagentPanel from '@jush-ai/web-ui/agent/SubagentPanel.vue'
 import SubagentHistoryMenu from './SubagentHistoryMenu.vue'
 import CommandHistoryMenu from './CommandHistoryMenu.vue'
@@ -1170,13 +1170,11 @@ watch(
                   The transcript says what happened; the recovery controls are
                   here, over the input.
                 -->
-                <PinnedDocumentChip
-                  v-for="pin in pins ?? []"
-                  :key="pin.id"
-                  :pin="pin"
-                  :opens="!!files?.open && pin.deviceId === files.device"
-                  @open="files?.open?.({ path: pin.path, line: null })"
-                  @unpin="emit('unpin', pin.id)"
+                <PinnedDocuments
+                  :pins="pins ?? []"
+                  :opens-on="files?.open ? (files.device ?? null) : null"
+                  @open="(pin) => files?.open?.({ path: pin.path, line: null })"
+                  @unpin="(id) => emit('unpin', id)"
                 />
                 <SessionDockChip v-if="recovery" @click="recover">
                   <Play :size="ICON_PX.in28" />

@@ -282,6 +282,8 @@
     "continue": "계속",
     "continueWith": "다음으로 계속: {label}",
     "unpin": "고정 해제",
+    "pinned": "고정된 문서 {count}개",
+    "pinnedElsewhere": "{device}에 있으며, 이 페이지에서는 해당 기기의 파일을 열지 않습니다.",
     "openProviders": "제공업체 열기",
     "outputTokens": "{tokens} 토큰",
     "tokenRate": "{rate} 토큰/초",

@@ -282,6 +282,8 @@
     "continue": "繼續",
     "continueWith": "改用 {label} 繼續",
     "unpin": "取消釘選",
+    "pinned": "已釘選的文件，{count} 個",
+    "pinnedElsewhere": "在 {device} 上，此頁面不開啟該裝置的檔案。",
     "openProviders": "打開供應商",
     "outputTokens": "{tokens} token",
     "tokenRate": "{rate} token/秒",
