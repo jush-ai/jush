@@ -19,6 +19,8 @@ mod package;
 #[cfg(all(unix, feature = "developer"))]
 pub use package::development_package;
 pub use package::{Caches, Spec, Versioning, package, split};
+#[cfg(unix)]
+pub(crate) use package::{COMPRESSED, COMPRESSED_FAST};
 
 use std::path::{Path, PathBuf};
 

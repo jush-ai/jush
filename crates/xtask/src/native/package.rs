@@ -65,11 +65,13 @@ use super::{DESCRIPTOR, Error, Executable, MANIFEST};
 /// A backend or machine manager release's record.
 const RELEASE: &str = "release.json";
 /// Where packaging keeps the executables' compressed copies, each named by
-/// the executable's SHA-256, so packaging again compresses nothing.
-const COMPRESSED: &str = ".cache/compressed";
+/// the executable's SHA-256, so packaging again compresses nothing. Nothing
+/// here tells a copy an executable of today needs from one of a build long
+/// gone, so `xtask sweep` removes the directory whole.
+pub(crate) const COMPRESSED: &str = ".cache/compressed";
 /// Where `xtask dev` keeps the copies it compresses at the fast level, apart
-/// from a release's, so no release reuses one.
-const COMPRESSED_FAST: &str = ".cache/compressed-fast";
+/// from a release's, so no release reuses one; swept as [`COMPRESSED`] is.
+pub(crate) const COMPRESSED_FAST: &str = ".cache/compressed-fast";
 /// How many hexadecimal digits of its artifacts' digest a development
 /// version carries.
 const DEVELOPMENT_DIGITS: usize = 12;
