@@ -87,15 +87,24 @@ onBeforeUnmount(() => {
 const STEP_PX = DOCK_STEP_PX
 /** A step above whatever is the dock's top: what waits for a decision over it, or else its first part. */
 const overTop = computed(() => `calc(100% + ${coverHeight.value + STEP_PX}px)`)
+const chipsRef = ref<HTMLElement>()
+// The chips' column, as its scroller's border box measures it: the scroller's
+// 1px margins reach past the column on each side.
+const { width: chipsWidth } = useElementSize(chipsRef, { width: 0, height: 0 }, { box: 'border-box' })
 /**
- * The scroll control stands centred over the column, level with the chips
- * row while it shows, in the room the row keeps for it; without the row, over
- * the dock's top.
+ * The scroll control stands level with the chips row while it shows, in the
+ * room the row keeps for it after the chips' column, which is centred over
+ * the column until the chips reach past the middle; without the row, centred
+ * over the dock's top.
  */
 const scrollPlace = computed(() =>
-  rowHeight.value > 0
-    ? { bottom: `${composerHeight.value + STEP_PX}px`, height: `${rowHeight.value - STEP_PX}px` }
-    : { bottom: overTop.value },
+  rowHeight.value > 0 && chipsWidth.value > 0
+    ? {
+        left: `calc(${chipsWidth.value - 2}px + var(--spacing) * 1.5 + var(--spacing-chip) / 2)`,
+        bottom: `${composerHeight.value + STEP_PX}px`,
+        height: `${rowHeight.value - STEP_PX}px`,
+      }
+    : { left: '50%', bottom: overTop.value },
 )
 /**
  * The catching-up spinner stands over the dock's top, a step above the scroll
@@ -126,7 +135,7 @@ const iconPx = useIconPx()
       where it covers nothing the user reads last.
     -->
     <span
-      class="pointer-events-none absolute left-1/2 z-20 inline-flex w-chip min-h-chip -translate-x-1/2 items-center"
+      class="pointer-events-none absolute z-20 inline-flex w-chip min-h-chip -translate-x-1/2 items-center"
       :style="scrollPlace"
     >
       <Transition
@@ -191,15 +200,20 @@ const iconPx = useIconPx()
       counts for none.
 
       The room stays while the control is hidden, so nothing in the row moves
-      when it comes. Each side has half of the rest: on a narrow row the
-      reading gives way, its speed first, and chips wider than their half, as
-      several are on a phone, stay on one line and scroll sideways, so the
-      dock's height does not change. A scroller clips what reaches past its
-      padding box, as the chips' 0.5px ring does, so its padding holds the
-      ring, and its margin of the same width keeps the chips where they stand.
+      when it comes. The chips have at least the half before it, which keeps it
+      centred, and as much more as they need: chips that reach past the middle
+      move the room, and the control in it, after them, and the reading gives
+      way, its speed first. Chips wider than the row, as several are on a
+      phone, stay on one line and scroll sideways, so the dock's height does
+      not change. A scroller clips what reaches past its padding box, as the
+      chips' 0.5px ring does, so its padding holds the ring, and its margin of
+      the same width keeps the chips where they stand.
     -->
-    <div ref="rowRef" class="hidden grid-cols-[minmax(0,1fr)_var(--spacing-chip)_minmax(0,1fr)] items-center gap-1.5 pb-2 has-[>*>*]:grid">
-      <div class="-m-px flex min-w-0 items-center gap-1.5 overflow-x-auto p-px overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden [&>*]:shrink-0">
+    <div
+      ref="rowRef"
+      class="hidden grid-cols-[minmax(calc(50%-var(--spacing-chip)/2-var(--spacing)*1.5),max-content)_var(--spacing-chip)_minmax(0,1fr)] items-center gap-1.5 pb-2 has-[>*>*]:grid"
+    >
+      <div ref="chipsRef" class="-m-px flex min-w-0 items-center gap-1.5 overflow-x-auto p-px overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden [&>*]:shrink-0">
         <slot name="chips" />
       </div>
       <div />
