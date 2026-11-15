@@ -282,6 +282,8 @@
     "continue": "Continuer",
     "continueWith": "Continuer avec {label}",
     "unpin": "Désépingler",
+    "pinned": "Documents épinglés, {count}",
+    "pinnedElsewhere": "Sur {device}, dont cette page n’ouvre pas les fichiers",
     "openProviders": "Ouvrir Fournisseurs",
     "outputTokens": "{tokens} token | {tokens} tokens",
     "tokenRate": "{rate} tok/s",

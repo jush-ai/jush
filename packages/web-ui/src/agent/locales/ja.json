@@ -282,6 +282,8 @@
     "continue": "続ける",
     "continueWith": "{label} で続ける",
     "unpin": "ピン留めを解除",
+    "pinned": "ピン留めしたドキュメント、{count} 件",
+    "pinnedElsewhere": "{device} 上にあり、このページではそのデバイスのファイルを開けません。",
     "openProviders": "プロバイダーを開く",
     "outputTokens": "{tokens} トークン",
     "tokenRate": "{rate} トークン/秒",

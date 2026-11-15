@@ -57,7 +57,7 @@ import ActivitySlot from '@jush-ai/web-ui/agent/blocks/ActivitySlot.vue'
 import type { ActivityKind } from '@jush-ai/web-ui/agent/activity-slot'
 import { provideEditSelection } from '@jush-ai/web-ui/agent/edit-selection'
 import ChatSession from '@jush-ai/web-ui/agent/ChatSession.vue'
-import type { PinnedDocumentView } from '@jush-ai/web-ui/agent/PinnedDocumentChip.vue'
+import type { PinnedDocumentView } from '@jush-ai/web-ui/agent/PinnedDocuments.vue'
 import { GALLERY_DEVICE } from '../fixtures/attachments'
 import GalleryWorkWindows from '../components/GalleryWorkWindows.vue'
 import { gallerySessionWork } from '../fixtures/session-work'
@@ -805,6 +805,8 @@ const deviceOnline = ref(true)
 /** The documents the session's agent pinned: × unpins one, a click opens it. */
 const sessionPins = ref<PinnedDocumentView[]>([
   { id: 1, path: `${PROJECT_ROOT}/docs/guides/deploying.md`, device: 'MacBook Pro', deviceId: GALLERY_DEVICE },
+  { id: 2, path: `${PROJECT_ROOT}/AGENTS.md`, device: 'MacBook Pro', deviceId: GALLERY_DEVICE },
+  { id: 3, path: '/home/alex/notes/release-checklist.md', device: 'Build Server', deviceId: 'gallery-build-server' },
 ])
 /** The session's messages reach the gallery project: images from its fixtures, files opened in the frame's windows. */
 const sessionFiles = {
