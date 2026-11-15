@@ -300,7 +300,7 @@ export const shellTool = toolCall({
  * A call that returned while its command runs on, one of the conversation's
  * running commands (the gallery's `Run the auth tests` job): its row
  * shimmers until the command's end arrives. It runs on a device it named,
- * which its prompt and its terminal's name.
+ * which a line over its script and its terminal's name show.
  */
 export const returnedShellTool = toolCall({
   id: 'tool-shell-returned',

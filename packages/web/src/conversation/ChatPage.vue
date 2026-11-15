@@ -100,10 +100,12 @@ provideCostWatch((window) => {
 })
 // The transcripts of the open conversation show a loading row at an edge only
 // while a page is being read for it.
-// A subagent on another device than the conversation's names it as the
-// account's devices do.
+// A subagent on another device than the conversation's, or a command run on
+// another, names it as the account's devices do: by its id, or by the name a
+// command's call gave it.
 provideDeviceNames(() => (device) => {
-  const record = resources.deviceById(device)
+  const named = product.snapshot?.devices?.find((candidate) => candidate.name === device)
+  const record = resources.deviceById(device) ?? resources.deviceById(named?.id ?? null)
   const kind = targetKindOf(record)
   return { name: deviceLabel(kind, record), kind }
 })

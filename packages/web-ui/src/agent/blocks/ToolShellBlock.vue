@@ -13,6 +13,8 @@ import ToolCallFace from './ToolCallFace.vue'
 import { toolRowIcon } from './tool-row-icon'
 import { useShellRow } from '../shell-row'
 import { shellDevice, shellTitle } from '../tool-rendering'
+import { useDeviceNames, type DeviceName } from '../device-names'
+import { deviceIcon } from '../../targets/icons'
 import { splitMedia, toolMedia } from '../tool-media'
 import { codeColor, codeRuns } from '../../markdown/highlight'
 import { useMarkdownRenderVersion } from '../../markdown/render-version'
@@ -34,10 +36,15 @@ const commandColors = computed(() => {
   return { runs: codeRuns(command.value, 'bash'), text: codeColor('bash') }
 })
 const title = computed(() => shellTitle(props.input))
-/** The prompt before the script: `$`, after the device the call named, as a shell's names its host. */
-const prompt = computed(() => {
-  const device = shellDevice(props.input)
-  return device === undefined ? '$' : `${device} $`
+const deviceNames = useDeviceNames()
+/**
+ * The device the call named, by the name and glyph the page gives it, on a
+ * line of its own over the script: a device's id is no word to read, and a
+ * name before the prompt would push the script's lines under it.
+ */
+const device = computed<DeviceName | null>(() => {
+  const named = shellDevice(props.input)
+  return named === undefined ? null : (deviceNames()?.(named) ?? { name: named, kind: 'device' })
 })
 const media = computed(() => splitMedia(toolMedia(props.block.output, title.value)))
 // A call whose command ran says how it ended in its tag and above its output,
@@ -117,8 +124,12 @@ function toggleCommand(): void {
     </template>
 
     <template #pinned>
+      <div v-if="device" class="mb-0.5 flex items-center gap-1 px-3 text-xs leading-5 text-fg-subtle">
+        <component :is="deviceIcon(device)" :size="ICON_PX.in24" class="shrink-0" aria-hidden="true" />
+        <span class="min-w-0 truncate">{{ device.name }}</span>
+      </div>
       <div class="flex px-3 font-mono text-xs leading-5 text-fg-subtle">
-        <span class="mr-1 shrink-0 select-none text-fg-faint">{{ prompt }}</span><!--
+        <span class="mr-1 shrink-0 select-none text-fg-faint">$</span><!--
           A command longer than two lines shows two, the second ending in an
           ellipsis; a click shows it whole and another clamps it again. One
           that fits is no control: a click selects it whole for copying.
