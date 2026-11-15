@@ -925,7 +925,7 @@ pub struct SwitchedBefore {
 impl CheckpointUpdate {
     /// The child rounds whose completion receipts this save carries, as
     /// waiting agent input or as `agent_message` blocks, which the save marks
-    /// delivered.
+    /// delivered. The end of another conversation's turn is no child's.
     pub fn carried_completions(&self) -> Result<Vec<CompletionId>, StoreError> {
         let waiting = self.state.agent_inputs.iter().map(|input| &input.message);
         let written = self
@@ -940,6 +940,9 @@ impl CheckpointUpdate {
             let AgentMessageEvent::Completion { .. } = message.event else {
                 continue;
             };
+            if message.sender.as_ref().is_some_and(|sender| sender.conversation.is_some()) {
+                continue;
+            }
             let round: CompletionId = message
                 .id
                 .as_str()

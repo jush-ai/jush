@@ -4,7 +4,9 @@
 //!
 //! - an explicit message, or the notice of a child's end, which carries what the
 //!   child wrote; an explicit message may come from an agent of another
-//!   conversation of the user (`jush conversation send`);
+//!   conversation of the user (`jush conversation send`), and so may the notice
+//!   that the turn such a message asked about ended, which carries the turn's
+//!   last answer (`--wake-when-done`);
 //! - the user's decision on a permission request, which reaches the agent that
 //!   asked the same way;
 //! - the user's move of the conversation, which the user tells the root of;
@@ -37,7 +39,8 @@ use crate::{BlockId, MAX_SAFE_INTEGER, NodeId, Timestamp, is_blank};
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AgentMessage {
     /// The id of the `agent_message` block the message becomes. A
-    /// completion's id is its [`CompletionId`]; a permission decision's is
+    /// completion's id is its [`CompletionId`], or for the end of another
+    /// conversation's turn, its [`done_id`]; a permission decision's is
     /// `permission:<request id>`; a move the user told of `moved:<revision>`,
     /// the execution-context revision the move made; a failed move's
     /// `move-failed:<move id>`.
@@ -105,6 +108,12 @@ pub struct SenderConversation {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[garde(skip)]
     pub title: Option<String>,
+    /// The sending agent wakes when the turn this message starts or joins
+    /// ends (`jush conversation send --wake-when-done`), with that turn's
+    /// last answer.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[garde(skip)]
+    pub wakes: bool,
 }
 
 /// What an agent message is.
@@ -227,6 +236,16 @@ pub struct CompletionId {
 
 const COMPLETION_PREFIX: &str = "subagent:";
 
+const DONE_PREFIX: &str = "done:";
+
+/// The id of the notice that the turn of `conversation`'s root ending at
+/// `end` ended, for the agent `waking` of another conversation, whose
+/// message asked about it: `done:<conversation>:<end>:<waking>`. One agent
+/// hears of one end once, however many of its messages the turn took.
+pub fn done_id(conversation: &NodeId, end: &BlockId, waking: &NodeId) -> BlockId {
+    BlockId::try_from(format!("{DONE_PREFIX}{conversation}:{end}:{waking}")).expect("a done id is never empty")
+}
+
 impl CompletionId {
     /// The id of the block the receipt becomes.
     pub fn block_id(&self) -> BlockId {
@@ -296,7 +315,8 @@ fn comes_from_its_sender(
     }
 }
 
-/// A completion's id names the round of its sender that it completes.
+/// A completion's id names the round of its sender that it completes, or
+/// for another conversation's turn, the end it tells of ([`done_id`]).
 fn names_completed_round<'a>(
     sender: &'a Option<Sender>,
     event: &'a AgentMessageEvent,
@@ -308,6 +328,15 @@ fn names_completed_round<'a>(
         let Some(sender) = sender else {
             return Ok(());
         };
+        if let Some(conversation) = &sender.conversation {
+            let prefix = format!("{DONE_PREFIX}{}:", conversation.id);
+            if !id.as_str().starts_with(&prefix) {
+                return Err(garde::Error::new(format!(
+                    "the end of another conversation's turn has an id that starts {prefix}"
+                )));
+            }
+            return Ok(());
+        }
         let expected = CompletionId {
             child: sender.id.clone(),
             round: sender.round,

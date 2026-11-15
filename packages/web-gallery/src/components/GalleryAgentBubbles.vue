@@ -19,8 +19,9 @@ import GalleryOwnWindows from './GalleryOwnWindows.vue'
  * - `child-report`: the same, with the report of its own child Check the
  *   links, which keeps its row.
  * - `main`: the main agent's view, where a message from its child keeps its
- *   row, and a message from another conversation, Coordinate the release, is
- *   a bubble that names that conversation.
+ *   row, a message from another conversation, Coordinate the release, is a
+ *   bubble that names that conversation, and the end of a turn of Stabilize
+ *   the login test, which its message asked to be woken for, keeps its row.
  *
  * The main agent's transcript is under the window in each, as the product's
  * session is.
@@ -37,6 +38,9 @@ const activeId = ref<string | null>(agents[0]!.id)
 const reveal = ref<TranscriptReveal | null>(null)
 
 provideOriginRevealer(({ conversationId, node, blockId }) => {
+  if (conversationId === 'gallery-login') {
+    return () => productWould('Open Stabilize the Login Test')
+  }
   if (conversationId !== null) {
     return () => productWould('Open Coordinate the Release at the Call That Sent the Message')
   }

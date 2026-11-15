@@ -154,6 +154,7 @@ pub mod suggested_replies;
 pub mod tree;
 pub mod update;
 pub mod usage;
+pub mod wakes;
 pub mod web_sessions;
 pub mod projects;
 pub mod workspaces;

@@ -1114,13 +1114,16 @@ fn command(call: &ToolCallBlock) -> Option<String> {
     }
 }
 
-/// The notice of a subagent's end as one line: who, and how its round ended.
+/// The notice of a subagent's end, or of another conversation's turn, as one
+/// line: whose, and how it ended.
 fn report_line(at: usize, message: &jush_shared_types::AgentMessageBlock) -> String {
-    let who = message
-        .message
-        .sender
-        .as_ref()
-        .map_or_else(|| "a subagent".to_owned(), |sender| format!("agent {} ({})", sender.number, sender.description));
+    let who = match &message.message.sender {
+        Some(sender) => match &sender.conversation {
+            Some(conversation) => format!("a turn of conversation {}", conversation.id),
+            None => format!("agent {} ({})", sender.number, sender.description),
+        },
+        None => "a subagent".to_owned(),
+    };
     let AgentMessageEvent::Completion { outcome } = &message.message.event else {
         unreachable!("a notice of an end is a completion")
     };

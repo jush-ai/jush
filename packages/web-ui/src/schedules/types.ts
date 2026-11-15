@@ -106,6 +106,8 @@ export type Trigger =
   | { kind: 'time'; timing: Timing }
   | { kind: 'change'; command: string; everyMinutes: number }
   | { kind: 'url' }
+  /** Each time another conversation of the user finishes working. */
+  | { kind: 'done'; conversation: string }
 
 /** Why a run was skipped or failed. */
 export type RunNote =

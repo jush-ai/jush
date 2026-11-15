@@ -5,6 +5,7 @@ import IconButton from '../ui/IconButton.vue'
 import MenuItem from '../ui/MenuItem.vue'
 import Switch from '../ui/Switch.vue'
 import Tooltip from '../ui/Tooltip.vue'
+import { useSendTargets } from '../agent/send-to-conversation'
 import { usePhone } from '../ui/phone'
 import { t } from './locales/text'
 import { REVEAL_PX, useSwipeDelete } from './swipe-delete'
@@ -45,7 +46,9 @@ const emit = defineEmits<{
 }>()
 
 const phone = usePhone()
-const trigger = computed(() => triggerWords(props.schedule, props.now))
+// A conversation the trigger waits for, by its title as the sidebar shows it.
+const targets = useSendTargets()
+const trigger = computed(() => triggerWords(props.schedule, props.now, (id) => targets?.describe(id) ?? null))
 const wake = computed(() => (props.archived ? null : wakeWords(props.schedule, props.now)))
 const reason = computed(() => lastWakeReason(props.schedule))
 const { offset, dragging, start, tap } = useSwipeDelete()

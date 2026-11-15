@@ -42,6 +42,7 @@ pub struct PendingCall {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AskedEnd {
     pub id: BlockId,
+    pub at: Timestamp,
     pub failed: bool,
     pub answer: Option<String>,
 }
@@ -1111,7 +1112,7 @@ impl TranscriptLog {
         let asked = self.asking.as_ref().is_some_and(|(_, asked)| *asked);
         if asked {
             let answer = ended_turn_answer(&self.blocks).and_then(|(_, text)| text).map(|text| text.text.clone());
-            self.asked_end = Some(AskedEnd { id: end.id().clone(), failed, answer });
+            self.asked_end = Some(AskedEnd { id: end.id().clone(), at: end.created_at(), failed, answer });
         }
     }
 
@@ -1135,14 +1136,20 @@ pub fn kept(old: &[Block], new: &[Block]) -> usize {
 /// Whether the user asked for the turn `block`, its first input, opens: the
 /// user's own message or steer did, a schedule's message or another
 /// conversation's did not, and any other input, a command's report, a
-/// subagent's message, a resume, opens a turn of the work it continues,
-/// which `continues_users` tells: whether the latest message of the user or
-/// a schedule before it is the user's.
+/// subagent's message, another conversation's notice that the work this one
+/// asked of it ended, a resume, opens a turn of the work it continues, which
+/// `continues_users` tells: whether the latest message of the user or a
+/// schedule before it is the user's.
 fn opens_asked(block: &Block, continues_users: impl FnOnce() -> bool) -> bool {
     match block {
         Block::Steer(_) => true,
         Block::User(user) => user.schedule.is_none(),
-        Block::AgentMessage(message) if from_another_conversation(message) => false,
+        Block::AgentMessage(message)
+            if from_another_conversation(message)
+                && !matches!(message.message.event, jush_shared_types::AgentMessageEvent::Completion { .. }) =>
+        {
+            false
+        }
         _ => continues_users(),
     }
 }

@@ -6,6 +6,8 @@
     "once": "Once · {when}",
     "change": "When output changes · {interval}",
     "url": "When a URL is called",
+    "done": "When “{title}” finishes",
+    "doneUnlisted": "When an archived or deleted conversation finishes",
     "interval": {
       "minutes": "{count} min",
       "hours": "{count} hour | {count} hours",

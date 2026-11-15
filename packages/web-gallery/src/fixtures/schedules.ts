@@ -17,8 +17,9 @@ function nextWeekday(weekday: number, hour: number): string {
 
 /**
  * The schedules of a conversation, as its Schedules window lists them: a
- * weekly report, a change watch, a once schedule, a paused one, and one whose
- * last wake failed because its device was offline.
+ * weekly report, a change watch, one that runs when another conversation
+ * finishes, a once schedule, a paused one, and one whose last wake failed
+ * because its device was offline.
  */
 export function gallerySchedules(): ConversationSchedule[] {
   const weekly = nextWeekday(1, 10)
@@ -48,6 +49,16 @@ export function gallerySchedules(): ConversationSchedule[] {
       paused: false,
       nextAt: null,
       lastRun: { at: ago(3 * MINUTE), state: 'notified', note: null },
+    },
+    {
+      id: 'sc-login',
+      name: 'Merge the login fix',
+      // The search window's conversation, which the sidebar lists by its title.
+      trigger: { kind: 'done', conversation: 'search-login' },
+      timeZone: 'Asia/Shanghai',
+      paused: false,
+      nextAt: null,
+      lastRun: { at: ago(42 * MINUTE), state: 'done', note: null },
     },
     {
       id: 'sc-remind',

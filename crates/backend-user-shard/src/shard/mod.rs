@@ -921,6 +921,12 @@ async fn serve(mut queue: mpsc::Receiver<Message>, services: Arc<Services>) {
                         shard
                             .tasks
                             .spawn_local(shard.clone().follow_schedules());
+                        // And the notices of wakes an earlier start did not
+                        // deliver.
+                        let waking = shard.clone();
+                        shard
+                            .tasks
+                            .spawn_local(async move { waking.deliver_undelivered_wakes().await });
                         // And the media jobs an earlier start kept, which
                         // end whether or not their calls come back.
                         shard

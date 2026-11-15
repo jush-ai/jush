@@ -52,6 +52,9 @@
       "finished": "エージェントが完了しました",
       "failed": "エージェントが失敗しました",
       "stopped": "エージェントが停止しました",
+      "conversationFinished": "チャットが完了しました",
+      "conversationFailed": "チャットが失敗しました",
+      "conversationStopped": "チャットが停止しました",
       "unnamed": "エージェント {number}"
     },
     "report": {

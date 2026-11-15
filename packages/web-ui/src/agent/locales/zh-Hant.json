@@ -52,6 +52,9 @@
       "finished": "智慧體已完成",
       "failed": "智慧體失敗",
       "stopped": "智慧體已停止",
+      "conversationFinished": "對話已完成",
+      "conversationFailed": "對話失敗",
+      "conversationStopped": "對話已停止",
       "unnamed": "智慧體 {number}"
     },
     "report": {

@@ -6,6 +6,8 @@
     "once": "一次 · {when}",
     "change": "輸出變更時 · {interval}",
     "url": "URL 被呼叫時",
+    "done": "「{title}」完成時",
+    "doneUnlisted": "已封存或已刪除的對話完成時",
     "interval": {
       "minutes": "{count} 分鐘",
       "hours": "{count} 小時 | {count} 小時",

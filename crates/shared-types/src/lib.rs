@@ -104,7 +104,7 @@ mod workflow;
 pub use account::{AgentAccount, Rotation};
 pub use agent_message::{
     AgentMessage, AgentMessageEvent, CompletionId, CompletionOutcome, NotCompletionId,
-    PermissionOutcome, Sender, SenderConversation,
+    PermissionOutcome, Sender, SenderConversation, done_id,
 };
 pub use block::{
     AbortBlock, AccountSwitchBlock, AccountSwitchCause, AgentMessageBlock, ScheduleMark, Block, CodeFile, CommandEnd, CommandReport, CompactionBoundaryBlock, CompactionMarkerBlock, Entry,

@@ -18,6 +18,7 @@ use jush_web_api_protocol::schedules::{
     FirstOrLast, HolidayPlace, IfBusy, MonthDay, Repeat, RepeatUnit, RunState, ScheduleDto,
     SchedulePatch, Task, Timing, Trigger, WeekOfMonth, Weekday,
 };
+use jush_web_api_protocol::ids::ConversationId;
 use jush_web_api_protocol::text::Trimmed;
 use garde::Validate;
 use jiff::civil::DateTime;
@@ -31,14 +32,14 @@ use crate::conversation::organize::{failed, verb};
 use crate::shard::Shard;
 use crate::shard::credential_commands::print_json;
 
-const SUMMARY: &str = "This conversation's schedules, which wake it: once, on a repeating cycle with tasks in it, every interval, by cron, when a command's output changes, or when a URL is called. List, show, create, change, run now and delete them.";
+const SUMMARY: &str = "This conversation's schedules, which wake it: once, on a repeating cycle with tasks in it, every interval, by cron, when a command's output changes, when a URL is called, or each time another conversation finishes working. List, show, create, change, run now and delete them.";
 
 /// The group's entry in the model's capability index.
-const ENTRY: &str = "Wakes this conversation once, on a repeating cycle, every interval, by cron, when a command's output changes, or on a URL call.";
+const ENTRY: &str = "Wakes this conversation once, on a repeating cycle, every interval, by cron, when a command's output changes, on a URL call, or when another conversation finishes.";
 
 const LIST_SUMMARY: &str = "List this conversation's schedules: id, whether it is on, its trigger's kind, its next and last run, and its name; show gives the timing and the tasks.";
 const SHOW_SUMMARY: &str = "Show one schedule: its trigger, a repeat's tasks with their ids, its prompt, state and latest runs; a URL trigger's address.";
-const CREATE_SUMMARY: &str = "Create a schedule, on at once, with the message each run sends on stdin. One trigger: --repeat with --task-at for its first task, --at, --every, --cron, --watch with --every for a change, or --url.";
+const CREATE_SUMMARY: &str = "Create a schedule, on at once, with the message each run sends on stdin. One trigger: --repeat with --task-at for its first task, --at, --every, --cron, --watch with --every for a change, --url, or --when-done.";
 const EDIT_SUMMARY: &str = "Change the parts the options name and keep the others. --repeat changes a repeat's cycle and keeps its tasks; another trigger option replaces the trigger. A repeat's task: --task picks one by its id (the only one by default) for --task-at, --holidays and stdin; --add-task adds one; --delete-task removes one. Without tasks, stdin replaces the message. --paused pauses it, --on turns it on.";
 const RUN_SUMMARY: &str = "Run a schedule now, whatever its timing, its limit or whether it is paused; --task picks a repeat's task when it has several.";
 const DELETE_SUMMARY: &str = "Delete a schedule and its runs' records.";
@@ -68,6 +69,7 @@ struct PartsArgs {
     tz: Option<String>,
     watch: Option<String>,
     url: Option<bool>,
+    when_done: Option<String>,
     max_runs_per_day: Option<u32>,
     no_limit: Option<bool>,
     if_busy: Option<String>,
@@ -123,7 +125,8 @@ pub(crate) fn schedule_group(shard: Weak<Shard>) -> GroupBuilder {
             .describe("tz", "An IANA time zone such as Asia/Shanghai; the user's own by default.")
             .describe("watch", "A command whose output change triggers a run, run every --every on this conversation's device in its directory, as your shell runs it. Its first run only records the output; one over 60 seconds fails.")
             .describe("url", "A URL trigger: another system calls its address with its secret, which create prints once; edit --new-secret makes a new one.")
-            .describe("max-runs-per-day", "With --watch or --url: at most this many runs a day, counted from midnight in --tz.")
+            .describe("when-done", "Another conversation, by its id from `jush conversation list`: a run each time it finishes working, whoever asked for the work, carrying how its last turn ended and its last answer. One message's turn alone: `jush conversation send --wake-when-done`.")
+            .describe("max-runs-per-day", "With --watch, --url or --when-done: at most this many runs a day, counted from midnight in --tz.")
             .describe("no-limit", "Remove the limit on runs a day.")
             .describe("if-busy", "While the conversation works: queue, the default, waits for its running turn to end; steer reaches the running turn, as the composer's Steer does.")
             .describe("prompt", "The message each run sends, a repeat's task's or a single trigger's, written as the user would write it; stdin.")
@@ -189,7 +192,7 @@ fn id_of(text: &str) -> Result<ScheduleId, RpcError> {
 }
 
 /// A trigger's kind, as `list` and `show` print it: `once`, `repeat`,
-/// `every`, `cron`, `watch` or `url`.
+/// `every`, `cron`, `watch`, `url` or `when-done`.
 fn trigger_kind(trigger: &Trigger) -> &'static str {
     match trigger {
         Trigger::Time { timing } => match timing {
@@ -200,6 +203,7 @@ fn trigger_kind(trigger: &Trigger) -> &'static str {
         },
         Trigger::Change { .. } => "watch",
         Trigger::Url {} => "url",
+        Trigger::Done { .. } => "when-done",
     }
 }
 
@@ -263,6 +267,16 @@ async fn print_shown(
     if json {
         return print_json(port, &Shown { schedule, secret, address }).await;
     }
+    // The conversation a when-done trigger names, by its title now.
+    let done_of = match &schedule.trigger {
+        Trigger::Done { conversation } => Some(match shard.services().control.conversation(conversation.clone()).await {
+            Ok(Some(record)) if record.owner == *shard.user() => {
+                super::message::Finished::name_of(&record.id, record.title.as_deref())
+            }
+            _ => format!("{conversation}, deleted"),
+        }),
+        _ => None,
+    };
     let mut fields = Fields::new();
     fields
         .field("ID", schedule.id.to_string())
@@ -284,6 +298,7 @@ async fn print_shown(
         Trigger::Url {} => fields
             .field("Address", address.as_deref())
             .field("Secret", secret.as_deref()),
+        Trigger::Done { .. } => fields.field("When done", done_of.as_deref()),
     };
     fields
         .field("Time zone", schedule.time_zone.as_str())
@@ -456,13 +471,18 @@ async fn patch(
     if args.url == Some(true) {
         chosen.push(Trigger::Url {});
     }
+    if let Some(conversation) = &args.when_done {
+        let conversation = ConversationId::try_from(conversation.trim())
+            .map_err(|_| failed("--when-done takes a conversation's id, as `jush conversation list` prints it"))?;
+        chosen.push(Trigger::Done { conversation });
+    }
     let cycle = args.repeat.as_deref().map(cycle).transpose()?;
     let triggers = chosen.len() + usize::from(cycle.is_some());
     if triggers > 1 {
-        return Err(failed("give one trigger: --repeat, --at, --every, --cron, --watch with --every, or --url"));
+        return Err(failed("give one trigger: --repeat, --at, --every, --cron, --watch with --every, --url or --when-done"));
     }
     if creating && triggers == 0 {
-        return Err(failed("give a trigger: --repeat, --at, --every, --cron, --watch with --every, or --url"));
+        return Err(failed("give a trigger: --repeat, --at, --every, --cron, --watch with --every, --url or --when-done"));
     }
 
     // The repeat the change leaves, with its tasks: a new or changed cycle,

@@ -94,6 +94,10 @@ impl Shard {
                 slot.leave_jobs_on(device, Leaving::Every);
             }
         }
+        // A sender waiting for work here hears how it ended, or that the
+        // conversation was deleted, once it is: read before the stop below
+        // ends the work, delivered after the commit, on their own.
+        let wakes = self.wakes_of_deleted(&record.id).await;
         // The work stops first: the tree takes no action, the root's stops as
         // Stop stops it, its children are aborted and its commands end, so
         // the file gate their jobs hold comes free.
@@ -125,6 +129,14 @@ impl Shard {
             return Ok(false);
         };
         self.mark(Part::Conversation(id.clone()));
+        if !wakes.is_empty() {
+            let shard = self.this();
+            self.tasks().spawn_local(async move {
+                for (wake, notice) in wakes {
+                    shard.deliver_wake(&wake, notice).await;
+                }
+            });
+        }
         // What the shard holds of its schedules stops.
         self.conversation_deleted_schedules(&schedules);
         self.agent().close_tree(&root).await;

@@ -52,6 +52,9 @@
       "finished": "Agent fertig",
       "failed": "Agent fehlgeschlagen",
       "stopped": "Agent gestoppt",
+      "conversationFinished": "Chat fertig",
+      "conversationFailed": "Chat fehlgeschlagen",
+      "conversationStopped": "Chat gestoppt",
       "unnamed": "Agent {number}"
     },
     "report": {

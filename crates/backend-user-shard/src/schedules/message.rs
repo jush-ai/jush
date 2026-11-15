@@ -7,9 +7,13 @@
 //! - A URL's calls add each call's time, method, headers and the path of its
 //!   body's file, with the bodies' first 16 KB in all, newest first, inside the
 //!   frame `jush web` puts around a page.
+//! - Another conversation's finish adds how its last turn ended and its last
+//!   answer, worded as the notice of a wake words them ([`turn_end`]).
 
+use jush_agent_session::{EndedTurn, TurnOutcome};
 use jush_backend_database::schedules::{RunCause, StoredSchedule};
 use jush_shared_types::Timestamp;
+use jush_web_api_protocol::ids::ConversationId;
 
 use super::hooks::Call;
 
@@ -37,6 +41,70 @@ pub(crate) enum Extra {
     /// The calls, oldest first, and the path each body was written to,
     /// none for an empty body.
     Calls { calls: Vec<Call>, written: Vec<Option<String>> },
+    Done(Finished),
+}
+
+/// Another conversation's turn that ended: the conversation, its title then,
+/// and how the turn ended, a failed one with its error's message.
+#[derive(Debug, Clone)]
+pub(crate) struct Finished {
+    pub conversation: ConversationId,
+    pub title: Option<String>,
+    pub end: EndedTurn,
+    pub error: Option<String>,
+}
+
+impl Finished {
+    /// The conversation as a message names it.
+    pub(crate) fn name(&self) -> String {
+        Self::name_of(&self.conversation, self.title.as_deref())
+    }
+
+    /// `conversation`, titled `title`, as a message names it: its title in
+    /// quotes and its id, or its id alone while it has no title.
+    pub(crate) fn name_of(conversation: &ConversationId, title: Option<&str>) -> String {
+        match title {
+            Some(title) => format!("conversation \u{201c}{title}\u{201d} ({conversation})"),
+            None => format!("conversation {conversation}"),
+        }
+    }
+}
+
+/// How `finished`'s turn ended, after its subject: "ended with an answer:"
+/// and the answer's first 16 KB, with where the rest is read when it is
+/// longer; "failed: " and the error; or "was stopped by the user.".
+pub(crate) fn turn_end(finished: &Finished) -> String {
+    match finished.end.outcome {
+        TurnOutcome::Answered => match &finished.end.answer {
+            Some(answer) => {
+                let (shown, cut) = first_bytes(answer, CUT_BYTES);
+                let mut text = format!("ended with an answer:\n\n{}", shown.trim_end());
+                if cut {
+                    text.push_str(&format!(
+                        "\n\n(Its first 16 KB; `jush conversation history --conversation {}` reads the rest.)",
+                        finished.conversation
+                    ));
+                }
+                text
+            }
+            None => "ended without a written answer.".to_owned(),
+        },
+        TurnOutcome::Failed => format!("failed: {}", finished.error.as_deref().unwrap_or("no reason was recorded")),
+        TurnOutcome::Stopped => "was stopped by the user.".to_owned(),
+    }
+}
+
+/// The first `limit` bytes of `text`, to a whole character, and whether
+/// any were left out.
+fn first_bytes(text: &str, limit: usize) -> (&str, bool) {
+    if text.len() <= limit {
+        return (text, false);
+    }
+    let mut end = limit;
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    (&text[..end], true)
 }
 
 /// The last `limit` bytes of `bytes`, from a whole character on.
@@ -78,10 +146,16 @@ pub(crate) fn text(schedule: &StoredSchedule, prompt: &str, cause: RunCause, at:
             format!("its URL was called {} times, last at {time}", calls.len())
         }
         (RunCause::Url, _) => format!("its URL was called at {time}"),
+        (RunCause::Done, Extra::Done(finished)) => format!("{} finished at {time}", finished.name()),
+        (RunCause::Done, _) => format!("its conversation finished at {time}"),
     };
     let mut text = format!("Schedule \u{201c}{}\u{201d}, {why}\n\n{}", schedule.name, prompt.trim());
     match extra {
         Extra::None => {}
+        Extra::Done(finished) => {
+            text.push_str(&format!("\n\nThe last turn of {} ", finished.name()));
+            text.push_str(&turn_end(finished));
+        }
         Extra::Change { before, now } => {
             for (label, output) in [("before", before), ("now", now)] {
                 text.push_str(&format!(

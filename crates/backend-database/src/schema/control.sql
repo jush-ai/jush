@@ -442,7 +442,7 @@ CREATE INDEX schedules_by_conversation ON schedules (conversation_id, created_at
 CREATE TABLE schedule_runs (
   id          TEXT PRIMARY KEY,
   schedule_id TEXT NOT NULL REFERENCES schedules (id) ON DELETE CASCADE,
-  cause       TEXT NOT NULL CHECK (cause IN ('time', 'change', 'url', 'now')),
+  cause       TEXT NOT NULL CHECK (cause IN ('time', 'change', 'url', 'done', 'now')),
   at          INTEGER NOT NULL,
   state       TEXT NOT NULL CHECK (state IN ('running', 'done', 'notified', 'skipped', 'failed')),
   note        TEXT,
@@ -452,6 +452,22 @@ CREATE TABLE schedule_runs (
   task_id     TEXT
 ) STRICT;
 CREATE INDEX schedule_runs_by_schedule ON schedule_runs (schedule_id, at);
+-- The wakes a message to another conversation asked for (`jush conversation
+-- send --wake-when-done`), each kept until its sender is woken: the
+-- recipient and the message's block there, the sending conversation and
+-- agent, which the end of the work the message started wakes, and once that
+-- work ended, the notice to deliver, as JSON, an agent message of the shared
+-- types, which a failed delivery keeps for the next try. Either
+-- conversation's deletion drops it.
+CREATE TABLE pending_wakes (
+  recipient_id TEXT NOT NULL COLLATE NOCASE REFERENCES conversations (id) ON DELETE CASCADE,
+  message_id   TEXT NOT NULL,
+  sender_id    TEXT NOT NULL COLLATE NOCASE REFERENCES conversations (id) ON DELETE CASCADE,
+  sender_node  TEXT NOT NULL,
+  notice       TEXT,
+  PRIMARY KEY (recipient_id, message_id)
+) STRICT;
+CREATE INDEX pending_wakes_by_sender ON pending_wakes (sender_id);
 -- A URL's calls, each kept as it is taken, with its delivery ID: pending
 -- until a run takes it, so a restart loses none; taken; or held, for one a
 -- paused schedule or its daily limit answered and one a pause or an edit

@@ -6,6 +6,8 @@
     "once": "1 回 · {when}",
     "change": "出力が変わったとき · {interval}",
     "url": "URL が呼ばれたとき",
+    "done": "「{title}」が完了したとき",
+    "doneUnlisted": "アーカイブ済みまたは削除済みのチャットが完了したとき",
     "interval": {
       "minutes": "{count} 分",
       "hours": "{count} 時間 | {count} 時間",
