@@ -595,7 +595,7 @@ provideOriginRevealer((origin) => {
 
 const { height: viewportHeight } = useElementSize(scrollContainer)
 
-useFollowSentMessages(() => renderBlocks.value, rowKey, scrollToBottom)
+useFollowSentMessages(() => renderBlocks.value, rowKey, () => props.latest, scrollToBottom)
 
 /**
  * How many screens from an edge of the window the next page is read: far
