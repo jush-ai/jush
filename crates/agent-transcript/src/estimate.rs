@@ -114,7 +114,7 @@ pub fn prompt_tokens(system_prompt: &str, tools: &[ToolDefinition]) -> u64 {
 
 /// Where the estimate of the next request starts weighing blocks: the
 /// latest usage a provider reported, and the first block after its
-/// `response`; or no usage and the last compaction boundary.
+/// `response`; or no usage and where replay starts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ContextAnchor {
     /// Whether a reported usage anchors the estimate.
@@ -268,6 +268,7 @@ fn block_estimate(block: &Block, request: &RequestView) -> (String, u64) {
             .collect::<Vec<_>>()
             .join("\n"),
         Block::CompactionMarker(marker) => marker.compacted_tokens.to_string(),
+        Block::Clear(_) => crate::CLEAR_NOTE.to_owned(),
     };
     (text, 0)
 }

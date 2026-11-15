@@ -280,6 +280,7 @@
     "subagent_failed": "サブエージェントを開始または停止できませんでした。",
     "shell_stop_failed": "コマンドを停止できませんでした。",
     "nothing_to_retry": "再試行するものはありません。",
+    "nothing_to_clear": "クリアするものはありません。",
     "summary_missing": "モデルが要約を作成しませんでした。",
     "prompt_unavailable": "モデルのプロバイダーを使用できません。",
     "usage_limit": "利用上限に達しました。",

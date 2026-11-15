@@ -527,7 +527,8 @@ pub enum PromptCache {
     Off,
     /// A request of a session, a summary request included. Its first
     /// `answered_items` items are what the session's latest answered request
-    /// carried; none when no request was answered since the last compaction.
+    /// carried; none when no request was answered since the last compaction
+    /// or clear.
     Session { answered_items: usize },
 }
 

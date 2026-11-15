@@ -225,12 +225,19 @@ pub fn fork_prefix<'a>(blocks: &'a [Block], end: ForkEnd<'_>) -> Result<&'a [Blo
 /// summarized it, at the newest completed text after the last compaction, or at
 /// that compaction. `blocks` may be a window that starts after the text, with
 /// `asked` 0: the window starts with the compaction that summarized it.
+///
+/// What comes after a `clear` that follows the text is not the context the
+/// text was read in, so a side question about it reads only what came before.
 pub fn side_end(blocks: &[Block], asked: usize) -> usize {
-    let end = match blocks[asked..].iter().rposition(is_compaction) {
+    let scope = blocks[asked..]
+        .iter()
+        .position(|block| matches!(block, Block::Clear(_)))
+        .map_or(blocks, |clear| &blocks[..asked + clear]);
+    let end = match scope[asked..].iter().rposition(is_compaction) {
         None => asked,
         Some(after) => {
             let compaction = asked + after;
-            newest(blocks, compaction).unwrap_or(compaction)
+            newest(scope, compaction).unwrap_or(compaction)
         }
     };
     match blocks.get(end + 1) {

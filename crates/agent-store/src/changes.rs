@@ -57,7 +57,8 @@ enum Place {
     /// the run before it.
     Passes,
     /// What the reader reads, which ends a run: the agent's text, the
-    /// user's words and decisions, an error, a stop, a compaction's divider.
+    /// user's words and decisions, an error, a stop, a compaction's or a
+    /// clear's divider.
     Ends,
 }
 
@@ -108,7 +109,8 @@ fn place(block: &Block, sender_below: bool) -> Place {
         | Block::Text(_)
         | Block::Error(_)
         | Block::AccountSwitch(_)
-        | Block::CompactionMarker(_) => Place::Ends,
+        | Block::CompactionMarker(_)
+        | Block::Clear(_) => Place::Ends,
     }
 }
 

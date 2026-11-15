@@ -106,7 +106,7 @@ const STALE_SPREAD_MS = 2_000
 /** How long a confirmation may take before its wait gives up. */
 const CONFIRMATION_MS = 30_000
 
-type ActionCommand = 'send' | 'retry' | 'resume' | 'compact'
+type ActionCommand = 'send' | 'retry' | 'resume' | 'compact' | 'clear'
 
 /**
  * A wait for the action a frame starts. It is `sent` until the session takes the
@@ -720,6 +720,11 @@ export class ConversationClient {
     return node === undefined
       ? this.action('compact', null, { type: 'compact' })
       : this.action('compact', null, { type: 'compact', node }, node)
+  }
+
+  /** Clears the root's context; resolves when the clear ends. */
+  clear(): Promise<void> {
+    return this.action('clear', null, { type: 'clear' })
   }
 
   /** Stops one thing; answers what it stopped, in request order. */

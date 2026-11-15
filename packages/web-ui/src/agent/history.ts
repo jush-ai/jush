@@ -23,9 +23,10 @@ export function latestBlocks(history: HeldTranscript): HeldBlock[] {
 
 /**
  * Rows that are no news to a reader: what the session writes about its own
- * upkeep, a compaction or a resume, and what no row shows.
+ * upkeep, a compaction or a resume, the user's own clear, and what no row
+ * shows.
  */
-const NOT_NEWS = new Set(['compaction_boundary', 'compaction_marker', 'resume', 'context', 'response'])
+const NOT_NEWS = new Set(['compaction_boundary', 'compaction_marker', 'clear', 'resume', 'context', 'response'])
 
 /**
  * Where the transcript ends for a reader: its last block that is news, by

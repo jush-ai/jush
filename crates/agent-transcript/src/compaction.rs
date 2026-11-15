@@ -11,7 +11,7 @@ use jush_shared_types::{Block, KeptMessage, ModelSelection, choose_kept, comment
 
 use super::{
     estimate::block_tokens,
-    is_answer, is_compaction,
+    cuts_context, is_answer,
     replay::RequestView,
     replay_start,
 };
@@ -26,9 +26,9 @@ pub fn summary_text(summary: &str) -> String {
     format!("<summary>\n{summary}\n</summary>")
 }
 
-/// The blocks a pass summarizes: from the last `compaction_boundary`, or the
-/// first block, to the cut point, where the content of an answered request
-/// ends.
+/// The blocks a pass summarizes: from the last `compaction_boundary` or
+/// `clear`, or the first block, to the cut point, where the content of an
+/// answered request ends.
 ///
 /// With no request answered since the last compaction, the blocks end where the
 /// input no request answered begins, which the pass keeps.
@@ -99,10 +99,11 @@ fn same_model(one: &ModelSelection, other: &ModelSelection) -> bool {
 /// Where the content of each request answered since the last compaction ends,
 /// in order.
 ///
-/// Each `response` block after the last boundary and its marker closes an
-/// answer, the run of thinking, text and tool-call blocks directly before it.
-/// What the blocks before that answer replay is what its request carried. A
-/// boundary whose marker an edit cut counts as the last compaction.
+/// Each `response` block after the last boundary and its marker, or the last
+/// `clear`, closes an answer, the run of thinking, text and tool-call blocks
+/// directly before it. What the blocks before that answer replay is what its
+/// request carried. A boundary whose marker an edit cut counts as the last
+/// compaction.
 pub fn answered_ends(blocks: &[Block]) -> Vec<usize> {
     answered_requests(blocks)
         .into_iter()
@@ -114,8 +115,8 @@ pub fn answered_ends(blocks: &[Block]) -> Vec<usize> {
 fn answered_requests(blocks: &[Block]) -> Vec<(usize, &ModelSelection)> {
     let floor = blocks
         .iter()
-        .rposition(is_compaction)
-        .map_or(0, |compaction| compaction + 1);
+        .rposition(cuts_context)
+        .map_or(0, |cut| cut + 1);
     let mut answered: Vec<(usize, &ModelSelection)> = Vec::new();
     for (index, block) in blocks.iter().enumerate().skip(floor) {
         let Block::Response(response) = block else {

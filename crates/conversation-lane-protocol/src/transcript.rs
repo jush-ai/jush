@@ -248,7 +248,8 @@ fn light_block(block: &Block) -> Block {
         | Block::Response(_)
         | Block::Error(_)
         | Block::AccountSwitch(_)
-        | Block::CompactionMarker(_) => {}
+        | Block::CompactionMarker(_)
+        | Block::Clear(_) => {}
     }
     light
 }

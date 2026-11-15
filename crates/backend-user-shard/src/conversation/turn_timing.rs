@@ -155,7 +155,7 @@ impl Turn {
     fn add(&mut self, block: &Block) {
         let created = block.created_at();
         let outside = match block {
-            Block::CompactionBoundary(_) => true,
+            Block::CompactionBoundary(_) | Block::Clear(_) => true,
             Block::CompactionMarker(marker) => marker.idle,
             Block::Error(error) => error.outside_turn,
             _ => false,

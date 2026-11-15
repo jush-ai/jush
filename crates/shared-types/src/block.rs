@@ -47,6 +47,8 @@ pub enum Block {
     CompactionBoundary(CompactionBoundaryBlock),
     /// Compaction's estimate of what it summarized, at the end.
     CompactionMarker(CompactionMarkerBlock),
+    /// Where the user cleared the model's context: replay starts here.
+    Clear(ClearBlock),
 }
 
 /// Evaluates `$body` with `$inner` bound to the block's variant, whichever it
@@ -70,6 +72,7 @@ macro_rules! on_block {
             Block::AccountSwitch($inner) => $body,
             Block::CompactionBoundary($inner) => $body,
             Block::CompactionMarker($inner) => $body,
+            Block::Clear($inner) => $body,
         }
     };
 }
@@ -103,7 +106,8 @@ impl Block {
             | Block::Response(_)
             | Block::Error(_)
             | Block::AccountSwitch(_)
-            | Block::CompactionMarker(_) => {
+            | Block::CompactionMarker(_)
+            | Block::Clear(_) => {
                 &[]
             }
         }
@@ -127,7 +131,8 @@ impl Block {
             | Block::Response(_)
             | Block::Error(_)
             | Block::AccountSwitch(_)
-            | Block::CompactionMarker(_) => {
+            | Block::CompactionMarker(_)
+            | Block::Clear(_) => {
                 None
             }
         }
@@ -1012,6 +1017,32 @@ pub struct AbortBlock {
     /// Set once the stopped turn is continued.
     #[garde(skip)]
     pub is_resumed: bool,
+}
+
+/// Where the user cleared the model's context. The model reads the
+/// conversation from here on as a new one, after a note that names what
+/// reads the blocks before it; the page shows every block.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, garde::Validate)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ClearBlock {
+    #[garde(skip)]
+    pub id: BlockId,
+    #[garde(skip)]
+    pub created_at: Timestamp,
+    /// The request the block belongs to: the id of the `user` block that
+    /// starts it, the block's own for a `user` block, which the backend sets
+    /// as it stores the block and never changes; absent for a block before
+    /// the transcript's first `user` block (`crates/agent-store/src/changes.rs`).
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "unwrap_or_skip"
+    )]
+    #[schemars(with = "BlockId")]
+    #[garde(skip)]
+    pub request: Option<BlockId>,
+    #[garde(dive)]
+    pub model: ModelSelection,
 }
 
 /// Reasoning text, with the vendor's signature when it signed it. A signed

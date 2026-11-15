@@ -549,9 +549,9 @@ impl<H: DeviceResolver> Tree<H> {
     ///
     /// The block is only the root's, only when the request follows the user's
     /// new message or steer, and only the questions asked since the agent last
-    /// heard of them, about replies still in its history, in the order asked.
-    /// The root's path holds a reply before its window too, which its store
-    /// finds.
+    /// heard of them, about replies still in its history since the last clear,
+    /// in the order asked. The root's path holds a reply before its window
+    /// too, which its store finds.
     pub async fn side_questions_context(&self, node: &NodeId, seen: &[&str]) -> Result<Option<String>, jush_agent_store::StoreError> {
         if node != self.root.id() {
             return Ok(None);
@@ -577,7 +577,7 @@ impl<H: DeviceResolver> Tree<H> {
         asked.extend(self.closed_sides.borrow().values().filter_map(|closed| closed.asked.clone()));
         let mut held = Vec::new();
         for asked in asked {
-            if root.holds(&asked.of.block).await? {
+            if root.holds_since_clear(&asked.of.block).await? {
                 held.push(asked);
             }
         }

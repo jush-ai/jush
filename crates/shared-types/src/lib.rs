@@ -107,7 +107,7 @@ pub use agent_message::{
     PermissionOutcome, Sender, SenderConversation,
 };
 pub use block::{
-    AbortBlock, AccountSwitchBlock, AccountSwitchCause, AgentMessageBlock, ScheduleMark, Block, CodeFile, CommandEnd, CommandReport, CompactionBoundaryBlock, CompactionMarkerBlock, Entry,
+    AbortBlock, AccountSwitchBlock, AccountSwitchCause, AgentMessageBlock, ScheduleMark, Block, CodeFile, CommandEnd, CommandReport, ClearBlock, CompactionBoundaryBlock, CompactionMarkerBlock, Entry,
     ContextBlock, ErrorBlock, ErrorDevice, EXECUTION_SOURCE, SKILLS_SOURCE, INSTRUCTIONS_SOURCE, InstructionEntry, PINNED_DOCUMENTS_SOURCE, SIDE_QUESTIONS_SOURCE, OpaqueBlock, OpaqueStatus, OpaqueView, SearchAction, SearchSource, ReportEvent, ResponseBlock, ResumeBlock, ShellCommand, SteerBlock, StoppedBy,
     WORKING_DIRECTORY_SOURCE, PictureCopy, PictureFailure, ReplyPicture, sent_whole,
     TextBlock, ThinkingBlock, ToolCallBlock, ToolCallStatus, UserBlock, WakeupBlock, client_block,

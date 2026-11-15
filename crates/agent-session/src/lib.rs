@@ -103,7 +103,7 @@ use jush_agent_store::{
     Checkpoint, CheckpointUpdate, Kind, RunningCommand, SessionStore, StoreError, Watch, media::HeldMedia,
 };
 use jush_agent_transcript::{
-    Earlier, ForkEnd, IdSource, TranscriptLog, last_answer, last_failure,
+    Earlier, ForkEnd, IdSource, TranscriptLog, last_answer, last_failure, nothing_to_clear,
 };
 use jush_conversation_lane_protocol::{AbortResult, AgentCode, Refusal, RequestOutput, TranscriptPatch, Version};
 use jush_provider_common::{Ahead, ProviderFailure, ProviderRuntime};
@@ -763,8 +763,8 @@ impl AgentSession {
     ///
     /// The session holds the checkpoint's window. Of a checkpoint that holds
     /// its whole path, such as a Fork's seed, it holds the blocks from its last
-    /// `compaction_boundary` on. It reads what it keeps of the blocks before
-    /// from the store.
+    /// `compaction_boundary` or `clear` on. It reads what it keeps of the
+    /// blocks before from the store.
     pub async fn restore(
         checkpoint: Checkpoint,
         id: NodeId,
@@ -1210,6 +1210,18 @@ impl AgentSession {
         self.shared.update(|core| core.admit(ActionKind::Compact { idle: false }))
     }
 
+    /// Clears the model's context: the model reads what comes after as a new
+    /// conversation.
+    pub fn clear(&self) -> Result<ActionHandle, AdmissionError> {
+        self.shared.update(|core| core.admit(ActionKind::Clear))
+    }
+
+    /// Whether the user has nothing to clear: nothing but context was
+    /// written since the last clear, or nothing at all.
+    pub fn nothing_to_clear(&self) -> bool {
+        self.shared.read(|core| nothing_to_clear(core.transcript.blocks()))
+    }
+
     /// Runs one compaction pass while the session is idle, before its prompt
     /// cache expires; a pass that fails writes nothing. Returns false, and
     /// runs nothing, when the session is not idle.
@@ -1437,6 +1449,29 @@ impl AgentSession {
     /// or before the window as the store finds it.
     pub async fn holds(&self, id: &BlockId) -> Result<bool, StoreError> {
         Ok(window::position(&self.shared, id).await?.is_some())
+    }
+
+    /// Whether the block `id` is on the current path after its last `clear`,
+    /// in what the model reads or what a compaction since summarized; any
+    /// block on a path with no clear is.
+    pub async fn holds_since_clear(&self, id: &BlockId) -> Result<bool, StoreError> {
+        let Some(position) = window::position(&self.shared, id).await? else {
+            return Ok(false);
+        };
+        let (held, end) = self.shared.read(|core| {
+            let transcript = &core.transcript;
+            let held = transcript
+                .blocks()
+                .iter()
+                .rposition(|block| matches!(block, Block::Clear(_)))
+                .map(|index| transcript.start() + index);
+            (held, transcript.len())
+        });
+        let clear = match held {
+            Some(clear) => Some(clear),
+            None => self.shared.store.last_of(Kind::Clear, end).await?,
+        };
+        Ok(clear.is_none_or(|clear| position > clear))
     }
 
     /// The latest call still executing: the one a command it runs, such as

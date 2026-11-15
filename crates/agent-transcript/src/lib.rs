@@ -59,13 +59,26 @@ pub fn is_interruption(block: &Block) -> bool {
     matches!(block, Block::Error(error) if error.code.as_deref() == Some(INTERRUPTED_CODE))
 }
 
-/// Where replay starts in `blocks`: at the last `compaction_boundary`, or
-/// at the first block when there is none.
+/// Where replay starts in `blocks`: at the last `compaction_boundary` or
+/// `clear`, or at the first block when there is none.
 pub fn replay_start(blocks: &[Block]) -> usize {
     blocks
         .iter()
-        .rposition(|block| matches!(block, Block::CompactionBoundary(_)))
+        .rposition(|block| matches!(block, Block::CompactionBoundary(_) | Block::Clear(_)))
         .unwrap_or(0)
+}
+
+/// What the model reads of a `clear`: the conversation goes on as a new one.
+pub const CLEAR_NOTE: &str = "The user cleared the context here: what came before is left out. `jush conversation history` reads it.";
+
+/// Whether the user has nothing to clear in `blocks`, a window: no block
+/// but `context` blocks since the last `clear`, or none at all.
+pub fn nothing_to_clear(blocks: &[Block]) -> bool {
+    blocks
+        .iter()
+        .rev()
+        .find(|block| !matches!(block, Block::Context(_)))
+        .is_none_or(|block| matches!(block, Block::Clear(_)))
 }
 
 /// Where the answer to the session's latest answered request begins.
@@ -86,6 +99,12 @@ pub(crate) fn is_compaction(block: &Block) -> bool {
         block,
         Block::CompactionBoundary(_) | Block::CompactionMarker(_)
     )
+}
+
+/// Whether the model's context before a block is gone after it: a
+/// compaction's boundary or marker, or a `clear`.
+pub(crate) fn cuts_context(block: &Block) -> bool {
+    is_compaction(block) || matches!(block, Block::Clear(_))
 }
 
 /// Whether a block is part of a model's answer.

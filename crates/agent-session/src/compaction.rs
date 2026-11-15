@@ -660,14 +660,14 @@ async fn pass(
             return None;
         }
         let window = compaction_window(&core.request_view(&view), &core.model, budget);
-        // A window of a boundary and its marker alone would only summarize a
-        // summary again.
+        // A window of a boundary and its marker, or of a clear, alone would
+        // only summarize a summary again, or a note.
         let first = view.blocks[window.start..window.cut]
             .iter()
             .position(|block| {
                 !matches!(
                     block,
-                    Block::CompactionBoundary(_) | Block::CompactionMarker(_)
+                    Block::CompactionBoundary(_) | Block::CompactionMarker(_) | Block::Clear(_)
                 )
             })
             .map(|offset| window.start + offset)?;

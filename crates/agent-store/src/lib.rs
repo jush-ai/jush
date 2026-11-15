@@ -78,8 +78,8 @@ pub trait SessionStore {
     /// saved; none when the node has none.
     ///
     /// Its transcript is the window a live session holds: the current path's
-    /// blocks from its last `compaction_boundary` on, or the whole path when it
-    /// has none. No row before it is read.
+    /// blocks from its last `compaction_boundary` or `clear` on, or the whole
+    /// path when it has none. No row before it is read.
     ///
     /// # Errors
     ///
@@ -131,9 +131,10 @@ pub trait SessionStore {
     ///
     /// Answers the path from that position on. When that position is before
     /// `held_from`, where the caller's window starts, it also answers what the
-    /// caller needs to hold the path from the last `compaction_boundary` at or
-    /// before it. All of it is read in the switch's transaction, so nothing
-    /// after its commit can fail. Nothing else of the checkpoint changes.
+    /// caller needs to hold the path from the last `compaction_boundary` or
+    /// `clear` at or before it. All of it is read in the switch's
+    /// transaction, so nothing after its commit can fail. Nothing else of the
+    /// checkpoint changes.
     ///
     /// # Errors
     ///
@@ -713,8 +714,8 @@ pub struct EditReceipt {
 ///
 /// It holds its state and the blocks of its current path from `start` to its
 /// end, with the versions at each of their places that has more than one. A
-/// load starts at the path's last `compaction_boundary`; a Fork's seed holds
-/// its whole path, from 0.
+/// load starts at the path's last `compaction_boundary` or `clear`; a Fork's
+/// seed holds its whole path, from 0.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Checkpoint {
     pub state: CheckpointState,
@@ -772,8 +773,11 @@ pub struct StoredPrefix {
 /// A kind of block [`SessionStore::last_of`] looks for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
-    /// A `compaction_boundary`, where a window starts.
-    CompactionBoundary,
+    /// Where a window starts, as replay does: a `compaction_boundary` or a
+    /// `clear`.
+    WindowStart,
+    /// A `clear`.
+    Clear,
     /// A block of a turn's input, which names its turn: `user`, `context`,
     /// `wakeup`, `steer`, `agent_message` or `resume`.
     Input,
@@ -796,6 +800,7 @@ pub enum Kind {
     /// A block that can be the record that ended a turn: any but a
     /// compaction's boundary and marker, an error that ended no turn, and
     /// the agent messages and command reports a turn takes after it ended.
+    /// A `clear` is one: a turn it follows is given up, never continued.
     Record,
 }
 
@@ -803,7 +808,8 @@ impl Kind {
     /// The `type` tags of its blocks as a row stores them.
     pub fn types(self) -> &'static [&'static str] {
         match self {
-            Self::CompactionBoundary => &["compaction_boundary"],
+            Self::WindowStart => &["compaction_boundary", "clear"],
+            Self::Clear => &["clear"],
             Self::Input => &["user", "context", "wakeup", "steer", "agent_message", "resume"],
             Self::UserInput => &["user", "steer"],
             Self::User => &["user"],
@@ -813,7 +819,7 @@ impl Kind {
             Self::Response => &["response"],
             Self::Record => &[
                 "user", "context", "wakeup", "steer", "resume", "abort", "thinking", "opaque", "text",
-                "tool_call", "response", "error", "account_switch",
+                "tool_call", "response", "error", "account_switch", "clear",
             ],
         }
     }
@@ -822,7 +828,8 @@ impl Kind {
     /// [`types`](Self::types).
     pub fn holds(self, block: &Block) -> bool {
         match self {
-            Self::CompactionBoundary => matches!(block, Block::CompactionBoundary(_)),
+            Self::WindowStart => matches!(block, Block::CompactionBoundary(_) | Block::Clear(_)),
+            Self::Clear => matches!(block, Block::Clear(_)),
             Self::Input => matches!(
                 block,
                 Block::User(_)
@@ -906,7 +913,7 @@ pub struct Switched {
     pub blocks: Vec<Block>,
     pub versions: BTreeMap<usize, Versions>,
     /// When `from` is before the caller's window: the path from the last
-    /// `compaction_boundary` at or before `from` up to it.
+    /// `compaction_boundary` or `clear` at or before `from` up to it.
     pub before: Option<SwitchedBefore>,
 }
 
@@ -914,8 +921,8 @@ pub struct Switched {
 /// ([`SessionStore::switch`]).
 #[derive(Debug, Clone, PartialEq)]
 pub struct SwitchedBefore {
-    /// Where the rows start: the last `compaction_boundary` at or before
-    /// the place, or 0.
+    /// Where the rows start: the last `compaction_boundary` or `clear` at or
+    /// before the place, or 0.
     pub start: usize,
     pub rows: Rows,
     /// What the session keeps of the blocks before `start`.

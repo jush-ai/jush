@@ -100,6 +100,7 @@
       "doneIdleTo": "アイドル中にコンテキストを約 {tokens} トークンに圧縮しました"
     },
     "stopped": "停止済み",
+    "cleared": "コンテキストをクリアしました",
     "queued": "{count} 件が待機中",
     "user": {
       "edit": "編集",
@@ -370,9 +371,11 @@
     "tip": "コンテキスト {figure}",
     "compacting": "コンテキストを圧縮中…",
     "compact": "圧縮",
+    "clear": "クリア",
     "untilCompaction": "圧縮まで {tokens}",
     "afterTurn": "ターンの終了後に使用できます",
     "availableFrom": "コンテキストが {from} になると使用できます（現在 {now}）",
+    "nothingToClear": "クリアするものはありません",
     "usageLimits": "利用上限",
     "refreshUsage": "使用量を更新",
     "instructions": "指示",

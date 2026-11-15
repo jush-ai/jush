@@ -62,7 +62,9 @@ function change(next: ModelSettingsChange): void {
     />
     <ContextUsageIndicator
       :usage="usage"
+      clearable
       @compact="productWould('Compact the Conversation')"
+      @clear="productWould('Clear the Context')"
     />
   </div>
   <ModelMenu

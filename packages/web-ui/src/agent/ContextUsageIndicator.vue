@@ -57,7 +57,8 @@ import { type CostRange, type CostShown, hasCost, shownRange, useCostRange, useC
  * 2. a header that opens and closes the list of rows
  * 3. a bar of what fills the context
  * 4. the rows, largest first, while the list is open
- * 5. the room before compaction, with Compact
+ * 5. the room before compaction, with Clear for the conversation's own agent,
+ *    and Compact
  * 6. what the conversation cost, whose caption opens and closes its details
  *    and, once the conversation is more than an hour old, switches between
  *    the last hour, the last day once it is more than a day old, and the
@@ -83,6 +84,13 @@ const props = defineProps<{
    * (`refusedForSize`).
    */
   sizeRefused?: boolean
+  /**
+   * The card offers Clear, which only the conversation's own agent has: the
+   * model then reads what comes after as a new conversation.
+   */
+  clearable?: boolean
+  /** Why Clear cannot run now, such as a running turn; none when it can. */
+  clearUnavailableReason?: string | null
   /** The card shows without a click, as a gallery specimen pins it open. */
   pinned?: boolean
   /**
@@ -131,6 +139,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   compact: []
+  clear: []
   /**
    * Opens where an entry is written: the settings for the personal
    * instructions, the file for a project file.
@@ -220,11 +229,17 @@ watch(
 onScopeDispose(() => stopWatch?.())
 
 /**
- * Compact is an action of the card, which closes it as a menu's action does.
+ * Compact and Clear are actions of the card, which close it as a menu's action
+ * does.
  */
 function compact(close: () => void): void {
   close()
   emit('compact')
+}
+
+function clear(close: () => void): void {
+  close()
+  emit('clear')
 }
 
 function openEntry(entry: InstructionEntry, close: () => void): void {
@@ -401,11 +416,21 @@ const ringColor = computed(() => {
                   </Fold>
                 </div>
                 <!--
-                  The last line of the context section: its Compact ends where
+                  The last line of the context section: its actions end where
                   the figures above it end.
                 -->
                 <div v-if="parts.context && !isCompacting" class="flex items-center gap-3 px-3 pt-2 pb-3">
                   <span class="min-w-0 flex-1 truncate tabular-nums text-fg-muted">{{ room === null ? '' : t('context.untilCompaction', { tokens: formatTokens(room) }) }}</span>
+                  <Button
+                    v-if="clearable"
+                    size="sm"
+                    class="-mr-1"
+                    :disabled="clearUnavailableReason != null"
+                    :disabled-reason="clearUnavailableReason ?? undefined"
+                    @click="clear(close)"
+                  >
+                    {{ t('context.clear') }}
+                  </Button>
                   <Button
                     size="sm"
                     :disabled="blockedReason != null"

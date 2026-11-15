@@ -610,7 +610,15 @@ pub async fn fork_seed(
         if !read.blocks.first().is_some_and(|block| Kind::CompletedText.holds(block)) {
             return Err(CutError::NotCompletedText.into());
         }
+        let path_end = start + window.len();
         match end {
+            // A `clear` followed the text: the side question's history ends
+            // before it, where `side_end` ends it among the blocks from the
+            // text to the clear, as it does in the window.
+            ForkEnd::Side(_) if let Some(clear) = store.last_of(Kind::Clear, path_end).await.map_err(store_error)?.filter(|clear| *clear > at) => {
+                let read = store.blocks(at..clear + 1).await.map_err(store_error)?;
+                (at + side_end(&read.blocks, 0) + 1, Vec::new())
+            }
             // The side question's history goes on through the window, which
             // starts with the compaction that summarized its text.
             ForkEnd::Side(_) => (start, window[..=side_end(window, 0)].to_vec()),

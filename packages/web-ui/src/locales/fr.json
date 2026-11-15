@@ -280,6 +280,7 @@
     "subagent_failed": "Un sous-agent n’a pas pu être démarré ou arrêté.",
     "shell_stop_failed": "La commande n’a pas pu être arrêtée.",
     "nothing_to_retry": "Il n’y a rien à réessayer.",
+    "nothing_to_clear": "Il n’y a rien à effacer.",
     "summary_missing": "Le modèle n’a pas rédigé de résumé.",
     "prompt_unavailable": "Le fournisseur du modèle n’est pas disponible.",
     "usage_limit": "Vous avez atteint votre limite d’utilisation.",
