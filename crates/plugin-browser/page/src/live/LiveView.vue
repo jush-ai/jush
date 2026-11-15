@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import { ArrowLeft, ArrowRight, ClipboardPaste, Copy, Link, RotateCw, Scissors } from '@lucide/vue'
-import { LIVE_CAPTURE_STOPPED, type LiveTab } from '../generated/plugin'
+import { LIVE_CAPTURE_FAILED, LIVE_CAPTURE_STOPPED, type LiveTab } from '../generated/plugin'
 import LiveControls from './LiveControls.vue'
 import LiveDialog from './LiveDialog.vue'
 import { CanvasPictures, ClickCount, Menu, MenuDivider, MenuItem, Popover, RegionStatus, keyInput, pointerInput, usePage, wheelInput } from '@jush-ai/plugin-sdk'
@@ -71,6 +71,42 @@ const placement = computed(() => {
   return { ...placed, left: placed.left + props.snap.x, top: placed.top + props.snap.y }
 })
 const state = computed(() => props.session?.state ?? null)
+
+/**
+ * How long a capture that failed and that the device captures again keeps
+ * the last picture before the view says it cannot show the page. The device
+ * starts the capture again by recreating its capture extension, which Chrome
+ * starts within about a second; a failure that lasts longer is one the user
+ * hears of.
+ */
+const RETRY_UNSAID_MS = 2000
+/**
+ * A capture that failed while the view showed a picture, within
+ * `RETRY_UNSAID_MS` of its failure: one that failed again after the user
+ * asked for it, or before any picture, has no picture to keep.
+ */
+const retrying = ref(false)
+let retried: ReturnType<typeof setTimeout> | null = null
+watch(() => state.value?.pictureless ?? null, (reason, was) => {
+  if (retried !== null) {
+    clearTimeout(retried)
+    retried = null
+  }
+  retrying.value = reason === LIVE_CAPTURE_FAILED && was === null
+  if (retrying.value) {
+    retried = setTimeout(() => {
+      retried = null
+      retrying.value = false
+    }, RETRY_UNSAID_MS)
+  }
+})
+onBeforeUnmount(() => {
+  if (retried !== null) {
+    clearTimeout(retried)
+  }
+})
+/** Why the view shows no picture, said in its place; none while the last picture stands. */
+const pictureless = computed(() => (retrying.value ? null : state.value?.pictureless ?? null))
 /**
  * Whether this view shows the tab the session watches: only it draws the
  * page's native controls, dialog and the browser's menu. A hidden content's
@@ -441,12 +477,12 @@ onBeforeUnmount(() => {
     <div v-if="!painted" class="pointer-events-none absolute inset-0" :class="BLANK_PAGE" />
     <!-- A notice that leaves no picture takes the picture's place; the page's controls and dialogs stay over it. -->
     <RegionStatus
-      v-if="state?.pictureless"
+      v-if="pictureless"
       class="absolute inset-0 bg-surface"
       status="failed"
       :label="t('region.couldntShow')"
-      :detail="reasonSentence(state.pictureless)"
-      :on-retry="state.pictureless === LIVE_CAPTURE_STOPPED ? () => session?.recapture() : undefined"
+      :detail="reasonSentence(pictureless)"
+      :on-retry="pictureless === LIVE_CAPTURE_STOPPED ? () => session?.recapture() : undefined"
     />
     <input
       ref="bridge"
