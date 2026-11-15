@@ -388,6 +388,9 @@ pub(crate) struct Inner {
     /// What the runner's cache downloads now, as it last said; kept in
     /// memory only.
     downloading: watch::Sender<Vec<DeviceDownload>>,
+    /// Whether a prompt to elevate shows on the device's desktop, as the
+    /// runner last said (`crates/runner/src/elevation.rs`).
+    elevation_prompt: watch::Sender<bool>,
 }
 
 #[derive(Default)]
@@ -459,6 +462,7 @@ pub(crate) enum Expected {
     PackageRelease,
     Sync,
     Storage,
+    Elevation,
     Prefetch,
     Resident,
     JobRead,
@@ -480,6 +484,8 @@ pub(crate) enum Answer {
     Http(HttpHead),
     /// What Jush keeps on the device after a storage request.
     Storage(wire::StorageReport),
+    /// What came of a request that a Windows runner run elevated.
+    Elevation(wire::ElevationOutcome),
     Done,
 }
 
@@ -792,6 +798,7 @@ impl Link {
             heard: Cell::new(tokio::time::Instant::now()),
             installed: watch::Sender::new(None),
             downloading: watch::Sender::new(Vec::new()),
+            elevation_prompt: watch::Sender::new(false),
             pongs: watch::Sender::new(()),
         }));
         if let Some(log) = link.0.device_log.clone() {
@@ -1003,6 +1010,12 @@ impl Link {
         self.0.downloading.subscribe()
     }
 
+    /// Whether a prompt to elevate shows on the device's desktop, as the
+    /// runner last said (`crates/runner/src/elevation.rs`).
+    pub fn watch_elevation_prompt(&self) -> watch::Receiver<bool> {
+        self.0.elevation_prompt.subscribe()
+    }
+
     pub fn is_closed(&self) -> bool {
         self.0.closed.is_cancelled()
     }
@@ -1092,6 +1105,16 @@ impl Link {
         self.call(Expected::Sync, |id| Inbound::Sync { id })
             .await
             .map(|_| ())
+    }
+
+    /// Asks a Windows runner to run elevated, which shows a User Account
+    /// Control prompt on the device's desktop, and answers once it shows or
+    /// could not; the device's elevation says later what came of it.
+    pub async fn elevate(&self) -> Result<wire::ElevationOutcome, DeviceError> {
+        match self.call(Expected::Elevation, |id| Inbound::ElevationRequest { id }).await? {
+            Answer::Elevation(outcome) => Ok(outcome),
+            _ => unreachable!("an elevation request is answered with its outcome"),
+        }
     }
 
     /// Removes what `action` names from the device and measures what Jush
@@ -1504,6 +1527,7 @@ impl Link {
             Expected::PackageRelease => "package_release",
             Expected::Sync => "sync",
             Expected::Storage => "storage",
+            Expected::Elevation => "elevation",
             Expected::Prefetch => "prefetch",
             Expected::Resident => "resident",
             Expected::JobRead => "job_read",
@@ -1651,6 +1675,10 @@ impl Link {
                 self.answer(&id, Expected::Storage, Answer::Storage(report));
             }
             Outbound::StorageFailed { id, reason } => self.refuse(&id, DeviceError::failed(None, reason)),
+            Outbound::ElevationAnswer { id, outcome } => self.answer(&id, Expected::Elevation, Answer::Elevation(outcome)),
+            Outbound::ElevationPrompt { showing } => {
+                self.0.elevation_prompt.send_replace(showing);
+            }
             // A repeated hello on a bound connection says nothing new.
             Outbound::Hello { .. } => {}
             Outbound::Installed { artifacts } => {

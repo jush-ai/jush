@@ -7,6 +7,7 @@ import type { ModelSettings } from '../agent/model-selection'
 import type { TagTone } from '../ui/Tag.vue'
 import type { SentenceText, TitleText } from '../ui/ui-text'
 import type { AutostartUnavailable } from '../devices/autostart'
+import type { Elevation } from '../devices/elevation'
 import type { DeviceMark } from '../devices/mark'
 import type { DownloadProgress } from '../devices/installed'
 import type { DeviceState } from '../devices/state'
@@ -181,6 +182,10 @@ export interface SettingsDevice extends DeviceReport {
    * runner last said; its page's header gives it. Null when it does.
    */
   autostartUnavailable?: AutostartUnavailable | null
+  /** Whether its Windows runner runs elevated, as it last said; null on another system. */
+  elevation?: Elevation | null
+  /** Whether a prompt to elevate shows on its desktop now. */
+  elevationPrompt?: boolean
   /** The device's home directory, which a location under it is written from as `~`. */
   home?: string | null
   /** When it was paired, as an ISO 8601 timestamp. */

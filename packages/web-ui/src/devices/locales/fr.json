@@ -88,7 +88,15 @@
     "paired": "Jumelé",
     "revokeThis": "Révoquer cet appareil",
     "revoke": "Révoquer…",
-    "lastSeen": "Vu pour la dernière fois"
+    "lastSeen": "Vu pour la dernière fois",
+    "administrator": "Droits d’administrateur",
+    "administratorRequest": "Demander affiche une confirmation sur l’écran de cet appareil.",
+    "administratorPrompt": "Autorisez-le dans la confirmation affichée sur l’écran de cet appareil.",
+    "administratorHeld": "Jush s’exécute avec les droits d’administrateur de ce compte.",
+    "administratorUnavailable": "Ce compte Windows n’est pas administrateur.",
+    "yes": "Oui",
+    "no": "Non",
+    "request": "Demander"
   },
   "details": {
     "title": "Détails de la connexion",

@@ -7,6 +7,9 @@
     "revokeFailed": "無法撤銷裝置",
     "renameFailed": "無法重新命名裝置",
     "routeFailed": "無法變更連線路徑",
+    "elevateFailed": "無法申請系統管理員權限",
+    "elevationUnavailable": "未能顯示確認",
+    "elevationUnavailableMessage": "Windows 目前無法在 {device} 上顯示確認。",
     "resetNotStarted": "重設未能開始。請檢查網路連線後重試。"
   },
   "storage": {

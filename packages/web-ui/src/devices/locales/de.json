@@ -88,7 +88,15 @@
     "paired": "Gekoppelt",
     "revokeThis": "Dieses Gerät entkoppeln",
     "revoke": "Entkoppeln …",
-    "lastSeen": "Zuletzt gesehen"
+    "lastSeen": "Zuletzt gesehen",
+    "administrator": "Administratorrechte",
+    "administratorRequest": "„Anfordern“ zeigt eine Abfrage auf dem Bildschirm dieses Geräts.",
+    "administratorPrompt": "Erlaube es in der Abfrage auf dem Bildschirm dieses Geräts.",
+    "administratorHeld": "Jush läuft mit den Administratorrechten dieses Kontos.",
+    "administratorUnavailable": "Dieses Windows-Konto ist kein Administratorkonto.",
+    "yes": "Ja",
+    "no": "Nein",
+    "request": "Anfordern"
   },
   "details": {
     "title": "Verbindungsdetails",

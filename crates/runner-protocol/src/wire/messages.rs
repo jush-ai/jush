@@ -164,6 +164,13 @@ pub enum Inbound {
     Sync {
         id: String,
     },
+    /// Asks a Windows runner to run elevated from here on, which shows a
+    /// User Account Control prompt on the device's desktop;
+    /// `elevation_answer` answers once the prompt shows, or could not
+    /// (`crates/runner/src/elevation.rs`).
+    ElevationRequest {
+        id: String,
+    },
     Spawn {
         spawn_id: String,
         command: String,
@@ -1051,6 +1058,7 @@ impl Inbound {
             | Self::Programs { .. }
             | Self::StorageRules { .. }
             | Self::Storage { .. }
+            | Self::ElevationRequest { .. }
             | Self::Sync { .. }
             | Self::Spawn { .. }
             | Self::SpawnStdin { .. }
@@ -1707,6 +1715,17 @@ pub enum Outbound {
         id: String,
         reason: String,
     },
+    /// What came of an `elevation_request`.
+    ElevationAnswer {
+        id: String,
+        outcome: ElevationOutcome,
+    },
+    /// Whether a User Account Control prompt of the runner's shows on the
+    /// device's desktop now, once the connection is online and as it
+    /// changes (`crates/runner/src/elevation.rs`).
+    ElevationPrompt {
+        showing: bool,
+    },
 }
 
 /// One artifact a device holds: its package, its line's name and its
@@ -1955,6 +1974,48 @@ pub struct RunnerInfo {
     )]
     #[garde(dive)]
     pub autostart_unavailable: Option<AutostartUnavailable>,
+    /// Whether a Windows runner runs elevated; none on other systems
+    /// (`crates/runner/src/elevation.rs`).
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "unwrap_or_skip"
+    )]
+    pub elevation: Option<Elevation>,
+}
+
+/// Whether a Windows runner runs elevated: as the user's own account, with
+/// the account's administrator rights, as a program started with Run as
+/// administrator does. A device keeps its runner's, and the web app receives
+/// it with the device.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub enum Elevation {
+    /// It runs elevated, or the account is in the Administrators group and
+    /// User Account Control is off.
+    Elevated,
+    /// The account is in the Administrators group and the runner runs with
+    /// its limited rights: a request shows a User Account Control prompt.
+    Elevatable,
+    /// The account is not in the Administrators group. A prompt would ask
+    /// for another account's password, and what it started would run as
+    /// that other account.
+    Unavailable,
+}
+
+/// What came of a request that a Windows runner run elevated. The prompt's
+/// answer shows in the device's elevation: a Yes restarts the runner
+/// elevated, and a No leaves it as it was.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub enum ElevationOutcome {
+    /// A prompt shows on the device's desktop: this request's, or one that
+    /// showed already.
+    Shown,
+    /// No prompt could ask: the account is not in the Administrators group,
+    /// the system starts the runner with no scheduled task, or there is no
+    /// desktop to show the prompt on. The runner's log says which.
+    Unavailable,
 }
 
 /// Why a device will not start its runner by itself after a restart
@@ -2852,7 +2913,8 @@ impl Outbound {
             // A report a drop lost is not sent again: the next one replaces it.
             Self::Hello { .. }
             | Self::Pong { .. }
-            | Self::Usage { .. } => Carriage::Connection,
+            | Self::Usage { .. }
+            | Self::ElevationPrompt { .. } => Carriage::Connection,
             Self::Revoke { .. }
             | Self::Installed { .. }
             | Self::Downloading { .. }
@@ -2879,6 +2941,7 @@ impl Outbound {
             | Self::SyncDone { .. }
             | Self::StorageDone { .. }
             | Self::StorageFailed { .. }
+            | Self::ElevationAnswer { .. }
             | Self::FsOk { .. }
             | Self::FsError { .. }
             | Self::GitOk { .. }

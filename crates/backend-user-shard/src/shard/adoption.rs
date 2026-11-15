@@ -388,6 +388,7 @@ impl Shard {
                     hello_instance,
                     home,
                     runner.autostart_unavailable,
+                    runner.elevation,
                 )
                 .await?;
             Some(settle_first_home(access, seen, device, first))
@@ -582,6 +583,18 @@ impl Shard {
                 next.end(&device.id, &device.name, state);
             });
         }
+    }
+
+    /// Asks the device's Windows runner to run elevated, which shows a User
+    /// Account Control prompt on its desktop, and answers once it shows or
+    /// could not (`crates/runner/src/elevation.rs`); none when its runner is
+    /// not connected.
+    pub async fn elevate_device(
+        &self,
+        device: &DeviceId,
+    ) -> Option<Result<jush_runner_protocol::wire::ElevationOutcome, jush_device_interface::DeviceError>> {
+        let link = self.devices().link(device)?;
+        Some(link.elevate().await)
     }
 
     /// Revokes a device, which nothing refuses.

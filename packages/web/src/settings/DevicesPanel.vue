@@ -17,7 +17,7 @@ const settings = useDeviceSettings()
 const installCommands = useInstallCommands()
 const address = useSettingsAddress()
 const { cloud, resetError } = storeToRefs(settings)
-const { revoke, rename, setRoute, resetCloud } = settings
+const { revoke, elevate, rename, setRoute, resetCloud } = settings
 
 /** Each paired device, with when it was paired and how this page reaches it. */
 const devices = computed<SettingsDevice[]>(() =>
@@ -68,5 +68,6 @@ watch(
     @measure="measureDirect"
     @rename="rename"
     @revoke="revoke"
+    @elevate="elevate"
   />
 </template>

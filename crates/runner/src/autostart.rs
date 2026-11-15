@@ -6,6 +6,12 @@
 //! starts the runner at the user's login and again after a crash, so a paired
 //! device is back online by itself after a restart.
 //!
+//! On Windows the task and the `Run` value start `jush-start.exe`, which the
+//! runner writes into its installation (`crates/runner/start/main.rs`), so no
+//! console window opens. The task runs with the highest privileges once an
+//! elevated runner registered it (`crate::elevation`), and a runner with
+//! limited rights never registers it again with less.
+//!
 //! The files the managers read are written directly and the managers are asked
 //! through their own commands, since none offers its user a library interface.
 //!
@@ -65,6 +71,7 @@ pub enum Supervision {
 /// The registration of one installation, named by its directory's name, so
 /// that the runners of several backends on one computer are registered
 /// apart.
+#[derive(Clone)]
 pub struct Registration {
     id: String,
     /// The installation's directory, absolute.
@@ -133,6 +140,12 @@ impl Registration {
         &self.home
     }
 
+    /// The installation's directory, absolute.
+    #[cfg(windows)]
+    pub fn directory(&self) -> &Path {
+        &self.directory
+    }
+
     /// Whether this process is the runner the manager started, which never
     /// hands over.
     pub fn supervised(&self) -> bool {
@@ -190,6 +203,20 @@ impl Registration {
         manager::exists(self).await
     }
 
+    /// Whether the installation's scheduled task is this release's and runs
+    /// with the highest privileges, so Windows starts its runner elevated.
+    #[cfg(windows)]
+    pub async fn elevated(&self) -> bool {
+        manager::elevated(self).await
+    }
+
+    /// Registers the installation's scheduled task with the highest
+    /// privileges, from an elevated process (`crate::elevation`).
+    #[cfg(windows)]
+    pub async fn register_elevated(&self) -> Result<(), String> {
+        manager::register_elevated(self).await
+    }
+
     /// Asks the manager to start the installation's runner, again when one
     /// of its own is on its way out.
     pub async fn start(&self) -> Result<(), String> {
@@ -199,7 +226,22 @@ impl Registration {
     /// Removes the registration, so the manager never starts a runner that
     /// is gone; what stays is said to the person at the console.
     pub async fn remove(&self) {
-        if let Err(error) = manager::remove(self).await {
+        Self::told(manager::remove(self).await);
+    }
+
+    /// Removes the registration as [`Self::remove`] does, for the person at
+    /// the console, who answers the prompt that elevates the removal where
+    /// only an elevated process may remove it.
+    pub async fn remove_asking(&self) {
+        #[cfg(windows)]
+        let removed = manager::remove_asking(self).await;
+        #[cfg(not(windows))]
+        let removed = manager::remove(self).await;
+        Self::told(removed);
+    }
+
+    fn told(removed: Result<(), String>) {
+        if let Err(error) = removed {
             crate::console::line(crate::console::runner_line(format_args!(
                 "the registration that starts this runner with the computer stays: {error}"
             )));
@@ -402,7 +444,8 @@ fn unit(launcher: &str, home: &str, directory: &str) -> String {
 
 /// The Windows task:
 ///
-/// - It starts at the user's logon, with the user's limited rights, hidden.
+/// - It starts at the user's logon, hidden, with the highest privileges when
+///   `elevated`, else with the user's limited rights.
 /// - It has no `RestartOnFailure`: it did not restart a task whose action
 ///   ended with a non-zero exit code, so a runner that was killed stayed down
 ///   until someone started the task. The action's own loop restarts the
@@ -413,7 +456,7 @@ fn unit(launcher: &str, home: &str, directory: &str) -> String {
 /// - It is never stopped for its running time, a battery or idleness.
 /// - It runs at normal priority, where a task's default is below it.
 #[cfg(windows)]
-fn task(user: &str, description: &str, arguments: &str, home: &str) -> String {
+fn task(user: &str, description: &str, program: &str, arguments: &str, home: &str, elevated: bool) -> String {
     format!(
         r#"<?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
@@ -430,7 +473,7 @@ fn task(user: &str, description: &str, arguments: &str, home: &str) -> String {
     <Principal id="Author">
       <UserId>{user}</UserId>
       <LogonType>InteractiveToken</LogonType>
-      <RunLevel>LeastPrivilege</RunLevel>
+      <RunLevel>{run_level}</RunLevel>
     </Principal>
   </Principals>
   <Settings>
@@ -451,7 +494,7 @@ fn task(user: &str, description: &str, arguments: &str, home: &str) -> String {
   </Settings>
   <Actions Context="Author">
     <Exec>
-      <Command>powershell.exe</Command>
+      <Command>{program}</Command>
       <Arguments>{arguments}</Arguments>
       <WorkingDirectory>{home}</WorkingDirectory>
     </Exec>
@@ -460,6 +503,8 @@ fn task(user: &str, description: &str, arguments: &str, home: &str) -> String {
 "#,
         description = xml(description),
         user = xml(user),
+        run_level = if elevated { "HighestAvailable" } else { "LeastPrivilege" },
+        program = xml(program),
         arguments = xml(arguments),
         home = xml(home),
     )
@@ -704,6 +749,7 @@ use linux as manager;
 #[cfg(windows)]
 mod windows {
     use super::{AutostartUnavailable, Registration, SUPERVISED, Supervision, run, task};
+    use std::path::PathBuf;
 
     /// What the log calls this manager.
     pub const MECHANISM: &str = "scheduled_task";
@@ -719,19 +765,26 @@ mod windows {
             format!("{}.{}", self.label_prefix(), self.id)
         }
 
-        /// PowerShell's arguments, which run the launcher with `run --log`,
-        /// hidden, as the manager's runner, and run it again 10 s after it
-        /// ends with anything but 0: the Task Scheduler's `RestartOnFailure`
-        /// did not restart a task whose action ended with an exit code, so
-        /// this loop is the supervisor, as launchd's `KeepAlive` and systemd's
-        /// `Restart=on-failure` are on the other systems. A launcher that
-        /// throws counts as a failure.
+        /// The installation's `jush-start.exe`, which the task and the `Run`
+        /// value start (`crates/runner/start/main.rs`).
+        pub(crate) fn starter(&self) -> PathBuf {
+            self.directory.join(crate::elevation::STARTER)
+        }
+
+        /// What `jush-start.exe` starts: PowerShell, which runs the launcher
+        /// with `run --log` as the manager's runner, and runs it again 10 s
+        /// after it ends with anything but 0. The Task Scheduler's
+        /// `RestartOnFailure` did not restart a task whose action ended with
+        /// an exit code, so this loop is the supervisor, as launchd's
+        /// `KeepAlive` and systemd's `Restart=on-failure` are on the other
+        /// systems. A launcher that throws counts as a failure.
         fn arguments(&self) -> String {
             let launcher = self.directory.join("run.ps1").to_string_lossy().replace('\'', "''");
             format!(
-                "-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -Command \"$env:{SUPERVISED} = '1'; \
+                "\"{}\" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command \"$env:{SUPERVISED} = '1'; \
                  while ($true) {{ $code = 1; try {{ & '{launcher}' run --log; $code = $LASTEXITCODE }} catch {{ }}; \
-                 if ($code -eq 0) {{ exit 0 }}; Start-Sleep -Seconds 10 }}\""
+                 if ($code -eq 0) {{ exit 0 }}; Start-Sleep -Seconds 10 }}\"",
+                powershell_path().display()
             )
         }
 
@@ -752,18 +805,47 @@ mod windows {
     const NAMED: &str = "$sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value; \
         $name = $env:JUSH_TASK_NAME + '.' + $sid; ";
 
+    /// Whether the task of this script's name is the one `JUSH_TASK_*`
+    /// describe, at whichever run level, in `$same`; whether it runs with the
+    /// highest privileges in `$highest`.
+    const COMPARE: &str = "$task = Get-ScheduledTask -TaskPath '\\' -TaskName $name -ErrorAction SilentlyContinue; \
+        $same = [bool]($task -and $task.Description -eq $env:JUSH_TASK_DESCRIPTION -and @($task.Actions).Count -eq 1 -and \
+          $task.Actions[0].Execute -eq $env:JUSH_TASK_PROGRAM -and $task.Actions[0].Arguments -eq $env:JUSH_TASK_ARGUMENTS -and \
+          $task.Settings.MultipleInstances -eq 'Queue'); \
+        $highest = [bool]($task -and $task.Principal.RunLevel -eq 'Highest'); ";
+
     /// Registers the task `JUSH_TASK_XML` describes, for this process's
-    /// user, unless one of its name already runs the same program for the
-    /// same installation.
-    const REGISTER: &str = "$ErrorActionPreference = 'Stop'; \
-        $task = Get-ScheduledTask -TaskPath '\\' -TaskName $name -ErrorAction SilentlyContinue; \
-        if ($task -and $task.Description -eq $env:JUSH_TASK_DESCRIPTION -and @($task.Actions).Count -eq 1 -and \
-          $task.Actions[0].Execute -eq 'powershell.exe' -and $task.Actions[0].Arguments -eq $env:JUSH_TASK_ARGUMENTS -and \
-          $task.Settings.MultipleInstances -eq 'Queue') { exit 0 }; \
-        Register-ScheduledTask -TaskName $name -Xml $env:JUSH_TASK_XML.Replace($env:JUSH_TASK_USER, $sid) -Force | Out-Null";
+    /// user, unless the task of its name is that one at the run level this
+    /// process can give. A process with limited rights leaves a task with
+    /// the highest privileges as it is, whatever it runs: registering it
+    /// again would take them away, and Windows refuses such a process the
+    /// highest.
+    ///
+    /// Windows refuses a process with limited rights a task an elevated
+    /// process made, as an installer run from an administrator's terminal
+    /// did, at any run level. A task that a process with limited rights
+    /// cannot register again stays as it was, which the script says with
+    /// `kept`: it still starts the runner, and an elevated runner registers
+    /// it anew.
+    const REGISTER: &str = "$ErrorActionPreference = 'Stop'; $elevated = $env:JUSH_TASK_ELEVATED -eq '1'; \
+        if (($elevated -and $same -and $highest) -or (-not $elevated -and ($same -or $highest))) { exit 0 }; \
+        try { Register-ScheduledTask -TaskName $name -Xml $env:JUSH_TASK_XML.Replace($env:JUSH_TASK_USER, $sid) -Force | Out-Null } \
+        catch { if ($task -and -not $elevated) { 'kept'; exit 0 }; throw }";
+
+    /// Exits 0 when the task is the one `JUSH_TASK_*` describe and runs
+    /// with the highest privileges.
+    const ELEVATED: &str = "if ($same -and $highest) { exit 0 }; exit 1";
+
+    /// Windows PowerShell, by its full path: a runner that may run elevated
+    /// must not run a `powershell.exe` the search finds first, which looks
+    /// beside the program that searches before the system's folders.
+    pub(crate) fn powershell_path() -> PathBuf {
+        let system = std::env::var_os("SystemRoot").unwrap_or_else(|| r"C:\Windows".into());
+        PathBuf::from(system).join(r"System32\WindowsPowerShell\v1.0\powershell.exe")
+    }
 
     async fn powershell(script: &str, registration: &Registration, extra: &[(&str, String)]) -> Result<String, String> {
-        let mut command = tokio::process::Command::new("powershell.exe");
+        let mut command = tokio::process::Command::new(powershell_path());
         command
             .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", &format!("{NAMED}{script}")])
             .env("JUSH_TASK_NAME", registration.name());
@@ -773,18 +855,43 @@ mod windows {
         run("PowerShell", command).await
     }
 
-    pub async fn ensure(registration: &Registration) -> Result<Supervision, AutostartUnavailable> {
+    /// What the scripts read of the task this installation should have.
+    fn described(registration: &Registration, elevated: bool) -> Vec<(&'static str, String)> {
         let description = registration.description();
+        let program = registration.starter().to_string_lossy().into_owned();
         let arguments = registration.arguments();
-        let task = task(USER, &description, &arguments, &registration.home.to_string_lossy());
-        let extra = [
+        let task = task(
+            USER,
+            &description,
+            &program,
+            &arguments,
+            &registration.home.to_string_lossy(),
+            elevated,
+        );
+        vec![
             ("JUSH_TASK_USER", USER.to_owned()),
             ("JUSH_TASK_XML", task),
             ("JUSH_TASK_DESCRIPTION", description),
-            ("JUSH_TASK_ARGUMENTS", arguments.clone()),
-        ];
-        match powershell(REGISTER, registration, &extra).await {
-            Ok(_) => {
+            ("JUSH_TASK_PROGRAM", program),
+            ("JUSH_TASK_ARGUMENTS", arguments),
+            ("JUSH_TASK_ELEVATED", if elevated { "1" } else { "0" }.to_owned()),
+        ]
+    }
+
+    pub async fn ensure(registration: &Registration) -> Result<Supervision, AutostartUnavailable> {
+        let elevated = crate::elevation::current() == Some(jush_runner_protocol::wire::Elevation::Elevated);
+        if let Err(error) = crate::elevation::place_starter(&registration.directory).await {
+            return Err(AutostartUnavailable::NotWritten {
+                path: registration.starter().to_string_lossy().into_owned(),
+                error: error.to_string(),
+            });
+        }
+        let extra = described(registration, elevated);
+        match powershell(&format!("{COMPARE}{REGISTER}"), registration, &extra).await {
+            Ok(said) => {
+                if said.trim() == "kept" {
+                    tracing::warn!(event = "autostart.step_failed", mechanism = MECHANISM, step = "scheduled_task", outcome = "kept", "the runner's scheduled task stays as an elevated process made it: this one may not change it");
+                }
                 // The task starts the runner; a `Run` value of before would
                 // start a second one.
                 if let Err(error) = run_value::remove(&registration.name()) {
@@ -793,7 +900,7 @@ mod windows {
                 Ok(Supervision::Restarts)
             }
             Err(refused) => {
-                let command = format!("powershell.exe {arguments}");
+                let command = format!("\"{}\" {}", registration.starter().display(), registration.arguments());
                 run_value::set(&registration.name(), &command).map_err(|error| {
                     AutostartUnavailable::Refused {
                         error: format!("{refused}; {error}"),
@@ -810,6 +917,28 @@ mod windows {
         powershell(FIND, registration, &[]).await.is_ok()
     }
 
+    /// Registers the installation's task with the highest privileges, from
+    /// an elevated process, with no `Run` value in its place when Windows
+    /// refuses it.
+    pub async fn register_elevated(registration: &Registration) -> Result<(), String> {
+        crate::elevation::place_starter(&registration.directory)
+            .await
+            .map_err(|error| error.to_string())?;
+        let extra = described(registration, true);
+        powershell(&format!("{COMPARE}{REGISTER}"), registration, &extra).await?;
+        if let Err(error) = run_value::remove(&registration.name()) {
+            tracing::warn!(event = "autostart.step_failed", mechanism = MECHANISM, step = "run_value", %error, "the runner's Run value stays beside its scheduled task");
+        }
+        Ok(())
+    }
+
+    /// Whether the installation's task is this release's and runs with the
+    /// highest privileges, so Windows starts its runner elevated.
+    pub async fn elevated(registration: &Registration) -> bool {
+        let extra = described(registration, true);
+        powershell(&format!("{COMPARE}{ELEVATED}"), registration, &extra).await.is_ok()
+    }
+
     pub async fn start(registration: &Registration) -> Result<(), String> {
         // A start while the task's instance runs waits for it to end.
         const START: &str = "Start-ScheduledTask -TaskPath '\\' -TaskName $name -ErrorAction Stop";
@@ -823,6 +952,44 @@ mod windows {
         let task = powershell(UNREGISTER, registration, &[]).await.map(drop);
         let value = run_value::remove(&registration.name()).map_err(|error| error.to_string());
         task.and(value)
+    }
+
+    /// Removes the task as [`remove`] does; a task that stays, as one an
+    /// elevated process made stays for a process with limited rights, is
+    /// removed by an elevated PowerShell, which the prompt asks the person
+    /// at the console for.
+    pub async fn remove_asking(registration: &Registration) -> Result<(), String> {
+        let refused = match remove(registration).await {
+            Ok(()) => return Ok(()),
+            Err(refused) => refused,
+        };
+        let elevatable = crate::elevation::current() == Some(jush_runner_protocol::wire::Elevation::Elevatable);
+        if !elevatable || !exists(registration).await {
+            return Err(refused);
+        }
+        let name = powershell("$name", registration, &[]).await?.trim().to_owned();
+        let removal = format!(
+            "Unregister-ScheduledTask -TaskPath '\\' -TaskName '{}' -Confirm:$false",
+            name.replace('\'', "''")
+        );
+        crate::console::line(crate::console::runner_line(
+            "an elevated runner made the scheduled task that starts it; Windows asks for administrator rights to remove it",
+        ));
+        // An elevated process inherits nothing of this one, so the script
+        // names the task itself; a task's name holds no double quote.
+        let program = powershell_path();
+        let parameters = format!("-NoProfile -NonInteractive -Command \"{removal}\"");
+        let elevated = tokio::task::spawn_blocking(move || {
+            crate::elevation::run_elevated(&program, &parameters, None)
+        })
+        .await
+        .map_err(|error| error.to_string())?;
+        match elevated {
+            Ok(0) if !exists(registration).await => Ok(()),
+            Ok(_) | Err(_) => Err(format!(
+                "Windows allows only an elevated process to remove it; run in an administrator's PowerShell: {removal}"
+            )),
+        }
     }
 
     /// The value of the user's `Run` key that starts the runner at logon.
@@ -868,3 +1035,5 @@ mod windows {
 
 #[cfg(windows)]
 use windows as manager;
+#[cfg(windows)]
+pub(crate) use windows::powershell_path;

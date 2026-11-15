@@ -65,6 +65,9 @@ pub enum End {
     /// The backend revoked the device; the projects of these names went
     /// with it.
     Revoked(Vec<String>),
+    /// A prompt granted elevation: the runner hands over to its elevated
+    /// self (`crates/runner/src/elevation.rs`).
+    Elevated,
 }
 
 /// What each connection takes from its registration.
@@ -118,6 +121,10 @@ pub struct Registered {
     pub removal: Option<String>,
     /// The number this start of the runner drew, which each hello names.
     pub instance: u64,
+    /// The prompts that elevate the runner, for a runner of the scheduled
+    /// task whose account may elevate (`crates/runner/src/elevation.rs`).
+    #[cfg(windows)]
+    pub elevator: Option<Arc<crate::elevation::Elevator>>,
 }
 
 /// The variables that tell every program the runner starts where its
@@ -160,6 +167,12 @@ enum Work {
         result: io::Result<()>,
         name: String,
     },
+    /// What came of the backend's request `id` to elevate.
+    #[cfg(windows)]
+    ElevationAnswer {
+        id: String,
+        outcome: wire::ElevationOutcome,
+    },
     Done,
 }
 
@@ -186,6 +199,11 @@ struct Owner<'r> {
     usage: watch::Receiver<Option<wire::Usage>>,
     /// The storage keeper's latest report.
     storage: watch::Receiver<Option<wire::StorageReport>>,
+    /// Whether a prompt to elevate shows now (`crates/runner/src/elevation.rs`).
+    elevation_prompt: watch::Receiver<bool>,
+    /// The backend's requests to elevate whose answer is on its way.
+    #[cfg(windows)]
+    elevation_requests: Vec<String>,
     /// Whether this connection asked the backend to revoke the device.
     revoke_asked: bool,
     /// The pages' peers the backend introduced on this connection
@@ -285,6 +303,9 @@ pub async fn serve(
         downloading: registered.downloading.clone(),
         usage: registered.usage.clone(),
         storage: registered.storage.reports(),
+        elevation_prompt: registered.management.elevation_prompt.subscribe(),
+        #[cfg(windows)]
+        elevation_requests: Vec::new(),
         revoke_asked: false,
         direct,
         own,
@@ -321,6 +342,15 @@ impl Owner<'_> {
             tokio::select! {
                 biased;
                 _ = management.stop.cancelled() => return Ok(End::Stopped),
+                // A request whose prompt granted elevation, or found it
+                // granted, is answered before the runner hands over.
+                _ = management.elevated.cancelled() => {
+                    #[cfg(windows)]
+                    for id in std::mem::take(&mut self.elevation_requests) {
+                        self.answer_elevation(id, wire::ElevationOutcome::Shown)?;
+                    }
+                    return Ok(End::Elevated);
+                }
                 // Asked to remove itself, the runner asks its backend to
                 // revoke the device, which ends the connection with
                 // `revoked` (`crates/runner/src/removal.rs`).
@@ -354,6 +384,9 @@ impl Owner<'_> {
                 }
                 Ok(()) = self.storage.changed(), if management.phase() == Phase::Online => {
                     self.report_storage()?;
+                }
+                Ok(()) = self.elevation_prompt.changed(), if management.phase() == Phase::Online => {
+                    self.report_elevation_prompt()?;
                 }
                 arrival = transport.input.recv() => match arrival {
                     Some(arrival) => {
@@ -454,7 +487,44 @@ impl Owner<'_> {
                 .send(announcement)
                 .map_err(|_| io::Error::other("device connection closed"))?;
         }
+        // Once, after the first connection: the prompt waits for the person
+        // on its own, and the runner serves meanwhile.
+        #[cfg(windows)]
+        if let Some(elevator) = self.registered.elevator.clone() {
+            tokio::spawn(async move { elevator.ask_by_itself().await });
+        }
+        if cfg!(windows) {
+            self.report_elevation_prompt()?;
+        }
         Ok(())
+    }
+
+    /// Reports whether a prompt to elevate shows now.
+    fn report_elevation_prompt(&mut self) -> io::Result<()> {
+        let showing = *self.elevation_prompt.borrow_and_update();
+        let frame = wire::encode(&wire::Outbound::ElevationPrompt { showing }).map_err(io::Error::other)?;
+        self.send(frame)
+    }
+
+    /// Answers the backend's request to elevate once the prompt shows; a
+    /// runner that cannot ask answers at once.
+    fn elevation_request(&mut self, id: String) -> io::Result<()> {
+        #[cfg(windows)]
+        if let Some(elevator) = self.registered.elevator.clone() {
+            self.elevation_requests.push(id.clone());
+            self.work.spawn(async move {
+                let outcome = elevator.request("requested").await;
+                Work::ElevationAnswer { id, outcome }
+            });
+            return Ok(());
+        }
+        tracing::warn!(event = "elevation.unavailable", reason = "no_elevator", "no prompt asked: this runner cannot run elevated by a prompt");
+        self.answer_elevation(id, wire::ElevationOutcome::Unavailable)
+    }
+
+    fn answer_elevation(&mut self, id: String, outcome: wire::ElevationOutcome) -> io::Result<()> {
+        let frame = wire::encode(&wire::Outbound::ElevationAnswer { id, outcome }).map_err(io::Error::other)?;
+        self.send(frame)
     }
 
     fn worked(&mut self, work: Work) -> io::Result<()> {
@@ -470,6 +540,11 @@ impl Owner<'_> {
                 // itself paired keeps its pairing.
                 tracing::warn!(event = "link.opened", protocol = wire::VERSION, "online");
                 self.registered.announce_paired(&name);
+            }
+            #[cfg(windows)]
+            Work::ElevationAnswer { id, outcome } => {
+                self.elevation_requests.retain(|request| *request != id);
+                self.answer_elevation(id, outcome)?;
             }
             Work::Done => {}
         }
@@ -872,6 +947,7 @@ impl Owner<'_> {
                 });
             }
             Inbound::Sync { id } => self.volumes.sync(id)?,
+            Inbound::ElevationRequest { id } => self.elevation_request(id)?,
             message if message.fs_request_id().is_some() => self.device.handle_filesystem(message)?,
             message if message.git_request_id().is_some() => self.device.handle_git(message)?,
             Inbound::FsSubscribe { .. } | Inbound::FsUnsubscribe { .. } | Inbound::FsRenew { .. } => {

@@ -44,7 +44,7 @@ use jush_runner_client::{
     socket_frame,
 };
 use jush_device_interface::{DeviceIdentity, DeviceKey};
-use jush_runner_protocol::wire::{self, AutostartUnavailable, DeviceArtifact, Hardware, Inbound, OperatingSystem};
+use jush_runner_protocol::wire::{self, AutostartUnavailable, DeviceArtifact, Elevation, Hardware, Inbound, OperatingSystem};
 use jush_runner_protocol::values::BackendUrl;
 use jush_web_api_protocol::devices::{DeviceDto, DeviceKind, DeviceLogo, DeviceMark, DeviceState};
 use jush_web_api_protocol::ids::{DeviceId, UserId};
@@ -818,6 +818,9 @@ impl Devices {
                 .link(&device.id)
                 .map(|link| link.watch_downloading().borrow().clone())
                 .unwrap_or_default(),
+            elevation_prompt: self
+                .link(&device.id)
+                .is_some_and(|link| *link.watch_elevation_prompt().borrow()),
             installed: device.installed,
             id: device.id,
             kind: device.kind,
@@ -830,6 +833,7 @@ impl Devices {
             route: device.route,
             start_command,
             autostart_unavailable: device.autostart_unavailable,
+            elevation: device.elevation,
         }
     }
 
@@ -1009,14 +1013,19 @@ impl Serving {
             (&mut outgoing)
                 .with(|frame: Vec<u8>| ready(Ok::<_, axum::Error>(Message::Binary(frame.into())))),
         );
-        // What the runner's cache downloads, which the devices' views show
-        // while it lasts.
+        // What the runner's cache downloads, and whether a prompt to elevate
+        // shows, which the devices' views show while it lasts.
         let mut downloading = link.watch_downloading();
+        let mut prompting = link.watch_elevation_prompt();
         let shown = {
             let marks = marks.clone();
             async move {
-                while downloading.changed().await.is_ok() {
-                    marks.mark(Part::Devices);
+                loop {
+                    tokio::select! {
+                        Ok(()) = downloading.changed() => marks.mark(Part::Devices),
+                        Ok(()) = prompting.changed() => marks.mark(Part::Devices),
+                        else => break,
+                    }
                 }
                 std::future::pending::<()>().await
             }
@@ -1132,10 +1141,11 @@ impl DeviceRecorder {
         instance: u64,
         home: String,
         autostart_unavailable: Option<AutostartUnavailable>,
+        elevation: Option<Elevation>,
     ) -> Option<FirstHome> {
         let first = match self
             .control
-            .set_device_runner(device.clone(), os, hardware, version, instance, home, autostart_unavailable)
+            .set_device_runner(device.clone(), os, hardware, version, instance, home, autostart_unavailable, elevation)
             .await
         {
             Ok(first) => first,

@@ -47,6 +47,8 @@ const props = defineProps<{
   claimDevice: (code: string, signal?: AbortSignal) => Promise<PairingResult>
   /** Revokes a device; its page works until it settles. */
   onRevoke?: Action<[id: string]>
+  /** Asks a device's Windows runner to run elevated. */
+  onElevate?: Action<[id: string]>
 }>()
 const emit = defineEmits<{
   retry: []
@@ -107,6 +109,7 @@ const pageProjects = computed(() =>
     @measure="emit('measure', shown!)"
     @rename="emit('rename', shown!, $event)"
     @revoke="onRevoke?.(shown!)"
+    @elevate="onElevate?.(shown!)"
   />
   <SettingsPage
     v-else

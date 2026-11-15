@@ -3,7 +3,9 @@
 use jush_runner_protocol::direct::CANDIDATE_CHARS;
 /// The STUN servers' URLs, which the product state names to the page.
 pub use jush_runner_protocol::direct::{NotAStunUrl, StunUrl};
-use jush_runner_protocol::wire::{AutostartUnavailable, DeviceArtifact, DeviceDownload, OperatingSystem, RunnerPlatform};
+use jush_runner_protocol::wire::{
+    AutostartUnavailable, DeviceArtifact, DeviceDownload, Elevation, ElevationOutcome, OperatingSystem, RunnerPlatform,
+};
 use jush_shared_types::{Nullable, Timestamp};
 use garde::Validate;
 use schemars::JsonSchema;
@@ -101,6 +103,16 @@ pub enum DeviceState {
     Offline,
 }
 
+/// What came of a request that a device's Windows runner run elevated
+/// (`POST /api/devices/{id}/elevation`): whether a User Account Control
+/// prompt shows on its desktop. The device's elevation says later what came
+/// of the prompt.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct DeviceElevation {
+    pub outcome: ElevationOutcome,
+}
+
 /// A device as the web app sees it. `platform` is the one its runner
 /// reported; `state` says whether its runner serves it now;
 /// `download_percent` is how much of a runner executable this backend has
@@ -119,7 +131,11 @@ pub enum DeviceState {
 /// paired device to start its runner again, null for the Cloud;
 /// `autostart_unavailable` is why the device will not start its runner by
 /// itself after a restart, as its runner last reported it, null when it
-/// does or before its runner first said (`crates/runner/src/autostart.rs`).
+/// does or before its runner first said (`crates/runner/src/autostart.rs`);
+/// `elevation` is whether its Windows runner runs elevated, as it last
+/// reported, null on another system or before it first said, and
+/// `elevation_prompt` whether a prompt to elevate shows on its desktop now,
+/// while its runner is connected (`crates/runner/src/elevation.rs`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DeviceDto {
@@ -156,6 +172,10 @@ pub struct DeviceDto {
     #[serde(deserialize_with = "Option::deserialize")]
     #[schemars(with = "Nullable<AutostartUnavailable>")]
     pub autostart_unavailable: Option<AutostartUnavailable>,
+    #[serde(deserialize_with = "Option::deserialize")]
+    #[schemars(with = "Nullable<Elevation>")]
+    pub elevation: Option<Elevation>,
+    pub elevation_prompt: bool,
 }
 
 /// The commands that install and start the runner on a computer of each

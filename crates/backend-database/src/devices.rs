@@ -10,7 +10,7 @@
 //! Whether a device is online is its runner connection's, not a record's.
 
 use jush_runner_protocol::pairs::PairRoute;
-use jush_runner_protocol::wire::{AutostartUnavailable, DeviceArtifact, Hardware, OperatingSystem, RunnerPlatform};
+use jush_runner_protocol::wire::{AutostartUnavailable, DeviceArtifact, Elevation, Hardware, OperatingSystem, RunnerPlatform};
 use jush_shared_types::Timestamp;
 use jush_web_api_protocol::devices::{DeviceKind, DeviceLogo, DeviceRoute};
 use jush_web_api_protocol::ids::{ConversationId, DeviceId, UserId, ProjectId};
@@ -101,6 +101,10 @@ pub struct DeviceRecord {
     /// The machine its runner last reported; none before its runner first
     /// reported it.
     pub hardware: Option<Hardware>,
+    /// Whether its Windows runner runs elevated, as it last reported
+    /// (`crates/runner/src/elevation.rs`); none on another system, or before
+    /// its runner first said.
+    pub elevation: Option<Elevation>,
 }
 
 impl DeviceRecord {
@@ -198,7 +202,7 @@ pub struct DeviceChange {
 }
 
 const DEVICE_COLUMNS: &str =
-    "id, user_id, kind, name, platform, claimed_at, last_seen_at, installed, os, runner_version, runner_instance, cloud_started_at, route, mark_number, machine, home, autostart_unavailable, hardware";
+    "id, user_id, kind, name, platform, claimed_at, last_seen_at, installed, os, runner_version, runner_instance, cloud_started_at, route, mark_number, machine, home, autostart_unavailable, hardware, elevation";
 
 /// The name and platform of the one device a user's Cloud is.
 pub const CLOUD_NAME: &str = "Cloud";
@@ -282,6 +286,7 @@ impl ControlService {
                 home: None,
                 autostart_unavailable: None,
                 hardware: None,
+                elevation: None,
             })
         })
         .await
@@ -546,6 +551,7 @@ impl ControlService {
         runner_instance: u64,
         home: String,
         autostart_unavailable: Option<AutostartUnavailable>,
+        elevation: Option<Elevation>,
     ) -> Result<Option<FirstHome>, StorageError> {
         self.call(move |connection, _|  {
             let transaction = connection.transaction()?;
@@ -577,8 +583,8 @@ impl ControlService {
             };
             transaction.execute(
                 "UPDATE devices SET os = ?1, runner_version = ?2, runner_instance = ?3, mark_number = ?4,
-                   home = ?5, autostart_unavailable = ?6, hardware = ?7
-                 WHERE id = ?8",
+                   home = ?5, autostart_unavailable = ?6, hardware = ?7, elevation = ?8
+                 WHERE id = ?9",
                 params![
                     to_json(&os),
                     runner_version,
@@ -587,6 +593,7 @@ impl ControlService {
                     recorded,
                     autostart_unavailable.as_ref().map(to_json),
                     to_json(&hardware),
+                    elevation.map(elevation_text),
                     device.as_str()
                 ],
             )?;
@@ -1118,5 +1125,21 @@ fn device_row(row: &Row<'_>) -> Result<DeviceRecord, StorageError> {
             Some(text) => Some(json("devices", "hardware", &text)?),
             None => None,
         },
+        elevation: match row.get::<_, Option<String>>("elevation")?.as_deref() {
+            Some("elevated") => Some(Elevation::Elevated),
+            Some("elevatable") => Some(Elevation::Elevatable),
+            Some("unavailable") => Some(Elevation::Unavailable),
+            Some(other) => Some(decode("devices", "elevation", Err::<Elevation, _>(format!("unknown elevation {other}")))?),
+            None => None,
+        },
     })
+}
+
+/// How the `elevation` column writes `elevation`.
+fn elevation_text(elevation: Elevation) -> &'static str {
+    match elevation {
+        Elevation::Elevated => "elevated",
+        Elevation::Elevatable => "elevatable",
+        Elevation::Unavailable => "unavailable",
+    }
 }

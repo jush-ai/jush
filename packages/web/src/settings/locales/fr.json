@@ -7,6 +7,9 @@
     "revokeFailed": "Impossible de révoquer l’appareil",
     "renameFailed": "Impossible de renommer l’appareil",
     "routeFailed": "Impossible de modifier l’itinéraire",
+    "elevateFailed": "Impossible de demander les droits d’administrateur",
+    "elevationUnavailable": "Aucune confirmation affichée",
+    "elevationUnavailableMessage": "Windows ne peut pas afficher de confirmation sur {device} pour le moment.",
     "resetNotStarted": "La réinitialisation n’a pas démarré. Vérifiez votre connexion et réessayez."
   },
   "storage": {

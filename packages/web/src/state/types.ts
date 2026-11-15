@@ -3,6 +3,7 @@ import type { ShownError } from '@jush-ai/web-ui/infra/errors'
 import type { FileBrowserPlatform } from '@jush-ai/web-ui/files/types'
 import type { DeviceStart } from '@jush-ai/web-ui/devices/installation'
 import type { AutostartUnavailable } from '@jush-ai/web-ui/devices/autostart'
+import type { Elevation } from '@jush-ai/web-ui/devices/elevation'
 import type { DeviceMark } from '@jush-ai/web-ui/devices/mark'
 import type { DeviceState } from '@jush-ai/web-ui/devices/state'
 import type { DeviceReport } from '@jush-ai/web-ui/devices/report'
@@ -245,6 +246,10 @@ export interface Device extends DeviceReport {
   start: DeviceStart | null
   /** Why a paired device will not start its runner by itself after a restart; null when it does. */
   autostartUnavailable: AutostartUnavailable | null
+  /** Whether a paired Windows device's runner runs elevated; null on another system. */
+  elevation: Elevation | null
+  /** Whether a prompt to elevate shows on its desktop now. */
+  elevationPrompt: boolean
   /** Its mark, with the number it shows (`deviceMarkOf`); null for the Cloud. */
   mark: DeviceMark | null
 }

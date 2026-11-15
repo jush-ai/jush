@@ -88,7 +88,15 @@
     "paired": "페어링한 날짜",
     "revokeThis": "이 기기 페어링 해제",
     "revoke": "페어링 해제…",
-    "lastSeen": "마지막 접속"
+    "lastSeen": "마지막 접속",
+    "administrator": "관리자 권한",
+    "administratorRequest": "‘요청’을 누르면 이 기기 화면에 확인 창이 나타납니다.",
+    "administratorPrompt": "이 기기 화면에 나타난 확인 창에서 허용하세요.",
+    "administratorHeld": "Jush가 이 계정의 관리자 권한으로 실행됩니다.",
+    "administratorUnavailable": "이 Windows 계정은 관리자가 아닙니다.",
+    "yes": "있음",
+    "no": "없음",
+    "request": "요청"
   },
   "details": {
     "title": "연결 세부 정보",

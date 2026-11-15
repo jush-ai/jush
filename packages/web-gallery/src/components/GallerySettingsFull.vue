@@ -400,6 +400,7 @@ function resetShortcuts() {
     @try-now="devices.tryNow"
     @measure="devices.measure"
     @revoke="revokeDevice"
+    @elevate="devices.elevate"
     @rename="devices.rename"
   />
 

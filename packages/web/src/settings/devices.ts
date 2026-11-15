@@ -5,6 +5,7 @@ import { computed, onScopeDispose, ref, watch } from 'vue'
 import { SerialQueue } from '@jush-ai/utils'
 import type { HeadlineText } from '@jush-ai/web-ui/ui/ui-text'
 import { errorCode, errorFields, reportError, shownError, type ShownError } from '@jush-ai/web-ui/infra/errors'
+import { showToast } from '@jush-ai/web-ui/infra/toast'
 import { pageLog } from '@jush-ai/web-ui/infra/log'
 import { known, useProduct } from '../state/product'
 import { cloudDeviceIn } from '../state/devices'
@@ -12,6 +13,7 @@ import { ApiError, apiRequest, jsonBody, readResponse } from '../api/client'
 import {
   cloudResetAnswerSchema,
   deviceAnswerSchema,
+  deviceElevationSchema,
   revokedDeviceSchema,
   type CloudReset,
   type ChangeDevice,
@@ -63,6 +65,31 @@ export const useDeviceSettings = defineStore('device-settings', () => {
       // A device another page revoked meanwhile is revoked: that is done.
       if (!current.signal.aborted && errorCode(error) !== 'device_not_found') {
         reportError(t('devices.revokeFailed'), error, { site: 'devices.revokeFailed', userVisible: true })
+      }
+    }
+  }
+
+  /**
+   * Asks a paired device's Windows runner to run elevated, which shows a
+   * prompt on the device's screen, and settles once it shows. The device
+   * says meanwhile that a prompt shows, and its elevation what came of it;
+   * a prompt Windows could not show says so in a toast.
+   */
+  async function elevate(id: string): Promise<void> {
+    const current = lifetime
+    const name = product.snapshot?.devices?.find((device) => device.id === id)?.name ?? ''
+    try {
+      const response = await apiRequest(`/devices/${encodeURIComponent(id)}/elevation`, {
+        method: 'POST',
+        signal: current.signal,
+      })
+      const { outcome } = await readResponse(response, deviceElevationSchema)
+      if (outcome === 'unavailable') {
+        showToast({ title: t('devices.elevationUnavailable'), message: t('devices.elevationUnavailableMessage', { device: name }), tone: 'neutral' })
+      }
+    } catch (error) {
+      if (!current.signal.aborted) {
+        reportError(t('devices.elevateFailed'), error, { site: 'devices.elevateFailed', userVisible: true })
       }
     }
   }
@@ -157,6 +184,7 @@ export const useDeviceSettings = defineStore('device-settings', () => {
     cloud,
     resetError,
     revoke,
+    elevate,
     rename,
     setRoute,
     resetCloud,

@@ -105,6 +105,7 @@ mod console;
 mod environment;
 mod direct;
 mod device_requests;
+mod elevation;
 mod forward;
 #[cfg(windows)]
 mod git;
@@ -350,6 +351,15 @@ enum Action {
     #[cfg(windows)]
     #[command(hide = true)]
     Git,
+    /// Registers the installation's scheduled task with the highest
+    /// privileges, in the elevated process a prompt started
+    /// (`crates/runner/src/elevation.rs`); exits with 1 when it could not.
+    #[cfg(windows)]
+    #[command(hide = true)]
+    Elevate {
+        #[command(flatten)]
+        installation: Installation,
+    },
     /// Prints this process's environment as JSON between two `mark`s, for
     /// the login shell a starting runner reads the device environment from.
     #[command(name = environment::PRINT, hide = true)]
@@ -432,6 +442,29 @@ async fn runner(cli: Cli) -> io::Result<u8> {
         }
         // `main` serves a shell before it builds the runner's runtimes.
         Action::Shell { .. } => return Err(io::Error::other("a shell runs on its own runtime")),
+        #[cfg(windows)]
+        Action::Elevate { installation } => {
+            let directory = directory(&installation, None)?;
+            let home = home()?;
+            if elevation::current() != Some(wire::Elevation::Elevated) {
+                eprintln!("jush-runner: this process does not run elevated");
+                return Ok(1);
+            }
+            // The task of before the rename goes too, which only an
+            // elevated process may delete.
+            let earlier = autostart::Registration::before_rename(&directory, &home)?;
+            if earlier.exists().await {
+                earlier.remove().await;
+            }
+            let registration = autostart::Registration::of(&directory, &home)?;
+            return Ok(match registration.register_elevated().await {
+                Ok(()) => 0,
+                Err(error) => {
+                    eprintln!("jush-runner: the task could not be registered with the highest privileges: {error}");
+                    1
+                }
+            });
+        }
         #[cfg(windows)]
         Action::Git => {
             return Ok(match git::find() {
@@ -625,6 +658,7 @@ async fn runner(cli: Cli) -> io::Result<u8> {
         }),
         // The registration says, once this runner holds its installation.
         autostart_unavailable: None,
+        elevation: elevation::current(),
     };
     // A managed guest's state is temporary; its log and its job output stay
     // on the system layer, which a stop keeps (`crates/runner/src/device_log.rs`, `crates/runner-jobs/src/job_directories.rs`).
@@ -785,6 +819,15 @@ async fn runner(cli: Cli) -> io::Result<u8> {
             | Ending::HandedOver
             | Ending::Unstartable,
         ) => Ok(0),
+        // The task waits for this runner's end to start the elevated one;
+        // a task that cannot be started leaves the restart to the loop.
+        Ok(Ending::Elevated) => match autostart::Registration::of(&installation_directory, &home)?.start().await {
+            Ok(()) => Ok(0),
+            Err(error) => {
+                console::line(format_args!("jush-runner: the elevated runner's task did not start: {error}"));
+                Ok(1)
+            }
+        },
         Ok(Ending::Refused(wire::HelloErrorCode::Internal)) => Ok(1),
         Ok(Ending::Refused(_)) => Ok(0),
         Ok(Ending::Replaced(successor)) => {
@@ -874,7 +917,7 @@ async fn uninstalled(directory: &Path, revocation: &Revocation) -> io::Result<u8
     }
     let removed = removal::remove(directory)?;
     println!("{}", removed.told(directory));
-    autostart::Registration::of(directory, &home()?)?.remove().await;
+    autostart::Registration::of(directory, &home()?)?.remove_asking().await;
     Ok(0)
 }
 

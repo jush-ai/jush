@@ -7,6 +7,9 @@
     "revokeFailed": "기기의 페어링을 해제할 수 없습니다",
     "renameFailed": "기기 이름을 변경할 수 없습니다",
     "routeFailed": "경로를 변경할 수 없습니다",
+    "elevateFailed": "관리자 권한을 요청할 수 없습니다",
+    "elevationUnavailable": "확인 창을 표시하지 못했습니다",
+    "elevationUnavailableMessage": "Windows가 지금 {device}에 확인 창을 표시할 수 없습니다.",
     "resetNotStarted": "초기화를 시작하지 못했습니다. 연결을 확인하고 다시 시도하십시오."
   },
   "storage": {

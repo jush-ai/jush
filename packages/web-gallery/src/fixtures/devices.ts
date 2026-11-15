@@ -123,7 +123,7 @@ const day = minutes(24 * 60)
  * measured nothing.
  */
 function demoDevice(
-  device: Pick<SettingsDevice, 'id' | 'name' | 'state' | 'downloadPercent' | 'seen' | 'start' | 'autostartUnavailable' | 'home' | 'mark'> & { os: SettingsDevice['os']; runnerVersion: string | null },
+  device: Pick<SettingsDevice, 'id' | 'name' | 'state' | 'downloadPercent' | 'seen' | 'start' | 'autostartUnavailable' | 'elevation' | 'home' | 'mark'> & { os: SettingsDevice['os']; runnerVersion: string | null },
   scenario: DirectScenario,
   paired: number,
   measured = true,
@@ -154,12 +154,20 @@ export function galleryDevices(): GalleryDevice[] {
       90 * day,
     ),
     demoDevice(
-      // It downloads its server's next runner while it serves.
-      { id: 'studio', name: 'studio-pc', state: 'online', downloadPercent: 40, seen: ago(0), mark: { logo: 'windows', number: 1 }, ...demoDeviceReport('windows', 'an-older-release') },
+      // It downloads its server's next runner while it serves, with the
+      // account's limited rights, which Request asks to raise.
+      { id: 'studio', name: 'studio-pc', state: 'online', downloadPercent: 40, seen: ago(0), elevation: 'elevatable', mark: { logo: 'windows', number: 1 }, ...demoDeviceReport('windows', 'an-older-release') },
       'unreachable',
       12 * day,
       // This browser never measured it: Latency says so until Measure.
       false,
+    ),
+    demoDevice(
+      // Its Windows account is not an administrator, so nothing can raise
+      // the runner's rights.
+      { id: 'kiosk', name: 'front-desk', state: 'offline', seen: ago(5 * day), elevation: 'unavailable', mark: { logo: 'windows', number: 2 }, ...current('windows') },
+      'unreachable',
+      30 * day,
     ),
     demoDevice(
       // Its server switched: it downloads the new runner, a quarter so far.
@@ -287,6 +295,22 @@ export function useGalleryDevices(initial: () => GalleryDevice[]) {
       device.name = name
   }
 
+  /**
+   * Asks device `id`'s Windows runner to run elevated: the prompt shows on
+   * its screen, the person at it allows it after a moment, and the elevated
+   * runner says so.
+   */
+  function elevate(id: string) {
+    const device = find(id)
+    if (!device || device.elevationPrompt)
+      return
+    device.elevationPrompt = true
+    later(2500, () => {
+      device.elevationPrompt = false
+      device.elevation = 'elevated'
+    })
+  }
+
   /** A revoked device leaves the list, and its page gives way to the list. */
   function revoke(id: string) {
     devices.value = devices.value.filter((device) => device.id !== id)
@@ -317,5 +341,5 @@ export function useGalleryDevices(initial: () => GalleryDevice[]) {
   /** The list as the page shows it: a number only while another device has its logo. */
   const listed = computed(() => shownAmong(devices.value))
 
-  return { devices: listed, shown, scenarios, setScenario, measure, tryNow, setRoute, rename, revoke, claim }
+  return { devices: listed, shown, scenarios, setScenario, measure, tryNow, setRoute, rename, revoke, elevate, claim }
 }

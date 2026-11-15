@@ -7,6 +7,9 @@
     "revokeFailed": "Não foi possível revogar o dispositivo",
     "renameFailed": "Não foi possível renomear o dispositivo",
     "routeFailed": "Não foi possível alterar a rota",
+    "elevateFailed": "Não foi possível solicitar permissões de administrador",
+    "elevationUnavailable": "Nenhuma confirmação exibida",
+    "elevationUnavailableMessage": "O Windows não pode mostrar uma confirmação em {device} agora.",
     "resetNotStarted": "A redefinição não começou. Verifique sua conexão e tente novamente."
   },
   "storage": {

@@ -17,7 +17,7 @@ use jush_backend_runners::claims::ClaimRefusal;
 use jush_backend_runners::files::browse_directory;
 use jush_device_interface::{DeviceError, DeviceErrorKind, MkdirOptions};
 use jush_web_api_protocol::devices::{
-    ChangeDevice, Claim, DeviceAnswer, DeviceKind,
+    ChangeDevice, Claim, DeviceAnswer, DeviceElevation, DeviceKind,
     Devices, RevokedDevice,
 };
 use jush_web_api_protocol::error::ErrorCode;
@@ -124,6 +124,28 @@ pub(super) async fn revoke(
         .map(|project| project.id)
         .collect();
     Ok(Json(RevokedDevice { removed }))
+}
+
+/// Asks a paired device's Windows runner to run elevated, and answers once
+/// the User Account Control prompt shows on its desktop, or could not; the
+/// device's elevation says later what came of it. A device whose runner is
+/// not connected answers 409 `device_offline`.
+pub(super) async fn elevate(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+    Path(id): Path<String>,
+) -> Result<Json<DeviceElevation>, ApiError> {
+    let device = owned_device(&state, &user.id, &id, Some(DeviceKind::User)).await?;
+    let answered = state
+        .shards
+        .of(&user.id)
+        .call(move |shard, _| async move { shard.elevate_device(&device.id).await })
+        .await?;
+    match answered {
+        Some(Ok(outcome)) => Ok(Json(DeviceElevation { outcome })),
+        Some(Err(error)) => Err(ApiError::device_operation(error)),
+        None => Err(ApiError::device_offline()),
+    }
 }
 
 /// A directory of a paired device, its home when the query names none,

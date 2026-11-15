@@ -7,6 +7,9 @@
     "revokeFailed": "Gerät konnte nicht entkoppelt werden",
     "renameFailed": "Gerät konnte nicht umbenannt werden",
     "routeFailed": "Route konnte nicht geändert werden",
+    "elevateFailed": "Administratorrechte konnten nicht angefordert werden",
+    "elevationUnavailable": "Keine Abfrage angezeigt",
+    "elevationUnavailableMessage": "Windows kann auf {device} gerade keine Abfrage anzeigen.",
     "resetNotStarted": "Das Zurücksetzen wurde nicht gestartet. Prüfe deine Verbindung und versuche es erneut."
   },
   "storage": {
