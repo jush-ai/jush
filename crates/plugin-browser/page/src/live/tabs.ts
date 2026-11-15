@@ -277,7 +277,7 @@ export class BrowserTabsController {
   private readonly pictured = shallowReactive(new Set<string>())
   /** Each browser tab's last picture, while the browser has the tab. */
   private readonly lastPictures = new Map<string, KeptPicture>()
-  /** The downloads the user started in each browser tab, as a view last reported them, the newest last. */
+  /** The downloads started in each browser tab, as a view last reported them, the newest last. */
   private readonly downloads = shallowReactive(new Map<string, readonly LiveDownload[]>())
   /** Every browser tab a view listed; null before the first list, whose tabs are not new to the page. */
   private heard: Set<string> | null = null
@@ -353,7 +353,7 @@ export class BrowserTabsController {
     return this.lastPictures.get(tab) ?? null
   }
 
-  /** The downloads the user started in the browser tab `tab`, the newest last. */
+  /** The downloads started in the browser tab `tab`, the newest last. */
   downloadsOf(tab: string | undefined): readonly LiveDownload[] {
     return tab === undefined ? [] : (this.downloads.get(tab) ?? [])
   }

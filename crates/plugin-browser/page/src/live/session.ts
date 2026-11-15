@@ -113,7 +113,7 @@ export interface LiveSessionOptions {
   onEnded?: (reason: string) => void
   /** The page showed a picture of the browser tab `tab`. */
   onPicture?: (tab: string) => void
-  /** The downloads the user started in the browser tab `tab`, the newest last, each time they change. */
+  /** The downloads started in the browser tab `tab`, the newest last, each time they change. */
   onDownloads?: (tab: string, downloads: LiveDownload[]) => void
   /** Reports a defect of the page, such as a message the protocol refuses. */
   defect: (message: string, error: unknown) => void

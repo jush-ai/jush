@@ -936,37 +936,38 @@ pub struct UploadResult {
 }
 
 input! {
-    targeted
-    /// `download`: clicks the target or a point and saves the download it starts.
+    /// `download`: lists the conversation's downloads on this device.
     pub struct DownloadInput {
-        /// Viewport CSS coordinates: x,y
-        #[serde(default, skip_serializing_if = "Option::is_none", with = "unwrap_or_skip")]
-        #[schemars(with = "String")]
-        #[garde(length(chars, min = 1))]
-        pub xy: Option<String>,
-        #[serde(default, skip_serializing_if = "Option::is_none", with = "unwrap_or_skip")]
-        #[schemars(with = "Vec<Modifier>")]
-        #[garde(skip)]
-        pub modifier: Option<Vec<Modifier>>,
-        /// New output file on this device
-        #[serde(default, skip_serializing_if = "Option::is_none", with = "unwrap_or_skip")]
-        #[schemars(with = "String")]
-        #[garde(length(chars, min = 1))]
-        pub output: Option<String>,
+        /// Wait until the downloads in progress have ended
         #[serde(default, skip_serializing_if = "Option::is_none", with = "unwrap_or_skip")]
         #[schemars(with = "bool")]
         #[garde(skip)]
-        pub overwrite: Option<bool>,
+        pub wait: Option<bool>,
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(deny_unknown_fields)]
 pub struct DownloadResult {
+    /// The newest first.
+    pub downloads: Vec<BrowserDownload>,
+    /// The folder complete downloads are in.
+    pub folder: String,
+}
+
+/// One download of the conversation's browser on this device.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct BrowserDownload {
+    /// The file's name in the folder, the page's numbered when it was taken.
+    pub name: String,
+    pub state: crate::live::DownloadState,
+    /// The bytes received so far.
+    pub received: u64,
+    /// The file's size; 0 while the server has not said it.
+    pub total: u64,
+    /// The file, once complete; empty before.
     pub path: String,
-    pub suggested_filename: String,
-    pub bytes: u64,
-    pub mime_type: String,
 }
 
 input! {
@@ -1757,7 +1758,7 @@ fn operands(name: &str) -> &'static [&'static str] {
         "webmcp.call" => &["tab", "tool"],
         // The first operand is a tab for start, a recording for the others.
         "record" => &["target", "action", "text"],
-        "tab.new" | "tab.list" | "tab.prune" | "content.fetch" | "install" => &[],
+        "tab.new" | "tab.list" | "tab.prune" | "content.fetch" | "install" | "download" => &[],
         _ => &["tab"],
     }
 }

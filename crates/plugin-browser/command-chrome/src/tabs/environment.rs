@@ -8,6 +8,7 @@
 //! <scratch>/<conversation>/.browser/        the conversation's profile
 //!   profile.lock                            held while a Chrome runs on it
 //!   downloads/  uploads/                    emptied when that Chrome stops
+//! <scratch>/<conversation>/downloads/       complete downloads, kept
 //! ```
 //!
 //! # Directories
@@ -471,7 +472,9 @@ async fn remove_directory(directory: &Path) -> Result<()> {
     }
 }
 
-/// The profile's directory of the browser's downloads, emptied when it stops.
+/// The profile's directory of the browser's downloads in progress, emptied
+/// when it stops; each moves to the downloads folder once complete
+/// (`crate::tabs::downloads`).
 const DOWNLOADS: &str = "downloads";
 /// The profile's directory of the files the user chose to upload, emptied
 /// when the browser stops.
@@ -484,6 +487,8 @@ pub struct LaunchOptions {
     /// The conversation's profile, which every Chrome it starts on this device
     /// runs on.
     pub profile: PathBuf,
+    /// The conversation's downloads, which outlast every Chrome.
+    pub downloads: crate::tabs::downloads::Downloads,
     /// The release's version, for the user agent pages see.
     version: String,
     /// The user's time zone and languages; they do not change while the
@@ -500,12 +505,14 @@ impl LaunchOptions {
     pub fn pinned(
         installation: Installation,
         profile: PathBuf,
+        downloads: crate::tabs::downloads::Downloads,
         locale: CommandLocale,
         color_scheme: ColorScheme,
     ) -> Result<Self> {
         Ok(Self {
             installation,
             profile,
+            downloads,
             version: crate::driver::installation::pinned_version()?,
             locale,
             color_scheme,
@@ -524,7 +531,8 @@ pub struct BrowserEnvironment {
     /// The recordings of the browser's tabs that still run, which end with
     /// every frame kept before the browser does.
     recordings: Recordings,
-    pub(crate) download_directory: PathBuf,
+    /// The conversation's downloads, this browser's among them.
+    downloads: crate::tabs::downloads::Downloads,
     /// Files the user chose in the live view, until the browser retires.
     pub(crate) upload_directory: PathBuf,
     /// The capture extension's connection.
@@ -573,6 +581,7 @@ where
     let download_directory = directories.profile().join(DOWNLOADS);
     remove_present(&download_directory).await?;
     tokio::fs::create_dir(&download_directory).await?;
+    let downloads = options.downloads;
     let upload_directory = directories.profile().join(UPLOADS);
     remove_present(&upload_directory).await?;
     tokio::fs::create_dir(&upload_directory).await?;
@@ -753,6 +762,9 @@ where
                 opened,
             )
             .await?;
+            downloads
+                .follow(&handle, tabs.clone(), download_directory, &observers, ended.clone())
+                .await?;
             let environment = BrowserEnvironment {
                 browser: handle.clone(),
                 ended: ended.clone(),
@@ -760,7 +772,7 @@ where
                 report_failure: failure.clone(),
                 tasks: observers.clone(),
                 recordings: recordings.clone(),
-                download_directory,
+                downloads,
                 upload_directory,
                 captures,
                 changes,
@@ -979,17 +991,9 @@ impl BrowserEnvironment {
         self.recordings.add(live);
     }
 
-    /// Where Chrome saves downloads.
-    pub fn download_directory(&self) -> &Path {
-        &self.download_directory
-    }
-
-    /// A new path for a download saved without `--output`: in the download
-    /// directory, on disk with the profile, which retirement removes.
-    pub fn saved_download(&self) -> Result<PathBuf> {
-        Ok(self
-            .download_directory
-            .join(crate::driver::handles::fresh("jush-download")?))
+    /// The conversation's downloads, this browser's among them.
+    pub fn downloads(&self) -> &crate::tabs::downloads::Downloads {
+        &self.downloads
     }
 
     /// Where the files the user chose in the live view stay until the

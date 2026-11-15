@@ -62,7 +62,7 @@ operations! {
     "select-text" => SelectTextInput, ActionResult, "Select rendered text or position its cursor; prefix and suffix disambiguate.";
     "wait" => WaitInput, WaitResult, "Wait for a URL glob, element state or current-document load state, within a bounded deadline.";
     "upload" => UploadInput, UploadResult, "Attach device files through a file input or chooser.";
-    "download" => DownloadInput, DownloadResult, "Trigger and save a completed download on this device.";
+    "download" => DownloadInput, DownloadResult, "List the downloads, where each is saved and how far it is; --wait waits for those in progress.";
     "clipboard.write" => ClipboardWriteInput, ClipboardWriteResult, "Write finite raw stdin to the managed clipboard with the declared MIME type.";
     "clipboard.read" => ClipboardReadInput, ClipboardReadResult, "Read clipboard text or export supported MIME entries to device files.";
     "eval" => EvalInput, EvalResult, "Run a read-only script and print the value of its last statement, as JSON: a short expression as the last argument, eval t1 'document.title', or statements from stdin. Chrome refuses side effects, and nothing waits for a Promise.";

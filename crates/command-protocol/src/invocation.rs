@@ -114,6 +114,14 @@ pub fn browser_profile_directory(scratch_root: Option<&std::path::Path>, convers
     scratch_directory(scratch_root, conversation).join(".browser")
 }
 
+/// Where a conversation's browser downloads are on a device, by the names the
+/// pages gave them: in its scratch files, which the agent reads, as
+/// [`scratch_directory`] places them. They outlast every browser; the
+/// scratch directory's cleanup removes them (`crates/runner-jobs/src/scratch.rs`).
+pub fn browser_downloads_directory(scratch_root: Option<&std::path::Path>, conversation: &str) -> std::path::PathBuf {
+    scratch_directory(scratch_root, conversation).join("downloads")
+}
+
 /// Where the record of a conversation's open browser tabs is on a device, in
 /// its browser profile: the next browser resident opens them again
 /// (`crates/plugin-browser/command/src/tab_record.rs`). A release ends them,

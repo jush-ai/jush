@@ -58,20 +58,6 @@ pub async fn save_with_overwrite(
     .await
 }
 
-/// Copy a completed browser download into an atomic device publication without buffering it.
-pub async fn publish_file(
-    cwd: &str,
-    output: &str,
-    source: std::path::PathBuf,
-    overwrite: bool,
-    cancel: &CancellationToken,
-    deadline: tokio::time::Instant,
-) -> Result<String> {
-    let path = preflight(cwd, output, overwrite).await?;
-    let mut source = tokio::fs::File::open(source).await?;
-    publish(path, overwrite, &mut source, cancel, deadline).await
-}
-
 /// Publishes what `source` yields at `path`. The deadline stops the copy as
 /// cancellation does; a rename that has started completes, so a command
 /// that reports a failure never publishes afterwards.

@@ -1,258 +1,84 @@
-//! Observe downloads before input and publish only completed device files.
+//! `download`: the conversation's downloads on this device, the newest first.
 //!
-//! Without `--output` a download goes to the profile's download directory, not
-//! `/tmp`, which may be held in memory; it lives as long as the environment. A
-//! suggested filename is data, never permission for path traversal.
+//! The conversation's downloads say how far each is; the files in the
+//! downloads folder are the complete ones, those a resident before this one
+//! named included. A complete download whose file has gone is no longer
+//! listed. No browser starts for it.
 
-use std::{path::PathBuf, sync::Arc};
+use std::time::SystemTime;
 
-use chromiumoxide::cdp::browser_protocol::{
-    browser::{
-        CancelDownloadParams, DownloadProgressState, EventDownloadProgress, EventDownloadWillBegin,
-    },
-    dom::GetNodeForLocationParams,
-    input::MouseButton,
-    network::EventResponseReceived,
-    page::GetResourceTreeParams,
-};
-use futures_util::{FutureExt, StreamExt};
 use serde_json::Value;
-use tokio_util::sync::CancellationToken;
 
-use crate::driver::operation::{BrowserError, CONTROL_TIMEOUT, Result, after_cleanup};
-use crate::tabs::{environment::BrowserEnvironment, tab::BrowserTab};
-use jush_command_sdk::InvocationContext;
+use crate::driver::operation::Result;
+use crate::page::protocol::{BrowserDownload, DownloadResult};
+use crate::tabs::downloads::Downloads;
+use jush_command_package_browser_protocol::live::DownloadState;
 
-use crate::page::{
-    element,
-    protocol::{BrowserOperation, DownloadResult},
-};
+/// What `wait` leaves of the deadline to list: the list itself is quick.
+const LISTING: std::time::Duration = std::time::Duration::from_secs(1);
 
-enum Phase {
-    NotStarted,
-    Triggered,
-    Active(Arc<EventDownloadWillBegin>),
-    Finished(Arc<EventDownloadWillBegin>),
-}
-
-/// Save the download caused by this action without replaying the action.
-pub async fn execute(
-    context: &InvocationContext,
-    environment: &BrowserEnvironment,
-    tab: Option<&BrowserTab>,
-    command: &BrowserOperation,
-    cancel: &CancellationToken,
-    deadline: tokio::time::Instant,
-) -> Result<Value> {
-    let tab = tab.ok_or(BrowserError::TabNotFound)?;
-    let BrowserOperation::Download(input) = command else {
-        unreachable!("download dispatch accepts only download");
-    };
-    let operation = tab.operation(cancel, deadline);
-    let mut session = tab
-        .state()
-        .gate
-        .try_checkout()
-        .ok_or_else(|| operation.failure(BrowserError::Busy, tab.id().as_str(), None))?;
-    let references = &mut session.references;
-    let (mut beginnings, mut progress) = operation
-        .run(async {
-            let browser = environment.browser().call()?;
-            Ok((
-                browser.event_listener::<EventDownloadWillBegin>().await?,
-                browser.event_listener::<EventDownloadProgress>().await?,
-            ))
-        })
-        .await?;
-    let mut responses = operation
-        .run(async { Ok(tab.page().event_listener::<EventResponseReceived>().await?) })
-        .await?;
-    let frames = operation
-        .run(crate::driver::frames::capture(tab.page()))
-        .await?
-        .frames;
-    let mut phase = Phase::NotStarted;
-    let mut work = async {
-        let output = match &input.output {
-            Some(output) => crate::driver::output::preflight(&context.request.cwd, output, input.overwrite == Some(true)).await?,
-            None => environment.saved_download()?,
-        };
-        let target = command.target();
-        let point = match &input.xy {
-            Some(xy) => operation.run(crate::page::actions::coordinates(tab, xy)).await?,
-            None => {
-                let target = target.as_ref().ok_or_else(|| BrowserError::Configuration("download requires an element or --xy".into()))?;
-                crate::page::element::ready(tab, target, references, element::CLICK, &operation).await?.state.point()
-            }
-        };
-        if input.xy.is_some() {
-            let hit = operation.run(async {
-                Ok(tab.page().execute(GetNodeForLocationParams::new(point.x.floor() as i64, point.y.floor() as i64)).await?.result)
-            }).await?;
-            let media_page = &frames.iter().find(|document| document.frame.id == hit.frame_id)
-                .ok_or(BrowserError::TargetNotFound)?.page;
-            if media_page.target_id() != tab.page().target_id() {
-                references.hold(media_page);
-            }
-            let media = operation.run(element::TargetElement::resolve(media_page, hit.backend_node_id)).await?;
-            let source: Option<String> = operation.run(element::call(tab.page(), &media,
-                "function() { return ['img','video','audio'].includes(this.localName) ? (this.currentSrc || this.src || null) : null; }", vec![])).await?;
-            if let Some(source) = source {
-                let conditions = element::prepared_state(tab.page(), &media, element::CLICK, element::Scroll::IfNeeded, &operation).await?;
-                if conditions.failed.is_some() { return Err(conditions.failure()); }
-                let tree = operation.run(async { Ok(media_page.execute(GetResourceTreeParams {}).await?.result.frame_tree) }).await?;
-                let mut pending = vec![tree];
-                let mut mime = None;
-                while let Some(frame) = pending.pop() {
-                    pending.extend(frame.child_frames.unwrap_or_default());
-                    if frame.frame.id == hit.frame_id {
-                        mime = frame.resources.into_iter().find(|resource| resource.url == source).map(|resource| resource.mime_type);
-                    }
-                }
-                let bytes = operation.run(crate::page::assets::resource_bytes(media_page, &hit.frame_id, &source)).await?;
-                let count = bytes.len();
-                let suggested = url::Url::parse(&source).ok().and_then(|url| url.path_segments().and_then(|mut parts| parts.next_back()).map(str::to_owned)).unwrap_or_default();
-                let path = crate::driver::output::save_with_overwrite(&context.request.cwd, &output.to_string_lossy(), bytes, input.overwrite == Some(true), cancel, deadline).await?;
-                return crate::driver::output::value(DownloadResult {
-                    path,
-                    suggested_filename: suggested,
-                    bytes: count as u64,
-                    mime_type: mime.unwrap_or_else(|| "application/octet-stream".into()),
-                });
-            }
-        }
-        phase = Phase::Triggered;
-        crate::page::pointer::click_at(tab, point, MouseButton::Left, 1, 0, &operation).await?;
-        let beginning = operation.run(async {
-            loop {
-                let event = beginnings.next().await.ok_or(BrowserError::Closed)??;
-                if frames.iter().any(|document| document.frame.id == event.frame_id) { return Ok(event); }
-            }
-        }).await?;
-        phase = Phase::Active(beginning.clone());
-        operation.run(async {
-            loop {
-                let event = progress.next().await.ok_or(BrowserError::Closed)??;
-                if event.guid != beginning.guid { continue; }
-                match event.state {
-                    DownloadProgressState::Completed => return Ok(()),
-                    DownloadProgressState::Canceled => {
-                        phase = Phase::Finished(beginning.clone());
-                        return Err(BrowserError::Io(std::io::Error::other("Chrome cancelled the download")));
-                    }
-                    DownloadProgressState::InProgress => {}
-                }
-            }
-        }).await?;
-        phase = Phase::Finished(beginning.clone());
-        let source = spool_path(environment, &beginning.guid)?;
-        let bytes = operation.run(async { Ok(tokio::fs::metadata(&source).await?.len()) }).await?;
-        let mut mime = "application/octet-stream".to_owned();
-        while let Some(Some(response)) = responses.next().now_or_never() {
-            let response = response?;
-            if response.response.url == beginning.url { mime = response.response.mime_type.clone(); }
-        }
-        let path = crate::driver::output::publish_file(&context.request.cwd, &output.to_string_lossy(), source, input.overwrite == Some(true), cancel, deadline).await?;
-        crate::driver::output::value(DownloadResult {
-            path,
-            suggested_filename: beginning.suggested_filename.clone(),
-            bytes,
-            mime_type: mime,
-        })
-    }.await;
-    // A click can finish before its download event arrives. On failure retain
-    // the installed observation during bounded cleanup, then cancel that GUID.
-    if work.is_err() && matches!(phase, Phase::Triggered) {
-        let pending = tokio::time::timeout(CONTROL_TIMEOUT, async {
-            while let Some(event) = beginnings.next().await {
-                let event = event.map_err(BrowserError::from)?;
-                if frames
-                    .iter()
-                    .any(|document| document.frame.id == event.frame_id)
-                {
-                    return Ok::<_, BrowserError>(Some(event));
-                }
-            }
-            Ok(None)
-        })
-        .await;
-        match pending {
-            Ok(Ok(Some(found))) => phase = Phase::Active(found),
-            Ok(Ok(None)) => {}
-            // No observed download remains owned by this invocation. A future
-            // page timer is a later page action and is never replayed here.
-            Err(_) => {}
-            Ok(Err(error)) => {
-                work = after_cleanup(work, Err(error));
-            }
-        }
+/// The conversation's `downloads`; with `wait`, once those in progress have
+/// ended or the deadline is near.
+pub async fn list(downloads: &Downloads, wait: bool, deadline: tokio::time::Instant) -> Result<Value> {
+    if wait {
+        downloads.settled(deadline - LISTING).await;
     }
-    let file_cleanup = async {
-        if let Phase::Active(download) | Phase::Finished(download) = &phase {
-            let source = spool_path(environment, &download.guid)?;
-            let stopping = if matches!(phase, Phase::Active(_)) {
-                tokio::time::timeout(CONTROL_TIMEOUT, async {
-                    environment
-                        .browser()
-                        .call()?
-                        .execute(CancelDownloadParams::new(download.guid.clone()))
-                        .await?;
-                    while let Some(event) = progress.next().await {
-                        let event = event?;
-                        if event.guid == download.guid
-                            && event.state != DownloadProgressState::InProgress
-                        {
-                            return Ok::<_, BrowserError>(());
-                        }
-                    }
-                    Err(BrowserError::Closed)
-                })
-                .await
-                .map_err(|_| BrowserError::Timeout)
-                .and_then(std::convert::identity)
-            } else {
-                Ok(())
+    let folder = downloads.folder();
+    // The folder is read before the list, so a download that completes
+    // between them is in the list alone, never in both.
+    let mut rows: Vec<(SystemTime, BrowserDownload)> = Vec::new();
+    if let Ok(mut entries) = tokio::fs::read_dir(folder).await {
+        while let Ok(Some(entry)) = entries.next_entry().await {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            // A hidden file is the system's, such as Finder's `.DS_Store`.
+            if name.starts_with('.') {
+                continue;
+            }
+            let Ok(metadata) = entry.metadata().await else {
+                continue;
             };
-            let mut removal = Ok(());
-            for path in [
-                source,
-                environment
-                    .download_directory()
-                    .join(format!("{}.crdownload", download.guid)),
-            ] {
-                let result = match tokio::fs::remove_file(path).await {
-                    Ok(()) => Ok(()),
-                    // Chrome removes cancelled partials itself on some platforms.
-                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-                    Err(error) => Err(BrowserError::Io(error)),
-                };
-                removal = after_cleanup(removal, result);
+            if !metadata.is_file() {
+                continue;
             }
-            after_cleanup(stopping, removal)?;
+            rows.push((
+                metadata.modified().unwrap_or(SystemTime::UNIX_EPOCH),
+                BrowserDownload {
+                    name,
+                    state: DownloadState::Complete,
+                    received: metadata.len(),
+                    total: metadata.len(),
+                    path: entry.path().to_string_lossy().into_owned(),
+                },
+            ));
         }
-        Ok(())
     }
-    .await;
-    let cleanup = after_cleanup(
-        file_cleanup,
-        crate::page::element::release_objects(tab, references).await,
-    );
-    drop(beginnings);
-    drop(progress);
-    drop(responses);
-    after_cleanup(work, cleanup).map_err(|error| operation.failure(error, tab.id().as_str(), None))
-}
-
-/// Resolve a Chrome download GUID inside the environment's private spool.
-fn spool_path(environment: &BrowserEnvironment, guid: &str) -> Result<PathBuf> {
-    if guid.is_empty()
-        || !guid
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
-    {
-        return Err(BrowserError::Cdp(chromiumoxide::error::CdpError::msg(
-            "download identifier is not a safe spool name",
-        )));
+    for download in downloads.list() {
+        let path = download
+            .path
+            .as_ref()
+            .map(|path| path.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        if download.state == DownloadState::Complete {
+            // The folder's row of the file, or none when it has gone.
+            rows.retain(|(_, row)| row.path != path);
+            if !tokio::fs::try_exists(&path).await.unwrap_or(false) {
+                continue;
+            }
+        }
+        rows.push((
+            download.began,
+            BrowserDownload {
+                name: download.name,
+                state: download.state,
+                received: download.received,
+                total: download.total,
+                path,
+            },
+        ));
     }
-    Ok(environment.download_directory().join(guid))
+    rows.sort_by(|a, b| b.0.cmp(&a.0));
+    crate::driver::output::value(DownloadResult {
+        downloads: rows.into_iter().map(|(_, row)| row).collect(),
+        folder: folder.to_string_lossy().into_owned(),
+    })
 }
