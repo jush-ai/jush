@@ -21,9 +21,12 @@
 //! an agent runs them for a device or a release, and Cargo leaves a unit it
 //! reuses untouched, so nothing tells their current units from stale ones
 //! short of building them again, minutes each. The next build of that kind
-//! starts cold instead. A directory a build holds locked is left alone, and
-//! so is everything that is not a build directory, such as a Cargo registry
-//! or a tool's downloads, which is only reported with its size.
+//! starts cold instead. So do packaging's compressed copies of executables,
+//! one more for every build packaged, which the next packaging makes again
+//! in seconds. A directory a build holds locked is left alone; packaging
+//! holds no lock, so one that runs in the checkout while the sweep removes
+//! its copies fails, and runs again. Everything that is neither, such as a
+//! Cargo registry or a tool's downloads, is only reported with its size.
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fs::{File, Metadata};
@@ -34,6 +37,8 @@ use std::process::{ExitStatus, Stdio};
 use std::time::{Duration, SystemTime};
 
 use serde::Deserialize;
+
+use crate::native::{COMPRESSED, COMPRESSED_FAST};
 
 /// The builds whose products the sweep keeps, as `cargo` arguments: the one
 /// selection's type check and test build, and the build `bun xtask` makes
@@ -555,16 +560,17 @@ fn print_largest(profile: &Path, sizes: &BTreeMap<PathBuf, u64>) {
     }
 }
 
-/// Removes the build directories beside the swept profile, as the module
-/// says, and reports what it leaves: everything else in the target and build
-/// directories, and every directory of `.cache` that Cargo marked as its own.
+/// Removes the build directories beside the swept profile and packaging's
+/// compressed copies, as the module says, and reports what it leaves:
+/// everything else in the target and build directories, and every directory
+/// of `.cache` that Cargo marked as its own.
 ///
 /// A directory is renamed before it is removed, its builds' locks held: a
 /// build that starts meanwhile makes a new directory under the old name and
 /// never writes among the files being removed. A renamed directory that an
 /// interrupted sweep left behind goes too.
 fn sweep_others(repository: &Path, metadata: &Directories, dry_run: bool) -> Result<(), Error> {
-    let mut builds = BTreeSet::new();
+    let mut doomed = BTreeSet::new();
     let mut others = BTreeSet::new();
     let mut roots = vec![&metadata.target_directory];
     if metadata.build_directory != metadata.target_directory {
@@ -576,24 +582,27 @@ fn sweep_others(repository: &Path, metadata: &Directories, dry_run: bool) -> Res
                 continue;
             }
             if directory.ends_with("release") || build_directory(&directory) {
-                builds.insert(directory);
+                doomed.insert(directory);
             } else {
                 others.insert(directory);
             }
         }
     }
+    for copies in [COMPRESSED, COMPRESSED_FAST].map(|copies| repository.join(copies)) {
+        if copies.is_dir() {
+            doomed.insert(copies);
+        }
+    }
     for directory in directories(&repository.join(".cache"))? {
         if build_directory(&directory) {
-            builds.insert(directory);
+            doomed.insert(directory);
         } else if directory.join("CACHEDIR.TAG").is_file() {
             others.insert(directory);
         }
     }
 
     // A leftover first, so a directory's rename finds its name free.
-    let (leftovers, current): (Vec<PathBuf>, Vec<PathBuf>) = builds
-        .into_iter()
-        .partition(|directory| directory.extension().is_some_and(|extension| extension == SWEEPING));
+    let (leftovers, current): (Vec<PathBuf>, Vec<PathBuf>) = doomed.into_iter().partition(|directory| is_sweeping(directory));
     let mut freed = 0;
     let mut removed = 0;
     for (directory, leftover) in leftovers.iter().map(|d| (d, true)).chain(current.iter().map(|d| (d, false))) {
@@ -622,7 +631,7 @@ fn sweep_others(repository: &Path, metadata: &Directories, dry_run: bool) -> Res
     }
     if removed > 0 {
         let verb = if dry_run { "Would remove" } else { "Removed" };
-        println!("{verb} these {removed} build directories, {}.", gigabytes(freed));
+        println!("{verb} these {removed} directories, {}.", gigabytes(freed));
     }
 
     if others.is_empty() {
@@ -645,9 +654,14 @@ const SWEEPING: &str = "sweeping";
 /// registry too, which holds its index. A directory a sweep was removing is
 /// one.
 fn build_directory(directory: &Path) -> bool {
-    directory.extension().is_some_and(|extension| extension == SWEEPING)
+    is_sweeping(directory)
         || ((directory.join("CACHEDIR.TAG").is_file() || directory.join(".rustc_info.json").is_file())
             && !directory.join("index").is_dir())
+}
+
+/// Whether `directory` is one a sweep was removing.
+fn is_sweeping(directory: &Path) -> bool {
+    directory.extension().is_some_and(|extension| extension == SWEEPING)
 }
 
 /// Every build lock in the profiles under `directory`, each held; `None`
