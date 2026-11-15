@@ -9,6 +9,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_with::rust::{double_option, unwrap_or_skip};
 
+use crate::ids::ConversationId;
 use crate::text::Trimmed;
 
 /// The runs `jush schedule show` lists, newest first; older ones are kept
@@ -284,10 +285,16 @@ pub enum Trigger {
     },
     /// When its URL, `<server>/hooks/<id>`, is called with its secret.
     Url {},
+    /// When another conversation of the user finishes working: it rests
+    /// after work that ended a turn.
+    Done {
+        #[garde(skip)]
+        conversation: ConversationId,
+    },
 }
 
 impl Trigger {
-    /// Whether it takes a limit on runs a day: a change watch and a URL do.
+    /// Whether it takes a limit on runs a day: all but a time do.
     pub fn takes_limit(&self) -> bool {
         !matches!(self, Self::Time { .. })
     }
@@ -333,8 +340,9 @@ pub enum RunState {
 pub enum RunNote {
     /// Skipped: the conversation's device was offline.
     Offline { device: String },
-    /// Skipped: the day's limit of runs was reached; `calls` URL calls, or
-    /// changes, came since, and started nothing.
+    /// Skipped: the day's limit of runs was reached; `calls` URL calls,
+    /// changes, or ends of the conversation a when-done trigger names, came
+    /// since, and started nothing.
     Limit { limit: u32, calls: u32 },
     /// Failed: the watch's command ran over 60 seconds and was stopped.
     CommandTimedOut,

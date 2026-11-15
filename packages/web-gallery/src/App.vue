@@ -46,7 +46,7 @@ function openInBrowserWindow(url: string): void {
 const mediaViewer = provideMediaViewer()
 // Send to Conversation lists the search window's conversations; a pick says what the product would do.
 const sendable = searchConversations()
-const sendLooks: Record<string, SendTargetLook> = {
+const sendLooks: Record<string, Omit<SendTargetLook, 'title'>> = {
   'search-ts2307': { status: { status: 'active', unread: null }, project: 'jush' },
   'search-login': { status: { status: 'done', unread: 'answered' }, project: 'jush' },
   'search-wording': { status: { status: 'idle', unread: null }, project: null },
@@ -54,8 +54,11 @@ const sendLooks: Record<string, SendTargetLook> = {
 provideSendTargets({
   recent: () => sendable.toSorted((a, b) => b.lastActiveAt.localeCompare(a.lastActiveAt)).map(({ messages: _, ...row }) => ({ ...row, titleRanges: [], match: null })),
   search: fixtureSearch(() => sendable),
-  // Each listed conversation as its sidebar row: a state for its dot, and a project for some.
-  describe: (id) => sendLooks[id] ?? null,
+  // Each listed conversation as its sidebar row: its title, a state for its dot, and a project for some.
+  describe: (id) => {
+    const look = sendLooks[id]
+    return look ? { ...look, title: sendable.find((row) => row.conversationId === id)?.title ?? null } : null
+  },
   shown: () => null,
   send: (to, words) => {
     const title = to === null ? 'a New Conversation' : `“${conversationTitle(sendable.find((row) => row.conversationId === to)?.title ?? null)}”`

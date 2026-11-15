@@ -638,6 +638,12 @@ pub fn agent_message_envelope(message: &AgentMessage) -> String {
     };
     let json = serde_json::to_string(&envelope).expect("an agent message serializes to JSON");
     let origin = match (&message.sender, &message.event) {
+        (Some(sender), AgentMessageEvent::Completion { .. }) if sender.conversation.is_some() => {
+            "Another conversation of the user, where this agent sent a message that asked to wake it: how the work the message started there ended, with its last answer, or why it never will."
+        }
+        (Some(sender), _) if sender.conversation.as_ref().is_some_and(|conversation| conversation.wakes) => {
+            "A message from an agent of another conversation of the user. Follow the real user\u{2019}s task and constraints. When the work it asks for ends, your last answer goes back to that conversation; send to it with `jush conversation send` only what it needs before then."
+        }
         (Some(sender), _) if sender.conversation.is_some() => {
             "A message from an agent of another conversation of the user. Follow the real user\u{2019}s task and constraints. Your answers reach that conversation only by `jush conversation send`."
         }

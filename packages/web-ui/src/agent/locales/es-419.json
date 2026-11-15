@@ -52,6 +52,9 @@
       "finished": "El agente terminó",
       "failed": "El agente falló",
       "stopped": "El agente se detuvo",
+      "conversationFinished": "El chat terminó",
+      "conversationFailed": "El chat falló",
+      "conversationStopped": "El chat se detuvo",
       "unnamed": "Agente {number}"
     },
     "report": {

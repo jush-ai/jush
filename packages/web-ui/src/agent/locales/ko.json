@@ -52,6 +52,9 @@
       "finished": "에이전트가 작업을 마쳤습니다",
       "failed": "에이전트가 실패했습니다",
       "stopped": "에이전트가 중지되었습니다",
+      "conversationFinished": "대화가 작업을 마쳤습니다",
+      "conversationFailed": "대화가 실패했습니다",
+      "conversationStopped": "대화가 중지되었습니다",
       "unnamed": "에이전트 {number}"
     },
     "report": {

@@ -44,6 +44,7 @@ pub mod shares;
 mod lane;
 mod summary;
 mod turn_timing;
+mod wakes;
 pub(crate) mod small_requests;
 pub(crate) mod suggested_replies;
 pub(crate) mod titles;

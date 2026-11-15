@@ -177,11 +177,16 @@ const recentConversations = keptComputed(() => activeConversations.value.slice(0
 provideSendTargets({
   recent: () => activeConversations.value,
   search: searchConversations,
+  // Any workspace's conversation, as `jush conversation list` names them.
   describe: (id) => {
-    const row = sidebarConversations.value.find((conversation) => conversation.id === id)
+    const row = conversations.listed.find((conversation) => conversation.id === id)
     if (!row)
       return null
-    return { status: row, project: resources.projects.find((project) => project.id === row.projectId)?.name ?? null }
+    return {
+      title: row.title,
+      status: row,
+      project: resources.projects.find((project) => project.id === row.projectId)?.name ?? null,
+    }
   },
   shown: () => product.activeConversationId,
   send: (to, words) => {

@@ -52,6 +52,9 @@
       "finished": "智能体已完成",
       "failed": "智能体失败",
       "stopped": "智能体已停止",
+      "conversationFinished": "对话已完成",
+      "conversationFailed": "对话失败",
+      "conversationStopped": "对话已停止",
       "unnamed": "智能体 {number}"
     },
     "report": {

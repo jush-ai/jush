@@ -68,18 +68,30 @@ impl Shard {
         self.summarize(record, work).await
     }
 
-    async fn summarize(&self, record: ConversationRecord, work: Work) -> Result<ConversationSummary, StorageError> {
+    /// Where the conversation `id` stands, as its sidebar row shows it, and
+    /// what its summary reads of its database.
+    async fn standing(&self, id: &ConversationId) -> (ConversationStatus, SummaryFacts) {
         let live = self
             .agent()
-            .tree(&root_of(&record.id))
+            .tree(&root_of(id))
             .map(|tree| (LiveRun::of(tree.is_running(), tree.agents_work()), tree.root().session().phase()));
-        let facts = self.summary_facts(&record.id).await;
+        let facts = self.summary_facts(id).await;
+        let resuming = self.restart_resumes().contains(id);
+        (status(live, resuming, &facts), facts)
+    }
+
+    /// Where the conversation `id` stands, as its sidebar row shows it.
+    pub(crate) async fn conversation_status(&self, id: &ConversationId) -> ConversationStatus {
+        self.standing(id).await.0
+    }
+
+    async fn summarize(&self, record: ConversationRecord, work: Work) -> Result<ConversationSummary, StorageError> {
+        let (status, facts) = self.standing(&record.id).await;
         let resolved = self.device_shard().resolve_target(&record).await?;
         let archived = record.archived();
-        let resuming = self.restart_resumes().contains(&record.id);
         Ok(ConversationSummary {
             unread: record.unread_end().map(|end| if end.failed { UnreadEnd::Failed } else { UnreadEnd::Answered }),
-            status: status(live, resuming, &facts),
+            status,
             target: record.target.shown(&resolved),
             worktree: record.target.worktree().map(|worktree| worktree.name.clone()),
             id: record.id,

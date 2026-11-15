@@ -24,9 +24,9 @@ export interface SendTargets {
    */
   search: SearchSource
   /**
-   * How the sidebar draws the conversation `id`: what its status dot shows,
-   * and the name of its project, null outside one; null for one the page
-   * does not list, as an archived one a search found.
+   * How the sidebar draws the conversation `id`: its title, what its status
+   * dot shows, and the name of its project, null outside one; null for one
+   * the page does not list, as an archived one a search found.
    */
   describe: (id: string) => SendTargetLook | null
   /** The conversation shown, which the words come from; null outside one. */
@@ -40,10 +40,11 @@ export interface SendTargets {
 }
 
 /**
- * A conversation as its sidebar row shows it: its dot's state and its project's
- * name.
+ * A conversation as its sidebar row shows it: its title, null for the
+ * placeholder, its dot's state and its project's name.
  */
 export interface SendTargetLook {
+  title: string | null
   status: Pick<SidebarConversation, 'status' | 'needsYou' | 'unread'>
   project: string | null
 }

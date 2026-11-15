@@ -6,6 +6,8 @@
     "once": "Uma vez · {when}",
     "change": "Quando a saída muda · {interval}",
     "url": "Quando uma URL é chamada",
+    "done": "Quando “{title}” termina",
+    "doneUnlisted": "Quando uma conversa arquivada ou excluída termina",
     "interval": {
       "minutes": "{count} min",
       "hours": "{count} hora | {count} horas",

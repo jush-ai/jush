@@ -208,9 +208,11 @@ impl Shard {
     }
 
     /// Follows the conversation's status: as its tree starts to run, notes
-    /// the turn that had ended last; as it rests, notifies of the latest
-    /// turn the user asked for that ended since, unless the user stopped
-    /// the last one. Called on each change of the tree's status.
+    /// the turn that had ended last; as it rests after work that ended a
+    /// turn, runs the schedules that wait for it to finish
+    /// (`Shard::fire_done`), and notifies of the latest turn the user asked
+    /// for that ended since, unless the user stopped the last one. Called on
+    /// each change of the tree's status.
     pub(crate) fn follow_turn_end(&self, conversation: &ConversationId) {
         if self.is_closing() {
             return;
@@ -238,8 +240,17 @@ impl Shard {
                 let Some(last) = session.ended_turn_result() else {
                     return;
                 };
+                if before.as_ref() == Some(&last.id) {
+                    return;
+                }
+                let error = match last.outcome {
+                    TurnOutcome::Failed => session.failed_turn().map(|failure| failure.message),
+                    _ => None,
+                };
+                self.fire_done(conversation, last.clone(), error.clone());
+                self.settle_wakes_at_rest(conversation, last.clone(), error);
                 // A turn the user stopped last says the user was there.
-                if before.as_ref() == Some(&last.id) || last.outcome == TurnOutcome::Stopped {
+                if last.outcome == TurnOutcome::Stopped {
                     return;
                 }
                 let Some(ended) = asked else {

@@ -1081,6 +1081,7 @@ impl AgentSession {
             };
             Some(EndedTurn {
                 id: end.id().clone(),
+                at: end.created_at(),
                 outcome,
                 answer: answer.map(|text| text.text.clone()),
             })
@@ -1099,6 +1100,7 @@ impl AgentSession {
     pub fn take_turn_end_asked_by_user(&self) -> Option<EndedTurn> {
         self.shared.update(|core| core.transcript.take_asked_end()).map(|end| EndedTurn {
             id: end.id,
+            at: end.at,
             outcome: if end.failed { TurnOutcome::Failed } else { TurnOutcome::Answered },
             answer: end.answer,
         })
@@ -1427,6 +1429,17 @@ impl AgentSession {
         Ok(Some(blocks))
     }
 
+    /// The position of the block `id` on the current path, held or before
+    /// the window; none when the path holds none.
+    pub async fn position(&self, id: &BlockId) -> Result<Option<usize>, StoreError> {
+        window::position(&self.shared, id).await
+    }
+
+    /// Whether the input `id` waits to be taken into a turn.
+    pub fn waits(&self, id: &BlockId) -> bool {
+        self.shared.read(|core| core.transcript.position(id).is_none() && core.inputs.contains(id.as_str()))
+    }
+
     /// The node's checkpoint store, where the blocks before the window
     /// are read.
     pub fn store(&self) -> Rc<dyn SessionStore> {
@@ -1747,8 +1760,9 @@ pub enum TurnOutcome {
 /// A turn that ended, as [`Session::ended_turn_result`] reads it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EndedTurn {
-    /// The block that ended it.
+    /// The block that ended it, and when.
     pub id: BlockId,
+    pub at: Timestamp,
     pub outcome: TurnOutcome,
     /// The Markdown of its last text that is not blank.
     pub answer: Option<String>,

@@ -71,15 +71,19 @@ export function receiptRow(message: AgentMessage): ReceiptRow {
         return { notice: t('transcript.receipt.fromConversation'), title: senderName(message), inline: false, after: '', tag: null }
       }
       return message.sender?.number === 0 ? mainAgentMessage() : named(t('transcript.receipt.fromAgent'))
-    case 'completion':
+    // A child's end, or the end of another conversation's turn that a
+    // message of this agent asked to be woken for.
+    case 'completion': {
+      const conversation = message.sender?.conversation != null
       switch (event.outcome) {
         case 'completed':
-          return named(t('transcript.receipt.finished'))
+          return named(t(conversation ? 'transcript.receipt.conversationFinished' : 'transcript.receipt.finished'))
         case 'failed':
-          return named(t('transcript.receipt.failed'), 'failed')
+          return named(t(conversation ? 'transcript.receipt.conversationFailed' : 'transcript.receipt.failed'), 'failed')
         case 'aborted':
-          return named(t('transcript.receipt.stopped'), 'stopped')
+          return named(t(conversation ? 'transcript.receipt.conversationStopped' : 'transcript.receipt.stopped'), 'stopped')
       }
+    }
   }
 }
 

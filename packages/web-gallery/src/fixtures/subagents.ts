@@ -715,10 +715,38 @@ export function bubbleAgents(report: boolean): SubagentRecord[] {
   ]
 }
 
+/** The main agent of another conversation, which this one asked to wake it when done. */
+const LOGIN = {
+  id: 'gallery-login',
+  number: 0,
+  description: 'root session',
+  conversation: { id: 'gallery-login', title: 'Stabilize the login test' },
+}
+
+/**
+ * The end of a turn of Stabilize the login test, which this conversation's
+ * message asked to be woken for (`jush conversation send --wake-when-done`):
+ * a receipt row whose title opens that conversation at the turn's end.
+ */
+function loginDone(createdAt: string): Block {
+  const id = `done:${LOGIN.id}:login-end:${BUBBLES_ROOT}`
+  const message: AgentMessage = {
+    id,
+    sender: { ...LOGIN, round: 1 },
+    recipientId: BUBBLES_ROOT,
+    timestamp: createdAt,
+    content: 'The work a message from this agent started in conversation “Stabilize the login test” (gallery-login) ended; its last turn ended with an answer:\n\nThe login test passed 20 runs in a row after the cookie rename.',
+    event: { type: 'completion', outcome: 'completed' },
+    origin: null,
+  }
+  return { type: 'agent_message', id, turnId: `${id}-turn`, createdAt, model: demoModel, message }
+}
+
 /**
  * The main agent's transcript beside them: a message from its child Tidy the
  * release notes, which arrives after its answer and so is a run of its own,
- * keeps its receipt row, as every message from below does.
+ * keeps its receipt row, as every message from below does; so does the end of
+ * the work its message started in another conversation.
  */
 export function bubblesMainBlocks(): Block[] {
   return inRequests([
@@ -742,5 +770,11 @@ export function bubblesMainBlocks(): Block[] {
       shell('bubbles-answer', ago(40_000), 'Tell Coordinate the release the notes mention the fix', 'Sent to “Coordinate the release”', 'completed', 'jush conversation send gallery-coordinate'),
     ),
     text('bubbles-answered', ago(35_000), 'The notes already mention the checkout fix; I told Coordinate the release.'),
+    ...inRun(
+      shell('bubbles-ask-login', ago(30_000), 'Ask Stabilize the login test to run it again', 'Sent to “Stabilize the login test” (gallery-login). This agent wakes when it is done.', 'completed', 'jush conversation send --wake-when-done gallery-login'),
+    ),
+    text('bubbles-asked', ago(28_000), 'Stabilize the login test runs it again; this conversation wakes when it is done.'),
+    ...inRun(loginDone(ago(12_000))),
+    text('bubbles-login', ago(8_000), 'The login test passes again: 20 runs in a row.'),
   ])
 }

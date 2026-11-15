@@ -6,6 +6,8 @@
     "once": "Una vez · {when}",
     "change": "Cuando cambia la salida · {interval}",
     "url": "Cuando se llama a una URL",
+    "done": "Cuando «{title}» termina",
+    "doneUnlisted": "Cuando termina un chat archivado o eliminado",
     "interval": {
       "minutes": "{count} min",
       "hours": "{count} hora | {count} horas",

@@ -593,7 +593,8 @@ function describeNotices(steps: readonly WorkStep[]): string {
     }
     else if (step.type === 'agent_message') {
       const name = step.message.sender?.id ?? step.id
-      if (step.message.event.type === 'completion')
+      // Another conversation's end is news of it, not a subagent's end.
+      if (step.message.event.type === 'completion' && !step.message.sender?.conversation)
         add({ subject: 'agent', ending: receiptRow(step.message).tag ?? 'finished' }, name)
       else
         add({ subject: 'update' }, name)

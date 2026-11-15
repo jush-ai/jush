@@ -48,6 +48,8 @@ pub(crate) enum Payload {
     Change { before: message::Output, now: message::Output },
     /// A URL's calls, oldest first.
     Calls(Vec<Call>),
+    /// Another conversation's last turn, which ended as it finished.
+    Done(message::Finished),
 }
 
 impl Fired {
@@ -77,6 +79,7 @@ pub(crate) fn cause_of(trigger: &Trigger) -> RunCause {
         Trigger::Time { .. } => RunCause::Time,
         Trigger::Change { .. } => RunCause::Change,
         Trigger::Url {} => RunCause::Url,
+        Trigger::Done { .. } => RunCause::Done,
     }
 }
 
@@ -267,6 +270,9 @@ impl Shard {
                 let written = self.write_bodies(&conversation, &run.id, &calls).await?;
                 message::text(schedule, prompt, fired.cause, fired.at, &message::Extra::Calls { calls, written })
             }
+            Payload::Done(finished) => {
+                message::text(schedule, prompt, fired.cause, fired.at, &message::Extra::Done(finished))
+            }
         };
         self.restore_tree(&conversation).await?;
         let tree = self
@@ -425,6 +431,7 @@ fn cause_name(cause: RunCause) -> &'static str {
         RunCause::Time => "time",
         RunCause::Change => "watch",
         RunCause::Url => "url",
+        RunCause::Done => "when-done",
         RunCause::Now => "now",
     }
 }

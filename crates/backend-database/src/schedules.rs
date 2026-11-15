@@ -107,6 +107,8 @@ pub enum RunCause {
     Time,
     Change,
     Url,
+    /// Another conversation finished working.
+    Done,
     /// An agent's `jush schedule run`.
     Now,
 }
@@ -117,6 +119,7 @@ impl RunCause {
             Self::Time => "time",
             Self::Change => "change",
             Self::Url => "url",
+            Self::Done => "done",
             Self::Now => "now",
         }
     }
@@ -126,6 +129,7 @@ impl RunCause {
             "time" => Self::Time,
             "change" => Self::Change,
             "url" => Self::Url,
+            "done" => Self::Done,
             "now" => Self::Now,
             other => {
                 return Err(StorageError::Corrupt {

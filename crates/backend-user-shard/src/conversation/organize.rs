@@ -23,13 +23,14 @@ use std::rc::{Rc, Weak};
 use jush_backend_database::conversation_index::{ConversationRecord, ConversationStart, Creation, RecordChange};
 use jush_conversation_lane_protocol::ClientContent;
 use jush_shared_types::WorkflowChoice;
-use jush_web_api_protocol::conversations::{ConversationPatch, ConversationTarget, FieldResult};
+use jush_web_api_protocol::conversations::{ConversationPatch, ConversationStatus, ConversationTarget, FieldResult};
 use jush_backend_device_access::device_commands::conversation_of;
 use jush_backend_device_access::root_of;
 use jush_device_interface::{Call, GroupBuilder, LeafBuilder, RpcError, RpcPort, TypedRpc};
 use jush_shared_types::output::{self, Cell, Table};
 use jush_shared_types::{AgentMessage, AgentMessageEvent, BlockId, NodeId, Sender as AgentSender, SenderConversation, Timestamp};
 use jush_web_api_protocol::devices::DeviceKind;
+use jush_backend_database::wakes::PendingWake;
 use jush_backend_database::workspaces::WorkspaceRecord;
 use jush_web_api_protocol::ids::{ConversationId, DeviceId, ProjectId, WorkspaceId};
 use jush_web_api_protocol::search::{RESULTS_MAX, SearchText};
@@ -42,6 +43,7 @@ use serde::{Deserialize, Serialize};
 use super::cost_report::{ConversationCost, CostArgs, cost};
 use super::history::{history_group, shell_word};
 use super::search::search;
+use crate::schedules::message::Finished;
 use crate::shard::Shard;
 
 const SUMMARY: &str = "This conversation in the user's sidebar: rename it, and list the user's projects and conversations; send a message to another conversation, or start a new one; what a conversation's calls to the model cost; and transcripts, which history searches and reads: an agent's of this conversation, or of another conversation of the user.";
@@ -55,11 +57,11 @@ const RENAME_SUMMARY: &str = "Rename this conversation, as its title in the user
 
 const PROJECTS_SUMMARY: &str = "List the user's projects of every workspace: id, workspace, device, directory and name.";
 
-const LIST_SUMMARY: &str = "List the user's conversations that are not archived, newest change first, twenty to a page, of every workspace: id, title, workspace, project and the time of the last change. With words, only those the app's Search finds with them in the title or the messages, fifty at most, which stderr says when more match. A conversation's id goes to history --conversation to read it, and to `send` to message it; stderr names the next page.";
+const LIST_SUMMARY: &str = "List the user's conversations that are not archived, newest change first, twenty to a page, of every workspace: id, title, workspace, project, status as the sidebar shows it (running, compacting, resuming, awaiting_commands, interrupted, error, stopped, completed or idle) and the time of the last change. With words, only those the app's Search finds with them in the title or the messages, fifty at most, which stderr says when more match. A conversation's id goes to history --conversation to read it, and to `send` to message it; stderr names the next page.";
 
-const SEND_SUMMARY: &str = "Send a message to the main agent of another conversation of the user that is not archived, by its id from list. A busy recipient takes it into its running turn; an idle one wakes. Returns once it is accepted, without waiting for an answer: the recipient answers, if it does, by sending to this conversation.";
+const SEND_SUMMARY: &str = "Send a message to the main agent of another conversation of the user that is not archived, by its id from list. A busy recipient takes it into its running turn; an idle one wakes. Returns once it is accepted, without waiting for an answer: the recipient answers, if it does, by sending to this conversation; with --wake-when-done, you wake when the turn that took it ends, with how it ended and its last answer.";
 
-const NEW_SUMMARY: &str = "Start a new conversation of the user for a separate piece of work, which runs on its own in the user's sidebar: the brief on stdin is its first message, a message from this conversation, so its agent can answer with send. It starts in this conversation's device and directory, or in --project's, with this conversation's model and workflow, and is titled from the brief unless --title names it. Returns once the brief is taken, with the new conversation's id.";
+const NEW_SUMMARY: &str = "Start a new conversation of the user for a separate piece of work, which runs on its own in the user's sidebar: the brief on stdin is its first message, a message from this conversation, so its agent can answer with send. It starts in this conversation's device and directory, or in --project's, with this conversation's model and workflow, and is titled from the brief unless --title names it. Returns once the brief is taken, with the new conversation's id; with --wake-when-done, you wake when its first turn ends, with how it ended and its last answer.";
 
 /// The input of `jush conversation rename`.
 #[derive(Deserialize, JsonSchema)]
@@ -79,6 +81,9 @@ struct SendArgs {
     conversation: ConversationId,
     /// The message
     message: String,
+    /// Wake this agent when the turn that takes the message ends, with how it ended and its last answer; to wake each time the conversation finishes, `jush schedule create --when-done`
+    #[serde(rename = "wake-when-done")]
+    wake_when_done: Option<bool>,
 }
 
 /// The input of `jush conversation new`.
@@ -92,6 +97,9 @@ struct NewArgs {
     title: Option<String>,
     /// The project it starts in, by its id from `jush conversation projects`; this conversation's device and directory when absent
     project: Option<ProjectId>,
+    /// Wake this agent when the conversation's first turn ends, with how it ended and its last answer; to wake each time it finishes, `jush schedule create --when-done`
+    #[serde(rename = "wake-when-done")]
+    wake_when_done: Option<bool>,
 }
 
 /// The input of a leaf that takes none.
@@ -222,17 +230,18 @@ async fn send(shard: Rc<Shard>, call: Call<SendArgs>, port: RpcPort) -> Result<u
         .await
         .map_err(failed)?
         .ok_or_else(|| failed("the sending conversation is gone"))?;
-    let sender = sender_of(&shard, &call, &sending)?;
+    let wakes = call.args.wake_when_done == Some(true);
+    let sender = sender_of(&shard, &call, &sending, wakes)?;
     deliver(&shard, &sender, &recipient.id, content).await.map_err(failed)?;
-    let title = recipient.title.as_deref().unwrap_or("untitled");
-    port.stdout(format!("Sent to \u{201c}{title}\u{201d} ({target}).\n")).await?;
+    let name = Finished::name_of(&recipient.id, recipient.title.as_deref());
+    port.stdout(format!("Sent to {name}.{}\n", woken(wakes))).await?;
     Ok(0)
 }
 
 /// The calling agent of `sending` as the sender of a message to another
 /// conversation, checked before anything is sent: a side question's agent,
 /// for one, sends none.
-fn sender_of<A>(shard: &Shard, call: &Call<A>, sending: &ConversationRecord) -> Result<Sender, RpcError> {
+fn sender_of<A>(shard: &Shard, call: &Call<A>, sending: &ConversationRecord, wakes: bool) -> Result<Sender, RpcError> {
     let caller = call
         .invocation
         .caller
@@ -246,6 +255,7 @@ fn sender_of<A>(shard: &Shard, call: &Call<A>, sending: &ConversationRecord) -> 
     sender.conversation = Some(SenderConversation {
         id: root_of(&sending.id),
         title: sending.title.clone(),
+        wakes,
     });
     Ok(Sender { sending: sending.id.clone(), node: caller.node.clone(), agent: sender, origin })
 }
@@ -259,7 +269,12 @@ struct Sender {
 }
 
 /// Admits `content` into the main agent of the user's conversation `to`, an
-/// agent's message from `sender`, as `send` and `new` deliver one.
+/// agent's message from `sender`, as `send` and `new` deliver one, and keeps
+/// the wake it asks for (`wakes.rs`).
+///
+/// The wake is kept once the message is admitted, so a message the
+/// recipient holds on neither its path nor its queue was removed; the check
+/// after keeping it settles a rest that came first.
 async fn deliver(shard: &Shard, sender: &Sender, to: &ConversationId, content: &str) -> Result<(), String> {
     let id = BlockId::try_from(uuid::Uuid::new_v4().to_string()).expect("a UUID is not empty");
     let timestamp = shard.services().clock.now();
@@ -273,6 +288,22 @@ async fn deliver(shard: &Shard, sender: &Sender, to: &ConversationId, content: &
         origin: sender.origin.clone(),
     };
     shard.permission_shard().admit(to, &root_of(to), &message).await?;
+    if sender.agent.conversation.as_ref().is_some_and(|conversation| conversation.wakes) {
+        let wake = PendingWake {
+            recipient: to.clone(),
+            message: id.clone(),
+            sender: sender.sending.clone(),
+            sender_node: sender.node.clone(),
+            notice: None,
+        };
+        shard
+            .services()
+            .control
+            .keep_wake(wake.clone())
+            .await
+            .map_err(|error| format!("the message was delivered, but its wake was not kept: {error}"))?;
+        shard.check_kept_wake(&wake).await;
+    }
     tracing::info!(
         event = "agent_message.sent",
         conversation = %sender.sending,
@@ -303,7 +334,8 @@ async fn new(shard: Rc<Shard>, call: Call<NewArgs>, port: RpcPort) -> Result<u8,
         .await
         .map_err(failed)?
         .ok_or_else(|| failed("the starting conversation is gone"))?;
-    let sender = sender_of(&shard, &call, &starting)?;
+    let wakes = call.args.wake_when_done == Some(true);
+    let sender = sender_of(&shard, &call, &starting, wakes)?;
     let (workspace, target, workflow) = match &call.args.project {
         Some(id) => {
             let projects = control.projects(shard.user().clone()).await.map_err(failed)?;
@@ -374,9 +406,14 @@ async fn new(shard: Rc<Shard>, call: Call<NewArgs>, port: RpcPort) -> Result<u8,
         Some(title) => Some(title.to_owned()),
         None => control.conversation(record.id.clone()).await.ok().flatten().and_then(|record| record.title),
     };
-    let shown = shown.unwrap_or_else(|| "untitled".to_owned());
-    port.stdout(format!("Started \u{201c}{shown}\u{201d} ({id}).\n")).await?;
+    let name = Finished::name_of(&record.id, shown.as_deref());
+    port.stdout(format!("Started {name}.{}\n", woken(wakes))).await?;
     Ok(0)
+}
+
+/// What `send` and `new` add when the message wakes its sender.
+fn woken(wakes: bool) -> &'static str {
+    if wakes { " This agent wakes when the work the message starts there ends." } else { "" }
 }
 
 /// Where `starting` works, as a new conversation is to start there: its
@@ -478,6 +515,8 @@ struct ListedConversation {
     workspace: String,
     /// The name of its project; null when it runs in none.
     project: Option<String>,
+    /// Where it stands, as its sidebar row shows it.
+    status: ConversationStatus,
     /// When it last changed.
     changed_at: Timestamp,
 }
@@ -522,18 +561,17 @@ async fn list(shard: Rc<Shard>, call: Call<ListArgs>, port: RpcPort) -> Result<u
             .map(|project| project.name.clone()),
         _ => None,
     };
-    let listed: Vec<ListedConversation> = records
-        .iter()
-        .skip((page - 1) * LISTED_PER_PAGE)
-        .take(LISTED_PER_PAGE)
-        .map(|record| ListedConversation {
+    let mut listed: Vec<ListedConversation> = Vec::with_capacity(LISTED_PER_PAGE);
+    for record in records.iter().skip((page - 1) * LISTED_PER_PAGE).take(LISTED_PER_PAGE) {
+        listed.push(ListedConversation {
             id: record.id.clone(),
             title: record.title.clone(),
             workspace: workspace_name(&workspaces, &record.workspace),
             project: project(&record.target),
+            status: shard.conversation_status(&record.id).await,
             changed_at: record.updated_at,
-        })
-        .collect();
+        });
+    }
     if page < pages {
         let quoted: Vec<String> = given.iter().map(|word| shell_word(word)).collect();
         let words = if quoted.is_empty() { String::new() } else { format!(" -- {}", quoted.join(" ")) };
@@ -557,18 +595,27 @@ async fn list(shard: Rc<Shard>, call: Call<ListArgs>, port: RpcPort) -> Result<u
         port.stdout(text + "\n").await?;
         return Ok(0);
     }
-    let mut table = Table::new(["id", "title", "workspace", "project", "changed"]);
+    let mut table = Table::new(["id", "title", "workspace", "project", "status", "changed"]);
     for conversation in &listed {
         table.row::<Cell>([
             conversation.id.as_str().into(),
             conversation.title.as_deref().into(),
             conversation.workspace.as_str().into(),
             conversation.project.as_deref().into(),
+            status_name(conversation.status).into(),
             conversation.changed_at.into(),
         ]);
     }
     port.stdout(table.render()).await?;
     Ok(0)
+}
+
+/// A status as `list` prints it, the name its JSON gives it.
+fn status_name(status: ConversationStatus) -> String {
+    match serde_json::to_value(status) {
+        Ok(serde_json::Value::String(name)) => name,
+        _ => format!("{status:?}"),
+    }
 }
 
 /// The name of the workspace `id` of `workspaces`, as Jush's commands say it.

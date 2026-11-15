@@ -79,8 +79,9 @@ fn place(block: &Block, sender_below: bool) -> Place {
                 Place::Passes
             }
         }
-        // A child's end, and a message from below, are results the agent
-        // reads among its steps. A message from above or beside, such as
+        // A child's end, another conversation's end it asked to hear of,
+        // and a message from below, are results the agent reads among its
+        // steps. A message from above or beside, such as
         // its parent's or a sibling's, is an instruction it works from and
         // ends a run, as the user's words do; so do the receipts of the
         // user's decisions and Jush's notices.

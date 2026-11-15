@@ -1,3 +1,4 @@
+import { conversationTitle } from '../agent/conversation-title'
 import { failureHeadline } from '../agent/error-detail'
 import { formatPast, formatUntil } from '../ui/dates'
 import { t } from './locales/text'
@@ -174,8 +175,16 @@ function timingWords(timing: Timing, zone: string, now: Date | number): string {
   }
 }
 
-/** The trigger in words: Every week · Mon 10:00, When output changes · 5 min. */
-export function triggerWords(schedule: Pick<ConversationSchedule, 'trigger' | 'timeZone'>, now: Date | number): string {
+/**
+ * The trigger in words: Every week · Mon 10:00, When output changes · 5 min,
+ * When “Fix the cart total” finishes. `listed` names a conversation the page
+ * lists by its title now, null for one it does not, archived or deleted.
+ */
+export function triggerWords(
+  schedule: Pick<ConversationSchedule, 'trigger' | 'timeZone'>,
+  now: Date | number,
+  listed: (id: string) => { title: string | null } | null,
+): string {
   const trigger: Trigger = schedule.trigger
   switch (trigger.kind) {
     case 'time':
@@ -186,6 +195,12 @@ export function triggerWords(schedule: Pick<ConversationSchedule, 'trigger' | 't
     }
     case 'url':
       return t('trigger.url')
+    case 'done': {
+      const conversation = listed(trigger.conversation)
+      return conversation
+        ? t('trigger.done', { title: conversationTitle(conversation.title) })
+        : t('trigger.doneUnlisted')
+    }
   }
 }
 
@@ -208,7 +223,8 @@ export function noteWords(note: RunNote): string {
 
 /**
  * When the schedule wakes the conversation, as a time from now; for a change
- * watch or a URL, when it last did. Null while it is paused, which says so.
+ * watch, a URL or another conversation's finish, when it last did. Null while
+ * it is paused, which says so.
  */
 export function wakeWords(schedule: ConversationSchedule, now: Date | number): string | null {
   if (schedule.paused) {

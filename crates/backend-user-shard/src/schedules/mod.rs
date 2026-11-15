@@ -15,7 +15,7 @@
 pub(crate) mod commands;
 pub(crate) mod holidays;
 mod hooks;
-mod message;
+pub(crate) mod message;
 mod runs;
 pub(crate) mod plan;
 mod watch;
@@ -27,7 +27,8 @@ use std::time::Duration;
 
 use base64::Engine;
 use jush_backend_database::StorageError;
-use jush_backend_database::schedules::{StoredRun, StoredSchedule};
+use jush_agent_session::EndedTurn;
+use jush_backend_database::schedules::{RunCause, StoredRun, StoredSchedule};
 use jush_backend_page_sync::Part;
 use jush_backend_providers::vault::seal::Row;
 use jush_shared_types::{ScheduleId, Timestamp};
@@ -91,10 +92,12 @@ pub enum ScheduleError {
     NoTasks,
     #[error("The task has no message to send.")]
     NoMessage,
-    #[error("A limit on runs a day is for a change watch or a URL.")]
+    #[error("A limit on runs a day is for a change watch, a URL or a when-done trigger.")]
     LimitNotTaken,
     #[error("Only a URL trigger has a secret.")]
     NoSecret,
+    #[error("{0}")]
+    NotDoneOf(String),
     #[error(transparent)]
     Storage(#[from] StorageError),
 }
@@ -294,7 +297,8 @@ impl Shard {
                     None => due,
                 })
             }
-            Trigger::Url {} => None,
+            // Neither fires at a time of its own.
+            Trigger::Url {} | Trigger::Done { .. } => None,
         })
     }
 
@@ -422,6 +426,37 @@ impl Shard {
                     return Err(PlanError::Holidays(place.country.clone()).into());
                 }
             }
+        }
+        // A when-done trigger names another conversation of the user that is
+        // not archived as it is set, by its record's id; one archived or
+        // deleted later runs nothing.
+        if let Trigger::Done { conversation } = &schedule.trigger
+            && before.trigger != schedule.trigger
+        {
+            let watched = match control.conversation(conversation.clone()).await? {
+                Some(record) if record.owner == *self.user() && !record.archived() => record.id,
+                Some(record) if record.owner == *self.user() => {
+                    return Err(ScheduleError::NotDoneOf(format!(
+                        "conversation {conversation} is archived, and only the user restores it"
+                    )));
+                }
+                _ => {
+                    return Err(ScheduleError::NotDoneOf(format!(
+                        "no conversation {conversation} (see `jush conversation list`)"
+                    )));
+                }
+            };
+            if watched == schedule.conversation {
+                return Err(ScheduleError::NotDoneOf(
+                    "--when-done names another conversation; this one's end is its own turn's end".into(),
+                ));
+            }
+            if self.wakes_back(&schedule.id, &schedule.conversation, &watched).await? {
+                return Err(ScheduleError::NotDoneOf(format!(
+                    "conversation {watched} already runs when this one finishes, through when-done schedules, so each would run the other without end"
+                )));
+            }
+            schedule.trigger = Trigger::Done { conversation: watched };
         }
         if schedule.max_runs_per_day.is_some() && !schedule.trigger.takes_limit() {
             if patch.max_runs_per_day.flatten().is_some() {
@@ -700,10 +735,96 @@ impl Shard {
                         None => keep(due),
                     }
                 }
-                Trigger::Url {} => {}
+                // A URL fires when it is called, a when-done trigger as its
+                // conversation rests (`fire_done`).
+                Trigger::Url {} | Trigger::Done { .. } => {}
             }
         }
         Ok(nearest)
+    }
+
+    /// Whether `watched` runs when `conversation` finishes, through the
+    /// user's when-done schedules other than `schedule`, paused ones too,
+    /// which run once turned on.
+    async fn wakes_back(
+        &self,
+        schedule: &ScheduleId,
+        conversation: &ConversationId,
+        watched: &ConversationId,
+    ) -> Result<bool, StorageError> {
+        let watches: Vec<(ConversationId, ConversationId)> = self
+            .services()
+            .control
+            .schedules(self.user().clone())
+            .await?
+            .into_iter()
+            .filter(|each| each.id != *schedule)
+            .filter_map(|each| match each.trigger {
+                Trigger::Done { conversation: of } => Some((of, each.conversation)),
+                _ => None,
+            })
+            .collect();
+        let mut reached = std::collections::HashSet::from([conversation.clone()]);
+        let mut next = vec![conversation.clone()];
+        while let Some(finished) = next.pop() {
+            for (of, runs) in &watches {
+                if *of == finished && reached.insert(runs.clone()) {
+                    if runs == watched {
+                        return Ok(true);
+                    }
+                    next.push(runs.clone());
+                }
+            }
+        }
+        Ok(false)
+    }
+
+    /// `conversation` finished working, its last turn ending at `end`: runs
+    /// each schedule that waits for it, unless the day's limit holds it back.
+    pub(crate) fn fire_done(&self, conversation: &ConversationId, end: EndedTurn, error: Option<String>) {
+        let shard = self.this();
+        let conversation = conversation.clone();
+        self.tasks().spawn_local(async move {
+            if let Err(error) = shard.fire_done_now(conversation.clone(), end, error).await {
+                tracing::warn!(event = "schedule.done_not_fired", user = %shard.user(), %conversation, %error, "the schedules waiting for a conversation to finish were not run");
+            }
+        });
+    }
+
+    async fn fire_done_now(
+        &self,
+        conversation: ConversationId,
+        end: EndedTurn,
+        error: Option<String>,
+    ) -> Result<(), StorageError> {
+        let control = &self.services().control;
+        let waiting: Vec<StoredSchedule> = control
+            .schedules(self.user().clone())
+            .await?
+            .into_iter()
+            .filter(|schedule| matches!(&schedule.trigger, Trigger::Done { conversation: of } if *of == conversation))
+            .filter(StoredSchedule::on)
+            .collect();
+        if waiting.is_empty() {
+            return Ok(());
+        }
+        let title = control.conversation(conversation.clone()).await?.and_then(|record| record.title);
+        let finished = message::Finished { conversation, title, end, error };
+        let now = control.now();
+        for schedule in waiting {
+            if self.limit_reached(&schedule, now).await?.is_some() {
+                self.count_held_back(&schedule, 1).await?;
+                continue;
+            }
+            let fired = runs::Fired {
+                cause: RunCause::Done,
+                at: now,
+                task: None,
+                payload: runs::Payload::Done(finished.clone()),
+            };
+            self.fire(&schedule, fired).await;
+        }
+        Ok(())
     }
 
     /// When a change watch next runs its command: an interval after its
