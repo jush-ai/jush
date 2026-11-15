@@ -23,11 +23,14 @@
 //! that starts with `#` is a comment to a shell, so that every line the commands
 //! print can be run as it stands.
 
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::ops::{Range, RangeInclusive};
 use std::rc::{Rc, Weak};
 
 use jush_agent_tools::duration;
 use jush_backend_database::search::{HistoryBound, HistoryQuery, SearchKind, occurrences, searchable_text};
+use jush_backend_database::running::{self, Standing};
 use jush_backend_database::tree::{self, Transcript};
 use jush_backend_device_access::device_commands::conversation_of;
 use jush_backend_device_access::{DeviceShard, root_of};
@@ -35,8 +38,8 @@ use jush_device_interface::{
     Call, FileContents, GroupBuilder, Device as _, LeafBuilder, RpcError, RpcPort, TypedRpc, WhenExists, WriteOptions,
 };
 use jush_shared_types::{
-    AgentMessageEvent, Block, DocumentSource, MediaSource, NodeId, ShellViewStatus, Timestamp, ToolCallBlock,
-    ToolView, UserContentBlock,
+    AgentMessageEvent, Block, CommandEnd, CommandId, DocumentSource, MediaSource, NodeId, ShellViewStatus, Timestamp,
+    ToolCallBlock, ToolView, UserContentBlock,
     output::{self, Cell, Table},
 };
 use jush_web_api_protocol::ids::{ConversationId, DeviceId};
@@ -241,6 +244,12 @@ struct Reader {
     /// is its parent.
     root: bool,
     zone: TimeZone,
+    /// When the read started, which a running command's time counts to.
+    now: Timestamp,
+    /// How each command that a call left running stands now, as the blocks
+    /// read so far name them: the call keeps only what it saw as it
+    /// returned.
+    commands: RefCell<HashMap<CommandId, Standing>>,
 }
 
 /// A target as the options that name it, each with the space before it.
@@ -295,6 +304,8 @@ impl Reader {
             agent: target.agent,
             other: target.conversation.clone(),
             zone,
+            now: shard.services().clock.now(),
+            commands: RefCell::new(HashMap::new()),
         })
     }
 
@@ -381,6 +392,40 @@ impl Reader {
             .await
             .map_err(failed)?;
         Ok(read.unwrap_or_default())
+    }
+
+    /// Reads how each command the calls of `blocks` left running stands
+    /// now, before their lines are printed.
+    async fn stand(&self, shard: &Shard, blocks: &[Block]) -> Result<(), RpcError> {
+        let unread: Vec<CommandId> = {
+            let known = self.commands.borrow();
+            blocks
+                .iter()
+                .filter_map(|block| match block {
+                    Block::ToolCall(call) => match &call.view {
+                        Some(ToolView::Shell(view))
+                            if view.status == ShellViewStatus::Running && !known.contains_key(&view.command_id) =>
+                        {
+                            Some(view.command_id.clone())
+                        }
+                        _ => None,
+                    },
+                    _ => None,
+                })
+                .collect()
+        };
+        if unread.is_empty() {
+            return Ok(());
+        }
+        let standings = shard
+            .services()
+            .conversations
+            .read(&self.conversation, move |connection| running::standings(connection, &unread))
+            .await
+            .map_err(failed)?
+            .unwrap_or_default();
+        self.commands.borrow_mut().extend(standings);
+        Ok(())
     }
 }
 
@@ -505,6 +550,7 @@ async fn search(shard: Rc<Shard>, call: Call<SearchArgs>, port: RpcPort) -> Resu
     let mut rows = Vec::new();
     for &at in hits.iter().skip((page - 1) * HITS_PER_PAGE).take(HITS_PER_PAGE) {
         let (blocks, _) = reader.blocks(&shard, at.saturating_sub(AROUND)..=at + AROUND).await?;
+        reader.stand(&shard, &blocks).await?;
         let first = at.saturating_sub(AROUND);
         let Some(hit) = blocks.get(at - first) else {
             // The transcript no longer holds it, as after an edit the
@@ -600,7 +646,7 @@ fn said(reader: &Reader, block: &Block) -> Option<(&'static str, String)> {
         (SearchKind::Message, Block::User(_)) => (reader.author(), found.text),
         (SearchKind::Message, _) => ("user", found.text),
         (SearchKind::Answer, _) => ("agent", found.text),
-        (SearchKind::Command, Block::ToolCall(call)) => ("command", command(call)?),
+        (SearchKind::Command, Block::ToolCall(call)) => ("command", command(reader, call)?),
         (SearchKind::Command, _) => return None,
     })
 }
@@ -702,6 +748,7 @@ async fn read(shard: Rc<Shard>, call: Call<ReadArgs>, port: RpcPort) -> Result<u
     };
     let first_end = to.map_or(from + BATCH - 1, |to| to.min(from + BATCH - 1));
     let (mut blocks, length) = reader.blocks(&shard, from..=first_end).await?;
+    reader.stand(&shard, &blocks).await?;
     if length == 0 {
         return Err(failed("the transcript has no blocks yet"));
     }
@@ -745,6 +792,7 @@ async fn read(shard: Rc<Shard>, call: Call<ReadArgs>, port: RpcPort) -> Result<u
             break;
         }
         blocks = reader.blocks(&shard, at..=end.min(at + BATCH - 1)).await?.0;
+        reader.stand(&shard, &blocks).await?;
     }
     if printed.is_empty() {
         printed.push(match from_side {
@@ -1012,7 +1060,7 @@ fn item(reader: &Reader, at: usize, block: &Block) -> Option<Shown> {
                 body: Some(message.message.content.clone()),
             })
         }
-        Block::ToolCall(call) => line(call_line(at, call)),
+        Block::ToolCall(call) => line(call_line(reader, at, call)),
         Block::Resume(_) => line(format!("[{at} turn resumed]")),
         Block::Abort(_) => line(format!("[{at} stopped by the user]")),
         Block::Error(error) => line(format!("[{at} error: {}]", error.message)),
@@ -1084,34 +1132,62 @@ fn file_kind(part: &UserContentBlock) -> String {
 
 /// A call as one line: a command's title, how it stands and how long it
 /// ran; any other tool by its name.
-fn call_line(at: usize, call: &ToolCallBlock) -> String {
-    match command(call) {
+fn call_line(reader: &Reader, at: usize, call: &ToolCallBlock) -> String {
+    match command(reader, call) {
         Some(command) => format!("[{at} command: {command}]"),
         None => format!("[{at} {} call]", call.tool_name),
     }
 }
 
-/// A command as a line names it: its title, how it stands and how long it
-/// ran, such as `Run the tests · exit 0 · 3s`; none for a call of another
+/// A command as a line names it: its title, how it stands now and how long
+/// it ran, such as `Run the tests · exit 0 · 3s`; none for a call of another
 /// tool.
-fn command(call: &ToolCallBlock) -> Option<String> {
+fn command(reader: &Reader, call: &ToolCallBlock) -> Option<String> {
     let title = call.shell_command().map(|command| command.title);
     match (&call.view, title) {
         (Some(ToolView::Shell(view)), title) => {
             let title = title.unwrap_or_else(|| "a command".to_owned());
-            let state = match view.status {
-                ShellViewStatus::Running => "running".to_owned(),
-                ShellViewStatus::Exited => match view.exit_code {
-                    Some(code) => format!("exit {code}"),
-                    None => "exited".to_owned(),
+            let (state, ran) = match view.status {
+                // The call returned while it ran: its records say how it
+                // stands now.
+                ShellViewStatus::Running => match reader.commands.borrow().get(&view.command_id) {
+                    Some(Standing::Running { started }) => {
+                        let ran = reader.now.as_millisecond() - started.as_millisecond();
+                        ("running".to_owned(), Some(u64::try_from(ran).unwrap_or(0)))
+                    }
+                    // A row from before rows kept the start falls back on
+                    // its call's, as the page's list of ended commands does.
+                    Some(Standing::Ended { end, started, ended }) => {
+                        let started = started.unwrap_or(call.created_at);
+                        let ran = ended.as_millisecond() - started.as_millisecond();
+                        (ending(end), Some(u64::try_from(ran).unwrap_or(0)))
+                    }
+                    Some(Standing::Unknown) | None => ("running when its call returned".to_owned(), None),
                 },
-                ShellViewStatus::Aborted => "stopped".to_owned(),
-                ShellViewStatus::Lost => "lost".to_owned(),
+                ShellViewStatus::Exited => match view.exit_code {
+                    Some(code) => (format!("exit {code}"), Some(view.running_ms)),
+                    None => ("exited".to_owned(), Some(view.running_ms)),
+                },
+                ShellViewStatus::Aborted => ("stopped".to_owned(), Some(view.running_ms)),
+                ShellViewStatus::Lost => ("lost".to_owned(), Some(view.running_ms)),
             };
-            Some(format!("{title} · {state} · {}", duration(view.running_ms)))
+            Some(match ran {
+                Some(ran) => format!("{title} · {state} · {}", duration(ran)),
+                None => format!("{title} · {state}"),
+            })
         }
         (Some(ToolView::RepeatedShell { .. }), Some(title)) => Some(format!("{title} · not run again")),
         _ => None,
+    }
+}
+
+/// How a command's end reads in its line.
+fn ending(end: &CommandEnd) -> String {
+    match end {
+        CommandEnd::Exited { exit_code } => format!("exit {exit_code}"),
+        CommandEnd::Stopped => "stopped".to_owned(),
+        CommandEnd::Lost { .. } => "lost".to_owned(),
+        CommandEnd::Unrecorded => "ended".to_owned(),
     }
 }
 
@@ -1156,6 +1232,7 @@ async fn open(shard: Rc<Shard>, call: Call<OpenArgs>, port: RpcPort) -> Result<u
     let page = call.args.page.unwrap_or(1);
     let at = named.at;
     let (mut blocks, length) = reader.blocks(&shard, at..=at).await?;
+    reader.stand(&shard, &blocks).await?;
     let Some(block) = blocks.pop() else {
         return Err(failed(match length {
             0 => "the transcript has no blocks yet".to_owned(),
@@ -1186,7 +1263,7 @@ async fn open(shard: Rc<Shard>, call: Call<OpenArgs>, port: RpcPort) -> Result<u
                     .command_page(
                         &root_of(&reader.conversation),
                         &view.command_id,
-                        &call_line(at, tool),
+                        &call_line(&reader, at, tool),
                         &script,
                         page,
                         NEXT_CHARS,
@@ -1196,7 +1273,7 @@ async fn open(shard: Rc<Shard>, call: Call<OpenArgs>, port: RpcPort) -> Result<u
                 printed + &next_line(&reader, at, page, pages)
             }
             (Some(ToolView::RepeatedShell { .. }), Some(script)) => {
-                paged(&reader, &call_line(at, tool), &format!("$ {script}"), at, page)?
+                paged(&reader, &call_line(&reader, at, tool), &format!("$ {script}"), at, page)?
             }
             _ => return Err(failed(format!("{at} is a {} call, which has nothing to open", tool.tool_name))),
         },

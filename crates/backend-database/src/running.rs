@@ -12,7 +12,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use jush_device_interface::{Seen, UnsentStart};
-use jush_shared_types::{CommandId, NodeId, Timestamp, TurnId};
+use jush_shared_types::{CommandEnd, CommandId, NodeId, Timestamp, TurnId};
 use jush_web_api_protocol::ids::{ConversationId, DeviceId, UserId};
 use rusqlite::{Connection, OptionalExtension, Row, params};
 use serde::{Deserialize, Serialize};
@@ -199,6 +199,54 @@ pub fn of_node(connection: &Connection, node: &NodeId) -> Result<Vec<RunningComm
         running.push(decode_row(row)?);
     }
     Ok(running)
+}
+
+/// How a command stands now, as its conversation's records say.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Standing {
+    /// It runs, since then.
+    Running { started: Timestamp },
+    /// It ended so, then; its start when its row keeps it, which a row
+    /// written before rows kept it does not.
+    Ended { end: CommandEnd, started: Option<Timestamp>, ended: Timestamp },
+    /// The conversation holds no record of it.
+    Unknown,
+}
+
+/// How each of `commands` stands now: by its `command_outputs` row once it
+/// ended, else by its record as running.
+pub fn standings(connection: &Connection, commands: &[CommandId]) -> Result<Vec<(CommandId, Standing)>, StorageError> {
+    let mut ended = connection
+        .prepare_cached("SELECT started_at, ended_at, ending FROM command_outputs WHERE command_id = ?1")?;
+    let mut running = connection.prepare_cached("SELECT started_at FROM running_commands WHERE command_id = ?1")?;
+    let mut standings = Vec::new();
+    for command in commands {
+        let row = ended
+            .query_row([command.as_str()], |row| {
+                Ok((row.get::<_, Option<i64>>(0)?, row.get::<_, i64>(1)?, row.get::<_, Option<String>>(2)?))
+            })
+            .optional()?;
+        let standing = match row {
+            Some((started, ended, ending)) => Standing::Ended {
+                end: match ending {
+                    Some(text) => json("command_outputs", "ending", &text)?,
+                    None => CommandEnd::Unrecorded,
+                },
+                started: started
+                    .map(|millis| decode("command_outputs", "started_at", Timestamp::from_millisecond(millis)))
+                    .transpose()?,
+                ended: decode("command_outputs", "ended_at", Timestamp::from_millisecond(ended))?,
+            },
+            None => match running.query_row([command.as_str()], |row| row.get::<_, i64>(0)).optional()? {
+                Some(millis) => Standing::Running {
+                    started: decode("running_commands", "started_at", Timestamp::from_millisecond(millis))?,
+                },
+                None => Standing::Unknown,
+            },
+        };
+        standings.push((command.clone(), standing));
+    }
+    Ok(standings)
 }
 
 /// Every node that ran a command that runs.
