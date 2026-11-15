@@ -17,7 +17,7 @@ import WaitingNote from './WaitingNote.vue'
 import { t } from '../locales/text'
 import { browserShortcut } from './input'
 import { startingLabel, type BrowserTabData, type BrowserTabsController, type KeptPicture } from './tabs'
-import { BLANK_PAGE, deviceSnap, panelSize, viewportChoices, type PanelSize, type ViewportChoice } from './view'
+import { BLANK_PAGE, deviceSnap, panelReport, panelSize, viewportChoices, type PanelSize, type ViewportChoice } from './view'
 
 /**
  * A `browser` tab's content: the device's browser tab its data names. It
@@ -108,11 +108,7 @@ function measure(): void {
   measured.value = panelSize(bounds.width, bounds.height)
   snap.value = { x: deviceSnap(bounds.left, devicePixelRatio), y: deviceSnap(bounds.top, devicePixelRatio) }
   if (props.shown) {
-    props.session.resize({
-      panel: measured.value,
-      devicePixelRatio,
-      screen: panelSize(screen.width, screen.height),
-    })
+    props.session.resize(panelReport(bounds.width, bounds.height))
   }
 }
 

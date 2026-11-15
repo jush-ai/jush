@@ -9,10 +9,10 @@
  * picture, so a return to the conversation shows them at once; past the
  * limit, the least recently watched is released.
  */
-import { effectScope, onScopeDispose } from 'vue'
+import { effectScope, onScopeDispose, watch } from 'vue'
 import { KeptSessions, definePluginStore, type KeptSession, type PageContext, type PluginStore } from '@jush-ai/plugin-sdk'
 import { browserTabsApi } from '../tabs'
-import { BrowserTabsController, type BrowserTabsOptions } from './tabs'
+import { BrowserTabsController, browserTabDataSchema, type BrowserTabsOptions } from './tabs'
 
 /** The kind's name, which the page's tabs and the plugin's work tabs carry. */
 export const BROWSER_TAB_KIND = 'browser'
@@ -37,14 +37,24 @@ export function browserStore(options: BrowserTabsOptions): BrowserStore {
 function keptBrowser(page: PageContext, conversation: string, options: BrowserTabsOptions): KeptBrowser {
   // Its own scope, which ends when the store releases it rather than with whatever made it.
   const scope = effectScope(true)
-  const tabs = scope.run(() => new BrowserTabsController(
-    browserTabsApi(
-      page.plugin.conversation(conversation),
-      (workTab) => page.work.select(conversation, BROWSER_TAB_KIND, workTab),
-    ),
-    page.errors,
-    options,
-  ))!
+  const held = () => page.work.tabs(conversation, BROWSER_TAB_KIND).flatMap((data) => {
+    const parsed = browserTabDataSchema.safeParse(data)
+    return parsed.success ? [parsed.data.tab] : []
+  })
+  const tabs = scope.run(() => {
+    const controller = new BrowserTabsController(
+      browserTabsApi(
+        page.plugin.conversation(conversation),
+        (workTab) => page.work.select(conversation, BROWSER_TAB_KIND, workTab),
+        held,
+      ),
+      page.errors,
+      options,
+    )
+    // The work's tabs end the openings whose tabs it held.
+    watch(held, () => controller.settleOpenings())
+    return controller
+  })!
   return {
     tabs,
     // What its view watches follows its contents' show and hide (`BrowserTabsController.show`).

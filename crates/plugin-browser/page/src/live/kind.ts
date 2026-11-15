@@ -1,11 +1,11 @@
-import { computed, defineComponent, h, onBeforeUnmount, type PropType } from 'vue'
+import { defineComponent, h, onBeforeUnmount, type PropType } from 'vue'
 import { Globe, RotateCw } from '@lucide/vue'
 import { ICON_PX, usePage, type KindTab, type TabKind, type WindowKind } from '@jush-ai/plugin-sdk'
 import BrowserOpening from './BrowserOpening.vue'
 import BrowserTabContent from './BrowserTabContent.vue'
 import { t } from '../locales/text'
 import { BROWSER_TAB_KIND, type BrowserStore } from './store'
-import { browserTabDataSchema, type BrowserTabData, type BrowserTabsController } from './tabs'
+import { BLANK_URL, addedWorkTab, browserTabDataSchema, type BrowserTabData, type BrowserTabsController } from './tabs'
 
 const BrowserTabMark = defineComponent({
   setup: () => () => h(Globe, { size: ICON_PX.markIn28 }),
@@ -14,16 +14,22 @@ const BrowserTabMark = defineComponent({
 /**
  * A tab is named by its page's title as the browser reports it, so a tab
  * opened in the background takes its title as soon as its page has one, as
- * in any browser; until it has one, by its address. A tab its user sent
- * elsewhere is named after where it goes at once, never after the page it
- * leaves.
+ * in any browser; until it has one, by its address, and a blank one New Tab,
+ * as Chrome names it. A tab its user sent elsewhere is named after where it
+ * goes at once, never after the page it leaves.
  */
 export function browserTabTitle(data: BrowserTabData, session: BrowserTabsController): string {
   const title = session.title(data)
-  if (title) {
-    return title
-  }
   const address = session.address(data)
+  // Chrome titles a blank page by its address, which no person reads as a name.
+  return title && !(address === BLANK_URL && title === BLANK_URL) ? title : addressTitle(address)
+}
+
+/** A tab's title by its address `address`, while its page has none. */
+function addressTitle(address: string): string {
+  if (address === BLANK_URL) {
+    return t('tab.blank')
+  }
   const url = URL.parse(address)
   return url ? url.host || url.href : address
 }
@@ -65,17 +71,16 @@ export function browserTabKind(store: BrowserStore): TabKind<BrowserTabData, Bro
     },
   })
   const opening = defineComponent({
-    props: { conversation: { type: String, required: true } },
-    emits: { failed: () => true },
-    setup(props, { emit }) {
-      const page = usePage()
-      const watched = page.store(store).watch(props.conversation)
+    props: {
+      conversation: { type: String, required: true },
+      opening: { type: String, required: true },
+      shown: { type: Boolean, required: true },
+    },
+    setup(props) {
+      // Watched while mounted, as a tab's content: the view opens for the panel's size.
+      const watched = usePage().store(store).watch(props.conversation)
       onBeforeUnmount(() => watched.end())
-      const held = computed(() => new Set(page.work.tabs(props.conversation, BROWSER_TAB_KIND).flatMap((data) => {
-        const parsed = browserTabDataSchema.safeParse(data)
-        return parsed.success ? [parsed.data.tab] : []
-      })))
-      return () => h(BrowserOpening, { session: watched.session.tabs, held: held.value, onFailed: () => emit('failed') })
+      return () => h(BrowserOpening, { session: watched.session.tabs, opening: Number(props.opening), shown: props.shown })
     },
   })
   return {
@@ -86,6 +91,15 @@ export function browserTabKind(store: BrowserStore): TabKind<BrowserTabData, Bro
     start: () => ({ url: null }),
     // Only the device makes a tab: the work has it once the device lists it.
     open: (opens, tab) => void browser(tab).open(opens.url),
+    // Read without making the conversation's browser: every conversation on screen asks.
+    openings: (tab) => (tab.page.store(store).peek(tab.conversation)?.tabs.openings.value ?? []).map((opening) => ({
+      key: String(opening.id),
+      title: addressTitle(opening.url ?? BLANK_URL),
+      tab: opening.tab === null ? null : addedWorkTab(opening.tab),
+      done: opening.done,
+      cancelled: opening.cancelled,
+    })),
+    cancel: (key, tab) => browser(tab).cancel(Number(key)),
     title: (data, tab) => browserTabTitle(data, browser(tab)),
     // The agent's showings, and the user's own opening, which the plugin carries from the tab list.
     shows: (data) => data.shows ?? 0,

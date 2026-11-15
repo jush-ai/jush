@@ -1,5 +1,6 @@
 {
   "window": { "name": "Navegador" },
+  "tab": { "blank": "Nueva pestaña" },
   "reasons": {
     "invalid_input": "El navegador abre solo páginas web, de archivo y en blanco.",
     "tab_not_found": "Esta página ya no está abierta en el dispositivo.",

@@ -1,49 +1,76 @@
 <script setup lang="ts">
-import { computed, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { AddressBar, RegionStatus, downloadProgress } from '@jush-ai/plugin-sdk'
 import { t } from '../locales/text'
 import { BLANK_URL, startingLabel, type BrowserTabsController } from './tabs'
-import { BLANK_PAGE } from './view'
+import { BLANK_PAGE, panelReport } from './view'
 
 /**
- * What the browser window shows over its tabs while a tab the user opens
- * comes, the latest one asked: the tab as it will look, an address bar on
- * what it opens and below it what Jush does, or a blank page for a blank
- * tab the browser opens now, so the tab that comes moves nothing. An
- * address typed meanwhile is where the tab goes once it opens. An opening
- * that ends without a tab, refused or closed before the work showed it,
- * says `failed` once no other is still opening, so a window it left empty
- * closes and one that waits for another tab stays.
+ * The content of a tab the user opens until the work holds it: the tab as
+ * it will look, an address bar on what it opens and below it what Jush
+ * does, or a blank page for a blank tab the browser opens now, so the tab
+ * that comes moves nothing. An address typed meanwhile is where the tab
+ * goes once it opens.
+ *
+ * Shown, it keeps the page's view open watching nothing and tells it the
+ * panel's size, as a tab's content before the browser has its tab does, so
+ * the device opens the tab at the size its picture shows at.
  */
 const props = defineProps<{
   session: BrowserTabsController
-  /** The browser tabs the work holds now. */
-  held: ReadonlySet<string>
+  /** The opening's id. */
+  opening: number
+  /** Whether its window is on screen. */
+  shown: boolean
 }>()
-const emit = defineEmits<{ failed: [] }>()
 
-// The tab may come before or after the open answers, so both are watched.
-watch([() => props.held, props.session.openings], ([tabs]) => props.session.held(tabs), { immediate: true })
-watch(props.session.unopened, () => {
-  if (props.session.openings.value.length === 0) {
-    emit('failed')
+const shown = computed(() => props.session.opening(props.opening))
+const phase = computed(() => props.session.openingPhase(props.opening))
+
+/** The opening's name among the contents the view follows. */
+const content = `opening:${props.opening}`
+const area = ref<HTMLElement | null>(null)
+let observer: ResizeObserver | null = null
+
+function measure(): void {
+  const bounds = area.value?.getBoundingClientRect()
+  if (props.shown && bounds && bounds.width >= 1 && bounds.height >= 1) {
+    props.session.resize(panelReport(bounds.width, bounds.height))
+  }
+}
+
+watch(() => props.shown, (shown, was) => {
+  if (shown) {
+    props.session.show(content, null)
+    measure()
+  } else if (was) {
+    props.session.hide(content)
+  }
+}, { immediate: true, flush: 'post' })
+
+onMounted(() => {
+  observer = new ResizeObserver(() => measure())
+  if (area.value) {
+    observer.observe(area.value)
   }
 })
 
-const latest = computed(() => props.session.openings.value.at(-1) ?? null)
-const phase = computed(() => props.session.openingPhase())
+onBeforeUnmount(() => {
+  observer?.disconnect()
+  props.session.hide(content)
+})
 </script>
 
 <template>
-  <div v-if="latest" class="absolute inset-0 z-10 flex flex-col bg-surface">
+  <div v-if="shown" class="absolute inset-0 z-10 flex flex-col bg-surface">
     <AddressBar
-      :address="latest.url ?? BLANK_URL"
+      :address="shown.url ?? BLANK_URL"
       :back-reason="t('address.noBack')"
       :forward-reason="t('address.noForward')"
       :can-reload="false"
-      @submit="(url) => session.goOpening(url)"
+      @submit="(url) => session.goOpening(opening, url)"
     />
-    <div class="relative flex min-h-0 flex-1 flex-col border-t border-line">
+    <div ref="area" class="relative flex min-h-0 flex-1 flex-col border-t border-line">
       <RegionStatus
         v-if="phase !== null"
         class="min-h-0 flex-1"

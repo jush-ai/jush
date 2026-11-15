@@ -18,7 +18,7 @@ import {
 import { schemaRefusal } from '@jush-ai/protocol'
 import type { Pinia } from 'pinia'
 import { z } from 'zod'
-import type { BoundTabKind, WindowKind, TabCommand } from '../agent/tab-kinds/kind'
+import type { BoundTabKind, KindOpening, WindowKind, TabCommand } from '../agent/tab-kinds/kind'
 import type { DeviceArtifact, DeviceDownload } from '../devices/installed'
 import type { ChangeSetSource, ReadCallChange } from '../files/changes'
 import type { CommitHistorySource } from '../files/history'
@@ -39,7 +39,7 @@ import type { TabPlace } from './place'
 import type { Operation } from '../ui/operations'
 import type { HeadlineText, SentenceText } from '../ui/ui-text'
 
-export type { WindowKind }
+export type { KindOpening, WindowKind }
 
 /**
  * A plugin's page: the object it declares with `definePage`, and the page
@@ -450,10 +450,19 @@ export interface TabKind<Data, Opens = Data> {
    * (`start`) or an intent (`intents`) gives, in place of the work creating
    * it: the kind of a device's live tabs, which only the device makes, and
    * whose `Opens` is what it asks the device for. The tab comes with the work
-   * once the device has it, and the window shows `opening` meanwhile, which
-   * says `failed` for an open the plugin refused, as the kind reports.
+   * once the device has it; until then it is one of `openings`.
    */
   open?(opens: Opens, tab: KindTab): void
+  /**
+   * The tabs the kind's plugin opens for the user on this page, oldest first,
+   * read reactively, each with the work tab it becomes once the device made
+   * it. Each stands in its window's strip from the click, selected, as a web
+   * browser's new tab does, and the work's tab takes its place once the work
+   * holds it. One that ends without a tab, refused or closed, leaves it.
+   */
+  openings?(tab: KindTab): readonly KindOpening[]
+  /** Ends the opening `key`, which its tab's Close does: it is `cancelled` from then on. */
+  cancel?(key: string, tab: KindTab): void
   title(data: Data, tab: KindTab): string
   /**
    * What the tab's pane says it reads while it waits for what it shows
@@ -524,10 +533,9 @@ export interface TabKind<Data, Opens = Data> {
    */
   openMenu?: Component
   /**
-   * What its window shows over its tabs while the kind opens one, such as a
-   * simulator that boots; nothing while none opens. Props: `conversation`.
-   * Emits `failed` when the opening was refused, which closes the window if
-   * it holds no tab.
+   * The content of an opening's tab, such as a simulator that boots. Props:
+   * `conversation`, `opening`, its key, and `shown`, whether its window is on
+   * screen.
    */
   opening?: Component
   /**
@@ -983,6 +991,8 @@ function bindKind(kind: TabKind<unknown>, tab: KindTab, context: PageContext): B
     window: kind.window,
     start: kind.start,
     open: kind.open && ((data) => kind.open?.(data, tab)),
+    openings: kind.openings && (() => kind.openings?.(tab) ?? []),
+    cancel: kind.cancel && ((key) => kind.cancel?.(key, tab)),
     title: (data) => kind.title(data, tab),
     subject: subject && ((data) => subject(data, tab)),
     mark: kind.mark,

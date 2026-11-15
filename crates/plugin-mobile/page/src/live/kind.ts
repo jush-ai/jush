@@ -1,7 +1,7 @@
-import { computed, defineComponent, h, onBeforeUnmount, type PropType } from 'vue'
+import { defineComponent, h, onBeforeUnmount, type PropType } from 'vue'
 import { z } from 'zod'
 import { Smartphone } from '@lucide/vue'
-import { ICON_PX, SystemLogo, usePage, type TabKind, type WindowKind } from '@jush-ai/plugin-sdk'
+import { ICON_PX, SystemLogo, usePage, type KindTab, type TabKind, type WindowKind } from '@jush-ai/plugin-sdk'
 import MobileTabContent from './MobileTabContent.vue'
 import OpenMenu from './OpenMenu.vue'
 import OpeningStatus from './OpeningStatus.vue'
@@ -65,18 +65,19 @@ export function mobileDeviceKind(store: MobileStore): TabKind<MobileTabData> {
     },
   })
   const opening = defineComponent({
-    props: { conversation: { type: String, required: true } },
-    emits: { failed: () => true },
-    setup(props, { emit }) {
-      const page = usePage()
+    props: {
+      conversation: { type: String, required: true },
+      opening: { type: String, required: true },
+      // A simulator's opening shows its status alone, which needs no panel.
+      shown: { type: Boolean, required: true },
+    },
+    setup(props) {
       const controller = watching(props.conversation)
-      const shown = computed(() => new Set(page.work.tabs(props.conversation, KIND).flatMap((data) => {
-        const parsed = mobileTabDataSchema.safeParse(data)
-        return parsed.success ? [parsed.data.device] : []
-      })))
-      return () => h(OpeningStatus, { controller, shown: shown.value, onFailed: () => emit('failed') })
+      return () => h(OpeningStatus, { controller, opening: Number(props.opening) })
     },
   })
+  /** The conversation's simulators on the page, unwatched. */
+  const devices = (tab: KindTab) => tab.page.store(store).of(tab.conversation).devices
   const content = defineComponent({
     props: {
       conversation: { type: String, required: true },
@@ -106,5 +107,17 @@ export function mobileDeviceKind(store: MobileStore): TabKind<MobileTabData> {
     content,
     openMenu,
     opening,
+    // Read without making the conversation's simulators: every conversation on screen asks.
+    openings: (tab) => {
+      const controller = tab.page.store(store).peek(tab.conversation)?.devices
+      return (controller?.openings.value ?? []).map((each) => ({
+        key: String(each.id),
+        title: each.name,
+        tab: controller?.openingTab(each) ?? null,
+        done: each.done,
+        cancelled: each.cancelled,
+      }))
+    },
+    cancel: (key, tab) => devices(tab).cancel(Number(key)),
   }
 }

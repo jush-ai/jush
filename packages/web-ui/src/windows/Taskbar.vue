@@ -103,8 +103,8 @@ const emit = defineEmits<{
   arrange: [ids: string[], pinned: boolean]
   close: [id: string]
   open: [kind: string]
-  /** A row of the entry's submenu was chosen: its window opens and waits for the tab it brings. */
-  awaitTab: [kind: string]
+  /** A row of the entry's submenu was chosen: its window opens on the tab it brings. */
+  opened: [kind: string]
 }>()
 
 /** The least width a button narrows to, in px: its icon and a few characters. */
@@ -286,7 +286,7 @@ function press(item: TaskbarItem): void {
             @select="entry.menu || emit('open', entry.kind)"
           >
             <template v-if="entry.menu" #submenu>
-              <component :is="entry.menu" @opened="emit('awaitTab', entry.kind)" />
+              <component :is="entry.menu" @opened="emit('opened', entry.kind)" />
             </template>
           </MenuItem>
         </Menu>
