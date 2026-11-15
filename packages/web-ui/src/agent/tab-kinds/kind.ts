@@ -30,6 +30,30 @@ export interface WindowKind {
 }
 
 /**
+ * A tab the kind's plugin opens for the user, from the click until the work
+ * holds it: it stands in its window's strip meanwhile, as a web browser's new
+ * tab does before its page exists.
+ */
+export interface KindOpening {
+  /** Which of the kind's openings it is, unique while the page has it. */
+  key: string
+  /** Its title in the strip, such as New Tab or a simulator's name. */
+  title: string
+  /** The id of the work tab it becomes, once the device made it; null before. */
+  tab: string | null
+  /**
+   * The work has held its tab: the opening is over, and the tab, while the
+   * work holds it, stands in its place.
+   */
+  done: boolean
+  /**
+   * The user closed it before the work held its tab, which the strip never
+   * shows: its window closes the tab once the work holds it.
+   */
+  cancelled: boolean
+}
+
+/**
  * What the conversation's windows need to show the tabs of one kind. They
  * know nothing else about a kind: the protocol, stream or routes its tabs use
  * stay behind `content`.
@@ -44,9 +68,16 @@ export interface BoundTabKind<Data = unknown> {
   start?(): unknown
   /**
    * Has the kind's plugin make the tab `opens` asks for in place of the work
-   * creating it; the window waits for it, showing `opening`.
+   * creating it, as one of its `openings`.
    */
   open?(opens: unknown): void
+  /**
+   * The tabs its plugin opens for the user on this page, oldest first, read
+   * reactively; one the work holds already may still be among them.
+   */
+  openings?(): readonly KindOpening[]
+  /** Ends the opening `key`, as its tab's Close: it is `cancelled` from then on. */
+  cancel?(key: string): void
   // A method, so kinds of different data fit one list of kinds.
   title(data: Data): string
   /** What the pane says it reads while it waits, such as a file's name; absent, the title. */
@@ -93,9 +124,8 @@ export interface BoundTabKind<Data = unknown> {
    */
   openMenu?: Component
   /**
-   * What its window shows over its tabs while the kind opens one, such as a
-   * simulator that boots; nothing while none opens. Emits `failed` when the
-   * opening was refused, which closes the window if it holds no tab.
+   * The content of an opening's tab, such as a simulator that boots. Props:
+   * `opening`, its key, and `shown`, whether its window is on screen.
    */
   opening?: Component
 }

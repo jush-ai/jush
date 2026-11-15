@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, h, ref, watch, type Component } from 'vue'
+import { computed, h, ref, shallowRef, watch, type Component } from 'vue'
 import { ArrowLeftToLine, ArrowRightToLine, CopyX, ListX, X } from '@lucide/vue'
 import Menu from '../ui/Menu.vue'
 import MenuItem from '../ui/MenuItem.vue'
@@ -13,7 +13,8 @@ import Taskbar, { type TaskbarItem, type TaskbarOpen } from './Taskbar.vue'
 import WindowStage, { type StageWindowView } from './WindowStage.vue'
 import WorkWindowBody from './WorkWindowBody.vue'
 import type { WindowTab } from './WorkWindow.vue'
-import { windowHolding, workWindows, type ShownTab, type WorkWindow } from './work-windows'
+import { cancelledTabs, openingBecame, openingTabId, windowHolding, workWindows, type ShownTab, type WorkWindow } from './work-windows'
+import { ICON_PX } from '../ui/icon-metrics'
 import type { BoundTabKind } from '../agent/tab-kinds/kind'
 import type { FrontCause, SessionWork } from './session-work'
 import { tabsToClose, type TabCloseScope } from '../agent/tab-close'
@@ -38,6 +39,10 @@ import { t } from './locales/text'
  *   what they show (`used`), and stay, so the taskbar keeps its buttons
  *   while what runs comes and goes; one whose window is open stands too, as
  *   after a switch to a version of a message whose path has none.
+ *
+ * A tab a kind's plugin opens, such as the browser's new tab, stands in its
+ * window from the click, selected, until the work holds the tab it becomes,
+ * which is selected in its place (`work-windows.ts`).
  *
  * The stage alone says which windows stand and which is in front; each
  * window of the work shows the newest of its own tabs. The host's address
@@ -92,7 +97,23 @@ const listOpen = defineModel<boolean>('listOpen', { default: false })
 const phone = usePhone()
 const area = ref<InstanceType<typeof WindowStage> | null>(null)
 
-const windows = computed<WorkWindow[]>(() => (props.work ? workWindows(props.work.tabsState, props.work.pinned, props.work.kinds) : []))
+/**
+ * The opening's tab each window shows, by window, which the page alone
+ * knows: a new opening's from its click until the user selects another tab
+ * or the work's tab it became is picked in the work.
+ */
+const chosen = shallowRef<ReadonlyMap<string, string>>(new Map())
+function choose(id: string, tab: string | null): void {
+  const next = new Map(chosen.value)
+  if (tab === null) {
+    next.delete(id)
+  } else {
+    next.set(id, tab)
+  }
+  chosen.value = next
+}
+
+const windows = computed<WorkWindow[]>(() => (props.work ? workWindows(props.work.tabsState, props.work.pinned, props.work.kinds, chosen.value) : []))
 const workIds = computed(() => new Set(windows.value.map((window) => window.window.id)))
 function workOf(id: string): WorkWindow | undefined {
   return windows.value.find((window) => window.window.id === id)
@@ -118,39 +139,87 @@ function ensure(id: string): boolean {
   return true
 }
 
-/**
- * The windows whose kind opens a tab the user chose in Open's submenu, such
- * as a simulator that boots: each stands, empty, until a tab comes, the
- * opening is refused or the user closes it.
- */
-const awaiting = ref<ReadonlySet<string>>(new Set())
-function awaited(id: string): void {
-  if (awaiting.value.has(id)) {
-    const next = new Set(awaiting.value)
-    next.delete(id)
-    awaiting.value = next
-  }
-}
-
-// A window of kinds that are not pinned stands while it holds a tab, or
-// awaits one; one that comes without a request for its tab waits minimized
-// on the taskbar. It runs before the watcher that says what is in front,
-// made after it, so a window its last closed tab leaves empty is gone by then.
-watch([windows, ready, awaiting], ([now]) => {
+// A window of kinds that are not pinned stands while it holds a tab, an
+// opening's included; one that comes without a request for its tab waits
+// minimized on the taskbar. It runs before the watcher that says what is in
+// front, made after it, so a window its last closed tab leaves empty is gone
+// by then.
+watch([windows, ready], ([now]) => {
   for (const window of now) {
     if (window.tabs.some((tab) => !tab.pinned)) {
-      awaited(window.window.id)
       ensure(window.window.id)
-    } else if (window.tabs.length === 0 && props.stage.find(window.window.id) && !awaiting.value.has(window.window.id)) {
+    } else if (window.tabs.length === 0 && props.stage.find(window.window.id)) {
       props.stage.remove(window.window.id)
     }
   }
 }, { immediate: true })
 
-function awaitTab(id: string): void {
-  awaiting.value = new Set([...awaiting.value, id])
-  show(id)
+/**
+ * The strip's key of each work tab an opening became: the opening's, so the
+ * strip keeps the one tab in place rather than closing one and opening
+ * another.
+ */
+const keys = new Map<string, string>()
+/** The strip's key of the tab `id`. */
+function keyOf(id: string): string {
+  const kept = keys.get(id)
+  if (kept !== undefined) {
+    return kept
+  }
+  for (const kind of props.work?.kinds ?? []) {
+    const opening = kind.openings?.().find((each) => each.tab === id)
+    if (opening) {
+      const key = openingTabId(kind, opening.key)
+      keys.set(id, key)
+      return key
+    }
+  }
+  return id
 }
+
+/** Every opening's tab the windows held, which a new one is not. */
+let openingsSeen = new Set<string>()
+/** The stage the openings were seen on: another is another conversation's, whose openings are its own. */
+let openingsStage: WindowStageModel | null = null
+// A new opening is selected in its window, as a web browser selects the tab
+// its + opens; the work's tab it became is then picked in the work, and an
+// opening that ended without a tab leaves its window to its other tabs. The
+// tab of one the user closed closes once the work holds it.
+watch(windows, (now) => {
+  const work = props.work
+  const unwanted = work ? cancelledTabs(work.kinds).filter((tab) => work.tabsState.tabs.some((held) => held.id === tab)) : []
+  if (unwanted.length) {
+    work?.closeTabs(unwanted)
+  }
+  // Another conversation came: what was chosen, seen and keyed was the last one's.
+  const came = openingsStage !== props.stage
+  if (came) {
+    openingsStage = props.stage
+    chosen.value = new Map()
+    keys.clear()
+  }
+  const seen = new Set<string>()
+  for (const window of now) {
+    for (const tab of window.tabs) {
+      if (tab.opening !== null) {
+        seen.add(tab.id)
+        if (!came && !openingsSeen.has(tab.id)) {
+          choose(window.window.id, tab.id)
+        }
+      }
+    }
+  }
+  openingsSeen = seen
+  for (const [id, tab] of chosen.value) {
+    const became = work ? openingBecame(now, work.kinds, tab) : null
+    if (became !== null) {
+      work?.pick(became)
+      choose(id, null)
+    } else if (!seen.has(tab)) {
+      choose(id, null)
+    }
+  }
+}, { immediate: true })
 
 // A request brings its tab's window to the front on it once the window holds
 // the tab, as a click would; one naming none puts the work's windows away.
@@ -163,8 +232,8 @@ watch([() => props.work?.request ?? null, windows, ready], ([request]) => {
     const { kind, data } = request.opens
     const opens = work.kinds.find((candidate) => candidate.kind === kind)
     if (opens?.open) {
-      awaitTab(opens.window.id)
       opens.open(data)
+      show(opens.window.id)
     }
     work.took(request.id)
     return
@@ -180,19 +249,30 @@ watch([() => props.work?.request ?? null, windows, ready], ([request]) => {
   }
   const window = windowHolding(windows.value, request.tab)
   if (window && ensure(window.window.id)) {
+    choose(window.window.id, null)
     work.pick(request.tab)
     props.stage.show(window.window.id)
     work.took(request.id)
   }
 }, { immediate: true })
 
-/** The tab of the work's window highest in front that is not minimized; none while no window of the work shows. */
+/**
+ * The work's tab of the window highest in front that is not minimized and
+ * shows one; none while no window of the work shows. An opening's tab is
+ * the page's alone, which the address cannot name: while a window shows
+ * one, the address keeps naming the work's tab behind it.
+ */
 const inFront = computed(() => {
   const shown = props.stage.state.windows
     .filter((placed) => placed.placement !== 'minimized' && workIds.value.has(placed.id))
     .sort((a, b) => b.order - a.order)
-  const front = shown[0]
-  return front ? workOf(front.id)?.selected ?? null : null
+  for (const placed of shown) {
+    const tab = workOf(placed.id)?.workTab ?? null
+    if (tab !== null) {
+      return tab
+    }
+  }
+  return null
 })
 /** The stage the address last followed: the first word of another one writes the address in place. */
 let followed: WindowStageModel | null = null
@@ -228,12 +308,14 @@ function markOf(tab: ShownTab): Component {
   let kept = marks.get(tab.id)
   if (kept?.kind !== tab.kind) {
     const { id, kind } = tab
+    // An opening has no data yet: its window's icon stands for its mark.
+    const opening = tab.opening !== null
     kept = {
       kind,
       mark: {
         render: () => {
           const now = tabsById.value.get(id)
-          return now ? h(kind.mark, { data: now.data }) : null
+          return now ? opening ? h(kind.window.icon, { size: ICON_PX.markIn28 }) : h(kind.mark, { data: now.data }) : null
         },
       },
     }
@@ -241,11 +323,16 @@ function markOf(tab: ShownTab): Component {
   }
   return kept.mark
 }
-// A closed tab's mark goes with it.
+// A closed tab's mark and key go with it.
 watch(tabsById, (now) => {
   for (const id of marks.keys()) {
     if (!now.has(id)) {
       marks.delete(id)
+    }
+  }
+  for (const id of keys.keys()) {
+    if (!now.has(id)) {
+      keys.delete(id)
     }
   }
 })
@@ -263,15 +350,16 @@ const closeMany: readonly { scope: Exclude<TabCloseScope, 'self'>; label: () => 
  * window's tabs, as a web browser's tab menu. A pinned tab closes by none.
  */
 function tabMenu(window: WorkWindow, tab: ShownTab): (() => ContextMenuGroup[]) | undefined {
-  const own = tab.kind.commands?.(tab.data, tab.id) ?? []
-  if (tab.pinned && own.length === 0) {
+  // An opening's page is not there yet: only its Close commands apply.
+  const commands = () => tab.opening === null ? tab.kind.commands?.(tab.data, tab.id) ?? [] : []
+  if (tab.pinned && commands().length === 0) {
     return undefined
   }
-  const close = (ids: string[]) => props.work?.closeTabs(ids)
+  const close = (ids: string[]) => closeTabs(window, ids)
   return () => {
     const closable = window.tabs.filter((each) => !each.pinned)
     return [
-      (tab.kind.commands?.(tab.data, tab.id) ?? []).map((command) => ({ icon: command.icon, label: command.label, disabled: command.disabled, run: () => command.run() })),
+      commands().map((command) => ({ icon: command.icon, label: command.label, disabled: command.disabled, run: () => command.run() })),
       tab.pinned ? [] : [
         { icon: X, label: shared('common.close'), run: () => close([tab.id]) },
         ...closeMany.map((item) => {
@@ -294,13 +382,29 @@ function workTabs(window: WorkWindow): WindowTab[] {
   const single = isSingle(window)
   return window.tabs.map((tab) => ({
     id: tab.id,
+    key: tab.opening === null ? keyOf(tab.id) : tab.id,
     title: single ? tab.subject : tab.title,
     mark: markOf(tab),
-    icon: tab.kind.icon?.(tab.data, tab.id) ?? null,
-    busy: !offline && (tab.kind.busy?.(tab.data, tab.id) ?? false),
+    icon: tab.opening === null ? tab.kind.icon?.(tab.data, tab.id) ?? null : null,
+    // An opening is at work until its tab comes, as a loading page's tab.
+    busy: !offline && (tab.opening !== null || (tab.kind.busy?.(tab.data, tab.id) ?? false)),
     closable: !tab.pinned,
     menu: tabMenu(window, tab),
   }))
+}
+
+/** Closes the tabs `ids` of `window`: the work's leave the work, and an opening ends. */
+function closeTabs(window: WorkWindow, ids: readonly string[]): void {
+  const closing = window.tabs.filter((tab) => ids.includes(tab.id))
+  for (const tab of closing) {
+    if (tab.opening !== null) {
+      tab.kind.cancel?.(tab.opening)
+    }
+  }
+  const held = closing.filter((tab) => tab.opening === null).map((tab) => tab.id)
+  if (held.length) {
+    props.work?.closeTabs(held)
+  }
 }
 
 const views = computed<StageWindowView[]>(() => props.stage.state.windows.flatMap((placed): StageWindowView[] => {
@@ -321,8 +425,14 @@ const views = computed<StageWindowView[]>(() => props.stage.state.windows.flatMa
 }))
 
 function select(id: string, tab: string): void {
-  if (workIds.value.has(id)) {
-    props.work?.pick(tab)
+  const window = workOf(id)
+  if (window) {
+    if (window.tabs.some((each) => each.id === tab && each.opening !== null)) {
+      choose(id, tab)
+    } else {
+      choose(id, null)
+      props.work?.pick(tab)
+    }
     props.stage.show(id)
   } else {
     ownOf(id)?.select(tab)
@@ -330,8 +440,9 @@ function select(id: string, tab: string): void {
 }
 
 function closeTab(id: string, tab: string): void {
-  if (workIds.value.has(id)) {
-    props.work?.closeTabs([tab])
+  const window = workOf(id)
+  if (window) {
+    closeTabs(window, [tab])
   } else {
     ownOf(id)?.closeTab?.(tab)
   }
@@ -347,12 +458,13 @@ function reorder(id: string, from: number, to: number): void {
   const offset = window.tabs.length - tabs.length
   const moved = tabs[from - offset]
   const before = tabs[to - offset]
-  if (moved && before) {
+  // An opening stays at the end until its tab comes.
+  if (moved?.opening === null && before?.opening === null) {
     work.moveTab(moved.id, work.tabsState.tabs.findIndex((tab) => tab.id === before.id))
   }
 }
 
-/** The window's + and the taskbar's +: a new tab, which the plugin of a device's live tabs makes while the window waits for it. */
+/** The window's + and the taskbar's +: a new tab, which the plugin of a device's live tabs makes as an opening. */
 function newTab(id: string): void {
   const starts = workOf(id)?.starts
   const data = starts?.start?.()
@@ -360,8 +472,8 @@ function newTab(id: string): void {
     return
   }
   if (starts.open) {
-    awaitTab(id)
     starts.open(data)
+    show(id)
     return
   }
   props.work?.add(starts.kind, data)
@@ -369,15 +481,12 @@ function newTab(id: string): void {
 
 /** Closes the window `id`: a window of the work closes its tabs with it, as a web browser's does. */
 function close(id: string): void {
-  awaited(id)
   const window = workOf(id)
   if (window) {
     closing ||= inFront.value !== null && windowHolding(windows.value, inFront.value)?.window.id === id
     const tabs = window.tabs.filter((tab) => !tab.pinned).map((tab) => tab.id)
     props.stage.remove(id)
-    if (tabs.length) {
-      props.work?.closeTabs(tabs)
-    }
+    closeTabs(window, tabs)
     return
   }
   props.stage.remove(id)
@@ -405,7 +514,9 @@ function open(id: string): void {
     const tab = window.selected
     if (tab !== null) {
       ensure(id)
-      props.work?.pick(tab)
+      if (window.tabs.some((each) => each.id === tab && each.opening === null)) {
+        props.work?.pick(tab)
+      }
       props.stage.show(id)
     } else {
       newTab(id)
@@ -582,8 +693,7 @@ function listPick(id: string): void {
             :dismiss="phone ? () => stage.minimizeAll() : null"
             @update-tab="(tab: string, data: unknown, how?: TabUpdate) => work?.updateTab(tab, data, how)"
             @update-pinned="(kind: string, data: unknown, how?: TabUpdate) => work?.updatePinned(kind, data, how)"
-            @close-tab="(tab: string) => work?.closeTabs([tab])"
-            @opening-failed="awaited(id)"
+            @close-tab="(tab: string) => closeTab(id, tab)"
           />
           <slot v-else name="own" :id="id" />
         </template>
@@ -604,7 +714,7 @@ function listPick(id: string): void {
       @arrange="arrange"
       @close="close"
       @open="openFromMenu"
-      @await-tab="awaitTab"
+      @opened="show"
     >
       <template #system>
         <slot name="system" />
@@ -630,7 +740,7 @@ function listPick(id: string): void {
           @select="entry.menu || listPick(entry.kind)"
         >
           <template v-if="entry.menu" #submenu>
-            <component :is="entry.menu" @opened="listOpen = false; awaitTab(entry.kind)" />
+            <component :is="entry.menu" @opened="listOpen = false; show(entry.kind)" />
           </template>
         </MenuItem>
       </Menu>

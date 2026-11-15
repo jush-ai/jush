@@ -49,7 +49,11 @@ function tabsError(error: PluginCallError): BrowserTabsError {
  * backend when the store releases that browser, as when the plugin is turned
  * off, is dropped and never sent (`packages/web-ui/src/plugins/page.ts`).
  */
-export function browserTabsApi(plugin: ConversationPlugin, select: (workTab: string) => void): BrowserTabsApi {
+export function browserTabsApi(
+  plugin: ConversationPlugin,
+  select: (workTab: string) => void,
+  held: () => readonly string[],
+): BrowserTabsApi {
   const tabs = plugin.state(browserTabsSchema)
   const session = new AbortController()
   onScopeDispose(() => session.abort())
@@ -83,6 +87,7 @@ export function browserTabsApi(plugin: ConversationPlugin, select: (workTab: str
       return call('open', params, tabOpenedSchema, OPEN_TIMEOUT_MS)
     },
     select,
+    held,
     navigate: (tab, url) => move('navigate', { tab, url } satisfies NavigateTab),
     history: (tab, action) => move('history', { tab, action } satisfies TabHistory),
     stop: (tab) => move('stop', { tab } satisfies StopTab),

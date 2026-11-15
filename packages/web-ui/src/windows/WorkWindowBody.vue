@@ -16,8 +16,9 @@ import { provideWindowDismiss } from './window-dismiss'
  * selected tab of a window on screen is told it is shown.
  *
  * While the conversation's device is offline, the window says so over its
- * contents, which stay mounted behind it. While a kind of it opens a tab,
- * such as a simulator that boots, the kind says so over them too.
+ * contents, which stay mounted behind it. An opening's tab, such as a
+ * simulator that boots, shows what its kind says of it (`opening`) while it
+ * is selected.
  */
 const props = defineProps<{
   window: WorkWindow
@@ -34,11 +35,10 @@ const emit = defineEmits<{
   updateTab: [id: string, data: unknown, how?: TabUpdate]
   updatePinned: [kind: string, data: unknown, how?: TabUpdate]
   closeTab: [id: string]
-  /** The tab its kind was opening was refused (`BoundTabKind.opening`). */
-  openingFailed: []
 }>()
 
-const present = computed(() => props.window.tabs.map((tab) => tab.id))
+/** The tabs of the work, whose contents stay once shown; an opening has its kind's `opening` instead. */
+const present = computed(() => props.window.tabs.filter((tab) => tab.opening === null).map((tab) => tab.id))
 const kept = shallowRef<readonly string[]>(keptContents([], props.window.selected, present.value))
 /**
  * The contents shown first, as the window opened or its kinds were bound
@@ -66,6 +66,7 @@ function bindingOf(kind: object): number {
 }
 
 const contents = computed(() => kept.value.flatMap((id) => props.window.tabs.filter((tab) => tab.id === id)))
+const opening = computed(() => props.window.tabs.find((tab) => tab.id === props.window.selected && tab.opening !== null) ?? null)
 </script>
 
 <template>
@@ -90,8 +91,7 @@ const contents = computed(() => kept.value.flatMap((id) => props.window.tabs.fil
           @close="tab.pinned || emit('closeTab', tab.id)"
         />
       </PaneScope>
-      <!-- After the panes, so what opens stands over a pane that says it reads. -->
-      <component :is="window.offers.opening" v-if="window.offers?.opening" @failed="emit('openingFailed')" />
+      <component :is="opening.kind.opening" v-if="opening?.kind.opening" :key="opening.id" :opening="opening.opening" :shown="onScreen" />
     </div>
   </div>
 </template>

@@ -8,11 +8,11 @@
  * canvas and its look, so a return to the conversation shows them at once;
  * past the limit, the least recently watched is released.
  */
-import { effectScope, onScopeDispose } from 'vue'
+import { effectScope, onScopeDispose, watch } from 'vue'
 import { KeptSessions, definePluginStore, type KeptSession, type PageContext, type PluginStore } from '@jush-ai/plugin-sdk'
 import { mobileApi } from '../devices'
 import { MobileDevicesController, type MobileControllerOptions } from './controller'
-import { KIND } from './kind'
+import { KIND, mobileTabDataSchema } from './kind'
 
 /** One conversation's simulators as the store keeps them. */
 export interface KeptDevices extends KeptSession {
@@ -34,12 +34,22 @@ export function mobileStore(options: MobileControllerOptions): MobileStore {
 function keptDevices(page: PageContext, conversation: string, options: MobileControllerOptions): KeptDevices {
   // Its own scope, which ends when the store releases it rather than with whatever made it.
   const scope = effectScope(true)
-  const devices = scope.run(() => new MobileDevicesController(
-    mobileApi(page.plugin.conversation(conversation)),
-    page.errors,
-    (id) => page.work.select(conversation, KIND, id),
-    { cache: page.cache, ...options },
-  ))!
+  const held = () => page.work.tabs(conversation, KIND).flatMap((data) => {
+    const parsed = mobileTabDataSchema.safeParse(data)
+    return parsed.success ? [parsed.data] : []
+  })
+  const devices = scope.run(() => {
+    const controller = new MobileDevicesController(
+      mobileApi(page.plugin.conversation(conversation)),
+      page.errors,
+      (id) => page.work.select(conversation, KIND, id),
+      held,
+      { cache: page.cache, ...options },
+    )
+    // The work's tabs end the openings the user closed, once their windows closed their tabs.
+    watch(held, () => controller.settle())
+    return controller
+  })!
   return {
     devices,
     // Whether each device's stream is looked at follows its views (`DeviceSession.showIn`).

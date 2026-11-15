@@ -33,14 +33,33 @@ export interface MobileErrors {
   defect(message: string, error: unknown): void
 }
 
-/** A simulator the user opens from the taskbar's Open, until its tab is there or the open was refused. */
+/**
+ * A simulator the user opens from the taskbar's Open, which stands in the
+ * window's strip from the click until the work holds its tab (`done`), and is
+ * kept until the work no longer holds it, which places that tab in the
+ * window; one refused leaves.
+ */
 export interface Opening {
+  /** Which opening it is, numbered from the first of the page. */
+  id: number
   nativeId: string
   name: string
   /** It was shut down, so it boots first, which can take a minute. */
   boots: boolean
   /** Its handle once it is open, before the plugin adds its tab. */
   device: string | null
+  /** The user closed it before the work held its tab, which the window then closes. */
+  cancelled: boolean
+  /** The work has held its tab: it opens no more. */
+  done: boolean
+}
+
+/**
+ * The id of the work tab the plugin adds for the device `device`, as the
+ * plugin names it (`crates/plugin-mobile/plugin/src/tabs.rs`).
+ */
+export function addedWorkTab(device: string): string {
+  return `mobile-${device}`
 }
 
 export interface MobileControllerOptions {
@@ -55,10 +74,10 @@ export interface MobileControllerOptions {
 export class MobileDevicesController {
   /** Whether the pictures can show: unknown until the decoder answered. */
   readonly pictures: Ref<'unknown' | 'supported' | 'unsupported'> = ref('unknown')
-  /** The simulators the user opens, in the order they were chosen; shallow, so each is the object `open` made. */
+  /** The simulators the user opens, in the order they were chosen (`Opening`); shallow, so each is the object `open` made. */
   readonly openings: Ref<readonly Opening[]> = shallowRef([])
-  /** How many opens were refused, which a window that holds no tab closes on. */
-  readonly refusals = ref(0)
+  /** The id of the latest opening. */
+  private opened = 0
   /** Each open device's live view, by device, made as a view of it first shows. */
   private readonly devices = new Map<string, DeviceSession>()
   private readonly platform: 'mac' | 'windows' | 'linux' | 'other'
@@ -72,6 +91,8 @@ export class MobileDevicesController {
     private readonly errors: MobileErrors,
     /** Selects the tab `id` of the conversation's work, once it is there. */
     private readonly select: (id: string) => void,
+    /** The devices of the conversation's work's tabs, read reactively. */
+    private readonly held: () => readonly Pick<MobileTabData, 'device' | 'nativeId'>[],
     options: MobileControllerOptions = {},
   ) {
     this.platform = options.platform ?? clientPlatform(navigator)
@@ -132,34 +153,70 @@ export class MobileDevicesController {
   }
 
   /**
-   * Opens `simulator` as the user chose it in the taskbar's Open, and selects
-   * its tab once the plugin adds it; one opening already is left to finish.
-   * One the conversation has open already only has its tab selected, with
-   * nothing to wait for. A refusal is a toast.
+   * The id of the work tab the opening becomes: its device's, once the
+   * device opened it or the work holds a tab of its simulator.
+   */
+  openingTab(opening: Opening): string | null {
+    const device = opening.device ?? this.held().find((data) => data.nativeId === opening.nativeId)?.device
+    return device === undefined || device === null ? null : addedWorkTab(device)
+  }
+
+  /**
+   * Opens `simulator` as the user chose it in the taskbar's Open, an opening
+   * from the click, and selects its tab once the plugin adds it; one opening
+   * already is left to finish. One the conversation has open already only
+   * has its tab selected, with nothing to wait for. A refusal is a toast.
    */
   async open(simulator: Simulator): Promise<void> {
-    if (this.openings.value.some((each) => each.nativeId === simulator.nativeId)) {
+    if (this.openings.value.some((each) => each.nativeId === simulator.nativeId && !each.cancelled && !each.done)) {
       return
     }
-    const opening: Opening = { nativeId: simulator.nativeId, name: simulator.name, boots: simulator.state === 'shut-down', device: null }
+    this.opened += 1
+    const id = this.opened
     if (simulator.open === undefined) {
+      const opening: Opening = { id, nativeId: simulator.nativeId, name: simulator.name, boots: simulator.state === 'shut-down', device: null, cancelled: false, done: false }
       this.openings.value = [...this.openings.value, opening]
     }
     try {
       const opened = await this.api.open(simulator.nativeId)
-      this.openings.value = this.openings.value.map((each) => each === opening ? { ...opening, device: opened.device } : each)
-      this.select(opened.tab)
+      const now = this.openings.value.find((each) => each.id === id)
+      this.openings.value = this.openings.value.map((each) => each === now ? { ...each, device: opened.device } : each)
+      if (!now?.cancelled) {
+        this.select(opened.tab)
+      }
     } catch (error) {
-      this.openings.value = this.openings.value.filter((each) => each !== opening)
-      this.refusals.value += 1
+      this.openings.value = this.openings.value.filter((each) => each.id !== id)
       this.errors.report(t('failures.open'), error)
     }
   }
 
-  /** The devices whose tabs the work holds now: their openings are done. */
-  shown(devices: ReadonlySet<string>): void {
-    if (this.openings.value.some((each) => each.device !== null && devices.has(each.device))) {
-      this.openings.value = this.openings.value.filter((each) => each.device === null || !devices.has(each.device))
+  /** The user closed the opening `id`: the window closes its tab once the work holds it. */
+  cancel(id: number): void {
+    this.openings.value = this.openings.value.map((each) => each.id === id ? { ...each, cancelled: true } : each)
+  }
+
+  /**
+   * The work's tabs changed: an opening whose tab it holds is done, and one
+   * done whose tab it no longer holds is over, as its tab closed.
+   */
+  settle(): void {
+    const held = new Set(this.held().map((data) => addedWorkTab(data.device)))
+    let changed = false
+    const next = this.openings.value.flatMap((opening) => {
+      const tab = this.openingTab(opening)
+      const holds = tab !== null && held.has(tab)
+      if (opening.done && !holds) {
+        changed = true
+        return []
+      }
+      if (holds && !opening.done) {
+        changed = true
+        return [{ ...opening, done: true }]
+      }
+      return [opening]
+    })
+    if (changed) {
+      this.openings.value = next
     }
   }
 

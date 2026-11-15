@@ -160,6 +160,8 @@ export interface BrowserTabsApi {
   open(url: string | null): Promise<TabOpened>
   /** Brings the window of the work tab `workTab` to the front on it, once the work has it. */
   select(workTab: string): void
+  /** The browser tabs the conversation's work holds, read reactively. */
+  held(): readonly string[]
   /** Starts loading `url`; answers the number of the last tab list before the request started. */
   navigate(tab: string, url: string): Promise<number>
   /** Moves or reloads the tab; answers as `navigate` does. */
@@ -211,14 +213,28 @@ type TabRequest =
   | { status: 'answered'; list: number; url: string | null }
 
 /**
- * A tab the user opens, on the address it goes to, or none for a blank one:
- * asked, then answered with the browser tab the device opened, until the
- * work has that tab.
+ * A tab the user opens, on the address it goes to, or none for a blank one,
+ * which stands in the window's strip from the click: asked, then known as
+ * the browser tab the device opened, until the work holds that tab (`done`),
+ * and kept until the work no longer holds it, which places that tab in the
+ * window.
  */
 export interface Opening {
   id: number
   url: string | null
   opened: TabOpened | null
+  /**
+   * The browser tab the device opened for it, known from the device's list
+   * when the list names a tab the user opened before the answer comes, or
+   * from the answer.
+   */
+  tab: string | null
+  /** The browser's tabs when it was asked, none of which is its. */
+  before: ReadonlySet<string>
+  /** The user closed it before the work held its tab, which the window then closes. */
+  cancelled: boolean
+  /** The work has held its tab: it opens no more. */
+  done: boolean
 }
 
 /** A browser tab's last picture, copied off the canvas that showed it, with the generation it was of, which places it. */
@@ -262,13 +278,8 @@ export class BrowserTabsController {
   private readonly known = shallowReactive(new Map<string, LiveTab>())
   /** The number of the last tab list a view reported, in the device's sequence; null before the first. */
   private readonly listed = shallowRef<number | null>(null)
-  /** The tabs the user opens, in the order asked, until the work has each (`held`). */
+  /** The tabs the user opens, in the order asked (`Opening`). */
   readonly openings: ShallowRef<readonly Opening[]> = shallowRef([])
-  /**
-   * How many openings ended without a tab, refused or closed before the
-   * work showed it, which a window that holds no tab closes on.
-   */
-  readonly unopened = shallowRef(0)
   /** The id of the latest opening. */
   private opened = 0
   /** The user's latest request on each browser tab. */
@@ -324,6 +335,7 @@ export class BrowserTabsController {
     watch(this.list, (listed) => {
       if (listed) {
         this.unlisted(listed)
+        this.bind(listed.tabs)
       }
     })
     const pictures = options.pictures ?? (() => picturesSupported(errors.defect))
@@ -511,17 +523,22 @@ export class BrowserTabsController {
     return tabs?.some((tab) => tab.id === data.tab) ? null : this.phase(tabs)
   }
 
+  /** The opening `id`, while the page has it. */
+  opening(id: number): Opening | null {
+    return this.openings.value.find((each) => each.id === id) ?? null
+  }
+
   /**
-   * What Jush does for the latest tab the user opens, while one opens; a
-   * blank one the browser opens says nothing, as it shows a blank page.
+   * What Jush does for the opening `id`; a blank one the browser opens says
+   * nothing, as it shows a blank page.
    */
-  openingPhase(): StartingPhase | null {
-    const latest = this.openings.value.at(-1)
-    if (!latest) {
+  openingPhase(id: number): StartingPhase | null {
+    const opening = this.opening(id)
+    if (!opening) {
       return null
     }
     const phase = this.phase(this.browserTabs())
-    return phase === 'page' && latest.url === null ? null : phase
+    return phase === 'page' && opening.url === null ? null : phase
   }
 
   /**
@@ -563,82 +580,138 @@ export class BrowserTabsController {
 
   /**
    * Opens a tab of the conversation's browser on `url`, or blank, as the
-   * window's + and a link's Open in Browser Window do: the device shows it,
-   * so the work selects it once it has it. It is an opening until then
-   * (`held`). One that ends without a tab is counted in `unopened`: a
-   * refusal is a toast, and a tab that closed before the work showed it
-   * says nothing, as it is gone.
+   * window's + and a link's Open in Browser Window do: an opening from the
+   * click, whose tab the device shows, so the work selects it once it has
+   * it. One that ends without a tab leaves: a refusal is a toast, and a tab
+   * that closed before the work held it says nothing, as it is gone.
    */
   async open(url: string | null): Promise<void> {
     this.opened += 1
     const id = this.opened
-    this.openings.value = [...this.openings.value, { id, url, opened: null }]
+    // Every tab the page knows of: a browser that starts again opens the old
+    // ones anew before the user's.
+    const before = new Set([
+      ...(this.browserTabs()?.map((tab) => tab.id) ?? []),
+      ...this.held(),
+      ...(this.heard ?? []),
+    ])
+    this.openings.value = [...this.openings.value, { id, url, opened: null, tab: null, before, cancelled: false, done: false }]
     let opened: TabOpened
     try {
       opened = await this.api.open(url)
     } catch (error) {
       this.openings.value = this.openings.value.filter((each) => each.id !== id)
       // One dropped as its browser was released is no refusal.
-      if (!this.disposed) {
-        this.unopened.value += 1
-        if (!(error instanceof BrowserTabsError && error.reason === 'tab_not_found')) {
-          this.errors.report(t('failures.openPage'), error)
-        }
+      if (!this.disposed && !(error instanceof BrowserTabsError && error.reason === 'tab_not_found')) {
+        this.errors.report(t('failures.openPage'), error)
       }
       return
     }
-    const now = this.openings.value.find((each) => each.id === id)
+    const now = this.opening(id)
     if (!now) {
       return
     }
-    this.openings.value = this.openings.value.map((each) => (each === now ? { ...now, opened } : each))
+    this.openings.value = this.openings.value.map((each) => (each === now ? { ...now, opened, tab: opened.tab } : each))
     // An address the user typed meanwhile.
-    if (now.url !== url && now.url !== null) {
+    if (now.url !== url && now.url !== null && !now.cancelled) {
       this.goTo(opened.tab, now.url)
     }
   }
 
+  /** The browser tabs the work holds now. */
+  private held(): ReadonlySet<string> {
+    return new Set(this.api.held())
+  }
+
   /**
-   * Ends each answered opening whose tab the device's list `listed` no
-   * longer names, numbered as high as its answer's or higher: the tab
-   * closed before the work showed it.
+   * The work's tabs changed: an opening whose tab it holds is done, and one
+   * done whose tab it no longer holds is over, as its tab closed.
    */
-  private unlisted(listed: BrowserTabList): void {
-    const gone = this.openings.value.filter(({ opened }) =>
-      opened !== null && listed.list >= opened.list && !listed.tabs.some((tab) => tab.id === opened.tab))
-    if (gone.length > 0) {
-      this.openings.value = this.openings.value.filter((each) => !gone.includes(each))
-      this.unopened.value += 1
+  settleOpenings(): void {
+    const held = this.held()
+    let changed = false
+    const next = this.openings.value.flatMap((opening) => {
+      const holds = opening.tab !== null && held.has(opening.tab)
+      if (opening.done && !holds) {
+        changed = true
+        return []
+      }
+      if (holds && !opening.done) {
+        changed = true
+        return [{ ...opening, done: true }]
+      }
+      return [opening]
+    })
+    if (changed) {
+      this.openings.value = next
     }
   }
 
   /**
-   * The user's address for the latest tab that opens, typed before the work
-   * has it: it shows at once, and the tab goes there once the device opened
+   * Gives each opening the device has not answered yet the tab it opened, as
+   * soon as a list names it: the oldest such opening takes the first tab the
+   * user opened that the browser did not have when it was asked and no other
+   * opening has. The work may hold the tab before the answer comes.
+   */
+  private bind(tabs: readonly { id: string; createdBy: { kind: string } }[]): void {
+    const taken = new Set(this.openings.value.flatMap((each) => each.tab === null ? [] : [each.tab]))
+    let changed = false
+    const next = this.openings.value.map((opening) => {
+      if (opening.tab !== null) {
+        return opening
+      }
+      const tab = tabs.find((each) => each.createdBy.kind === 'user' && !opening.before.has(each.id) && !taken.has(each.id))
+      if (!tab) {
+        return opening
+      }
+      taken.add(tab.id)
+      changed = true
+      return { ...opening, tab: tab.id }
+    })
+    if (changed) {
+      this.openings.value = next
+    }
+  }
+
+  /**
+   * Ends each opening whose tab the device's list `listed` no longer names
+   * before the work held it: one answered, by a list numbered as high as its
+   * answer's or higher; one the user closed, as its tab closed.
+   */
+  private unlisted(listed: BrowserTabList): void {
+    const named = (tab: string) => listed.tabs.some((each) => each.id === tab)
+    const gone = this.openings.value.filter(({ opened, tab, cancelled, done }) => !done && (
+      (opened !== null && listed.list >= opened.list && !named(opened.tab))
+      || (cancelled && tab !== null && !named(tab))))
+    if (gone.length > 0) {
+      this.openings.value = this.openings.value.filter((each) => !gone.includes(each))
+    }
+  }
+
+  /** The user closed the opening `id`: the window closes its tab once the work holds it. */
+  cancel(id: number): void {
+    this.openings.value = this.openings.value.map((each) => (each.id === id ? { ...each, cancelled: true } : each))
+  }
+
+  /**
+   * The user's address for the opening `id`, typed before the work has its
+   * tab: it shows at once, and the tab goes there once the device opened
    * it.
    */
-  goOpening(url: string): void {
-    const latest = this.openings.value.at(-1)
-    if (!latest) {
+  goOpening(id: number, url: string): void {
+    const opening = this.opening(id)
+    if (!opening) {
       return
     }
-    this.openings.value = this.openings.value.map((each) => (each === latest ? { ...latest, url } : each))
-    if (latest.opened !== null) {
-      this.goTo(latest.opened.tab, url)
+    this.openings.value = this.openings.value.map((each) => (each === opening ? { ...opening, url } : each))
+    if (opening.opened !== null) {
+      this.goTo(opening.opened.tab, url)
     }
   }
 
   /** The user's address, loaded in `tab`; a refusal is a toast. */
   private goTo(tab: string, url: string): void {
     this.navigate(tab, url).catch((error: unknown) => this.errors.report(t('failures.openAddress'), error))
-  }
-
-  /** The browser tabs the work holds now: their openings are done. */
-  held(tabs: ReadonlySet<string>): void {
-    const done = ({ opened }: Opening) => opened !== null && tabs.has(opened.tab)
-    if (this.openings.value.some(done)) {
-      this.openings.value = this.openings.value.filter((each) => !done(each))
-    }
   }
 
   /** The user's address, loaded in `tab`; rejects with what refused it. */
@@ -823,6 +896,7 @@ export class BrowserTabsController {
     this.listed.value = list
     this.settle(tabs, list)
     this.pageOpened(tabs)
+    this.bind(tabs)
     for (const id of [...this.known.keys()]) {
       if (!tabs.some((tab) => tab.id === id)) {
         this.known.delete(id)

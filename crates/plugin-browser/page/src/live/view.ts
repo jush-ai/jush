@@ -12,7 +12,7 @@
  */
 import type { TitleText } from '@jush-ai/plugin-sdk'
 import type { BrowserViewport, CursorRegion } from '../generated/plugin'
-import type { LiveStream } from './session'
+import type { LiveStream, PanelReport } from './session'
 import { t } from '../locales/text'
 
 /**
@@ -43,6 +43,11 @@ const MAX_SIDE = 4096
 export function panelSize(width: number, height: number): PanelSize {
   const side = (length: number) => Math.max(1, Math.min(MAX_SIDE, Math.round(length)))
   return { width: side(width), height: side(height) }
+}
+
+/** What a shown content tells the view of its panel, `width` by `height` CSS pixels, on this screen. */
+export function panelReport(width: number, height: number): PanelReport {
+  return { panel: panelSize(width, height), devicePixelRatio, screen: panelSize(screen.width, screen.height) }
 }
 
 /**

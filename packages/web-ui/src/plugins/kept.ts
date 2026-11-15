@@ -49,6 +49,11 @@ export class KeptSessions<S extends KeptSession> {
    * `of` without changing what it reads.
    */
   private readonly released = shallowRef(0)
+  /**
+   * Counts the sessions made, which a reader of `peek` follows; counted after
+   * the task that made one, as a render may make one through `of`.
+   */
+  private readonly made = shallowRef(0)
 
   constructor(
     private readonly make: (key: string) => S,
@@ -59,6 +64,16 @@ export class KeptSessions<S extends KeptSession> {
   get(key: string): S | undefined {
     void this.released.value
     return this.entries.get(key)?.session
+  }
+
+  /**
+   * The session of `key` while one is kept or watched, never made here, as
+   * what every conversation on screen reads but few have; read reactively,
+   * its making included.
+   */
+  peek(key: string): S | undefined {
+    void this.made.value
+    return this.get(key)
   }
 
   /**
@@ -74,7 +89,10 @@ export class KeptSessions<S extends KeptSession> {
     }
     const entry = { session: this.make(key), watchers: 0 }
     this.entries.set(key, entry)
-    queueMicrotask(() => this.trim())
+    queueMicrotask(() => {
+      this.made.value += 1
+      this.trim()
+    })
     return entry.session
   }
 
@@ -91,6 +109,9 @@ export class KeptSessions<S extends KeptSession> {
       this.entries.delete(key)
     } else {
       entry = { session: this.make(key), watchers: 0 }
+      queueMicrotask(() => {
+        this.made.value += 1
+      })
     }
     this.entries.set(key, entry)
     entry.watchers += 1

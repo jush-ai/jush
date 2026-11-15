@@ -1,5 +1,6 @@
 {
   "window": { "name": "Browser" },
+  "tab": { "blank": "Neuer Tab" },
   "reasons": {
     "invalid_input": "Der Browser öffnet nur Web-, Datei- und leere Seiten.",
     "tab_not_found": "Diese Seite ist auf dem Gerät nicht mehr geöffnet.",

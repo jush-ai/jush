@@ -50,6 +50,8 @@ import { t as agentText } from '../agent/locales/text'
  */
 export interface WindowTab {
   id: string
+  /** Which tab of the strip it is, kept as an opening becomes the work's tab; its id where absent. */
+  key?: string
   title: string
   /** The tab's mark, such as a file's icon, drawn at the mark's size; the window's icon where absent. */
   mark?: Component
@@ -168,7 +170,7 @@ function doubleClick(event: MouseEvent): void {
       <TabStrip v-else class="min-w-0 flex-1" :on-reorder="(from, to) => emit('reorder', from, to)">
         <TabItem
           v-for="tab in tabs"
-          :key="tab.id"
+          :key="tab.key ?? tab.id"
           :title="tab.title"
           :is-active="tab.id === current"
           :icon="tab.icon ?? null"
