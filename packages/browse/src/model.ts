@@ -29,7 +29,12 @@
 //   would take the next answer.
 // - Its usage is Jush's own estimate, a token for each 4 bytes: the request's
 //   JSON as its input, the answer's text as its output, so the context
-//   indicator and compaction see a conversation the size it is.
+//   indicator and compaction see a conversation the size it is. A turn's
+//   request reads from the cache the whole blocks it starts with, in a
+//   vendor's order (tools, system prompt, messages), that an earlier turn
+//   request of the server's life started with too, as a vendor's prompt cache
+//   does: each conversation and agent keeps its own prefix, and a request
+//   whose start changed reads less.
 // - The queue lives as long as the tool's server. A server that starts again
 //   for changed code has none.
 import type { Server } from 'bun'
@@ -81,8 +86,22 @@ interface OfferedTool {
   input_schema?: { properties?: Record<string, unknown>, required?: string[] }
 }
 
+/**
+ * A request's prompt as a vendor caches it: each tool, each block of the
+ * system prompt and each block of each message, in that order, as JSON
+ * without the marks of where the cache ends, which move from request to
+ * request.
+ */
+function promptBlocks(request: MessagesRequest, tools: OfferedTool[]): string[] {
+  const json = (value: unknown) => JSON.stringify(value, (key, inner) => key === 'cache_control' ? undefined : inner)
+  const system = request.system === undefined ? [] : Array.isArray(request.system) ? request.system : [request.system]
+  const messages = (request.messages ?? []).flatMap((message) => (Array.isArray(message.content) ? message.content : [message.content]).map((block) => json([message.role, block])))
+  return [...tools.map(json), ...system.map(json), ...messages]
+}
+
 /** The parts of a Messages request the endpoint reads. */
 interface MessagesRequest {
+  system?: unknown
   tools?: OfferedTool[]
   messages?: { role: string, content: string | { type: string, text?: string, content?: unknown }[] }[]
 }
@@ -90,6 +109,12 @@ interface MessagesRequest {
 export class ScriptedModel {
   private queue: Answer[] = []
   private readonly asked: Asked[] = []
+  /**
+   * The prompts turn requests sent, each as its blocks' JSON in a vendor's
+   * order, one for each prefix no later request extended; a request reads
+   * from the cache what it shares with the one it shares most with.
+   */
+  private cached: string[][] = []
   private blocks = 0
 
   private constructor(private readonly server: Server<undefined>) {}
@@ -136,10 +161,11 @@ export class ScriptedModel {
     return [...this.asked]
   }
 
-  /** Drops the queue and the requests. */
+  /** Drops the queue, the requests and the cache. */
   forget(): void {
     this.queue = []
     this.asked.length = 0
+    this.cached = []
   }
 
   async shutdown(): Promise<void> {
@@ -157,11 +183,35 @@ export class ScriptedModel {
       const message = `The scripted model's next answer runs a command, and the request offers no tool that takes one: ${tools.map((tool) => tool.name).join(', ')}`
       return Response.json({ type: 'error', error: { type: 'invalid_request_error', message } }, { status: 400 })
     }
+    let cacheRead = 0
+    if (turn) {
+      const prompt = promptBlocks(request, tools)
+      const sharing = (cached: string[]) => {
+        let shared = 0
+        while (shared < prompt.length && shared < cached.length && prompt[shared] === cached[shared]) {
+          shared++
+        }
+        return shared
+      }
+      const best = this.cached.reduce((found, cached, index) => {
+        const shared = sharing(cached)
+        return shared > found.shared ? { index, shared } : found
+      }, { index: -1, shared: 0 })
+      const bytes = prompt.slice(0, best.shared).reduce((sum, block) => sum + Buffer.byteLength(block), 0)
+      cacheRead = Math.min(inputTokens, Math.floor(bytes / 4))
+      // The request extends the prefix it shares all of; one it parts from
+      // is kept beside it, as another conversation's or agent's is.
+      if (best.index >= 0 && best.shared === this.cached[best.index].length) {
+        this.cached[best.index] = prompt
+      } else {
+        this.cached.push(prompt)
+      }
+    }
     const taken = turn ? this.queue.shift() ?? null : null
     this.asked.push({ at: Date.now(), tools: tools.map((tool) => tool.name), last: lastSaid(request), body, answer: taken })
     const steps: Answer = taken ?? [{ say: turn ? NOTHING_QUEUED : NO_TURN }]
     const encoder = new TextEncoder()
-    const events = this.events(steps, shell, inputTokens, gone)
+    const events = this.events(steps, shell, inputTokens - cacheRead, cacheRead, gone)
     return new Response(
       new ReadableStream<Uint8Array>({
         async pull(controller) {
@@ -179,7 +229,7 @@ export class ScriptedModel {
   }
 
   /** The vendor's events for `steps`, each when its step's pace has it; ends early once the backend is `gone`. */
-  private async *events(steps: Answer, shell: OfferedTool | undefined, inputTokens: number, gone: AbortSignal): AsyncGenerator<{ type: string } & Record<string, unknown>> {
+  private async *events(steps: Answer, shell: OfferedTool | undefined, inputTokens: number, cacheRead: number, gone: AbortSignal): AsyncGenerator<{ type: string } & Record<string, unknown>> {
     const written = steps.reduce((sum, step) => sum + Buffer.byteLength('say' in step ? step.say : 'think' in step ? step.think : 'run' in step ? step.run : ''), 0)
     yield {
       type: 'message_start',
@@ -191,7 +241,7 @@ export class ScriptedModel {
         content: [],
         stop_reason: null,
         stop_sequence: null,
-        usage: { input_tokens: inputTokens, output_tokens: 1 },
+        usage: { input_tokens: inputTokens, cache_read_input_tokens: cacheRead, output_tokens: 1 },
       },
     }
     let index = 0
