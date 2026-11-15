@@ -10,6 +10,7 @@ import { agentWorks, markSent, markWithdrawn, turnStartingMessage, type SendWay 
 import { segmentStreamUnits } from '@jush-ai/web-ui/ui/stream-reveal'
 import { contentCopy, type CopiedMessage } from '@jush-ai/web-ui/agent/message-input/copied-message'
 import { showRecalled } from '@jush-ai/web-ui/agent/recalled-toast'
+import { nothingToClear } from '@jush-ai/web-ui/agent/session-status'
 import { productWould } from './product-would'
 import { demoModel, editedFile, inRequests, inRun, listedFiles, shellView, withLists, type ShellView } from './fixtures/blocks'
 import { wholeHistory } from '@jush-ai/web-ui/agent/history'
@@ -1262,6 +1263,20 @@ export function useTurnFlow(options: TurnFlowOptions = {}) {
   }
 
   /**
+   * Clear from the context meter's card, as the backend does: the divider at
+   * the end, and the context is a new conversation's again. Nothing happens
+   * while a turn runs or with nothing to clear, as the card's Clear is
+   * disabled then.
+   */
+  function clear(): void {
+    if (state.phase !== 'idle' || nothingToClear(state.blocks)) {
+      return
+    }
+    state.blocks = [...state.blocks, { type: 'clear', id: nextId('clear'), createdAt: now(), model: demoModel }]
+    state.contextUsage = usageAt(0.02)
+  }
+
+  /**
    * A message sent as a steer: it shows as one from the send, and once held
    * it waits as a pending steer until the turn's next boundary. With nothing
    * running, the steer starts the turn, as the product's session does; a
@@ -1626,6 +1641,7 @@ export function useTurnFlow(options: TurnFlowOptions = {}) {
     stop,
     stopForEdit,
     compact,
+    clear,
     steer,
     queue,
     recallQueued,

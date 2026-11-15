@@ -326,7 +326,13 @@ the command's run on the device, the page's connection.
   no step of a turn. It takes no answer and gets a fixed line.
 - **Its usage** is Jush's own estimate, a token for each 4 bytes of the
   request's JSON and of the answer's text, so the context indicator and
-  compaction see the conversation at its size.
+  compaction see the conversation at its size. A turn's request reads from
+  the cache the whole blocks it starts with (tools, system prompt, messages)
+  that an earlier turn request started with too, as a vendor's prompt cache
+  does, each conversation and agent with its own prefix. A request whose
+  start changed reads less, which the cost card counts as a miss once it
+  reads at least 2,000 tokens and 5% less than the agent's call before it.
+  `jush.model.forget()` drops the cache with the queue.
 - `jush.model.requests()` returns what the backend asked, each request with its
   JSON and the answer it took. `jush.model.left()` returns how many answers
   are still queued.

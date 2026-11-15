@@ -133,6 +133,10 @@ pub struct UsageRow {
     /// sent; none for a request outside a session.
     pub system_hash: Option<String>,
     pub tools_hash: Option<String>,
+    /// The call sent a prompt no earlier call of its agent began with: the
+    /// first after a clear or a compaction, before any of its requests was
+    /// answered. Its cache read is no measure of a miss.
+    pub new_prompt: bool,
 }
 
 /// What each kind of a call's tokens would cost on the vendor's API, in
@@ -694,6 +698,8 @@ struct CallFacts<'a> {
     started_at: Timestamp,
     system_hash: Option<&'a str>,
     tools_hash: Option<&'a str>,
+    /// The call began a new prompt ([`UsageRow::new_prompt`]).
+    new_prompt: bool,
 }
 
 /// What a turn call keeps of its place among its agent's calls.
@@ -710,8 +716,9 @@ struct KeptCall {
 /// the agent came between them and why it missed the cache.
 ///
 /// A call missed when it read less of the cache than the previous call by
-/// [`MISS_SHARE`] and [`MISS_TOKENS`], except the first call and the first
-/// after a compaction, which start a new prompt.
+/// [`MISS_SHARE`] and [`MISS_TOKENS`], except the first call, the first after
+/// a compaction and any other that begins a new prompt, as the first after a
+/// clear does.
 fn next_call(
     connection: &Connection,
     conversation: &str,
@@ -760,7 +767,7 @@ fn next_call(
         });
     }
     let read = decode("usage_ledger", "cache_read_tokens", u64::try_from(read))?;
-    let miss = if missed(read, facts.usage.cache_read_tokens) {
+    let miss = if !facts.new_prompt && missed(read, facts.usage.cache_read_tokens) {
         let changed = |before: Option<&str>, after: Option<&str>| matches!((before, after), (Some(before), Some(after)) if before != after);
         // Whether the latest write of the call's model was kept for an hour.
         let hour_write: Option<i64> = connection
@@ -1006,6 +1013,7 @@ pub(crate) fn write_usage(transaction: &rusqlite::Transaction<'_>, row: &UsageRo
                 started_at: row.started_at,
                 system_hash: row.system_hash.as_deref(),
                 tools_hash: row.tools_hash.as_deref(),
+                new_prompt: row.new_prompt,
             },
         )?),
         _ => None,

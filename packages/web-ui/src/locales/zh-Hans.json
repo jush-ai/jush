@@ -280,6 +280,7 @@
     "subagent_failed": "无法启动或停止子智能体。",
     "shell_stop_failed": "无法停止命令。",
     "nothing_to_retry": "没有可重试的内容。",
+    "nothing_to_clear": "没有可清空的内容。",
     "summary_missing": "模型未写出摘要。",
     "prompt_unavailable": "该模型的供应商不可用。",
     "usage_limit": "已达到用量限额。",

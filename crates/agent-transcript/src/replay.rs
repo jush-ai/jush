@@ -1,6 +1,6 @@
 //! What the model receives of a transcript.
 //!
-//! It is the blocks from the last compaction boundary on, each as its inference
+//! It is the blocks from the last compaction boundary or clear on, each as its inference
 //! item, with long texts cut in the middle, each medium with the bytes the
 //! session holds for it, and each medium the request's model cannot take as a
 //! text that says why.
@@ -15,8 +15,9 @@
 //! - New blocks are appended.
 //! - A tool call's result completes a call no request carried yet.
 //! - A view is never replayed.
-//! - Only compaction, a model switch and an edit change what an earlier request
-//!   carried, and a retry or a resume cuts back to an earlier request.
+//! - Only compaction, a clear, a model switch and an edit change what an
+//!   earlier request carried, and a retry or a resume cuts back to an earlier
+//!   request.
 
 use std::borrow::Cow;
 use std::ops::Range;
@@ -39,7 +40,7 @@ use jush_shared_types::{
 use serde::Serialize;
 use serde_json::Value;
 
-use super::{COMPACTION_NOTE, gone_text, latest_answer, replay_start, summary_text};
+use super::{CLEAR_NOTE, COMPACTION_NOTE, gone_text, latest_answer, replay_start, summary_text};
 
 /// What the model receives for a `resume` block.
 pub const RESUME_TEXT: &str = "Continue from where you left off.";
@@ -197,6 +198,9 @@ pub fn replay(request: &RequestView) -> Replay {
                     content: vec![UserPart::Text(summary_text(&bound_text(&boundary.summary)))],
                 });
             }
+            Block::Clear(_) => items.push(InferenceItem::UserMessage {
+                content: vec![UserPart::Text(CLEAR_NOTE.to_owned())],
+            }),
             Block::Abort(_)
             | Block::Response(_)
             | Block::Error(_)

@@ -456,6 +456,8 @@ pub(super) enum ActionKind {
     Compact {
         idle: bool,
     },
+    /// The user's clear of the model's context.
+    Clear,
     /// An admitted edit, whose submission waits in the session's edit state.
     Edit,
     /// A switch to the `to`th version at the block `target`'s place.
@@ -474,6 +476,7 @@ impl ActionKind {
             Self::Retry => "retry",
             Self::Resume { .. } => "resume",
             Self::Compact { .. } => "compact",
+            Self::Clear => "clear",
             Self::Edit => "edit",
             Self::Switch { .. } => "switch",
         }
@@ -1146,8 +1149,8 @@ impl SessionCore {
         };
         // A turn waits for the model's answer from its start, through the
         // hooks and the device reads that build its request; a compaction
-        // alone asks for none.
-        let waits = !matches!(kind, ActionKind::Compact { .. });
+        // or a clear alone asks for none.
+        let waits = !matches!(kind, ActionKind::Compact { .. } | ActionKind::Clear);
         let kind_name = kind.name();
         self.activity = Activity::Running(ActionRun {
             turn: turn.clone(),
@@ -1401,7 +1404,7 @@ impl SessionCore {
                 "answered" if run.tally.yielded => "yielded",
                 // An action that asks the model nothing, such as a compaction
                 // or an edit's save, ends as completed, not as answered.
-                "answered" if matches!(run.kind_name, "compact" | "edit" | "switch") => "completed",
+                "answered" if matches!(run.kind_name, "compact" | "clear" | "edit" | "switch") => "completed",
                 outcome => outcome,
             },
             code,
@@ -3286,7 +3289,7 @@ impl SessionCore {
 
     // Media.
 
-    /// The blocks replay sends: from the last compaction boundary on.
+    /// The blocks replay sends: from the last compaction boundary or clear on.
     pub(super) fn replayed(&self) -> &[Block] {
         self.transcript.from(self.transcript.replay_start())
     }
@@ -3440,9 +3443,9 @@ impl SessionCore {
         Some((update, rows))
     }
 
-    /// Lets go of the blocks before the last `compaction_boundary` once every
-    /// row up to it is saved: after a save commits, and when nothing was left
-    /// to save.
+    /// Lets go of the blocks before the last `compaction_boundary` or `clear`
+    /// once every row up to it is saved: after a save commits, and when
+    /// nothing was left to save.
     ///
     /// Blocks a rewrite or an edit read from before the window go the same way.
     pub(super) fn release_settled(&mut self) {

@@ -683,6 +683,21 @@ impl<H: DeviceResolver> Connection<H> {
             ClientFrame::Retry {} | ClientFrame::Resume {} => {
                 return self.recover(session, kind).await;
             }
+            ClientFrame::Clear {} => {
+                let refusal = busy(session).or_else(|| {
+                    session.nothing_to_clear().then(|| {
+                        Refusal::new(AgentCode::NothingToClear, "Nothing was sent since the context was last cleared")
+                    })
+                });
+                if let Some(refusal) = refusal {
+                    self.reject(kind, refusal);
+                    return false;
+                }
+                match session.clear() {
+                    Ok(_) => return true,
+                    Err(error) => self.reject(kind, error.refusal()),
+                }
+            }
             // A subagent's context card compacts that child, the root's the root.
             ClientFrame::Compact { node } => match node {
                 None => {

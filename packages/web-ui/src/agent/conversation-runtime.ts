@@ -585,6 +585,11 @@ export class ConversationRuntime {
     this.options.state.pendingAction = null
   }
 
+  /** Clears the root's context: its model reads what comes after as a new conversation. */
+  async clear(): Promise<void> {
+    await untilEndedOrLost((await this.ensureOpen()).clear())
+  }
+
   /**
    * Compacts the context of `node`, a live subagent, or the root's when
    * absent. A subagent that ended meanwhile has no context left to compact,

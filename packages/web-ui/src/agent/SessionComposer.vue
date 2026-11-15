@@ -122,6 +122,11 @@ const props = withDefaults(
      */
     sizeRefused?: boolean
     /**
+     * Nothing was written since the context was last cleared, or nothing at
+     * all, so the context card's Clear has nothing to do (`nothingToClear`).
+     */
+    nothingToClear?: boolean
+    /**
      * What the newest instructions block holds, which the context card lists.
      */
     instructions?: readonly InstructionEntry[]
@@ -220,6 +225,7 @@ const emit = defineEmits<{
    */
   saveForLater: []
   compact: []
+  clear: []
   /** Opens where an instructions entry of the context card is written. */
   openInstruction: [entry: InstructionEntry]
   /** The context card's Refresh usage button asks the vendor for the usage limits again. */
@@ -514,6 +520,8 @@ const compactUnavailable = computed(() => {
   }
   return null
 })
+/** Why Clear cannot run now: as Compact, and with nothing to clear. */
+const clearUnavailable = computed(() => compactUnavailable.value ?? (props.nothingToClear ? t('context.nothingToClear') : null))
 /**
  * The agent works. A message steers it or waits in the queue, one or the other.
  */
@@ -911,11 +919,14 @@ function changeDraft(markdown: string, attachments: MessageCapsule[]): void {
             :size-refused="sizeRefused"
             :is-compacting="compacting"
             :unavailable-reason="compactUnavailable"
+            clearable
+            :clear-unavailable-reason="clearUnavailable"
             :instructions="instructions"
             :limits="limits"
             :cost="cost"
             :cost-profiles="costProfiles"
             @compact="emit('compact')"
+            @clear="emit('clear')"
             @open-instruction="emit('openInstruction', $event)"
             @refresh-limits="emit('refreshLimits')"
           />

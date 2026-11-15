@@ -183,6 +183,19 @@ const buttonPrimaryPressed = ref(true)
 const iconPressed = ref(true)
 const iconCirclePressed = ref(true)
 
+/**
+ * The pinned card's Clear: the context drops to what a new conversation
+ * holds, and Clear has nothing to do until a message is sent, which the
+ * specimen stands for by a wait.
+ */
+const clearedPinned = ref(false)
+function clearPinned(): void {
+  clearedPinned.value = true
+  window.setTimeout(() => {
+    clearedPinned.value = false
+  }, 2400)
+}
+
 function pulseCompact(which: 'idle' | 'warn' | 'danger' | 'pinned'): void {
   const flag = which === 'idle'
     ? compactIdle
@@ -1026,18 +1039,22 @@ const DEVICE_STATES: { variant: string; state: DeviceState | null; mark: DeviceM
 
       <GallerySection
         title="ContextUsageIndicator"
-        note="The ring is the backend’s estimate, blue below 70% of the window, orange from 70% and red from 90%. Click it for the card, on a phone tap it for a sheet; a click outside, another click on the ring or Escape closes it, and resting the pointer on it shows only its tip, the word Context and the figure the card’s header shows, such as Context 139K / 1M (13%), and none without a usage or a window. Compact closes the card, as a menu’s action does. The header opens and closes the list of what fills the context, while it compacts too, where it says Compacting; one part of the card stands open at a time, the list or the cost’s details, closed at first and then as the user left it, kept in the browser; the bar shows either way, the rows largest first, each one figure with its share of the window. Under them, the room before compaction, with Compact, from half the window, or at any share after a turn the vendor refused for its size. Under it, once the conversation made a call, what it cost, which the page reads with the conversation as it opens and follows while it is open, so the card shows it the moment it opens: closed, the equivalent API price and the main conversation’s cache hit rate over the calls its chart draws side by side, each its value over its label; its caption is a disclosure of its own, and opening it closes the list. Opened, the caption holds the price, then the price by kind of token two by two, the Profiles part in two columns (the main conversation, then the five profiles the conversation’s workflow offers whose subagents cost the most, a bar under each of its share of the largest), and from the fourth call the chart of the turn calls’ hit rates by their numbers in the conversation: at most 40 points over the last 400 calls, consecutive calls merged into one point as the conversation grows, the groups counted from call 1 so a point never moves, round numbers under it, a point with a miss a red dot, a compaction a grey dashed line. Resting the pointer on the chart, or a tap on a phone, shows the nearest point’s tip beside it where it fits, otherwise above it, never past the card’s edges: a call’s number, time, rate and price, a miss’s cause in red with the tokens it wrote again, and First request or After compaction in grey; a group’s range of numbers, rate, summed price and its misses’ causes. A figure that cannot be computed is left out with its label. Then the usage limits of a subscription account, under a line that ends in a Refresh usage button (its icon turns while the request runs, the windows stay until the answer replaces them, a failure shows the vendor’s words under the line until the next answer, and a click keeps the card open), each window’s name, reset and use on one line over its bar (a model on an API key has none), and last the instruction files, each of which opens where it is written. While the usage or the window is unknown, as in a conversation just reopened before its session’s estimate or on a model without a window, the card holds the cost and the usage limits, and a model with no limits has no meter, whatever it cost."
+        note="The ring is the backend’s estimate, blue below 70% of the window, orange from 70% and red from 90%. Click it for the card, on a phone tap it for a sheet; a click outside, another click on the ring or Escape closes it, and resting the pointer on it shows only its tip, the word Context and the figure the card’s header shows, such as Context 139K / 1M (13%), and none without a usage or a window. Clear and Compact close the card, as a menu’s action does. The header opens and closes the list of what fills the context, while it compacts too, where it says Compacting; one part of the card stands open at a time, the list or the cost’s details, closed at first and then as the user left it, kept in the browser; the bar shows either way, the rows largest first, each one figure with its share of the window. Under them, the room before compaction, with Clear and Compact. Clear, on the conversation’s own card and not a subagent’s, makes the model read what comes after as a new conversation, at any share; it waits for the turn to end, and has nothing to do until a message is sent after the last clear. Compact runs from half the window, or at any share after a turn the vendor refused for its size. Under it, once the conversation made a call, what it cost, which the page reads with the conversation as it opens and follows while it is open, so the card shows it the moment it opens: closed, the equivalent API price and the main conversation’s cache hit rate over the calls its chart draws side by side, each its value over its label; its caption is a disclosure of its own, and opening it closes the list. Opened, the caption holds the price, then the price by kind of token two by two, the Profiles part in two columns (the main conversation, then the five profiles the conversation’s workflow offers whose subagents cost the most, a bar under each of its share of the largest), and from the fourth call the chart of the turn calls’ hit rates by their numbers in the conversation: at most 40 points over the last 400 calls, consecutive calls merged into one point as the conversation grows, the groups counted from call 1 so a point never moves, round numbers under it, a point with a miss a red dot, a compaction a grey dashed line. Resting the pointer on the chart, or a tap on a phone, shows the nearest point’s tip beside it where it fits, otherwise above it, never past the card’s edges: a call’s number, time, rate and price, a miss’s cause in red with the tokens it wrote again, and First request or After compaction in grey; a group’s range of numbers, rate, summed price and its misses’ causes. A figure that cannot be computed is left out with its label. Then the usage limits of a subscription account, under a line that ends in a Refresh usage button (its icon turns while the request runs, the windows stay until the answer replaces them, a failure shows the vendor’s words under the line until the next answer, and a click keeps the card open), each window’s name, reset and use on one line over its bar (a model on an API key has none), and last the instruction files, each of which opens where it is written. While the usage or the window is unknown, as in a conversation just reopened before its session’s estimate or on a model without a window, the card holds the cost and the usage limits, and a model with no limits has no meter, whatever it cost."
       >
         <div class="specimen-row">
           <GallerySpecimen variant="below half · 34%">
             <ContextUsageIndicator
               :usage="usageAt(0.34)"
               :is-compacting="compactIdle"
+              clearable
               @compact="pulseCompact('idle')"
+              @clear="productWould('Clear the Context')"
             />
           </GallerySpecimen>
           <GallerySpecimen variant="warning · 75%">
             <ContextUsageIndicator
+              clearable
+              @clear="productWould('Clear the Context')"
               :usage="usageAt(0.75)"
               :is-compacting="compactWarn"
               @compact="pulseCompact('warn')"
@@ -1045,6 +1062,8 @@ const DEVICE_STATES: { variant: string; state: DeviceState | null; mark: DeviceM
           </GallerySpecimen>
           <GallerySpecimen variant="danger · 94%">
             <ContextUsageIndicator
+              clearable
+              @clear="productWould('Clear the Context')"
               :usage="usageAt(0.94)"
               :is-compacting="compactDanger"
               @compact="pulseCompact('danger')"
@@ -1054,10 +1073,14 @@ const DEVICE_STATES: { variant: string; state: DeviceState | null; mark: DeviceM
             <ContextUsageIndicator
               :usage="usageAt(0.75)"
               unavailable-reason="Available after the turn ends"
+              clearable
+              clear-unavailable-reason="Available after the turn ends"
             />
           </GallerySpecimen>
           <GallerySpecimen variant="compacting">
             <ContextUsageIndicator
+              clearable
+              @clear="productWould('Clear the Context')"
               :usage="usageAt(0.75)"
               :is-compacting="true"
             />
@@ -1066,15 +1089,18 @@ const DEVICE_STATES: { variant: string; state: DeviceState | null; mark: DeviceM
         <!-- Each card pinned open in a well of its own, with room above the ring for it. -->
         <div class="flex flex-wrap gap-6">
           <GalleryOverlayWell>
-            <GallerySpecimen variant="card · a long conversation, Compact offered">
+            <GallerySpecimen variant="card · a long conversation, Clear and Compact offered">
               <div class="px-44 pt-[36rem]">
                 <ContextUsageIndicator
                   pinned
-                  :usage="usageAt(0.62)"
+                  :usage="clearedPinned ? usageAt(0.02) : usageAt(0.62)"
                   :is-compacting="compactPinned"
+                  clearable
+                  :clear-unavailable-reason="clearedPinned ? 'Nothing to clear' : null"
                   :instructions="demoInstructions"
                   :limits="cardLong.limits.value"
                   @compact="pulseCompact('pinned')"
+                  @clear="clearPinned"
                   @open-instruction="demoOpenInstruction($event, productWould)"
                   @refresh-limits="cardLong.refresh"
                 />
@@ -1085,6 +1111,8 @@ const DEVICE_STATES: { variant: string; state: DeviceState | null; mark: DeviceM
             <GallerySpecimen variant="card · just compacted, a long account label truncates">
               <div class="px-44 pt-[36rem]">
                 <ContextUsageIndicator
+                  clearable
+                  @clear="productWould('Clear the Context')"
                   pinned
                   :usage="usageAt(0.06, { summary: 2_400 })"
                   :instructions="demoInstructions"
@@ -1099,6 +1127,8 @@ const DEVICE_STATES: { variant: string; state: DeviceState | null; mark: DeviceM
             <GallerySpecimen variant="card · turn refused for its size, Compact at 28%">
               <div class="px-44 pt-[36rem]">
                 <ContextUsageIndicator
+                  clearable
+                  @clear="productWould('Clear the Context')"
                   pinned
                   size-refused
                   :usage="usageAt(0.28)"
@@ -1113,6 +1143,8 @@ const DEVICE_STATES: { variant: string; state: DeviceState | null; mark: DeviceM
             <GallerySpecimen variant="card · account without a label">
               <div class="px-44 pt-[36rem]">
                 <ContextUsageIndicator
+                  clearable
+                  @clear="productWould('Clear the Context')"
                   pinned
                   :usage="usageAt(0.42)"
                   :instructions="demoInstructions"
@@ -1128,6 +1160,8 @@ const DEVICE_STATES: { variant: string; state: DeviceState | null; mark: DeviceM
             <GallerySpecimen variant="card · Refresh usage fails, the vendor’s words show under the header">
               <div class="px-44 pt-[36rem]">
                 <ContextUsageIndicator
+                  clearable
+                  @clear="productWould('Clear the Context')"
                   pinned
                   :usage="usageAt(0.42)"
                   :instructions="demoInstructions"
@@ -1143,6 +1177,8 @@ const DEVICE_STATES: { variant: string; state: DeviceState | null; mark: DeviceM
             <GallerySpecimen variant="card · new conversation, the usage limits alone">
               <div class="px-44 pt-[16rem]">
                 <ContextUsageIndicator
+                  clearable
+                  @clear="productWould('Clear the Context')"
                   pinned
                   :usage="null"
                   :instructions="demoInstructions"
@@ -1156,6 +1192,8 @@ const DEVICE_STATES: { variant: string; state: DeviceState | null; mark: DeviceM
             <GallerySpecimen variant="card · Cost closed, its price and cache hit rate">
               <div class="px-44 pt-[36rem]">
                 <ContextUsageIndicator
+                  clearable
+                  @clear="productWould('Clear the Context')"
                   pinned
                   :expanded="null"
                   :usage="usageAt(0.62)"
@@ -1174,6 +1212,8 @@ const DEVICE_STATES: { variant: string; state: DeviceState | null; mark: DeviceM
             <GallerySpecimen variant="card · Cost closed, 1H: the price and rate of the last 60 minutes">
               <div class="px-44 pt-[36rem]">
                 <ContextUsageIndicator
+                  clearable
+                  @clear="productWould('Clear the Context')"
                   pinned
                   :expanded="null"
                   cost-range="hour"
@@ -1193,6 +1233,8 @@ const DEVICE_STATES: { variant: string; state: DeviceState | null; mark: DeviceM
             <GallerySpecimen variant="card · Cost closed, 1D: the price and rate of the last 24 hours, the conversation three days old">
               <div class="px-44 pt-[36rem]">
                 <ContextUsageIndicator
+                  clearable
+                  @clear="productWould('Clear the Context')"
                   pinned
                   :expanded="null"
                   cost-range="day"
@@ -1212,6 +1254,8 @@ const DEVICE_STATES: { variant: string; state: DeviceState | null; mark: DeviceM
             <GallerySpecimen variant="card · Cost opened, 180 calls of 5 a point, the profiles Global Workflow offers; a disabled one and none have no row, with the usage limits">
               <div class="px-44 pt-[70rem]">
                 <ContextUsageIndicator
+                  clearable
+                  @clear="productWould('Clear the Context')"
                   pinned
                   expanded="cost"
                   :usage="usageAt(0.62)"
@@ -1230,6 +1274,8 @@ const DEVICE_STATES: { variant: string; state: DeviceState | null; mark: DeviceM
             <GallerySpecimen variant="card · Cost opened, 1H: the chart still shows the latest calls">
               <div class="px-44 pt-[70rem]">
                 <ContextUsageIndicator
+                  clearable
+                  @clear="productWould('Clear the Context')"
                   pinned
                   expanded="cost"
                   cost-range="hour"
@@ -1247,6 +1293,8 @@ const DEVICE_STATES: { variant: string; state: DeviceState | null; mark: DeviceM
             <GallerySpecimen variant="card · Cost opened, 1D: the three ranges, the chart still shows the latest calls">
               <div class="px-44 pt-[70rem]">
                 <ContextUsageIndicator
+                  clearable
+                  @clear="productWould('Clear the Context')"
                   pinned
                   expanded="cost"
                   cost-range="day"
@@ -1264,6 +1312,8 @@ const DEVICE_STATES: { variant: string; state: DeviceState | null; mark: DeviceM
             <GallerySpecimen variant="card · Cost opened, 1D chosen in a conversation of three hours: it does not offer 1D, so the card shows All">
               <div class="px-44 pt-[70rem]">
                 <ContextUsageIndicator
+                  clearable
+                  @clear="productWould('Clear the Context')"
                   pinned
                   expanded="cost"
                   cost-range="day"
@@ -1281,6 +1331,8 @@ const DEVICE_STATES: { variant: string; state: DeviceState | null; mark: DeviceM
             <GallerySpecimen variant="card · Cost opened, 1H with no call in the hour">
               <div class="px-44 pt-[40rem]">
                 <ContextUsageIndicator
+                  clearable
+                  @clear="productWould('Clear the Context')"
                   pinned
                   expanded="cost"
                   cost-range="hour"
@@ -1298,6 +1350,8 @@ const DEVICE_STATES: { variant: string; state: DeviceState | null; mark: DeviceM
             <GallerySpecimen variant="card · Cost opened, subagents without profiles: no Profiles part">
               <div class="px-44 pt-[70rem]">
                 <ContextUsageIndicator
+                  clearable
+                  @clear="productWould('Clear the Context')"
                   pinned
                   expanded="cost"
                   :usage="usageAt(0.62)"
@@ -1314,6 +1368,8 @@ const DEVICE_STATES: { variant: string; state: DeviceState | null; mark: DeviceM
             <GallerySpecimen variant="card · Cost opened, no subagents">
               <div class="px-44 pt-[62rem]">
                 <ContextUsageIndicator
+                  clearable
+                  @clear="productWould('Clear the Context')"
                   pinned
                   expanded="cost"
                   :usage="usageAt(0.62)"
@@ -1330,6 +1386,8 @@ const DEVICE_STATES: { variant: string; state: DeviceState | null; mark: DeviceM
             <GallerySpecimen variant="card · Cost opened, two calls: the rate without the chart">
               <div class="px-44 pt-[40rem]">
                 <ContextUsageIndicator
+                  clearable
+                  @clear="productWould('Clear the Context')"
                   pinned
                   expanded="cost"
                   :usage="usageAt(0.12)"
@@ -1346,6 +1404,8 @@ const DEVICE_STATES: { variant: string; state: DeviceState | null; mark: DeviceM
             <GallerySpecimen variant="card · Cost opened, 12 calls: one call a point">
               <div class="px-44 pt-[50rem]">
                 <ContextUsageIndicator
+                  clearable
+                  @clear="productWould('Clear the Context')"
                   pinned
                   expanded="cost"
                   :usage="usageAt(0.22)"
@@ -1362,6 +1422,8 @@ const DEVICE_STATES: { variant: string; state: DeviceState | null; mark: DeviceM
             <GallerySpecimen variant="card · Cost opened, 1,000 calls: the last 400, 10 a point">
               <div class="px-44 pt-[50rem]">
                 <ContextUsageIndicator
+                  clearable
+                  @clear="productWould('Clear the Context')"
                   pinned
                   expanded="cost"
                   :usage="usageAt(0.62)"
@@ -1378,6 +1440,8 @@ const DEVICE_STATES: { variant: string; state: DeviceState | null; mark: DeviceM
             <GallerySpecimen variant="card · Cost opened, eight profiles: the main conversation and the five that cost the most">
               <div class="px-44 pt-[50rem]">
                 <ContextUsageIndicator
+                  clearable
+                  @clear="productWould('Clear the Context')"
                   pinned
                   expanded="cost"
                   :usage="usageAt(0.62)"
@@ -1394,6 +1458,8 @@ const DEVICE_STATES: { variant: string; state: DeviceState | null; mark: DeviceM
             <GallerySpecimen variant="card · Cost opened, a model with no prices: no price by kind, the rate and the chart">
               <div class="px-44 pt-[50rem]">
                 <ContextUsageIndicator
+                  clearable
+                  @clear="productWould('Clear the Context')"
                   pinned
                   expanded="cost"
                   :usage="usageAt(0.3)"
@@ -1408,6 +1474,8 @@ const DEVICE_STATES: { variant: string; state: DeviceState | null; mark: DeviceM
             <GallerySpecimen variant="card · a subagent’s Cost: no Profiles part">
               <div class="px-44 pt-[50rem]">
                 <ContextUsageIndicator
+                  clearable
+                  @clear="productWould('Clear the Context')"
                   pinned
                   expanded="cost"
                   :usage="usageAt(0.34)"
@@ -1422,6 +1490,8 @@ const DEVICE_STATES: { variant: string; state: DeviceState | null; mark: DeviceM
             <GallerySpecimen variant="card · reopened, before the session’s estimate: the cost and the usage limits">
               <div class="px-44 pt-[30rem]">
                 <ContextUsageIndicator
+                  clearable
+                  @clear="productWould('Clear the Context')"
                   pinned
                   :expanded="null"
                   :usage="null"
@@ -1438,6 +1508,8 @@ const DEVICE_STATES: { variant: string; state: DeviceState | null; mark: DeviceM
             <GallerySpecimen variant="card · a model without a window, on a subscription: the cost and the usage limits">
               <div class="px-44 pt-[30rem]">
                 <ContextUsageIndicator
+                  clearable
+                  @clear="productWould('Clear the Context')"
                   pinned
                   :expanded="null"
                   :usage="usageOf(42_000, null)"
@@ -1453,6 +1525,8 @@ const DEVICE_STATES: { variant: string; state: DeviceState | null; mark: DeviceM
             <GallerySpecimen variant="card · compacting: the list and the cost still open">
               <div class="px-44 pt-[44rem]">
                 <ContextUsageIndicator
+                  clearable
+                  @clear="productWould('Clear the Context')"
                   pinned
                   is-compacting
                   expanded="context"
@@ -1471,6 +1545,8 @@ const DEVICE_STATES: { variant: string; state: DeviceState | null; mark: DeviceM
             <GallerySpecimen :variant="tip.variant">
               <div class="px-44 pt-[62rem]">
                 <ContextUsageIndicator
+                  clearable
+                  @clear="productWould('Clear the Context')"
                   pinned
                   expanded="cost"
                   :usage="usageAt(0.62)"
@@ -1486,6 +1562,8 @@ const DEVICE_STATES: { variant: string; state: DeviceState | null; mark: DeviceM
             <GallerySpecimen variant="card · API key, no usage limits">
               <div class="px-44 pt-[26rem]">
                 <ContextUsageIndicator
+                  clearable
+                  @clear="productWould('Clear the Context')"
                   pinned
                   :usage="usageAt(0.42)"
                   :instructions="demoInstructions"

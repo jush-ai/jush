@@ -212,6 +212,8 @@ export function sessionStatusCopy(kind: SessionStatusKind): {
  * - an error that ended no turn, such as a Compact whose summary request failed
  * - a compaction's boundary and marker
  * - the agent messages and command reports a failed turn took after it ended
+ *
+ * A clear is a record of its own: the turn before it is given up.
  */
 export function turnRecovery(
   phase: 'idle' | string,
@@ -225,6 +227,16 @@ export function turnRecovery(
     return 'resume'
   }
   return end?.type === 'abort' ? 'continue' : null
+}
+
+/**
+ * Whether the user has nothing to clear in `blocks`, the transcript's latest:
+ * nothing but context was written since the last clear, or nothing at all, as
+ * the backend refuses a `clear` frame.
+ */
+export function nothingToClear(blocks: readonly { type: string }[]): boolean {
+  const last = blocks.findLast((block) => block.type !== 'context')
+  return last === undefined || last.type === 'clear'
 }
 
 /**

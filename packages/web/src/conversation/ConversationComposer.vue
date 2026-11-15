@@ -11,7 +11,7 @@ import { latestBlocks } from '@jush-ai/web-ui/agent/history'
 import WaitingComments from '@jush-ai/web-ui/agent/comments/WaitingComments.vue'
 import { inReadingOrder } from '@jush-ai/web-ui/agent/comments/comments'
 import { changeEditComments, editComments } from '@jush-ai/web-ui/agent/message-editing'
-import { refusedForSize } from '@jush-ai/web-ui/agent/session-status'
+import { nothingToClear, refusedForSize } from '@jush-ai/web-ui/agent/session-status'
 import { isCompacting } from '@jush-ai/web-ui/agent/conversation-status'
 
 import { composerRemoteAttachment } from '@jush-ai/web-ui/agent/message-input/attachments'
@@ -163,6 +163,8 @@ function changeEdit(change: Parameters<typeof changeEditComments>[1]): void {
 const instructions = computed(() => loadedInstructions(latestBlocks(props.conversation.history), props.conversation.instructions))
 /** The unfinished turn failed for its size: Compact is offered at any share. */
 const sizeRefused = computed(() => refusedForSize(latestBlocks(props.conversation.history)))
+/** Nothing was written since the last clear: Clear has nothing to do. */
+const clearDone = computed(() => nothingToClear(latestBlocks(props.conversation.history)))
 
 const card = useContextCard(() => props.openFile)
 /** What the context card shows of the usage limits of the account the conversation's model runs on. */
@@ -303,6 +305,7 @@ function attachRemote(file: { deviceId: string; device: string; path: string }) 
       :model-settings="conversation.model"
       :usage="conversation.contextUsage"
       :size-refused="sizeRefused"
+      :nothing-to-clear="clearDone"
       :instructions="instructions"
       :limits="limits"
       :cost="cost"
@@ -337,6 +340,7 @@ function attachRemote(file: { deviceId: string; device: string; path: string }) 
       :conversation-id="conversation.id"
       @stop="store.stop(conversation)"
       @compact="store.compact(conversation)"
+      @clear="store.clear(conversation)"
       @open-instruction="card.openInstruction"
     >
       <template v-if="carriedComments.length > 0" #carried>

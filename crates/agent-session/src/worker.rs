@@ -228,6 +228,10 @@ async fn execute(
         ActionKind::Resume { reason } => resume(s, cancel, reason.clone()).await,
         ActionKind::Edit => editing::run(s, cancel).await,
         ActionKind::Switch { target, to } => editing::switch(s, cancel, target, *to).await,
+        ActionKind::Clear => {
+            clear(s);
+            Ok(())
+        }
         ActionKind::Compact { idle } => {
             // The server compared the estimate with the share from which the
             // user may compact before it took the frame; the log repeats it.
@@ -257,6 +261,24 @@ async fn execute(
     }
 }
 
+/// Clears the model's context: a `clear` block, from which replay starts.
+///
+/// The model is asked nothing. The next request takes an account again, as
+/// after a compaction, since it writes its prefix anew. Nothing is awaited
+/// once the block is written, so no Stop or shutdown comes between it and
+/// the action's end: the action's closing save keeps it and reports the
+/// usage it leaves.
+fn clear(s: &SessionShared) {
+    s.update(|core| {
+        let model = core.model.clone();
+        core.transcript.push_clear(&model);
+        core.commit();
+        core.take_account(None);
+        // The media before the clear are no longer replayed.
+        core.release_media();
+    });
+}
+
 /// Discards the last input turn and runs it again from its input: the block
 /// that opened it stays, with the turn's steers and every agent message after
 /// it.
@@ -266,16 +288,22 @@ async fn retry(s: &Rc<SessionShared>, cancel: &TurnCancel) -> Result<(), TurnErr
         // The input turn may have begun before the window, as when a
         // compaction ran inside it: the window then holds no block that
         // opens it, or only an agent message of a turn that began before.
+        // A turn before the last clear is given up, never retried; one after
+        // it began after it, since the user clears only while nothing runs.
         let rewind = loop {
-            let found = s.read(|core| {
+            let (found, cleared) = s.read(|core| {
                 let blocks = core.transcript.blocks();
-                rewind(blocks)
-                    .filter(|rewind| core.transcript.start() == 0 || opens_input_turn(&blocks[rewind.input]))
+                let clear = blocks.iter().rposition(|block| matches!(block, Block::Clear(_)));
+                let found = rewind(blocks).filter(|rewind| match clear {
+                    Some(clear) => rewind.input > clear,
+                    None => core.transcript.start() == 0 || opens_input_turn(&blocks[rewind.input]),
+                });
+                (found, clear.is_some())
             });
             if let Some(found) = found {
                 break found;
             }
-            if !window::reach_further(s).await? {
+            if cleared || !window::reach_further(s).await? {
                 return Err(TurnError::refused(AgentCode::NothingToRetry, "There is no input turn to retry"));
             }
         };

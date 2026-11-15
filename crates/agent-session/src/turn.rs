@@ -522,7 +522,7 @@ async fn request(
     window: Option<u64>,
 ) -> Result<InferenceRequest, TurnError> {
     // Only the context the model receives counts as seen: a block before
-    // the last compaction boundary is summarized away, so its source tells
+    // the last compaction boundary or clear is gone, so its source tells
     // the model again.
     let (seen, turn) = s.read(|core| {
         let seen: Vec<(String, String)> = core

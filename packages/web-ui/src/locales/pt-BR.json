@@ -280,6 +280,7 @@
     "subagent_failed": "Não foi possível iniciar ou parar um subagente.",
     "shell_stop_failed": "Não foi possível parar o comando.",
     "nothing_to_retry": "Não há nada para tentar novamente.",
+    "nothing_to_clear": "Não há nada para limpar.",
     "summary_missing": "O modelo não escreveu um resumo.",
     "prompt_unavailable": "O provedor do modelo não está disponível.",
     "usage_limit": "Você atingiu seu limite de uso.",

@@ -103,6 +103,7 @@
       "doneIdleTo": "閒置時上下文已壓縮至約 {tokens} 個 token"
     },
     "stopped": "已停止",
+    "cleared": "上下文已清空",
     "queued": "{count} 則佇列中",
     "user": {
       "edit": "編輯",
@@ -373,9 +374,11 @@
     "tip": "上下文 {figure}",
     "compacting": "正在壓縮上下文…",
     "compact": "壓縮",
+    "clear": "清空",
     "untilCompaction": "距離壓縮還有 {tokens}",
     "afterTurn": "輪次結束後可用",
     "availableFrom": "上下文達到 {from} 後可用（目前 {now}）",
+    "nothingToClear": "沒有可清空的內容",
     "usageLimits": "使用上限",
     "refreshUsage": "重新整理用量",
     "instructions": "指示",

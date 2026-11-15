@@ -4779,6 +4779,9 @@ export const useConversations = defineStore('conversations', () => {
     /** Compacts the root's context, or the live subagent `node`'s, as its context card asks. */
     compact: (conversation: Conversation, node?: string) =>
       action(conversation, (runtime) => runtime.compact(node)),
+    /** Clears the root's context, as its context card asks. */
+    clear: (conversation: Conversation) =>
+      action(conversation, (runtime) => runtime.clear()),
     // Steer on a steer or a queued message still on its way waits for the
     // session to hold it; on any other, it goes at once. Recall takes the
     // row away at once in either case.

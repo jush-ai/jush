@@ -175,6 +175,7 @@ impl KeptUsage {
             price: None,
             system_hash: None,
             tools_hash: None,
+            new_prompt: false,
         }
     }
 }

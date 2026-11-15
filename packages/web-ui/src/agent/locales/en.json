@@ -103,6 +103,7 @@
       "doneIdleTo": "Context compacted while idle to ~{tokens} tokens"
     },
     "stopped": "Stopped",
+    "cleared": "Context cleared",
     "queued": "{count} queued",
     "user": {
       "edit": "Edit",
@@ -373,9 +374,11 @@
     "tip": "Context {figure}",
     "compacting": "Compacting context…",
     "compact": "Compact",
+    "clear": "Clear",
     "untilCompaction": "{tokens} until compaction",
     "afterTurn": "Available after the turn ends",
     "availableFrom": "Available from {from} context (now {now})",
+    "nothingToClear": "Nothing to clear",
     "usageLimits": "Usage limits",
     "refreshUsage": "Refresh usage",
     "instructions": "Instructions",

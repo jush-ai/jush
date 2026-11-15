@@ -469,6 +469,8 @@ pub enum AgentCode {
     ShellStopFailed,
     /// A Retry with no turn to run again.
     NothingToRetry,
+    /// A Clear with nothing written since the last one.
+    NothingToClear,
     /// Compaction's summary request answered calls and no summary, twice.
     SummaryMissing,
     /// The system prompt of the conversation's model could not be made, as

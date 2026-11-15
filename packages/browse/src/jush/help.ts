@@ -42,7 +42,7 @@ what it returns, then the page's state; a call ends after ten minutes unless
     jush.message(text, { files, wait, timeout })   send in the open conversation, with files from this machine, and wait for its turn, not for subagents; fails at once, with the page's words, when it is not delivered or the turn fails, and before writing when the draft holds files
     jush.turn({ timeout })               wait until the open conversation no longer runs, from a message on its way to the subagents and background jobs it started
     jush.model.answers([[{ think, ms }, { say, ms }, { run }, { wait }], …])   script the model's replies to the next requests of a turn, each a list of steps; adds the Scripted model to the backend and chooses it in the composer
-    jush.model.requests() .left() .forget()   what the backend asked the scripted model, how many answers are still queued, and drop both
+    jush.model.requests() .left() .forget()   what the backend asked the scripted model, how many answers are still queued, and drop both with its cache
     jush.transcript.watch()              read the transcript in every painted frame; .shown() .grown(px) .still(ms) wait for what it shows, .stop() answers the recording
     jush.transcript.judge(recording)     the recording's violations of the rules a transcript keeps (browse.md § The transcript's ruler)
     jush.transcript.run(...names)        play the scenes named, or all, each in a new conversation with the scripted model, and print each one's violations; jush.transcript.scenes() lists them

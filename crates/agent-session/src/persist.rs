@@ -67,7 +67,7 @@ impl Default for PersistMarks {
 
 /// Writes the checkpoint when a save is due. The caller holds the session's
 /// save order. Once every row is saved, the blocks before the last
-/// compaction boundary are let go.
+/// compaction boundary or clear are let go.
 pub(crate) async fn write_if_dirty(s: &SessionShared) -> Result<(), StoreError> {
     let Some((update, rows)) = s.update(|core| core.prepare_checkpoint()) else {
         s.update(|core| core.release_settled());

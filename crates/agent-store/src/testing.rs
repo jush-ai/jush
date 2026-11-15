@@ -299,7 +299,7 @@ fn load(stored: &Stored, id: &NodeId) -> Result<Option<Checkpoint>, StoreError> 
     let Some(node) = stored.nodes.get(id) else {
         return Ok(None);
     };
-    let start = node.last_of(Kind::CompactionBoundary, node.path.len()).unwrap_or(0);
+    let start = node.last_of(Kind::WindowStart, node.path.len()).unwrap_or(0);
     Ok(Some(Checkpoint {
         state: node.state.clone(),
         start,
@@ -518,7 +518,7 @@ impl SessionStore for MemorySessionStore {
             node.path.extend(tail);
             node.cut = None;
             let before = (from < held_from).then(|| {
-                let start = node.last_of(Kind::CompactionBoundary, from + 1).unwrap_or(0);
+                let start = node.last_of(Kind::WindowStart, from + 1).unwrap_or(0);
                 let mut versions = node.versions(start);
                 versions.retain(|position, _| *position < from);
                 SwitchedBefore {

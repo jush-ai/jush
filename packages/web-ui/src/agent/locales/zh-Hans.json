@@ -103,6 +103,7 @@
       "doneIdleTo": "闲置时上下文已压缩至约 {tokens} 个 token"
     },
     "stopped": "已停止",
+    "cleared": "上下文已清空",
     "queued": "已排队 {count} 条",
     "user": {
       "edit": "编辑",
@@ -373,9 +374,11 @@
     "tip": "上下文 {figure}",
     "compacting": "正在压缩上下文…",
     "compact": "压缩",
+    "clear": "清空",
     "untilCompaction": "距离压缩还有 {tokens}",
     "afterTurn": "轮次结束后可用",
     "availableFrom": "上下文达到 {from} 后可用（当前 {now}）",
+    "nothingToClear": "没有可清空的内容",
     "usageLimits": "用量限额",
     "refreshUsage": "刷新用量",
     "instructions": "指令",

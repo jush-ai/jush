@@ -134,6 +134,9 @@ pub enum ClientFrame {
         #[garde(skip)]
         node: Option<NodeId>,
     },
+    /// Clear the root's context: its model reads what comes after as a new
+    /// conversation.
+    Clear {},
     /// Stop a running command.
     ShellAbort {
         #[garde(skip)]
@@ -167,6 +170,7 @@ pub enum ClientFrameKind {
     Retry,
     Resume,
     Compact,
+    Clear,
     ShellAbort,
     Close,
 }
@@ -197,6 +201,7 @@ impl ClientFrame {
             Self::Retry {} => ClientFrameKind::Retry,
             Self::Resume {} => ClientFrameKind::Resume,
             Self::Compact { .. } => ClientFrameKind::Compact,
+            Self::Clear {} => ClientFrameKind::Clear,
             Self::ShellAbort { .. } => ClientFrameKind::ShellAbort,
             Self::Close {} => ClientFrameKind::Close,
         }

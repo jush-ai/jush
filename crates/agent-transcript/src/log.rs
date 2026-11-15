@@ -10,7 +10,7 @@ use std::{collections::BTreeMap, rc::Rc, sync::Arc};
 use jush_conversation_lane_protocol::{TranscriptPatch, Version, Versions};
 use jush_provider_common::{AccountSwitch, OpaqueStep, ToolCall};
 use jush_shared_types::{ScheduleMark, CodeFile, MessageComment, PictureCopy, ReplyPicture, 
-    AbortBlock, AccountSwitchBlock, AgentMessage, AgentMessageBlock, Block, BlockId, Clock, CompactionBoundaryBlock,
+    AbortBlock, AccountSwitchBlock, AgentMessage, AgentMessageBlock, Block, BlockId, ClearBlock, Clock, CompactionBoundaryBlock,
     CompactionMarkerBlock, ContextBlock, Entry, ErrorBlock, InstructionEntry, KeptMessage, ModelSelection, ProviderErrorDiagnostics,
     OpaqueBlock, OpaqueStatus, ResponseBlock, ResumeBlock, SteerBlock, TextBlock, ThinkingBlock,
     Timestamp, TokenUsage, ToolCallBlock, ToolCallStatus, ToolResultContentBlock, ToolView, TurnId,
@@ -148,7 +148,7 @@ impl TranscriptLog {
     }
 
     /// Where replay starts: the position of the last `compaction_boundary`
-    /// held, or the window's start.
+    /// or `clear` held, or the window's start.
     pub fn replay_start(&self) -> usize {
         self.start + crate::replay_start(&self.blocks)
     }
@@ -567,6 +567,17 @@ impl TranscriptLog {
             let held = |blocks: &[Block]| blocks.iter().any(|block| block.id() == &end.id);
             held(gone) && !held(next)
         })
+    }
+
+    /// The user's clear of the model's context.
+    pub fn push_clear(&mut self, model: &ModelSelection) {
+        let (id, created_at) = self.stamp();
+        self.append(Block::Clear(ClearBlock {
+            id,
+            created_at,
+            request: None,
+            model: model.clone(),
+        }));
     }
 
     /// The stopped marker a Stop leaves.

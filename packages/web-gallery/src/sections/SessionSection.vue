@@ -122,6 +122,7 @@ import { showToast } from '@jush-ai/web-ui/infra/toast'
 import AgentMessageList from '@jush-ai/web-ui/agent/AgentMessageList.vue'
 import { joinMessageContent } from '@jush-ai/web-ui/agent/message-input/message-content'
 import { compactionTranscript, type CompactionCase } from '../fixtures/compaction'
+import { clearTranscript, type ClearCase } from '../fixtures/clear'
 import { RestoreSweep } from '../fixtures/restore-sweep'
 import {
   behindSession,
@@ -1518,6 +1519,10 @@ const compactionCases: { state: CompactionCase; variant: string }[] = [
   { state: 'failed', variant: 'failed' },
 ]
 const compactionSteers = [{ id: 'compaction-steer', content: [{ type: 'text' as const, text: 'Also run the whole auth suite.' }] }]
+const clearCases: { state: ClearCase; variant: string }[] = [
+  { state: 'cleared', variant: 'just cleared' },
+  { state: 'next', variant: 'the next message after a clear' },
+]
 
 /** The stand-in session an edit is sent to: it replaces the message and what follows with the edit and a reply. */
 const editHost: MessageEditHost = {
@@ -3467,6 +3472,36 @@ onBeforeUnmount(() => {
                 :pending-steers="item.state === 'running' ? compactionSteers : []"
                 :queue="[]"
                 :phase="item.state === 'running' ? 'compacting' : 'idle'"
+                :bottom-offset="0"
+                :persisted-scroll-state="undefined"
+                read-only
+                @recall-steer="productWould('Recall the Steer')"
+                @interrupt-pending-steer="productWould('Send the Steer Now')"
+                @delete-unsent="productWould('Delete the Steer')"
+              />
+            </div>
+          </GallerySpecimen>
+        </div>
+      </GallerySection>
+      <GallerySection
+        title="Cleared Context"
+        note="The user cleared the context from the context card. Every message stays on the page, and a divider says where the context was cleared. The model reads what comes after it as a new conversation: a line that says the context was cleared and where the earlier messages can be read, then the next message with the conversation’s execution context and pinned documents. The answer before the divider keeps its Copy and Fork, and loses its suggested replies."
+      >
+        <div class="specimen-stack">
+          <GallerySpecimen
+            v-for="item in clearCases"
+            :key="item.state"
+            :variant="item.variant"
+            wide
+          >
+            <div class="gallery-frame h-[16rem] bg-surface">
+              <AgentMessageList
+                class="h-full"
+                :conversation-id="`clear-${item.state}`"
+                :blocks="clearTranscript(item.state)"
+                :pending-steers="[]"
+                :queue="[]"
+                phase="idle"
                 :bottom-offset="0"
                 :persisted-scroll-state="undefined"
                 read-only

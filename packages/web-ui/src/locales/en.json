@@ -280,6 +280,7 @@
     "subagent_failed": "A subagent couldn’t be started or stopped.",
     "shell_stop_failed": "The command couldn’t be stopped.",
     "nothing_to_retry": "There’s nothing to retry.",
+    "nothing_to_clear": "There’s nothing to clear.",
     "summary_missing": "The model didn’t write a summary.",
     "prompt_unavailable": "The model’s provider isn’t available.",
     "usage_limit": "You’ve reached your usage limit.",

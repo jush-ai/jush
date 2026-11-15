@@ -36,7 +36,8 @@ export interface ReplyEndInput {
  * unless the agent goes on.
  *
  * A compaction's divider after a block leaves it the end: the user compacted
- * after it, and nothing of the turn followed.
+ * after it, and nothing of the turn followed. So does a clear, which, as a
+ * user message does, begins what follows.
  */
 export function replyEndIds(
   visibleBlocks: readonly ReplyBlock[],
@@ -49,7 +50,7 @@ export function replyEndIds(
     const last = !next && (
       input.phase === 'idle' || input.sending === true || (block.type === 'text' && block.forkable === true && !input.continuing)
     )
-    if (next?.type === 'user' || next?.type === 'abort' || last) {
+    if (next?.type === 'user' || next?.type === 'abort' || next?.type === 'clear' || last) {
       ids.add(block.id)
     }
   })

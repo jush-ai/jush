@@ -1003,7 +1003,7 @@ impl SessionStore for SqliteSessionStore {
                     // read in the same transaction, so nothing after the
                     // commit can fail.
                     let before = if from < held_from {
-                        let start = last_of(&transaction, &node, &path, Kind::CompactionBoundary, at + 1)?.unwrap_or(0);
+                        let start = last_of(&transaction, &node, &path, Kind::WindowStart, at + 1)?.unwrap_or(0);
                         let range = count(start)..at;
                         Some(SwitchedBefore {
                             start,
@@ -1203,9 +1203,9 @@ fn is_output(block: &Block) -> bool {
 }
 
 /// A node's checkpoint: its state row and its window, the blocks of its
-/// current path from the last `compaction_boundary` on with the versions
-/// there; none when the node does not exist. No row before the window is
-/// read.
+/// current path from the last `compaction_boundary` or `clear` on with the
+/// versions there; none when the node does not exist. No row before the
+/// window is read.
 fn checkpoint(connection: &Connection, node: &NodeId) -> Result<Option<Checkpoint>, StorageError> {
     let row: Option<String> = connection
         .query_row("SELECT state FROM nodes WHERE id = ?1", [node.as_str()], |row| row.get(0))
@@ -1214,7 +1214,7 @@ fn checkpoint(connection: &Connection, node: &NodeId) -> Result<Option<Checkpoin
         return Ok(None);
     };
     let path = Path::read(connection, node.as_str())?;
-    let start = last_of(connection, node, &path, Kind::CompactionBoundary, path.len())?.unwrap_or(0);
+    let start = last_of(connection, node, &path, Kind::WindowStart, path.len())?.unwrap_or(0);
     let window = count(start)..path.len();
     Ok(Some(Checkpoint {
         state: json("nodes", "state", &state)?,
@@ -1953,7 +1953,9 @@ fn walk(
         let row = row?;
         if last.is_none() {
             last = match row.kind.as_str() {
-                "response" => Some(Terminal::Response),
+                // A clear gives up the turn before it, which then stands as
+                // finished, as the page shows it.
+                "response" | "clear" => Some(Terminal::Response),
                 "error" => Some(Terminal::Error),
                 "abort" => Some(Terminal::Abort),
                 _ => None,

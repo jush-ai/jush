@@ -103,6 +103,7 @@
       "doneIdleTo": "Kontext im Leerlauf auf ~{tokens} Tokens komprimiert"
     },
     "stopped": "Gestoppt",
+    "cleared": "Kontext geleert",
     "queued": "{count} in Warteschlange",
     "user": {
       "edit": "Bearbeiten",
@@ -373,9 +374,11 @@
     "tip": "Kontext {figure}",
     "compacting": "Kontext wird komprimiert …",
     "compact": "Komprimieren",
+    "clear": "Leeren",
     "untilCompaction": "{tokens} bis zur Komprimierung",
     "afterTurn": "Nach Ende der Runde verfügbar",
     "availableFrom": "Verfügbar ab {from} Kontext (jetzt {now})",
+    "nothingToClear": "Nichts zu leeren",
     "usageLimits": "Nutzungslimits",
     "refreshUsage": "Nutzung aktualisieren",
     "instructions": "Anweisungen",

@@ -1017,6 +1017,7 @@ fn item(reader: &Reader, at: usize, block: &Block) -> Option<Shown> {
         Block::Abort(_) => line(format!("[{at} stopped by the user]")),
         Block::Error(error) => line(format!("[{at} error: {}]", error.message)),
         Block::AccountSwitch(switch) => line(format!("[{at} account switched from {} to {}]", switch.from, switch.to)),
+        Block::Clear(clear) => line(format!("[{at} context cleared by the user · {}]", reader.when(clear.created_at))),
         Block::CompactionBoundary(_) => line(format!(
             "[{at} summary of the earlier conversation: jush conversation history open {at}{}]",
             reader.flags()

@@ -26,6 +26,7 @@ import StepsNotSharedBlock from './StepsNotSharedBlock.vue'
 import ErrorBlock from './ErrorBlock.vue'
 import AccountSwitchBlock from './AccountSwitchBlock.vue'
 import StoppedBlock from './StoppedBlock.vue'
+import ClearBlock from './ClearBlock.vue'
 import CompactionBlock from './CompactionBlock.vue'
 import QueueDivider from './QueueDivider.vue'
 import PendingSubmission from '../PendingSubmission.vue'
@@ -364,6 +365,7 @@ function shownComments(comments: readonly MessageComment[] | undefined): ShownCo
         v-else-if="block.type === 'compaction_progress'"
         running
       />
+      <ClearBlock v-else-if="block.type === 'clear'" />
       <ActivitySlot
         v-else-if="block.type === 'activity_slot'"
         v-bind="block.slot"

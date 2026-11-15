@@ -4,6 +4,7 @@ import { computed, onBeforeUnmount, onMounted, ref, useSlots, watch } from 'vue'
 import { previewMediaType, type ContextUsage, type UserContentBlock } from '@jush-ai/protocol'
 import { GLOBAL_PROFILES, OFFERED_PROFILES, useCardCost } from '../fixtures/cost'
 import SessionComposer from '@jush-ai/web-ui/agent/SessionComposer.vue'
+import { nothingToClear } from '@jush-ai/web-ui/agent/session-status'
 import { type WorkflowChoice, type WorkflowList, workflowProfiles } from '@jush-ai/web-ui/agent/workflow-menu'
 import { provideSendNextWaiting } from '@jush-ai/web-ui/agent/pending-steers'
 import { isEmptyMessage, joinMessageContent, splitMessageContent } from '@jush-ai/web-ui/agent/message-input/message-content'
@@ -105,8 +106,16 @@ const props = withDefaults(
     onSteer?: (content: UserContentBlock[], message: SentMessage) => void
     /** Queues a message behind the specimen's running turn; without it, a toast says what the product would do. */
     onQueue?: (content: UserContentBlock[], message: SentMessage) => void
-    /** The specimen's flow, whose Recall gives a message back into this composer, as the product's does. */
-    flow?: { attachComposer(host: RecallComposer): () => void }
+    /**
+     * The specimen's flow, whose Recall gives a message back into this
+     * composer, as the product's does, and whose conversation the context
+     * card's Clear clears.
+     */
+    flow?: {
+      attachComposer(host: RecallComposer): () => void
+      clear?: () => void
+      state?: { blocks: readonly { type: string }[] }
+    }
     /**
      * What Return in the empty composer does while the specimen's messages
      * wait, as a conversation page offers it; outside one, its own when given.
@@ -229,6 +238,16 @@ function compact() {
   }
   productWould('Compact the Conversation')
 }
+/** Clear from the meter's card: the specimen's flow's conversation, or a toast when it has none. */
+function clear() {
+  if (props.flow?.clear) {
+    props.flow.clear()
+    return
+  }
+  productWould('Clear the Context')
+}
+/** Clear has nothing to do in the flow's conversation, as the product reads its transcript. */
+const clearDone = computed(() => props.flow?.state ? nothingToClear(props.flow.state.blocks) : false)
 /** What the conversation cost, which the page holds while the conversation is open, as the product does. */
 const cardCost = useCardCost('profiles')
 const composer = ref<InstanceType<typeof SessionComposer>>()
@@ -822,6 +841,8 @@ onBeforeUnmount(() => {
     @change-context-limit="setGalleryContextLimit"
     @stop="emit('stop')"
     @compact="compact"
+    @clear="clear"
+    :nothing-to-clear="clearDone"
     @open-instruction="demoOpenInstruction($event, productWould)"
   >
     <template v-if="$slots.carried" #carried>

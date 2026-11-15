@@ -103,6 +103,7 @@
       "doneIdleTo": "Contexto compactado en inactividad a ~{tokens} tokens"
     },
     "stopped": "Detenido",
+    "cleared": "Contexto borrado",
     "queued": "{count} en cola",
     "user": {
       "edit": "Editar",
@@ -373,9 +374,11 @@
     "tip": "Contexto {figure}",
     "compacting": "Compactando el contexto…",
     "compact": "Compactar",
+    "clear": "Borrar",
     "untilCompaction": "{tokens} hasta la compactación",
     "afterTurn": "Disponible cuando termine el turno",
     "availableFrom": "Disponible a partir de {from} de contexto (ahora {now})",
+    "nothingToClear": "No hay nada que borrar",
     "usageLimits": "Límites de uso",
     "refreshUsage": "Actualizar uso",
     "instructions": "Instrucciones",

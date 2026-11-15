@@ -19,8 +19,9 @@ use jush_shared_types::{Block, BlockId};
 
 use super::SessionShared;
 
-/// Holds the blocks from the last `compaction_boundary` at or before `position`
-/// on, so that a rewrite of the history from there sees them.
+/// Holds the blocks from the last `compaction_boundary` or `clear` at or
+/// before `position` on, so that a rewrite of the history from there sees
+/// them.
 ///
 /// Those before the window are read from the store. The caller holds the
 /// session's save order; the next save that leaves nothing unsaved before the
@@ -30,15 +31,16 @@ pub(crate) async fn reach(s: &SessionShared, position: usize) -> Result<(), Stor
     if position >= start {
         return Ok(());
     }
-    let from = s.store.last_of(Kind::CompactionBoundary, position + 1).await?.unwrap_or(0);
+    let from = s.store.last_of(Kind::WindowStart, position + 1).await?.unwrap_or(0);
     let rows = s.store.blocks(from..start).await?;
     let earlier = Earlier::read(&*s.store, from).await?;
     s.update(|core| core.transcript.extend_back(from, rows.blocks, rows.versions, earlier));
     Ok(())
 }
 
-/// Holds one compaction more of the history before the window, when there
-/// is one: answers false when the window starts at the path's start.
+/// Holds one compaction or clear more of the history before the window,
+/// when there is one: answers false when the window starts at the path's
+/// start.
 pub(crate) async fn reach_further(s: &SessionShared) -> Result<bool, StoreError> {
     let start = s.read(|core| core.transcript.start());
     if start == 0 {

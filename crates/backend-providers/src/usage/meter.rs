@@ -18,7 +18,7 @@ use jush_backend_database::control::ControlService;
 use jush_backend_database::usage::{ApiPrice, ObservedWindow, UsageRow, merge_windows};
 use jush_provider_common::{
     Ahead, CallEvent, CallOutcome, ErrorCode, InferenceRequest, ProviderEvent, ProviderRun,
-    ProviderRuntime, RequestLimits, RequestPurpose, VendorCall,
+    PromptCache, ProviderRuntime, RequestLimits, RequestPurpose, VendorCall,
 };
 use jush_shared_types::{Clock, Model, ModelCost, QuotaWindow, Timestamp, TokenUsage};
 use jush_web_api_protocol::ids::{ConversationId, CredentialId, ProviderId, UserId};
@@ -136,6 +136,9 @@ struct Calls {
     request: String,
     system_hash: Option<String>,
     tools_hash: Option<String>,
+    /// The request answers nothing an earlier request of its session sent:
+    /// its first call begins a new prompt.
+    new_prompt: bool,
     /// When the open call started; none between a call's end and the next
     /// one's start.
     open: Option<Timestamp>,
@@ -163,6 +166,7 @@ impl Calls {
         Self {
             system_hash,
             tools_hash,
+            new_prompt: matches!(request.prompt_cache, PromptCache::Session { answered_items: 0 }),
             agent: request.agent,
             turn: request.purpose.belongs_to_turn().then(|| request.turn_id.clone()),
             purpose: request.purpose,
@@ -295,6 +299,7 @@ impl Calls {
             price: None,
             system_hash: self.system_hash.clone(),
             tools_hash: self.tools_hash.clone(),
+            new_prompt: self.new_prompt && self.call_no == 1,
         }
     }
 
