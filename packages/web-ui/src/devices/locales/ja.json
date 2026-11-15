@@ -88,7 +88,15 @@
     "paired": "ペアリング日",
     "revokeThis": "このデバイスのアクセスを取り消す",
     "revoke": "アクセスを取り消す…",
-    "lastSeen": "最終確認"
+    "lastSeen": "最終確認",
+    "administrator": "管理者権限",
+    "administratorRequest": "「リクエスト」を押すと、このデバイスの画面に確認が表示されます。",
+    "administratorPrompt": "このデバイスの画面に表示された確認で許可してください。",
+    "administratorHeld": "Jush はこのアカウントの管理者権限で動作しています。",
+    "administratorUnavailable": "この Windows アカウントは管理者ではありません。",
+    "yes": "あり",
+    "no": "なし",
+    "request": "リクエスト"
   },
   "details": {
     "title": "接続の詳細",

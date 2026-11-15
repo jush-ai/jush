@@ -95,9 +95,11 @@ const RUNNER_ENTRIES: &[&str] = &[
     "artifacts",
     "backend-url",
     "commands",
+    "elevation-asked",
     "jush-runner",
     "jush-runner.exe",
     "install.lock",
+    "jush-start.exe",
     "jobs",
     "log",
     "release-id",
@@ -214,7 +216,7 @@ pub fn remove(directory: &Path) -> io::Result<Removed> {
         .collect::<Vec<_>>()
         .join("\n");
     let start = |flags: u32| {
-        std::process::Command::new("powershell.exe")
+        std::process::Command::new(crate::autostart::powershell_path())
             .args(["-NoProfile", "-NonInteractive", "-Command", SCRIPT])
             .env("JUSH_REMOVED_PATHS", &joined)
             // A process's working directory cannot be removed while it runs.

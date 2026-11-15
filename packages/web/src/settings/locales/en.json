@@ -7,6 +7,9 @@
     "revokeFailed": "Could Not Revoke Device",
     "renameFailed": "Could Not Rename Device",
     "routeFailed": "Could Not Change the Route",
+    "elevateFailed": "Could Not Request Administrator Rights",
+    "elevationUnavailable": "No Prompt Shown",
+    "elevationUnavailableMessage": "Windows can’t show a prompt on {device} right now.",
     "resetNotStarted": "The reset didn’t start. Check your connection and try again."
   },
   "storage": {

@@ -88,7 +88,15 @@
     "paired": "配对日期",
     "revokeThis": "撤销此设备",
     "revoke": "撤销…",
-    "lastSeen": "上次在线"
+    "lastSeen": "上次在线",
+    "administrator": "管理员权限",
+    "administratorRequest": "点“申请”后，这台设备的屏幕上会弹出确认。",
+    "administratorPrompt": "请在这台设备屏幕上的确认中允许。",
+    "administratorHeld": "Jush 以这个账户的管理员权限运行。",
+    "administratorUnavailable": "这个 Windows 账户不是管理员。",
+    "yes": "有",
+    "no": "无",
+    "request": "申请"
   },
   "details": {
     "title": "连接详细信息",

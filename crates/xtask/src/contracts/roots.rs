@@ -221,6 +221,7 @@ pub fn web() -> Vec<Root> {
         receives::<devices::DeviceAnswer>(),
         sends::<devices::ChangeDevice>(),
         receives::<devices::RevokedDevice>(),
+        receives::<devices::DeviceElevation>(),
         sends::<diagnostics::PageLog>(),
         receives::<cloud::CloudStatus>(),
         sends::<cloud::CloudReset>(),

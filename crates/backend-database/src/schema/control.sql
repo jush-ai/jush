@@ -217,7 +217,10 @@ CREATE TABLE devices (
   hardware TEXT,
   -- What Jush keeps on it, as its runner last measured, JSON, the web
   -- contract's `DeviceStorageReport`; none before its runner first measured.
-  storage TEXT
+  storage TEXT,
+  -- Whether its Windows runner runs elevated, as it last reported; none on
+  -- another system, or before its runner first said.
+  elevation TEXT CHECK (elevation IN ('elevated', 'elevatable', 'unavailable'))
 ) STRICT;
 CREATE UNIQUE INDEX devices_one_machine ON devices (user_id, machine) WHERE kind = 'managed';
 

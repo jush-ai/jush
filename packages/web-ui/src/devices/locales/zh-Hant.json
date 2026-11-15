@@ -88,7 +88,15 @@
     "paired": "配對日期",
     "revokeThis": "撤銷此裝置",
     "revoke": "撤銷…",
-    "lastSeen": "最後上線"
+    "lastSeen": "最後上線",
+    "administrator": "系統管理員權限",
+    "administratorRequest": "按下「申請」後，這部裝置的螢幕上會出現確認。",
+    "administratorPrompt": "請在這部裝置螢幕上的確認中允許。",
+    "administratorHeld": "Jush 以這個帳號的系統管理員權限執行。",
+    "administratorUnavailable": "這個 Windows 帳號不是系統管理員。",
+    "yes": "有",
+    "no": "無",
+    "request": "申請"
   },
   "details": {
     "title": "連線詳細資料",

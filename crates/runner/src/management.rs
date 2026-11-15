@@ -106,6 +106,12 @@ pub struct Management {
     revocation: watch::Sender<Option<Revocation>>,
     pub draining: CancellationToken,
     pub stop: CancellationToken,
+    /// A prompt granted elevation: the runner ends, leaving its jobs to the
+    /// elevated runner its task starts (`crates/runner/src/elevation.rs`).
+    pub elevated: CancellationToken,
+    /// Whether a prompt to elevate shows on the desktop now, which the
+    /// connection reports (`crates/runner/src/elevation.rs`).
+    pub elevation_prompt: watch::Sender<bool>,
     told: Mutex<Told>,
 }
 
@@ -122,6 +128,8 @@ impl Management {
             revocation: watch::Sender::new(None),
             draining: CancellationToken::new(),
             stop,
+            elevated: CancellationToken::new(),
+            elevation_prompt: watch::Sender::new(false),
             told: Mutex::default(),
         })
     }

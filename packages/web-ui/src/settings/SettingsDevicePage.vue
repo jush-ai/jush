@@ -60,7 +60,11 @@ import type { SettingsDevice } from './types'
  *   the last attempt's diagnostics; and the two paths' latency from this
  *   browser's last measurement, with when it was taken and Measure, which
  *   alone measures from here: showing the page measures nothing.
- * - Device holds the facts, with Rename…
+ * - Device holds the facts, with Rename…; on Windows, whether the runner has
+ *   the account's administrator rights, with Request when the account may give
+ *   them, which shows a prompt on the device's screen. Request is busy while a
+ *   prompt shows there, whoever asked, as the runner says, so every page shows
+ *   it (`crates/runner/src/elevation.rs`).
  * - Revoke… ends the page.
  *
  * The Cloud's page has no Connection.
@@ -75,6 +79,8 @@ const props = defineProps<{
   overlayStore: OverlayStore
   /** Revokes the device; the dialog's button works until it settles. */
   onRevoke?: Action
+  /** Asks the device's Windows runner to run elevated; Request works until the prompt shows. */
+  onElevate?: Action
 }>()
 const emit = defineEmits<{
   back: []
@@ -127,6 +133,20 @@ const offlineStart = computed(() => (device.value?.state === 'offline' ? (device
 const noAutostart = computed(() => {
   const reason = device.value?.autostartUnavailable
   return reason ? autostartCause(reason, device.value?.home) : null
+})
+
+/** What the Administrator rights row says under its value, in every state, so the row keeps its height. */
+const elevationSentence = computed<SentenceText | undefined>(() => {
+  switch (device.value?.elevation) {
+    case 'elevated':
+      return t('page.administratorHeld')
+    case 'elevatable':
+      return device.value.elevationPrompt ? t('page.administratorPrompt') : t('page.administratorRequest')
+    case 'unavailable':
+      return t('page.administratorUnavailable')
+    default:
+      return undefined
+  }
 })
 
 /**
@@ -318,6 +338,18 @@ async function revoke(): Promise<void> {
         :description="runner === 'outdated' ? t('page.runnerUpdates') : undefined"
       >
         <span class="text-chrome text-fg-muted">{{ runner ? RUNNER_STATE_LABEL[runner] : t('page.notReported') }}</span>
+      </SettingsRow>
+      <SettingsRow v-if="device?.elevation" :label="t('page.administrator')" :description="elevationSentence">
+        <span class="text-chrome text-fg-muted">{{ device.elevation === 'elevated' ? t('page.yes') : t('page.no') }}</span>
+        <Button
+          v-if="device.elevation === 'elevatable'"
+          size="sm"
+          :loading="device.elevationPrompt"
+          :disabled="device.state !== 'online'"
+          @click="onElevate?.()"
+        >
+          {{ t('page.request') }}
+        </Button>
       </SettingsRow>
       <SettingsRow v-if="device" :label="t('page.paired')">
         <span class="text-chrome text-fg-muted">{{ formatDay(device.pairedAt) }}</span>

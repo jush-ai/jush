@@ -7,6 +7,9 @@
     "revokeFailed": "デバイスのアクセスを取り消せませんでした",
     "renameFailed": "デバイス名を変更できませんでした",
     "routeFailed": "経路を変更できませんでした",
+    "elevateFailed": "管理者権限をリクエストできませんでした",
+    "elevationUnavailable": "確認を表示できませんでした",
+    "elevationUnavailableMessage": "Windows は現在 {device} に確認を表示できません。",
     "resetNotStarted": "リセットを開始できませんでした。接続を確認して、もう一度お試しください。"
   },
   "storage": {

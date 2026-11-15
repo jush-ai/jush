@@ -118,6 +118,11 @@ pub enum Ending {
     /// which this one, which the manager did not start, handed it to
     /// (`crates/runner/src/autostart.rs`).
     HandedOver,
+    /// A prompt granted elevation: the scheduled task, which runs with the
+    /// highest privileges now, starts the installation's runner elevated
+    /// once this one ended, and that runner keeps the jobs
+    /// (`crates/runner/src/elevation.rs`).
+    Elevated,
     /// The installation's state is one no start can change, which the log
     /// says.
     Unstartable,
@@ -160,6 +165,13 @@ pub async fn run(options: Options, stop: CancellationToken) -> io::Result<Ending
             }
         }
     }
+    // Only the task's runner may ask: the `Run` value starts nothing
+    // elevated (`crates/runner/src/elevation.rs`).
+    #[cfg(windows)]
+    let elevating = match (&options.autostart, &supervision) {
+        (Some(registration), Some(Ok(Supervision::Restarts))) => Some(registration.clone()),
+        _ => None,
+    };
     runner.autostart_unavailable = supervision.and_then(Result::err);
     // The runner that keeps the installation ends a move from the names of
     // before the rename (`crates/runner/src/renamed.rs`).
@@ -228,6 +240,14 @@ pub async fn run(options: Options, stop: CancellationToken) -> io::Result<Ending
     let pipes = PipeClient::new(&options.backend, token.subscribe())?;
     let secret = uuid::Uuid::new_v4().simple().to_string();
     let management = Management::new(secret.clone(), runner.version.clone(), stop.clone());
+    #[cfg(windows)]
+    let elevator = elevating.and_then(|registration| {
+        crate::elevation::Elevator::new(
+            &registration,
+            management.elevation_prompt.clone(),
+            management.elevated.clone(),
+        )
+    });
     if options.removing {
         management.removing.cancel();
     }
@@ -302,15 +322,18 @@ pub async fn run(options: Options, stop: CancellationToken) -> io::Result<Ending
         volumes: options.volumes,
         removal: options.removal,
         instance: uuid::Uuid::new_v4().as_u64_pair().0,
+        #[cfg(windows)]
+        elevator,
     };
     let mut kept = Kept::open(&registered).await;
     let outcome = tokio::select! {
         outcome = reconnect(&registered, &mut kept) => outcome,
         never = revocation_window(&registered) => match never {},
     };
-    // A runner that updates leaves its jobs to its successor; one that ends
-    // otherwise stops them (`crates/runner/src/connection/kept.rs`).
-    if matches!(outcome, Ok(Ending::Replaced(_))) {
+    // A runner that updates leaves its jobs to its successor, as one that
+    // hands over to its elevated self does; one that ends otherwise stops
+    // them (`crates/runner/src/connection/kept.rs`).
+    if matches!(outcome, Ok(Ending::Replaced(_) | Ending::Elevated)) {
         kept.leave().await;
     } else {
         kept.close().await;
@@ -343,12 +366,24 @@ pub async fn run(options: Options, stop: CancellationToken) -> io::Result<Ending
             Ok(Ending::Held) => "held",
             Ok(Ending::Refused(_)) => "refused",
             Ok(Ending::HandedOver) => "handed_over",
+            Ok(Ending::Elevated) => "elevated",
             Ok(Ending::Unstartable) => "unstartable",
             Err(_) => "failed",
         },
         ms = started.elapsed().as_millis() as u64,
         "the runner stopped"
     );
+    // An elevated runner removes its task before it lets go of the
+    // installation: the `uninstall` that asked, which removes the rest once
+    // it may, can run with limited rights, which Windows refuses a task an
+    // elevated process made.
+    #[cfg(windows)]
+    if matches!(outcome, Ok(Ending::Uninstalled(_)))
+        && crate::elevation::current() == Some(jush_runner_protocol::wire::Elevation::Elevated)
+        && let Some(registration) = &options.autostart
+    {
+        registration.remove().await;
+    }
     let released = lease.release();
     let ending = outcome?;
     closed.and(released)?;
@@ -452,6 +487,7 @@ async fn reconnect(registered: &Registered, kept: &mut Kept) -> io::Result<Endin
         match result {
             Ok(End::Rejected(code)) => return Ok(Ending::Refused(code)),
             Ok(End::Stopped) => return Ok(Ending::Stopped),
+            Ok(End::Elevated) => return Ok(Ending::Elevated),
             // An `uninstall` asked for the revocation, and removes the
             // installation once this runner has ended.
             Ok(End::Revoked(_)) if management.removing.is_cancelled() => {
@@ -494,6 +530,7 @@ async fn reconnect(registered: &Registered, kept: &mut Kept) -> io::Result<Endin
             tokio::select! {
                 _ = management.stop.cancelled() => return Ok(Ending::Stopped),
                 _ = management.draining.cancelled(), if idle => return Ok(Ending::Stopped),
+                _ = management.elevated.cancelled() => return Ok(Ending::Elevated),
                 () = &mut waited => break,
                 event = kept.next() => kept.handle(event, None, registered).await,
             }
@@ -548,6 +585,7 @@ async fn connection(registered: &Registered, kept: &mut Kept) -> io::Result<Atte
         let idle = kept.jobs.is_empty();
         tokio::select! {
             _ = management.draining.cancelled(), if idle => return Ok(Attempt::Ended(End::Stopped)),
+            _ = management.elevated.cancelled() => return Ok(Attempt::Ended(End::Elevated)),
             result = &mut connecting => break result?,
             event = kept.next() => kept.handle(event, None, registered).await,
         }

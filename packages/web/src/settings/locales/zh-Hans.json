@@ -7,6 +7,9 @@
     "revokeFailed": "无法撤销设备",
     "renameFailed": "无法重命名设备",
     "routeFailed": "无法更改连接路径",
+    "elevateFailed": "无法申请管理员权限",
+    "elevationUnavailable": "未能弹出确认",
+    "elevationUnavailableMessage": "Windows 现在无法在 {device} 上弹出确认。",
     "resetNotStarted": "重置未能开始。请检查网络连接后重试。"
   },
   "storage": {

@@ -88,7 +88,15 @@
     "paired": "Paired",
     "revokeThis": "Revoke this device",
     "revoke": "Revoke…",
-    "lastSeen": "Last seen"
+    "lastSeen": "Last seen",
+    "administrator": "Administrator rights",
+    "administratorRequest": "Request shows a prompt on this device’s screen.",
+    "administratorPrompt": "Allow it in the prompt on this device’s screen.",
+    "administratorHeld": "Jush runs with this account’s administrator rights.",
+    "administratorUnavailable": "This Windows account isn’t an administrator.",
+    "yes": "Yes",
+    "no": "No",
+    "request": "Request"
   },
   "details": {
     "title": "Connection Details",

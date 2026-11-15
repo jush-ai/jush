@@ -667,6 +667,7 @@ fn router(state: AppState, closing: CancellationToken, web_directory: Option<Pat
         .route("/devices", get(devices::list))
         .route("/devices/claim", post(devices::claim))
         .route("/devices/{id}", delete(devices::revoke).patch(devices::change))
+        .route("/devices/{id}/elevation", post(devices::elevate))
         .route(
             "/devices/{id}/fs",
             get(devices::browse).post(devices::make_directory),

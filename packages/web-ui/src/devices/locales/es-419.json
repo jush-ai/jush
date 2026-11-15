@@ -88,7 +88,15 @@
     "paired": "Vinculado",
     "revokeThis": "Revocar este dispositivo",
     "revoke": "Revocar…",
-    "lastSeen": "Última conexión"
+    "lastSeen": "Última conexión",
+    "administrator": "Permisos de administrador",
+    "administratorRequest": "Solicitar muestra una confirmación en la pantalla de este dispositivo.",
+    "administratorPrompt": "Permítelo en la confirmación que aparece en la pantalla de este dispositivo.",
+    "administratorHeld": "Jush se ejecuta con los permisos de administrador de esta cuenta.",
+    "administratorUnavailable": "Esta cuenta de Windows no es de administrador.",
+    "yes": "Sí",
+    "no": "No",
+    "request": "Solicitar"
   },
   "details": {
     "title": "Detalles de la conexión",

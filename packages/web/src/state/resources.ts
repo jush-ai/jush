@@ -53,6 +53,8 @@ function productDevice(device: DeviceDto, devices: readonly DeviceDto[]): Device
     platform,
     start: device.startCommand ? { command: device.startCommand, system: platform } : null,
     autostartUnavailable: device.autostartUnavailable,
+    elevation: device.elevation,
+    elevationPrompt: device.elevationPrompt,
     os: device.os,
     runnerVersion: device.runnerVersion,
     mark: deviceMarkOf(device, devices),
