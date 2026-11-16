@@ -437,7 +437,9 @@ impl CoreStore {
                 }
                 detached
             };
+            // As a detach: its agents hear on their next call that it went.
             for conversation in detached {
+                super::conversation_index::advance_context(&transaction, &conversation)?;
                 raise_devices_revision(&transaction, &conversation)?;
                 if !conversations.contains(&conversation) {
                     conversations.push(conversation);
