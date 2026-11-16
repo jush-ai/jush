@@ -223,19 +223,7 @@ impl CoreStore {
             )?;
             if inserted == 1 {
                 for attached in &metadata.attached_devices {
-                    let paired: bool = transaction.query_row(
-                        "SELECT EXISTS (SELECT 1 FROM devices WHERE id = ?1)",
-                        [attached.device.as_str()],
-                        |row| row.get(0),
-                    )?;
-                    if paired {
-                        insert_attached_device(
-                            &transaction,
-                            &operation.id,
-                            attached,
-                            metadata.created_at,
-                        )?;
-                    }
+                    insert_attached_device(&transaction, &operation.id, attached, metadata.created_at)?;
                 }
                 copy_pins(&transaction, &operation.id, &metadata.pins)?;
             }
