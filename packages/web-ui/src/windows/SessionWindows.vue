@@ -104,6 +104,12 @@ const area = ref<InstanceType<typeof WindowStage> | null>(null)
  */
 const chosen = shallowRef<ReadonlyMap<string, string>>(new Map())
 function choose(id: string, tab: string | null): void {
+  // A choice that changes nothing writes nothing: the watchers that choose
+  // read the windows the choice makes, and would run again for their own
+  // write.
+  if ((chosen.value.get(id) ?? null) === tab) {
+    return
+  }
   const next = new Map(chosen.value)
   if (tab === null) {
     next.delete(id)
@@ -221,38 +227,49 @@ watch(windows, (now) => {
   }
 }, { immediate: true })
 
+/**
+ * The request the windows last took. The request comes in `props.work`,
+ * which the parent makes anew only when it renders again: what taking it
+ * changes in the windows runs this watcher again first, with the request it
+ * took.
+ */
+let taken: number | null = null
 // A request brings its tab's window to the front on it once the window holds
 // the tab, as a click would; one naming none puts the work's windows away.
 watch([() => props.work?.request ?? null, windows, ready], ([request]) => {
   const work = props.work
-  if (!work || !request) {
+  if (!work || !request || request.id === taken) {
     return
+  }
+  const take = () => {
+    taken = request.id
+    work.took(request.id)
   }
   if (request.opens) {
     const { kind, data } = request.opens
     const opens = work.kinds.find((candidate) => candidate.kind === kind)
+    take()
     if (opens?.open) {
       opens.open(data)
       show(opens.window.id)
     }
-    work.took(request.id)
     return
   }
   if (request.tab === null) {
+    take()
     for (const placed of props.stage.state.windows) {
       if (workIds.value.has(placed.id) && placed.placement !== 'minimized') {
         props.stage.minimize(placed.id)
       }
     }
-    work.took(request.id)
     return
   }
   const window = windowHolding(windows.value, request.tab)
   if (window && ensure(window.window.id)) {
+    take()
     choose(window.window.id, null)
     work.pick(request.tab)
     props.stage.show(window.window.id)
-    work.took(request.id)
   }
 }, { immediate: true })
 
