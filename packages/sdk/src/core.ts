@@ -530,6 +530,18 @@ export class Device {
     void connected.ended.then(() => child.stdin?.end())
     return child
   }
+
+  /**
+   * Revokes the device, as the app's Revoke does: its token opens nothing
+   * from then on, the commands running on it are lost, and the commands of
+   * a conversation whose target it is fail until `update({ target })` names
+   * another. A runner connected to it exits and removes its `--home`, or
+   * only its own files there when `--home` is the home directory, holds it,
+   * or is a filesystem's root, such as a volume's mount point.
+   */
+  async revoke(): Promise<void> {
+    await this.routes.send('DELETE', `/devices/${encodeURIComponent(this.id)}`)
+  }
 }
 
 export class Devices {

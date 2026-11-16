@@ -108,6 +108,7 @@ public packages both import:
 | `core.devices.create()` | `POST /devices` (0305): a device, with its id |
 | `device.connect(stream)` | `CONNECT /devices/{device}/runner` (0305), with the stream's bytes carried both ways: a runner's channel the program reaches it by; it resolves once the product state shows the device online, so a conversation can be created on it next, and fails when the channel ends first; a device the core waits for to come back counts as online, as the app shows it |
 | `device.spawn(command)` | starts `command`, whose standard input and output are a `jush-runner run --stdio`'s, and connects them, resolving as `connect` does; with no command, the package's own `jush-runner` on the program's machine |
+| `device.revoke()` | `DELETE /devices/{id}`, as the app's Revoke |
 | `core.fetch(request, base)`, `core.accept(socket, url)` | the core's routes under `/cores/{id}/api`, for the program's HTTP server to forward its pages' requests below `base` (`/api` unless named) and its pages' sockets, with the query of the address the page opened |
 | `jush.fetch(request, base)` | the process's schedule URLs, `/hooks/{id}` below `base` (0304) |
 
