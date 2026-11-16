@@ -20,13 +20,15 @@
 //!   or a probe that fails, leaves the snapshot until the account's next
 //!   use, Smart's choice or Refresh usage. The process forgets it as it
 //!   stops, so a failed read is tried once more after a restart.
+//! - A probe that meets the wait of the account's probes reads nothing, and
+//!   the reset is read for as the wait ends.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, PoisonError, Weak};
 use std::time::Duration;
 
-use jush_provider_common::quota::QuotaSnapshotStore;
+use jush_provider_common::quota::{ProbeGate, QuotaSnapshotStore};
 use jush_shared_types::{Clock, QuotaSnapshot, SnapshotSource, Timestamp};
 use jush_web_api_protocol::ids::{CredentialId, ProviderId};
 use tokio_util::sync::CancellationToken;
@@ -47,6 +49,8 @@ pub(crate) enum ResetRead {
     /// The probe wrote the account's new snapshot.
     Read,
     Failed,
+    /// The account's probes wait until then: the reset is read for then.
+    Waits(Timestamp),
     /// The account was removed or signed out: it is not read again.
     Gone,
 }
@@ -98,6 +102,9 @@ pub struct AccountQuotas {
     awaited: Mutex<HashSet<(ProviderId, Timestamp)>>,
     /// Each account's timer for its windows' resets.
     resets: Mutex<HashMap<Account, ResetWatch>>,
+    /// Each account's probe gate, which every provider of the account built
+    /// in this process shares; forgotten as the process stops.
+    gates: Mutex<HashMap<Account, Arc<ProbeGate>>>,
     /// The number of the next timer for a reset.
     timers: AtomicU64,
     /// The registry, which builds the account a timer probes; set once as
@@ -117,6 +124,7 @@ impl AccountQuotas {
             clock,
             awaited: Mutex::default(),
             resets: Mutex::default(),
+            gates: Mutex::default(),
             timers: AtomicU64::new(0),
             registry: OnceLock::new(),
             stop: CancellationToken::new(),
@@ -186,11 +194,15 @@ impl AccountQuotas {
         if watch.timer.is_some_and(|(waits_for, _)| waits_for <= due) {
             return;
         }
+        // `READ_AFTER_RESET` is 30 seconds, well within i64 milliseconds.
+        self.arm(watch, account, due, due.as_millisecond() + READ_AFTER_RESET.as_millis() as i64);
+    }
+
+    /// Sets `watch`, the account's, held, to a timer for the reset `due`
+    /// that reads at `read_at` milliseconds, in place of the one it had.
+    fn arm(self: &Arc<Self>, watch: &mut ResetWatch, account: &Account, due: Timestamp, read_at: i64) {
         let number = self.timers.fetch_add(1, Ordering::Relaxed);
         watch.timer = Some((due, number));
-        drop(resets);
-        // `READ_AFTER_RESET` is 30 seconds, well within i64 milliseconds.
-        let read_at = due.as_millisecond() + READ_AFTER_RESET.as_millis() as i64;
         let wait = Duration::from_millis(u64::try_from(read_at - self.clock.now().as_millisecond()).unwrap_or(0));
         let quotas = self.clone();
         let account = account.clone();
@@ -234,6 +246,10 @@ impl AccountQuotas {
             self.watch(&account, snapshot);
             return;
         }
+        let due = held
+            .as_deref()
+            .and_then(|snapshot| unread_resets(snapshot, read).min())
+            .unwrap_or(now);
         match self.resets().get_mut(&account) {
             Some(watch) => watch.read = Some(now),
             None => return,
@@ -247,6 +263,16 @@ impl AccountQuotas {
             ResetRead::Read => {}
             ResetRead::Gone => {
                 self.resets().remove(&account);
+            }
+            // The reset stays unread, and is read for as the wait ends: a
+            // probe that waits read nothing.
+            ResetRead::Waits(until) => {
+                let mut resets = self.resets();
+                let Some(watch) = resets.get_mut(&account) else {
+                    return;
+                };
+                watch.read = read;
+                self.arm(watch, &account, due, until.as_millisecond());
             }
             ResetRead::Failed => {
                 self.store.entry_changed(account.0.clone()).await;
@@ -309,18 +335,33 @@ impl AccountQuotas {
         &self.edge
     }
 
-    /// Forgets a removed account's snapshot, and ends its timer.
+    /// The probe gate of `account`, made at its first probe.
+    fn gate(&self, account: &Account) -> Arc<ProbeGate> {
+        self.gates
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .entry(account.clone())
+            .or_default()
+            .clone()
+    }
+
+    /// Forgets a removed account's snapshot and probes, and ends its timer.
     pub fn forget_account(&self, provider: &ProviderId, account: &CredentialId) {
         let account = (provider.clone(), account.clone());
         self.lock().remove(&account);
         self.resets().remove(&account);
+        self.gates.lock().unwrap_or_else(PoisonError::into_inner).remove(&account);
     }
 
-    /// Forgets the snapshots of a deleted entry's accounts, and ends their
-    /// timers.
+    /// Forgets the snapshots and probes of a deleted entry's accounts, and
+    /// ends their timers.
     pub fn forget_entry(&self, provider: &ProviderId) {
         self.lock().retain(|(held, _), _| held != provider);
         self.resets().retain(|(held, _), _| held != provider);
+        self.gates
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .retain(|(held, _), _| held != provider);
     }
 
     /// Ends the timers and waits for the record writes still running.
@@ -415,5 +456,9 @@ impl QuotaSnapshotStore for AccountQuota {
         }
         self.quotas.write_through(self.account.clone());
         snapshot
+    }
+
+    fn gate(&self) -> Arc<ProbeGate> {
+        self.quotas.gate(&self.account)
     }
 }

@@ -18,7 +18,16 @@
 //! A snapshot is information for the user and for choosing an account under
 //! rotation. Inference admission never reads it and the model never sees it. A
 //! window the vendor does not report is absent, never a made-up percentage.
+//!
+//! An account is probed one probe at a time, through the gate every provider
+//! of the account shares ([`ProbeGate`]): a probe asked while another runs
+//! answers what that one answered. A vendor refuses a usage endpoint read too
+//! often, and a refusal makes a failing account's snapshot stay old, which
+//! would have the backend's own probes ask again at every account choice. So
+//! a routine probe waits after each attempt, longer after each failure in a
+//! row ([`routine_wait`]); the user's Refresh usage does not wait.
 
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use jush_shared_types::{
@@ -82,20 +91,62 @@ impl ProviderQuota {
     }
 
     /// Asks the vendor's usage endpoint about the account and merges the answer
-    /// into its snapshot.
+    /// into its snapshot, one probe of the account at a time, under the wait
+    /// of a routine probe for `ask`.
     ///
     /// The probe sets the plan and the account label and replaces the windows
     /// it names whose value comes from a request that started no later than the
     /// probe. A family whose probe would spend an inference request is never
-    /// probed.
-    pub async fn probe(&self) -> Result<Arc<QuotaSnapshot>, QuotaError> {
+    /// probed. A probe asked while another of the account ran answers what
+    /// that one answered, and reads nothing itself.
+    pub async fn probe(&self, ask: ProbeAsk) -> Result<Arc<QuotaSnapshot>, QuotaError> {
         match self.source.probe_cost() {
             None => return Err(QuotaError::Unsupported),
             Some(ProbeCost::Inference) => return Err(QuotaError::RequiresInference),
             Some(ProbeCost::Free) => {}
         }
+        let gate = self.store.gate();
+        let ended = gate.ended.load(Ordering::Acquire);
+        let mut last = gate.last.lock().await;
+        if gate.ended.load(Ordering::Acquire) != ended
+            && let Some(attempt) = last.as_ref()
+        {
+            return attempt.outcome.clone();
+        }
         let requested_at = self.clock.now();
-        let reading = self.source.probe().await?;
+        if ask == ProbeAsk::Routine
+            && let Some(attempt) = last.as_ref()
+        {
+            let until = attempt.waits_until();
+            if requested_at < until {
+                return Err(QuotaError::Waiting { until });
+            }
+        }
+        let outcome = self.read(requested_at).await;
+        let failures = match (&outcome, last.as_ref()) {
+            (Ok(_), _) => 0,
+            (Err(_), previous) => previous.map_or(0, |attempt| attempt.failures) + 1,
+        };
+        *last = Some(Attempt {
+            started: requested_at,
+            failures,
+            outcome: outcome.clone(),
+        });
+        gate.ended.fetch_add(1, Ordering::Release);
+        outcome
+    }
+
+    /// One read of the vendor's usage endpoint, started at `requested_at`,
+    /// merged into the account's snapshot, within `PROBE_LIMIT`.
+    async fn read(&self, requested_at: Timestamp) -> Result<Arc<QuotaSnapshot>, QuotaError> {
+        let reading = tokio::time::timeout(PROBE_LIMIT, self.source.probe())
+            .await
+            .map_err(|_| {
+                QuotaError::Unavailable(format!(
+                    "the usage read did not end within {} seconds",
+                    PROBE_LIMIT.as_secs()
+                ))
+            })??;
         let observed_at = self.clock.now();
         let mut reading = Some(reading);
         Ok(self.store.update(&mut |previous| {
@@ -232,9 +283,71 @@ pub struct ProbeReading {
     pub absent: Vec<String>,
 }
 
+/// How long one read may hold the account's probe gate. Every probe of the
+/// account waits behind it, Smart's choice of an account among them, so a
+/// read that never ends must not hold them for good; twice Claude Code's
+/// own limit on its usage request, whose process must start first.
+const PROBE_LIMIT: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// Who asks for a probe.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProbeAsk {
+    /// The user's Refresh usage, which never waits for the account's wait:
+    /// it reads, or answers what a probe in progress as it was asked read.
+    User,
+    /// The backend's own, such as Smart's choice or the read after a reset,
+    /// which runs only once the account's wait has passed.
+    Routine,
+}
+
+/// How long a routine probe waits after an attempt that ended `failures`
+/// failures in a row: 5 minutes after a success, as Smart reads a snapshot
+/// older than that again; 5, 10, 20 and 40 minutes after failures, then 60.
+/// An hour is the longest Claude Code's CLI keeps a refused usage read before
+/// it asks the vendor again: waiting longer would only leave the snapshot
+/// older.
+pub fn routine_wait(failures: u32) -> std::time::Duration {
+    const FIRST: std::time::Duration = std::time::Duration::from_secs(5 * 60);
+    const LONGEST: std::time::Duration = std::time::Duration::from_secs(60 * 60);
+    let doublings = failures.saturating_sub(1).min(8);
+    FIRST.saturating_mul(1 << doublings).min(LONGEST)
+}
+
+/// The probes of one account, shared by every provider of the account: one
+/// runs at a time, and the last attempt sets when a routine one may run.
+#[derive(Debug, Default)]
+pub struct ProbeGate {
+    /// The attempts that ended, which a probe that waited for the gate reads
+    /// to tell whether one ran meanwhile.
+    ended: AtomicU64,
+    /// Held for the length of a probe.
+    last: tokio::sync::Mutex<Option<Attempt>>,
+}
+
+/// An account's last probe that read its vendor.
+#[derive(Debug)]
+struct Attempt {
+    started: Timestamp,
+    /// Failures in a row, this one included; none after a success.
+    failures: u32,
+    outcome: Result<Arc<QuotaSnapshot>, QuotaError>,
+}
+
+impl Attempt {
+    /// When a routine probe may read again.
+    fn waits_until(&self) -> Timestamp {
+        let wait = i64::try_from(routine_wait(self.failures).as_millis()).unwrap_or(i64::MAX);
+        Timestamp::from_millisecond(self.started.as_millisecond().saturating_add(wait)).unwrap_or(self.started)
+    }
+}
+
 /// Why a probe failed.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum QuotaError {
+    /// A routine probe met the account's wait, which ends at `until`: it read
+    /// nothing.
+    #[error("the account's usage is read again after {until}")]
+    Waiting { until: Timestamp },
     /// The family has no usage endpoint to probe.
     #[error("this provider cannot read its usage")]
     Unsupported,
@@ -262,6 +375,9 @@ pub trait QuotaSnapshotStore: Send + Sync {
         &self,
         next: &mut dyn FnMut(Option<&QuotaSnapshot>) -> QuotaSnapshot,
     ) -> Arc<QuotaSnapshot>;
+
+    /// The account's probe gate, the same for every provider of the account.
+    fn gate(&self) -> Arc<ProbeGate>;
 }
 
 /// A snapshot store held in memory, such as for a provider built during a
@@ -271,6 +387,7 @@ pub struct MemorySnapshots {
     /// A `std` mutex: probes and observations arrive from any thread, and
     /// the merge under it never awaits.
     latest: Mutex<Option<Arc<QuotaSnapshot>>>,
+    gate: Arc<ProbeGate>,
 }
 
 impl MemorySnapshots {
@@ -297,6 +414,10 @@ impl QuotaSnapshotStore for MemorySnapshots {
         let snapshot = Arc::new(next(latest.as_deref()));
         *latest = Some(snapshot.clone());
         snapshot
+    }
+
+    fn gate(&self) -> Arc<ProbeGate> {
+        self.gate.clone()
     }
 }
 

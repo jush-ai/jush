@@ -18,7 +18,7 @@ use jush_provider_registry::entry::ProviderEntry;
 use jush_backend_providers::vault::entries::Vault;
 use jush_backend_providers::vault::operations::OperationGuard;
 use jush_provider_common::Provider;
-use jush_provider_common::quota::QuotaError;
+use jush_provider_common::quota::{ProbeAsk, QuotaError};
 use jush_web_api_protocol::auth::UserDto;
 use jush_web_api_protocol::error::ErrorCode;
 use jush_web_api_protocol::ids::CredentialId;
@@ -273,7 +273,7 @@ pub(super) async fn quota(
     let Some(quota) = provider.quota() else {
         return Ok(Json(QuotaAnswer { quota: None }));
     };
-    let snapshot = match quota.probe().await {
+    let snapshot = match quota.probe(ProbeAsk::User).await {
         Ok(snapshot) => Some(snapshot),
         Err(QuotaError::Unsupported) => quota.latest(),
         Err(QuotaError::RequiresInference) => {
@@ -284,6 +284,13 @@ pub(super) async fn quota(
             ));
         }
         Err(error) => {
+            tracing::warn!(
+                event = "account_usage.refresh_failed",
+                provider = %entry.id,
+                account = request.credential_id.as_ref().map(tracing::field::display),
+                %error,
+                "Refresh usage did not read an account's usage; its snapshot stays"
+            );
             return Err(ApiError::new(
                 StatusCode::SERVICE_UNAVAILABLE,
                 ErrorCode::QuotaUnavailable,
