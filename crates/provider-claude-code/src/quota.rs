@@ -12,8 +12,10 @@
 //! (`crates/provider-claude-code/src/cli.rs`). The CLI refreshes a cache older
 //! than its six hours as it starts, and leaves a younger one alone. So a process
 //! of the account that starts three hours or more after the last probe runs one
-//! in the background, and the cache is never more than nine hours old. A
-//! sign-in fetches the flags too, so a new account's first process finds them.
+//! in the background, and the cache is no more than nine hours old while those
+//! probes run; one the account's probes' wait holds back is run by the next
+//! start three hours on. A sign-in fetches the flags too, so a new account's
+//! first process finds them.
 
 use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -146,9 +148,17 @@ impl QuotaSource for ClaudeQuota {
                 QuotaError::Invalid(format!("Claude Code's usage answer cannot be read: {reason}"))
             };
             let answer = UsageAnswer::deserialize(&usage).map_err(|error| invalid(&error.to_string()))?;
-            let rate_limits = answer
-                .rate_limits
-                .ok_or_else(|| invalid("it holds no rate limits"))?;
+            let rate_limits = match answer.rate_limits {
+                Some(rate_limits) => rate_limits,
+                // The CLI keeps a refused read for the time the refusal names,
+                // up to an hour, and answers none until then.
+                None if answer.rate_limits_available == Some(true) => {
+                    return Err(QuotaError::Unavailable(
+                        "Claude Code could not read the account's usage from Anthropic, which can ask it to wait up to an hour after a refused read".into(),
+                    ));
+                }
+                None => return Err(invalid("it holds no rate limits")),
+            };
             let usage = usage_of(&rate_limits).ok_or_else(|| invalid("its rate limits are not an object"))?;
             Ok(ProbeReading {
                 plan: answer
@@ -183,12 +193,16 @@ impl QuotaSource for ClaudeQuota {
     }
 }
 
-/// What Jush reads of the CLI's `get_usage` answer (Claude Code 2.1.301).
+/// What Jush reads of the CLI's `get_usage` answer (Claude Code 2.1.325).
 #[derive(Deserialize)]
 struct UsageAnswer {
     /// The vendor's usage object, null when the CLI did not read it.
     #[serde(default)]
     rate_limits: Option<serde_json::Value>,
+    /// Whether the account has plan rate limits at all: false for an API key
+    /// or a sign-in without the profile scope.
+    #[serde(default)]
+    rate_limits_available: Option<bool>,
     /// Such as `max`.
     #[serde(default)]
     subscription_type: Option<String>,

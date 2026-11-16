@@ -25,6 +25,7 @@ use jush_provider_common::images::ImageMaker;
 use jush_provider_common::media::{MediaMaker, MediaModelInfo};
 use jush_provider_common::audio::AudioMaker;
 use jush_provider_common::videos::VideoMaker;
+use jush_provider_common::quota::{ProbeAsk, QuotaError};
 use jush_provider_common::{DeviceRoute, ModelWires, Provider, ProviderHttp};
 use jush_shared_types::{AudioShape, CacheTtl, Clock, MediaKind, MediaShapes, Metered, Model, Rotation};
 use jush_web_api_protocol::ids::{CredentialId, ProviderId};
@@ -157,8 +158,12 @@ impl ProviderRegistry {
         let Some(quota) = provider.quota() else {
             return ResetRead::Gone;
         };
-        match quota.probe().await {
+        match quota.probe(ProbeAsk::Routine).await {
             Ok(_) => ResetRead::Read,
+            Err(QuotaError::Waiting { until }) => {
+                tracing::debug!(event = "account_usage.reset_read_waits", provider = %entry, account = %account, %until, "an account's usage is read again after a reset once its probes' wait after their last attempt ends");
+                ResetRead::Waits(until)
+            }
             Err(error) => {
                 tracing::warn!(event = "account_usage.reset_read_failed", provider = %entry, account = %account, %error, "an account's usage was not read again after a reset; its snapshot stays");
                 ResetRead::Failed
@@ -467,7 +472,8 @@ impl ProviderRegistry {
     /// signed out (`crates/provider-claude-code/src/account.rs`).
     ///
     /// With `fresh`, a snapshot older than five minutes, or none, is read again
-    /// first by a free probe, and one that fails leaves the snapshot as it was
+    /// first by a free probe once the account's probes' wait has passed, and a
+    /// probe that fails or waits leaves the snapshot as it was
     /// (`crates/provider-registry/src/rotation.rs`).
     pub async fn candidates(
         &self,
@@ -496,10 +502,17 @@ impl ProviderRegistry {
             let provider_id = entry.id.clone();
             let probed = account.clone();
             let probe = self.quotas.edge().spawn(async move {
-                if let Some(quota) = provider.quota()
-                    && let Err(error) = quota.probe().await
-                {
-                    tracing::warn!(event = "account_usage.read_failed", provider = %provider_id, account = %probed, kept = "snapshot", %error, "an account's usage was not read before a choice; its snapshot stays");
+                let Some(quota) = provider.quota() else {
+                    return;
+                };
+                match quota.probe(ProbeAsk::Routine).await {
+                    Ok(_) => {}
+                    Err(QuotaError::Waiting { until }) => {
+                        tracing::debug!(event = "account_usage.read_waits", provider = %provider_id, account = %probed, kept = "snapshot", %until, "an account's usage was not read before a choice: its probes wait after an attempt; its snapshot stays");
+                    }
+                    Err(error) => {
+                        tracing::warn!(event = "account_usage.read_failed", provider = %provider_id, account = %probed, kept = "snapshot", %error, "an account's usage was not read before a choice; its snapshot stays");
+                    }
                 }
             });
             async move { (account, probe.await) }

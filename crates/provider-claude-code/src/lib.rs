@@ -69,7 +69,7 @@ use std::sync::Arc;
 use jush_command_package_claude_code_protocol::PACKAGE;
 use jush_provider_common::credentials::{Accounts, CredentialPool, SubscriptionAccounts};
 use jush_provider_common::models_dev::ModelsDevClient;
-use jush_provider_common::quota::{ProviderQuota, QuotaSnapshotStore};
+use jush_provider_common::quota::{ProbeAsk, ProviderQuota, QuotaError, QuotaSnapshotStore};
 use jush_provider_common::{
     Capabilities, CatalogError, Provider, ProviderRuntime, RuntimeEnv, RuntimeError, Searches,
 };
@@ -187,13 +187,20 @@ impl Shared {
         }
         let shared = self.clone();
         tokio::task::spawn_local(async move {
-            if let Err(error) = shared.quota.probe().await {
-                tracing::warn!(
+            match shared.quota.probe(ProbeAsk::Routine).await {
+                Ok(_) => {}
+                Err(QuotaError::Waiting { until }) => tracing::debug!(
+                    event = "claude_code_flags.refresh_waits",
+                    provider = %shared.id,
+                    %until,
+                    "the usage probe that refreshes Claude Code's feature flags did not run: the account's probes wait after an attempt; the next start after three hours runs another"
+                ),
+                Err(error) => tracing::warn!(
                     event = "claude_code_flags.refresh_failed",
                     provider = %shared.id,
                     %error,
                     "the usage probe that refreshes Claude Code's feature flags failed; the next start after three hours runs another"
-                );
+                ),
             }
         });
     }
