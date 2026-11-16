@@ -212,6 +212,39 @@ for (const listed of core.state.devices) {
 }
 ```
 
+`device.revoke()` revokes a device, as the app's Revoke does: its token opens
+nothing from then on, the commands running on it are lost, and the commands of
+a conversation whose target it is fail until `update({ target })` names
+another. A runner connected to it exits and removes its `--home`, or only its
+own files there when `--home` is the home directory, holds it, or is a
+filesystem's root, such as a volume's mount point.
+
+### Sandboxes that expire
+
+A sandbox that lives for a while and then goes, such as a container your
+platform keeps for 24 hours, is one device for each sandbox. Make a device
+when the sandbox starts, and revoke it when the sandbox ends; a device is
+never reused for the next sandbox, since its runner's state went with the
+sandbox. One sandbox can serve one conversation, or every conversation of its
+day.
+
+When a sandbox ends before a conversation does, start a new sandbox, move the
+conversation onto its device, and revoke the old device:
+
+```ts
+const next = await core.devices.create()
+await next.spawn(['sandbox', 'exec', 'sbx-0412', 'jush-runner', 'run', '--stdio', '--home', `/var/lib/jush/${next.id}`])
+for (const conversation of onOldSandbox) {
+  await conversation.update({ target: { kind: 'device', deviceId: next.id, path: '/workspace' } })
+}
+await old.revoke()
+```
+
+The conversation keeps its transcript, and its agent is told on its next turn
+that no file moved: what the old sandbox held, its files and the browser
+profiles on it among them, went with it. What has to outlive a sandbox lives
+on a volume your platform keeps across sandboxes.
+
 ## Conversations
 
 `core.conversations.create()` takes the conversation's `title`, `model` and

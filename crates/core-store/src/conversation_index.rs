@@ -1463,8 +1463,9 @@ fn attached_rows(
 }
 
 /// Attaches `attached` to the conversation. A device attached already keeps
-/// its row, and the answer is false. For a transaction that attaches devices
-/// with its other writes, such as a target switch's or a Fork's.
+/// its row, and one revoked is not attached; the answer is then false. For a
+/// transaction that attaches devices with its other writes, such as a target
+/// switch's, whose departed device may be the one revoked, or a Fork's.
 pub fn insert_attached_device(
     connection: &Connection,
     conversation: &ConversationId,
@@ -1473,7 +1474,7 @@ pub fn insert_attached_device(
 ) -> Result<bool, StorageError> {
     let inserted = connection.execute(
         "INSERT INTO conversation_devices (conversation_id, device_id, cwd, attached_at)
-         VALUES (?1, ?2, ?3, ?4)
+         SELECT ?1, ?2, ?3, ?4 WHERE EXISTS (SELECT 1 FROM devices WHERE id = ?2)
          ON CONFLICT (conversation_id, device_id) DO NOTHING",
         params![
             conversation.as_str(),
