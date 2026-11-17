@@ -57,6 +57,13 @@
     "attention": "{count} pendientes",
     "success": "{count} listos"
   },
+  "unreadEntry": {
+    "unread": "{count} sin leer",
+    "running": "{count} en curso",
+    "idle": "Nada en curso",
+    "nextUnread": "Mostrar el siguiente chat sin leer, sin marcarlo como leído",
+    "nextRunning": "Mostrar el siguiente chat en curso"
+  },
   "selection": {
     "open": "Abrir",
     "rename": "Cambiar nombre",

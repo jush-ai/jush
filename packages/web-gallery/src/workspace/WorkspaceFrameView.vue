@@ -101,6 +101,7 @@ const activeConversation = ref<string | null>('c-login')
           :section-entries="sidebarEntries(PLUGIN_PAGES, () => true)"
           @search="productWould('Open Search')"
           @select="(id) => (activeConversation = id)"
+          @glance="(id) => (activeConversation = id)"
           @create="productWould('Start a New Conversation')"
           @archive="(ids) => (conversations = conversations.filter((conversation) => !ids.includes(conversation.id)))"
           @delete="(ids) => (conversations = conversations.filter((conversation) => !ids.includes(conversation.id)))"

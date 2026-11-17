@@ -57,6 +57,13 @@
     "attention": "要対応 {count} 件",
     "success": "完了 {count} 件"
   },
+  "unreadEntry": {
+    "unread": "未読 {count} 件",
+    "running": "実行中 {count} 件",
+    "idle": "実行中のものはありません",
+    "nextUnread": "次の未読のチャットを未読のまま表示",
+    "nextRunning": "次の実行中のチャットを表示"
+  },
   "selection": {
     "open": "開く",
     "rename": "名前を変更",

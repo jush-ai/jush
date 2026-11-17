@@ -60,7 +60,7 @@ import { useSessions } from './auth/handoff'
 import { usePageDebugging } from './debug/page-debugging'
 import { usePasskeyOffer } from './auth/passkey-offer'
 import PasswordChoice from './auth/PasswordChoice.vue'
-import { attend, attended } from './state/attention'
+import { attended, glance, opened, shown } from './state/attention'
 provideBlobUrl(blobUrl)
 provideKeepPicture(keepPicture)
 /** How many recent conversations the search window lists before the user types. */
@@ -346,8 +346,8 @@ const openInBrowserWindow = computed(() => {
 })
 // The shown conversation is read while the user attends the page, and a
 // change of it is the user's action, from the sidebar, a link, Back or a
-// notification.
-watch(activeId, () => attend(), { immediate: true })
+// notification, except the unread entry's, which only glances at it.
+watch(activeId, (id) => shown(id), { immediate: true })
 watch(
   [
     activeId,
@@ -539,7 +539,8 @@ useAppShortcuts(
           @search="openSearch(null)"
           @retry-list="conversations.reloadList"
           @reorder="reorder"
-          @select="open"
+          @select="(id) => { opened(id); open(id) }"
+          @glance="(id) => { glance(id); open(id) }"
           @create="create"
           @add-project="addProject"
           @remove-project="removeProject"

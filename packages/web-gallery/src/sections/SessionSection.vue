@@ -4035,6 +4035,7 @@ onBeforeUnmount(() => {
                   :active-id="frameActiveConversationId"
                   :section-entries="sidebarEntries(PLUGIN_PAGES, () => true)"
                   @select="(id) => (frameActiveConversationId = id)"
+                  @glance="(id) => (frameActiveConversationId = id)"
                   @archive="(ids) => (frameConversations = frameConversations.filter((conversation) => !ids.includes(conversation.id)))"
                   @delete="(ids) => (frameConversations = frameConversations.filter((conversation) => !ids.includes(conversation.id)))"
                   @open-settings="(section) => productWould(section ? `Open ${section} Settings` : 'Open Settings')"

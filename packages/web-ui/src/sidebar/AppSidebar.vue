@@ -38,6 +38,8 @@ import SidebarAccountRow from './SidebarAccount.vue'
 import SidebarGroupLabel from './SidebarGroupLabel.vue'
 import SidebarToggle from './SidebarToggle.vue'
 import SidebarNavItem from './SidebarNavItem.vue'
+import SidebarUnreadEntry from './SidebarUnreadEntry.vue'
+import { nextOf, unreadEntry, type EntryPlace, type UnreadEntry } from './unread-entry'
 import SidebarProjectHeader from './SidebarProjectHeader.vue'
 import { projectDeviceName, projectQualifiers } from './project-devices'
 import { projectEntries, selectionEntries } from './selection-menu'
@@ -53,8 +55,10 @@ import type { WorkspaceView } from '../workspaces/workspaces'
  *
  * - Top: the app, the workspace switcher, and the entries: New, Search, then the
  *   entries the host gives, such as a plugin's settings section, then Archived.
- *   Each but New and Search opens its settings section. The lists below are the
- *   shown workspace's.
+ *   Each but New and Search opens its settings section. Below them the unread
+ *   entry counts the conversations with news, or else those that run, and goes
+ *   to each in turn without reading it. The lists below are the shown
+ *   workspace's.
  * - Middle: plain conversations, then each project that holds one as a collapsible
  *   group of its conversations, with one selection across all of them. The Conversations and
  *   Projects groups each fold under their label.
@@ -106,6 +110,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   reorder: [request: SidebarReorder]
   select: [id: string]
+  /** The unread entry's click on news: show the conversation without reading it, until an action in it. */
+  glance: [id: string]
   create: [projectId: string | null]
   /** Opens the search window. */
   search: []
@@ -419,6 +425,30 @@ function projectMenu(project: SidebarProject): ContextMenuDeclaration {
 const listId = useId()
 const rowId = (id: string): string => `${listId}-${id}`
 
+/** What the unread entry says: nothing while the list is not there. */
+const entryShown = computed<UnreadEntry>(() =>
+  props.listStatus === 'loading' || props.listStatus === 'failed' ? { kind: 'unknown' } : unreadEntry(props.conversations),
+)
+
+/** Where the unread entry went last, which places a conversation read since. */
+let entryLast: EntryPlace | null = null
+
+/**
+ * The unread entry's click: the next conversation in its order after the shown
+ * one, glanced at while it has news, opened as its row opens it while it only
+ * runs; none while that is the shown one.
+ */
+function goToNext(): void {
+  const next = nextOf(props.conversations, props.activeId, entryLast)
+  if (next === null || next.id === props.activeId)
+    return
+  entryLast = next
+  if (entryShown.value.kind === 'unread')
+    emit('glance', next.id)
+  else
+    emit('select', next.id)
+}
+
 function onListFocus(event: FocusEvent): void {
   if (focusedByKeyboard(event))
     list.onFocus()
@@ -704,6 +734,13 @@ function selectProjectConversations(project: SidebarProject): void {
         :icon="Archive"
         :label="t('nav.archived')"
         @click="emit('openSettings', 'archived')"
+      />
+    </div>
+    <!-- As wide as a lit row's background, 8px from both edges like every block. -->
+    <div class="mt-3 shrink-0 px-2">
+      <SidebarUnreadEntry
+        :entry="entryShown"
+        @next="goToNext"
       />
     </div>
 

@@ -28,6 +28,7 @@ import { useHeldList, useProduct } from '../state/product'
 import { useResources } from '../state/resources'
 import { targetKindOf } from '../state/devices'
 import { usePreferences } from '../state/preferences'
+import { glancingAt } from '../state/attention'
 import { placesFor } from '../devices/files'
 import { conversationDeviceSource } from './files'
 import { claimStoredFile, uploadAttachment } from '../api/uploads'
@@ -294,7 +295,7 @@ function attachRemote(file: { deviceId: string; device: string; path: string }) 
       :paste="paste"
       @submit-edit="store.submitEdit(conversation, $event)"
       @save-edit="store.saveSavedEdit(conversation)"
-      focus-on-show
+      :focus-on-show="!glancingAt(conversation.id)"
       :running="conversation.phase === 'running' || startingTurn"
       :compacting="isCompacting(conversation.phase)"
       :send-while-running="preferences.sendWhileRunning"

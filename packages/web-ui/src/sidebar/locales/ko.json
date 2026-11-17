@@ -57,6 +57,13 @@
     "attention": "할 일 {count}개",
     "success": "완료 {count}개"
   },
+  "unreadEntry": {
+    "unread": "읽지 않음 {count}개",
+    "running": "실행 중 {count}개",
+    "idle": "실행 중인 항목 없음",
+    "nextUnread": "다음 읽지 않은 대화를 읽지 않은 상태로 표시",
+    "nextRunning": "다음 실행 중인 대화 표시"
+  },
   "selection": {
     "open": "열기",
     "rename": "이름 변경",

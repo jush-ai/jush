@@ -57,6 +57,13 @@
     "attention": "{count} 个待办",
     "success": "{count} 个完成"
   },
+  "unreadEntry": {
+    "unread": "{count} 条未读",
+    "running": "{count} 个进行中",
+    "idle": "没有进行中的对话",
+    "nextUnread": "显示下一个未读对话，并保持未读",
+    "nextRunning": "显示下一个进行中的对话"
+  },
   "selection": {
     "open": "打开",
     "rename": "重命名",

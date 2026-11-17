@@ -298,6 +298,7 @@ onMounted(async () => {
           :section-entries="sidebarEntries(PLUGIN_PAGES, () => true)"
           @search="productWould('Open Search')"
           @select="(id) => { activeId = id; sidebarOpen = false }"
+          @glance="(id) => { activeId = id; sidebarOpen = false }"
           @create="productWould('Start a New Conversation')"
           @archive="(ids) => (conversations = conversations.filter((conversation) => !ids.includes(conversation.id)))"
           @delete="(ids) => (conversations = conversations.filter((conversation) => !ids.includes(conversation.id)))"
