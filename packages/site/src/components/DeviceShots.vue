@@ -17,7 +17,7 @@
 //   |               [mach]  |      |       |  name+light                    ├▶[vps]
 //   +------------- name+light      +-------+                                └▶[home lab]
 import { computed, onBeforeUnmount, onMounted, ref, useId, watch } from 'vue'
-import DeviceLogo from '@jush-ai/web-ui/devices/DeviceLogo.vue'
+import DeviceLogo from '@jush-agent/web-ui/devices/DeviceLogo.vue'
 import type { DeviceShot, ShotDevice, ShotMachine } from '@/demo/message'
 import server from '@/assets/devices/server.webp'
 import macbook from '@/assets/devices/macbook.webp'

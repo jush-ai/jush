@@ -1,6 +1,6 @@
 import { computed, ref, type ComputedRef } from 'vue'
-import type { SessionWork } from '@jush-ai/web-ui/windows/session-work'
-import { readStage, type StageState } from '@jush-ai/web-ui/windows/stage'
+import type { SessionWork } from '@jush-agent/web-ui/windows/session-work'
+import { readStage, type StageState } from '@jush-agent/web-ui/windows/stage'
 import type { GalleryWork } from './work'
 
 const PINS_KEY = 'jush-gallery.taskbar-pins'

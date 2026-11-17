@@ -1,6 +1,6 @@
-import type { FoundMessages, SearchRow } from '@jush-ai/web-ui/search/search'
+import type { FoundMessages, SearchRow } from '@jush-agent/web-ui/search/search'
 import { apiRequest, readResponse } from './client'
-import { messageResultsSchema, searchResultsSchema } from '@jush-ai/protocol'
+import { messageResultsSchema, searchResultsSchema } from '@jush-agent/protocol'
 
 /** The caller's conversations that match `query`: of the workspace `workspace`, or of every one without it. */
 export async function searchConversations(query: string, signal: AbortSignal, workspace?: string | null): Promise<SearchRow[]> {

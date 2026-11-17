@@ -1,20 +1,20 @@
 <script setup lang="ts">
 import { requestFailure } from '../fixtures/request-failures'
-import type { ShownError } from '@jush-ai/web-ui/infra/errors'
+import type { ShownError } from '@jush-agent/web-ui/infra/errors'
 import { computed, onScopeDispose, ref, toRaw } from 'vue'
-import { appOverlayStore } from '@jush-ai/web-ui/overlay/appOverlay'
+import { appOverlayStore } from '@jush-agent/web-ui/overlay/appOverlay'
 import ProviderLoginDialog, {
   type ProviderLoginPhase,
-} from '@jush-ai/web-ui/settings/ProviderLoginDialog.vue'
-import type { ProviderLoginStage } from '@jush-ai/web-ui/settings/types'
-import SettingsProvidersPage from '@jush-ai/web-ui/settings/SettingsProvidersPage.vue'
+} from '@jush-agent/web-ui/settings/ProviderLoginDialog.vue'
+import type { ProviderLoginStage } from '@jush-agent/web-ui/settings/types'
+import SettingsProvidersPage from '@jush-agent/web-ui/settings/SettingsProvidersPage.vue'
 import {
   type SettingsModelDraft,
   type SettingsProviderAccount,
   type SettingsProviderEntry,
   type SettingsProviderModel,
   type SettingsVendor,
-} from '@jush-ai/web-ui/settings/types'
+} from '@jush-agent/web-ui/settings/types'
 import {
   galleryCacheTtl,
   isIncomplete,
@@ -28,14 +28,14 @@ import {
 } from '../fixtures/settings'
 import { slow } from '../fixtures/slow'
 import { galleryShareKeys, useGalleryShareKeys } from '../fixtures/provider-sharing'
-import { showToast } from '@jush-ai/web-ui/infra/toast'
-import { operations } from '@jush-ai/web-ui/ui/operations'
-import { providerOperation } from '@jush-ai/web-ui/settings/provider-operations'
+import { showToast } from '@jush-agent/web-ui/infra/toast'
+import { operations } from '@jush-agent/web-ui/ui/operations'
+import { providerOperation } from '@jush-agent/web-ui/settings/provider-operations'
 import { DAY, HOUR, MINUTE, ahead } from '../fixtures/time'
 import { galleryDevices } from '../fixtures/devices'
-import type { MenuDevice } from '@jush-ai/web-ui/targets/types'
-import type { SettingsDevice, SettingsQuotaWindow } from '@jush-ai/web-ui/settings/types'
-import { onImages } from '@jush-ai/web-ui/settings/window-name'
+import type { MenuDevice } from '@jush-agent/web-ui/targets/types'
+import type { SettingsDevice, SettingsQuotaWindow } from '@jush-agent/web-ui/settings/types'
+import { onImages } from '@jush-agent/web-ui/settings/window-name'
 import { HOUR_SECONDS, WEEK_SECONDS, reported, windowNamed } from '../fixtures/usage-limits'
 
 /**

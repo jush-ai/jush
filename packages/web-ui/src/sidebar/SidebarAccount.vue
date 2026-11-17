@@ -2,18 +2,18 @@
 import { t } from './locales/text'
 import { computed } from 'vue';
 import { accountDisplayName } from '../auth/account-display';
-import Avatar from '@jush-ai/web-ui/ui/Avatar.vue';
+import Avatar from '@jush-agent/web-ui/ui/Avatar.vue';
 import { Bug, CircleUser, LogOut, Settings } from '@lucide/vue';
-import { appOverlayStore } from '@jush-ai/web-ui/overlay/appOverlay';
-import Dropdown from '@jush-ai/web-ui/ui/Dropdown.vue';
-import Menu from '@jush-ai/web-ui/ui/Menu.vue';
-import MenuDivider from '@jush-ai/web-ui/ui/MenuDivider.vue';
-import MenuItem from '@jush-ai/web-ui/ui/MenuItem.vue';
-import { pressOnKey } from '@jush-ai/web-ui/ui/button-events';
-import { ICON_PX } from '@jush-ai/web-ui/ui/icon-metrics';
-import { provideRowTarget, type Action } from '@jush-ai/web-ui/ui/operations';
-import RowSpinner from '@jush-ai/web-ui/ui/RowSpinner.vue';
-import Tooltip from '@jush-ai/web-ui/ui/Tooltip.vue';
+import { appOverlayStore } from '@jush-agent/web-ui/overlay/appOverlay';
+import Dropdown from '@jush-agent/web-ui/ui/Dropdown.vue';
+import Menu from '@jush-agent/web-ui/ui/Menu.vue';
+import MenuDivider from '@jush-agent/web-ui/ui/MenuDivider.vue';
+import MenuItem from '@jush-agent/web-ui/ui/MenuItem.vue';
+import { pressOnKey } from '@jush-agent/web-ui/ui/button-events';
+import { ICON_PX } from '@jush-agent/web-ui/ui/icon-metrics';
+import { provideRowTarget, type Action } from '@jush-agent/web-ui/ui/operations';
+import RowSpinner from '@jush-agent/web-ui/ui/RowSpinner.vue';
+import Tooltip from '@jush-agent/web-ui/ui/Tooltip.vue';
 import type { SidebarAccount } from './types';
 import { THIS_SESSION } from './session-target';
 

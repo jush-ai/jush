@@ -1,9 +1,9 @@
 import { readonly, ref } from 'vue'
-import type { UpdateEnd } from '@jush-ai/web-ui/ui/UpdatingScreen.vue'
-import { pageLog } from '@jush-ai/web-ui/infra/log'
-import { errorFields } from '@jush-ai/web-ui/infra/errors'
-import { reloadPage } from '@jush-ai/web-ui/infra/build-reload'
-import { updateStateSchema, type UpdateState } from '@jush-ai/protocol'
+import type { UpdateEnd } from '@jush-agent/web-ui/ui/UpdatingScreen.vue'
+import { pageLog } from '@jush-agent/web-ui/infra/log'
+import { errorFields } from '@jush-agent/web-ui/infra/errors'
+import { reloadPage } from '@jush-agent/web-ui/infra/build-reload'
+import { updateStateSchema, type UpdateState } from '@jush-agent/protocol'
 
 /**
  * The update the backend carries out before it serves a new release

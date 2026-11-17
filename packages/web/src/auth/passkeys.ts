@@ -1,10 +1,10 @@
 import { t } from './locales/text'
 import { computed, watch } from 'vue'
-import { shownError } from '@jush-ai/web-ui/infra/errors'
+import { shownError } from '@jush-agent/web-ui/infra/errors'
 import { defineStore } from 'pinia'
-import { SerialQueue } from '@jush-ai/utils'
-import { reportError } from '@jush-ai/web-ui/infra/errors'
-import type { PasskeyAddOutcome, PasskeyOfferOutcome, SettingsPasskey } from '@jush-ai/web-ui/settings/types'
+import { SerialQueue } from '@jush-agent/utils'
+import { reportError } from '@jush-agent/web-ui/infra/errors'
+import type { PasskeyAddOutcome, PasskeyOfferOutcome, SettingsPasskey } from '@jush-agent/web-ui/settings/types'
 import { apiRequest, ApiError, jsonBody, readResponse } from '../api/client'
 import {
   creationChallengeSchema,
@@ -12,7 +12,7 @@ import {
   type NewPasskey,
   type PasskeyDto,
   type PasskeyPatch,
-} from '@jush-ai/protocol'
+} from '@jush-agent/protocol'
 import { useHeldList, useProduct, type Answer } from '../state/product'
 import { verifyWithPassword } from './handoff'
 import { browserHasPasskeys, createPasskey, signalAccount, signalUnknownPasskey } from './webauthn'

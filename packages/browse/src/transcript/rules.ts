@@ -22,8 +22,8 @@
 // The one exception is a row the reader opened or folded, after which the
 // list follows its end or not by where that left it, a moment later: there
 // the control tells which, and the rules hold the list to it from then on.
-import { AT_END_PX, BOTTOM_THRESHOLD_PX } from '@jush-ai/web-ui/composables/scroll-bottom'
-import { FOLD_MS } from '@jush-ai/web-ui/ui/fold'
+import { AT_END_PX, BOTTOM_THRESHOLD_PX } from '@jush-agent/web-ui/composables/scroll-bottom'
+import { FOLD_MS } from '@jush-agent/web-ui/ui/fold'
 import type { Frame, Input, Recording } from './probe'
 
 export type Rule = 'end-left' | 'moved-down' | 'place-moved' | 'pulled-back' | 'moved-apart' | 'control-moved' | 'blank' | 'scroll-to-bottom'

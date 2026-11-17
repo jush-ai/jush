@@ -1,4 +1,4 @@
-import type { CommandReport, ToolMediaSource, ToolResultContentBlock } from '@jush-ai/protocol'
+import type { CommandReport, ToolMediaSource, ToolResultContentBlock } from '@jush-agent/protocol'
 import { toolCallTitle } from './block-helpers'
 import { reportShown } from './command-reports'
 import { t } from './locales/text'

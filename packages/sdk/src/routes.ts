@@ -2,8 +2,8 @@
  * A core's routes, as a page has them under `/api`, at `/cores/{id}/api` of
  * the process, and its page connection; and the error a route answers.
  */
-import type { PageConnection } from '@jush-ai/conversation-client'
-import { errorBodySchema, schemaRefusal, type ErrorBody } from '@jush-ai/protocol'
+import type { PageConnection } from '@jush-agent/conversation-client'
+import { errorBodySchema, schemaRefusal, type ErrorBody } from '@jush-agent/protocol'
 import type { z } from 'zod'
 import type { Process } from './process'
 

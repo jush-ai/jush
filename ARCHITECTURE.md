@@ -127,7 +127,7 @@ A shared mechanism goes where its use decides:
     access does not fit, change it first.
 -   Every reusable UI behavior lives in `web-ui` as a component or primitive,
     and a plugin's feature UI lives in its plugin package, written only against
-    `@jush-ai/plugin-sdk` (`packages/plugin-sdk/src/index.ts`); `web-ui` knows
+    `@jush-agent/plugin-sdk` (`packages/plugin-sdk/src/index.ts`); `web-ui` knows
     no plugin, and `web` and `web-gallery` supply only data, state, services and
     handlers. A behavior first built for one surface (a control's affordance, a
     page's interaction, a dialog flow) is generalized into `web-ui` in the same
@@ -213,7 +213,7 @@ A program is named by its owner alone. A library's package is
 plugin's part keeps the name its kind gives it, as though it were a directory
 of `crates/` itself: `crates/plugin-browser/protocol/` holds
 `jush-command-package-browser-protocol`, and `crates/plugin-browser/page/`
-the page package `@jush-ai/plugin-browser`.
+the page package `@jush-agent/plugin-browser`.
 
 A suffix tells what a crate holds:
 
@@ -260,7 +260,7 @@ Inside a crate, these rules apply:
 -   Modules follow responsibilities. There is no `misc`, `helpers` or `utils`
     module.
 -   Generic Rust comes from std or an established crate, generic web code
-    comes from `@jush-ai/utils`, and a domain helper sits beside its module.
+    comes from `@jush-agent/utils`, and a domain helper sits beside its module.
 -   Generated TypeScript (`src/generated/` directories) stays uncommitted.
 -   A vendored crate keeps its upstream metadata and licenses. Its
     `[package.metadata.jush]` names each change from upstream with its reason,
@@ -486,7 +486,7 @@ xtask -> conversation-lane-protocol, shared-artifacts, command-package-browser-p
 
 ### TypeScript packages
 
-A line names a workspace package by its name without the `@jush-ai/` scope.
+A line names a workspace package by its name without the `@jush-agent/` scope.
 The following graph lists the TypeScript packages:
 
 ```text

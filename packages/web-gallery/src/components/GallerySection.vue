@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { HeadlineText, SentenceText } from '@jush-ai/web-ui/ui/ui-text'
+import type { HeadlineText, SentenceText } from '@jush-agent/web-ui/ui/ui-text'
 
 defineProps<{
   title: HeadlineText

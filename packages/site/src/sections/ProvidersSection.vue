@@ -3,12 +3,12 @@
 // subscriptions and keys, with what each subscription has left.
 import { ArrowUpIcon, CheckIcon, ChevronDownIcon, KeyRoundIcon, SquareTerminalIcon } from '@lucide/vue'
 // The vendors' own marks, the files Jush's settings and model menu show.
-import claudeUrl from '@jush-ai/web-ui/settings/logos/claude.svg?url&no-inline'
-import openaiUrl from '@jush-ai/web-ui/settings/logos/openai.svg?url&no-inline'
-import xaiUrl from '@jush-ai/web-ui/settings/logos/xai.svg?url&no-inline'
-import kimiUrl from '@jush-ai/web-ui/settings/logos/kimi-code-plan-global.svg?url&no-inline'
-import zaiUrl from '@jush-ai/web-ui/settings/logos/zai-coding-plan.svg?url&no-inline'
-import minimaxUrl from '@jush-ai/web-ui/settings/logos/minimax-coding-plan.svg?url&no-inline'
+import claudeUrl from '@jush-agent/web-ui/settings/logos/claude.svg?url&no-inline'
+import openaiUrl from '@jush-agent/web-ui/settings/logos/openai.svg?url&no-inline'
+import xaiUrl from '@jush-agent/web-ui/settings/logos/xai.svg?url&no-inline'
+import kimiUrl from '@jush-agent/web-ui/settings/logos/kimi-code-plan-global.svg?url&no-inline'
+import zaiUrl from '@jush-agent/web-ui/settings/logos/zai-coding-plan.svg?url&no-inline'
+import minimaxUrl from '@jush-agent/web-ui/settings/logos/minimax-coding-plan.svg?url&no-inline'
 
 /**
  * A mark, and how much of its box it is drawn across. The files leave

@@ -138,7 +138,7 @@ fn operation(name: &str) -> NativeOperation {
 /// it calls, and its tab kind, whose tabs the plugin brings up to date
 /// whenever the browser package says the conversation's tabs changed.
 pub(crate) fn page() -> Page {
-    Page::new("@jush-ai/plugin-browser")
+    Page::new("@jush-agent/plugin-browser")
         .conversation_state(State::new::<BrowserTabs>().calls(operation("tab.list")).held())
         .tab_kind(KIND)
         .method(

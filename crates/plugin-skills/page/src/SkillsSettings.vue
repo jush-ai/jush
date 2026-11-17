@@ -4,7 +4,7 @@ import { computed, ref } from 'vue'
 import { z } from 'zod'
 import SettingsSkills from './SettingsSkills.vue'
 import type { AddSourceAnswer, SettingsSkillDevice, SettingsSkillDraft, SettingsSkillFetcher, SettingsSkillSource } from './types'
-import { formatBytes, PluginCallError, usePage, type HeadlineText } from '@jush-ai/plugin-sdk'
+import { formatBytes, PluginCallError, usePage, type HeadlineText } from '@jush-agent/plugin-sdk'
 import {
   addedSourceSchema,
   skillsStateSchema,

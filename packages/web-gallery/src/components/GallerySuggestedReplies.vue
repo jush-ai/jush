@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { onBeforeUnmount, ref, watch } from 'vue'
-import type { UserContentBlock } from '@jush-ai/protocol'
-import ChatSession from '@jush-ai/web-ui/agent/ChatSession.vue'
-import { useMessageFiles } from '@jush-ai/web-ui/markdown/message-files'
+import type { UserContentBlock } from '@jush-agent/protocol'
+import ChatSession from '@jush-agent/web-ui/agent/ChatSession.vue'
+import { useMessageFiles } from '@jush-agent/web-ui/markdown/message-files'
 import { PROJECT_ROOT } from '../fixtures/project'
 import { SUGGESTION_ROUNDS, suggestedRepliesConversation } from '../fixtures/suggested-replies'
 import { useTurnFlow, type SentMessage } from '../turn-flow'

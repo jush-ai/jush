@@ -1,5 +1,5 @@
-import type { ProviderShareService } from '@jush-ai/web-ui/settings/provider-sharing'
-import type { SettingsShareKey } from '@jush-ai/web-ui/settings/types'
+import type { ProviderShareService } from '@jush-agent/web-ui/settings/provider-sharing'
+import type { SettingsShareKey } from '@jush-agent/web-ui/settings/types'
 import { productWould } from '../product-would'
 import { simulatedRequestId } from './request-failures'
 import { slow } from './slow'

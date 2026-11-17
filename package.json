@@ -30,8 +30,8 @@
     "check:registry": "bun run scripts/check-public-registry.ts",
     "contracts": "bun scripts/xtask.ts contracts",
     "typecheck": "bun run contracts && tsgo --noEmit && tsgo --noEmit -p packages/browse",
-    "typecheck:web": "bun run contracts && bun run --sequential --no-exit-on-error --filter @jush-ai/protocol --filter @jush-ai/conversation-client --filter @jush-ai/utils --filter @jush-ai/sdk --filter @jush-ai/web-ui --filter '@jush-ai/plugin-*' --filter @jush-ai/web-gallery --filter @jush-ai/web --filter @jush-ai/site typecheck",
-    "build": "bun run contracts && bun --filter '*' --filter '!@jush-ai/site' build",
+    "typecheck:web": "bun run contracts && bun run --sequential --no-exit-on-error --filter @jush-agent/protocol --filter @jush-agent/conversation-client --filter @jush-agent/utils --filter @jush-agent/sdk --filter @jush-agent/web-ui --filter '@jush-agent/plugin-*' --filter @jush-agent/web-gallery --filter @jush-agent/web --filter @jush-agent/site typecheck",
+    "build": "bun run contracts && bun --filter '*' --filter '!@jush-agent/site' build",
     "web:gallery": "bun scripts/web-gallery.ts",
     "web:dev": "bun scripts/web-dev.ts",
     "web:build": "bun run build"

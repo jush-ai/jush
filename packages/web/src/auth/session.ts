@@ -1,7 +1,7 @@
 import { nextTick } from 'vue'
 import { defineStore } from 'pinia'
-import { coded, errorFields, shownError, type ShownError } from '@jush-ai/web-ui/infra/errors'
-import { pageLog } from '@jush-ai/web-ui/infra/log'
+import { coded, errorFields, shownError, type ShownError } from '@jush-agent/web-ui/infra/errors'
+import { pageLog } from '@jush-agent/web-ui/infra/log'
 import {
   identitySchema,
   setupStatusSchema,
@@ -12,7 +12,7 @@ import {
   type SetupRequest,
   type SetupStatus,
   type UserDto,
-} from '@jush-ai/protocol'
+} from '@jush-agent/protocol'
 import { apiRequest, ApiError, jsonBody, readResponse } from '../api/client'
 import { unsubscribeOnSignOut } from '../state/notifications'
 import { signalUnknownPasskey, signWithPasskey } from './webauthn'

@@ -7,7 +7,7 @@
  * version the file no longer has.
  */
 import { z } from 'zod'
-import { readOpenedSchema } from '@jush-ai/protocol'
+import { readOpenedSchema } from '@jush-agent/protocol'
 import { directRoute } from '.'
 import { ChannelFailed, type DirectPeer, type OperationChannel } from './peer'
 import { rawAnswer, type RawRequest } from './raw'

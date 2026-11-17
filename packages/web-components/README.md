@@ -1,9 +1,9 @@
-# @jush-ai/web-components
+# @jush-agent/web-components
 
 Jush's conversation view as a custom element, the web app's own views, for a
 program's page in any framework, or none. It talks to a core through the
 path where the program's server forwards it with
-[`@jush-ai/sdk`](../sdk/README.md).
+[`@jush-agent/sdk`](../sdk/README.md).
 
 The following page shows a conversation, with its work in windows over and
 beside it and a taskbar under them, as the web app does:

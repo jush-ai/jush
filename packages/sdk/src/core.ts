@@ -8,7 +8,7 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { join } from 'node:path'
 import type { Readable, Writable } from 'node:stream'
-import { PageConnection, reconnectWait, SILENCE_MS, type ConnectionHost, type Lane } from '@jush-ai/conversation-client'
+import { PageConnection, reconnectWait, SILENCE_MS, type ConnectionHost, type Lane } from '@jush-agent/conversation-client'
 import {
   accountsSchema,
   activeAccountSchema,
@@ -34,7 +34,7 @@ import {
   type PushMessage,
   type StarterAnswer,
   type SubscriptionLogin,
-} from '@jush-ai/protocol'
+} from '@jush-agent/protocol'
 import { randomUUID } from 'node:crypto'
 import { Conversation } from './conversation'
 import { servePlugin, type Plugin } from './plugin'

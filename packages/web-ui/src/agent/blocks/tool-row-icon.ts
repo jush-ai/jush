@@ -1,6 +1,6 @@
 import type { Component } from 'vue'
-import type { AgentMessage } from '@jush-ai/protocol'
-import type { OpaqueView } from '@jush-ai/protocol'
+import type { AgentMessage } from '@jush-agent/protocol'
+import type { OpaqueView } from '@jush-agent/protocol'
 import { AtSign, Bell, Bot, Brain, Cloud, Clapperboard, Globe, Image, MoveRight, ShieldCheck, SquareTerminal, Zap } from '@lucide/vue'
 import { searchKind } from '../opaque-steps'
 import { toolRenderKind } from '../tool-rendering'

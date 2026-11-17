@@ -28,14 +28,14 @@ import {
   schemaRefusal,
   type DebugFromPage,
   type PageFacts,
-} from '@jush-ai/protocol'
-import { useCopy } from '@jush-ai/web-ui/composables/useCopy'
-import { coded, environmental, reportError } from '@jush-ai/web-ui/infra/errors'
-import { PAGE_ID } from '@jush-ai/web-ui/infra/log'
-import type { DebugPhase } from '@jush-ai/web-ui/sidebar/debug-page'
-import { t } from '@jush-ai/web-ui/sidebar/locales/text'
-import { waitToReconnect, type ReconnectWait } from '@jush-ai/web-ui/transport/liveness'
-import { connectionFailures, openLane, type Lane, type LaneRefusal } from '@jush-ai/web-ui/transport/page-connection'
+} from '@jush-agent/protocol'
+import { useCopy } from '@jush-agent/web-ui/composables/useCopy'
+import { coded, environmental, reportError } from '@jush-agent/web-ui/infra/errors'
+import { PAGE_ID } from '@jush-agent/web-ui/infra/log'
+import type { DebugPhase } from '@jush-agent/web-ui/sidebar/debug-page'
+import { t } from '@jush-agent/web-ui/sidebar/locales/text'
+import { waitToReconnect, type ReconnectWait } from '@jush-agent/web-ui/transport/liveness'
+import { connectionFailures, openLane, type Lane, type LaneRefusal } from '@jush-agent/web-ui/transport/page-connection'
 import { outcome, wellFormed } from './written'
 
 /** The `sessionStorage` key that keeps the token of the tab's link. */

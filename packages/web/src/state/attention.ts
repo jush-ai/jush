@@ -1,6 +1,6 @@
 import { ref, type Ref } from 'vue'
-import { SCREEN_EDGE_PX } from '@jush-ai/web-ui/ui/phone'
-import { FRAME_INPUT, USER_ACTION_EVENTS } from '@jush-ai/web-ui/ui/user-input'
+import { SCREEN_EDGE_PX } from '@jush-agent/web-ui/ui/phone'
+import { FRAME_INPUT, USER_ACTION_EVENTS } from '@jush-agent/web-ui/ui/user-input'
 
 /**
  * Whether the user attends the page: from their first action on it while it

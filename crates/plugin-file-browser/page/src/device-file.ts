@@ -4,7 +4,7 @@
 // the conversation's own device.
 import { defineComponent, h, type PropType } from 'vue'
 import { z } from 'zod'
-import { FileIcon, ICON_PX, baseName, type IntentPayloads, type TabKind } from '@jush-ai/plugin-sdk'
+import { FileIcon, ICON_PX, baseName, type IntentPayloads, type TabKind } from '@jush-agent/plugin-sdk'
 import DeviceFileTab from './DeviceFileTab.vue'
 import { filesWindow } from './data'
 

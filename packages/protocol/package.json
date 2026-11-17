@@ -1,8 +1,8 @@
 {
-  "name": "@jush-ai/protocol",
+  "name": "@jush-agent/protocol",
   "description": "The TypeScript form of Jush's Rust contracts: Zod schemas, types and lookups generated from them.",
   "version": "0.24.0",
-  "private": false,
+  "private": true,
   "type": "module",
   "exports": {
     ".": {
@@ -24,9 +24,6 @@
   "scripts": {
     "build": "bun run --cwd ../.. contracts && tsdown",
     "typecheck": "tsgo --noEmit -p tsconfig.json"
-  },
-  "publishConfig": {
-    "access": "public"
   },
   "repository": {
     "type": "git",

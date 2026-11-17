@@ -12,7 +12,7 @@
 // and the conversations it had until `jush.down({ wipe: true })`.
 import { copyFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { identitySchema } from '@jush-ai/protocol'
+import { identitySchema } from '@jush-agent/protocol'
 import { errors, type Page } from 'playwright'
 import { startGroup, type Started } from '../processes'
 import {

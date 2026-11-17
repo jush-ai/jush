@@ -2,7 +2,7 @@
 //! any size below the model's window, of which the model menu offers a few
 //! steps to pick.
 //!
-//! The steps and their lookups are generated into `@jush-ai/protocol`, so the
+//! The steps and their lookups are generated into `@jush-agent/protocol`, so the
 //! model menu shows what a session applies.
 //!
 //! A limit replaces the model's window wherever Jush uses the window for
@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 
 /// One limit the model menu offers, and the smallest context window it
 /// offers it on. Its schema types the table the page receives in
-/// `@jush-ai/protocol`.
+/// `@jush-agent/protocol`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ContextLimitStep {

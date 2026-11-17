@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { t } from './locales/text'
-import { formError, shownError } from '@jush-ai/web-ui/infra/errors'
+import { formError, shownError } from '@jush-agent/web-ui/infra/errors'
 import { nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import EmailLoginPage, {
   type EmailLoginPhase,
-} from '@jush-ai/web-ui/auth/EmailLoginPage.vue'
+} from '@jush-agent/web-ui/auth/EmailLoginPage.vue'
 import { setupStatus, useSession } from './session'
 import { returnAddress } from './return'
 import { autofillOffersPasskeys, browserHasPasskeys } from './webauthn'

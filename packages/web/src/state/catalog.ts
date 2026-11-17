@@ -1,11 +1,11 @@
-import type { ModelInfo } from '@jush-ai/web-ui/transport/protocol'
+import type { ModelInfo } from '@jush-agent/web-ui/transport/protocol'
 import type {
   SettingsProviderEntry,
   SettingsProviderModel,
   SettingsWireApi,
-} from '@jush-ai/web-ui/settings/types'
-import { providerLogo } from '@jush-ai/web-ui/settings/vendor-logos'
-import { onImages } from '@jush-ai/web-ui/settings/window-name'
+} from '@jush-agent/web-ui/settings/types'
+import { providerLogo } from '@jush-agent/web-ui/settings/vendor-logos'
+import { onImages } from '@jush-agent/web-ui/settings/window-name'
 import {
   appliedContextLimit,
   type AuthState,
@@ -16,7 +16,7 @@ import {
   type CatalogModel,
   type CatalogProvider,
   type ProviderState,
-} from '@jush-ai/protocol'
+} from '@jush-agent/protocol'
 
 /**
  * The name of the CLI that `providerId`'s requests start on the Subscriptions

@@ -7,7 +7,7 @@
 // window.
 import { defineComponent, h, type PropType } from 'vue'
 import { File } from '@lucide/vue'
-import { FileIcon, ICON_PX, baseName, definePage, type TabKind } from '@jush-ai/plugin-sdk'
+import { FileIcon, ICON_PX, baseName, definePage, type TabKind } from '@jush-agent/plugin-sdk'
 import { PLUGIN } from './generated/plugin'
 import { t } from './locales/text'
 import FileTab from './FileTab.vue'

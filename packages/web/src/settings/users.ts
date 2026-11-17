@@ -1,8 +1,8 @@
 import { t } from './locales/text'
 import { computed } from 'vue'
 import { defineStore } from 'pinia'
-import { shownError, reportError } from '@jush-ai/web-ui/infra/errors'
-import type { HandoffHost } from '@jush-ai/web-ui/auth/handoff'
+import { shownError, reportError } from '@jush-agent/web-ui/infra/errors'
+import type { HandoffHost } from '@jush-agent/web-ui/auth/handoff'
 import type {
   NewPasswordOutcome,
   SettingsCloudStorage,
@@ -11,7 +11,7 @@ import type {
   SettingsUsersHost,
   UserAddOutcome,
   UserRole,
-} from '@jush-ai/web-ui/settings/types'
+} from '@jush-agent/web-ui/settings/types'
 import { apiRequest, ApiError, jsonBody, readResponse } from '../api/client'
 import {
   createdUserSchema,
@@ -19,7 +19,7 @@ import {
   type CreateUser,
   type ListedUser,
   type UserChange,
-} from '@jush-ai/protocol'
+} from '@jush-agent/protocol'
 import { confirmationHost, makeSignInCode } from '../auth/handoff'
 import { useSession } from '../auth/session'
 import { useHeldList, useProduct } from '../state/product'

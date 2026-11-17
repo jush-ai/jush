@@ -1,10 +1,10 @@
 import { t } from './locales/text'
 import { computed } from 'vue'
 import { defineStore } from 'pinia'
-import { reportError } from '@jush-ai/web-ui/infra/errors'
-import type { ForwardDevice, PortForwardChange, SettingsPortForward } from '@jush-ai/web-ui/settings/port-forwards'
+import { reportError } from '@jush-agent/web-ui/infra/errors'
+import type { ForwardDevice, PortForwardChange, SettingsPortForward } from '@jush-agent/web-ui/settings/port-forwards'
 import { apiRequest, ApiError, jsonBody, readResponse } from '../api/client'
-import { portForwardAnswerSchema, type PortForwardDto, type PortForwardPatch } from '@jush-ai/protocol'
+import { portForwardAnswerSchema, type PortForwardDto, type PortForwardPatch } from '@jush-agent/protocol'
 import { useHeldList, useProduct, type Answer } from '../state/product'
 import { deviceMarkOf, targetKindOf, deviceLabel } from '../state/devices'
 

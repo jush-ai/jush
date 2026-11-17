@@ -1,5 +1,5 @@
 import { apiRequest, jsonBody } from './client'
-import type { SuggestedReplyUsed } from '@jush-ai/protocol'
+import type { SuggestedReplyUsed } from '@jush-agent/protocol'
 
 /** Tells the backend the user took a suggested reply, which it keeps to measure them by. */
 export async function reportSuggestedReplyUsed(conversationId: string, used: SuggestedReplyUsed): Promise<void> {

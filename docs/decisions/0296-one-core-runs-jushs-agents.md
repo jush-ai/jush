@@ -34,7 +34,7 @@ wraps that binary. Both run the same code.
 
 ```text
 a program (TypeScript)                    Jush's server
-  @jush-ai/sdk                            accounts, sessions, pages,
+  @jush-agent/sdk                         accounts, sessions, pages,
     │ the web API, HTTP/2 over stdio        pairing, Clouds, shares, push
     ▼                                         │ in process, one per user
   jush-core binary ──────┐                    ▼

@@ -1,4 +1,4 @@
-import { MAX_PAGE_MESSAGE_BYTES, type ClientFrame } from '@jush-ai/protocol'
+import { MAX_PAGE_MESSAGE_BYTES, type ClientFrame } from '@jush-agent/protocol'
 
 /**
  * A connection that carries frames; it does not vouch for them. What arrives

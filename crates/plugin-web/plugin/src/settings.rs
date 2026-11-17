@@ -100,7 +100,7 @@ impl WebReason {
 }
 
 pub(crate) fn page() -> Page {
-    Page::new("@jush-ai/plugin-web")
+    Page::new("@jush-agent/plugin-web")
         .user_state(State::new::<WebState>())
         .method(Method::new::<SignIn, SignInStarted>("sign_in", Scope::User))
         .method(Method::new::<SignOut, ()>("sign_out", Scope::User))

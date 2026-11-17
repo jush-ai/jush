@@ -1,5 +1,5 @@
 import { reactive } from 'vue'
-import type { UserContentBlock } from '@jush-ai/protocol'
+import type { UserContentBlock } from '@jush-agent/protocol'
 import {
   AttachmentUploadQueue,
   applyAttachmentUpdate,

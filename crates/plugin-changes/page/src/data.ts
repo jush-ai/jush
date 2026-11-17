@@ -9,7 +9,7 @@ import {
   type IntentPayloads,
   type RequestEditRef,
   type RequestEditSelection,
-} from '@jush-ai/plugin-sdk'
+} from '@jush-agent/plugin-sdk'
 
 /**
  * What the Change view shows (`crates/agent-store/src/changes.rs`,

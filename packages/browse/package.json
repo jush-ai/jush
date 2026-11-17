@@ -1,14 +1,14 @@
 {
-  "name": "@jush-ai/browse",
+  "name": "@jush-agent/browse",
   "description": "bun browse: the product-check tool over Playwright (docs/delivery/browse.md).",
   "version": "0.0.0",
   "private": true,
   "license": "Apache-2.0",
   "type": "module",
   "dependencies": {
-    "@jush-ai/protocol": "workspace:^",
-    "@jush-ai/web": "workspace:^",
-    "@jush-ai/web-ui": "workspace:^",
+    "@jush-agent/protocol": "workspace:^",
+    "@jush-agent/web": "workspace:^",
+    "@jush-agent/web-ui": "workspace:^",
     "playwright": "1.63.0",
     "zod": "^4.0.0"
   }

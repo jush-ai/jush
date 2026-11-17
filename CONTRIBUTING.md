@@ -113,7 +113,7 @@ Four rules apply across the code:
   - In Rust: the standard library, the crate's declared dependencies and the
     workspace.
   - In the browser packages: the package's declared dependencies,
-    `@jush-ai/utils` and the workspace.
+    `@jush-agent/utils` and the workspace.
 
   Two implementations of the same purpose are a defect. Import the existing
   one and merge duplicates. Domain-specific helpers stay in the crate or

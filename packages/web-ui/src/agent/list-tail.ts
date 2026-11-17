@@ -1,5 +1,5 @@
-import type { Block, PendingCall, QueuedMessage, SessionPhase } from '@jush-ai/protocol'
-import { nonEmptyString } from '@jush-ai/utils'
+import type { Block, PendingCall, QueuedMessage, SessionPhase } from '@jush-agent/protocol'
+import { nonEmptyString } from '@jush-agent/utils'
 import { pendingSteersToRenderBlocks, type MessageListBlock, type PendingCallRenderBlock } from './pending-steers'
 import { queuedMessagesToRenderBlocks } from './queued-messages'
 import { isCompacting } from './conversation-status'

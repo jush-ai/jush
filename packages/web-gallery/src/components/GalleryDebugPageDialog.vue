@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { appOverlayStore } from '@jush-ai/web-ui/overlay/appOverlay'
-import DebugPageDialog from '@jush-ai/web-ui/sidebar/DebugPageDialog.vue'
-import type { DebugPhase } from '@jush-ai/web-ui/sidebar/debug-page'
+import { appOverlayStore } from '@jush-agent/web-ui/overlay/appOverlay'
+import DebugPageDialog from '@jush-agent/web-ui/sidebar/DebugPageDialog.vue'
+import type { DebugPhase } from '@jush-agent/web-ui/sidebar/debug-page'
 import GalleryDialogFrame from './GalleryDialogFrame.vue'
 
 /**

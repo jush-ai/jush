@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import FileCard from './FileCard.vue'
-import { baseName } from '@jush-ai/utils'
+import { baseName } from '@jush-agent/utils'
 import { tooLargeNote } from './preview'
 import { useShowing } from './showing'
 import type { FileContents } from './types'

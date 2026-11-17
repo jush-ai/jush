@@ -1,6 +1,6 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import { statusPath, type DeviceRoute, type DirectAttempt, type DirectStatus, type PathFigures } from '@jush-ai/web-ui/devices/direct'
-import type { SettingsDevice } from '@jush-ai/web-ui/settings/types'
+import { statusPath, type DeviceRoute, type DirectAttempt, type DirectStatus, type PathFigures } from '@jush-agent/web-ui/devices/direct'
+import type { SettingsDevice } from '@jush-agent/web-ui/settings/types'
 import { demoDeviceReport, demoDeviceStart } from './device-installation'
 import { ago } from './time'
 import { shownAmong } from './device-marks'

@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { t } from './locales/text'
 import { computed } from 'vue'
-import DeviceIcon from '@jush-ai/web-ui/devices/DeviceIcon.vue'
-import Tooltip from '@jush-ai/web-ui/ui/Tooltip.vue'
-import { ICON_PX } from '@jush-ai/web-ui/ui/icon-metrics'
-import { usePhone } from '@jush-ai/web-ui/ui/phone'
-import { deviceIcon } from '@jush-ai/web-ui/targets/icons'
-import { deviceStatusLabel } from '@jush-ai/web-ui/devices/state'
+import DeviceIcon from '@jush-agent/web-ui/devices/DeviceIcon.vue'
+import Tooltip from '@jush-agent/web-ui/ui/Tooltip.vue'
+import { ICON_PX } from '@jush-agent/web-ui/ui/icon-metrics'
+import { usePhone } from '@jush-agent/web-ui/ui/phone'
+import { deviceIcon } from '@jush-agent/web-ui/targets/icons'
+import { deviceStatusLabel } from '@jush-agent/web-ui/devices/state'
 import type { SidebarDevice } from './types'
 
 /**

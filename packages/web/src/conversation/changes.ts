@@ -1,8 +1,8 @@
 import { z } from 'zod'
-import type { ReadCallChange } from '@jush-ai/web-ui/files/changes'
-import type { ChangeReads, HistoryReads } from '@jush-ai/web-ui/files/kept-source'
+import type { ReadCallChange } from '@jush-agent/web-ui/files/changes'
+import type { ChangeReads, HistoryReads } from '@jush-agent/web-ui/files/kept-source'
 import { ApiError, apiRequest, jsonBody, readResponse } from '../api/client'
-import { changeSidesSchema, gitBranchesSchema, gitCommitSchema, gitLogSchema, gitRepositoriesSchema, repositoriesRequestSchema, workingTreeChangesSchema, type GitRepositories } from '@jush-ai/protocol'
+import { changeSidesSchema, gitBranchesSchema, gitCommitSchema, gitLogSchema, gitRepositoriesSchema, repositoriesRequestSchema, workingTreeChangesSchema, type GitRepositories } from '@jush-agent/protocol'
 import { fileBrowserError, rawFileContents, readAtOf } from '../api/files'
 
 /**

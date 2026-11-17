@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import FoldChevron from '@jush-ai/web-ui/ui/FoldChevron.vue'
-import { ICON_PX } from '@jush-ai/web-ui/ui/icon-metrics'
-import CapCentered from '@jush-ai/web-ui/ui/CapCentered.vue'
+import FoldChevron from '@jush-agent/web-ui/ui/FoldChevron.vue'
+import { ICON_PX } from '@jush-agent/web-ui/ui/icon-metrics'
+import CapCentered from '@jush-agent/web-ui/ui/CapCentered.vue'
 import ConversationDot from './ConversationDot.vue'
 import type { DotSource } from './conversation-dot'
 

@@ -1,4 +1,4 @@
-import { upperFirst } from '@jush-ai/utils'
+import { upperFirst } from '@jush-agent/utils'
 import { t } from './locales/text'
 
 /** A reasoning effort as the page names it, in the page's language; one a catalogue does not know shows as its id. */
