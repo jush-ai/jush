@@ -2,7 +2,7 @@
 // web page and a program's SDK alike: `PageConnection` carries the lanes on
 // the socket its host opens, and `ConversationClient` drives a conversation
 // on its lane. It validates every frame it receives with the schemas of
-// `@jush-ai/protocol`, and imports no user interface package.
+// `@jush-agent/protocol`, and imports no user interface package.
 //
 // `applyTranscriptPatches` is the one transcript patch applier. The agent's
 // Rust tests write patch sequences together with the snapshot each must

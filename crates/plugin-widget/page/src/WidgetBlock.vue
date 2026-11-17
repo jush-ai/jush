@@ -54,7 +54,7 @@ const grown = new Set<string>()
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { Check, Images, Share } from '@lucide/vue'
-import { IconButton, useCopy, usePage, windowHeight } from '@jush-ai/plugin-sdk'
+import { IconButton, useCopy, usePage, windowHeight } from '@jush-agent/plugin-sdk'
 import { widgetFactsSchema, type FrameSize, type WidgetFacts } from './generated/plugin'
 import { t } from './locales/text'
 import WidgetFrame from './WidgetFrame.vue'

@@ -1,10 +1,10 @@
-import { keptComputed } from '@jush-ai/web-ui/infra/keep-same'
+import { keptComputed } from '@jush-agent/web-ui/infra/keep-same'
 import { computed, ref, shallowRef, watch } from 'vue'
 import { defineStore } from 'pinia'
-import { SerialQueue, moveBefore } from '@jush-ai/utils'
+import { SerialQueue, moveBefore } from '@jush-agent/utils'
 import { ApiError, apiRequest, jsonBody, readResponse } from '../api/client'
-import { reportError } from '@jush-ai/web-ui/infra/errors'
-import type { RememberedChoices } from '@jush-ai/web-ui/agent/starting-choices'
+import { reportError } from '@jush-agent/web-ui/infra/errors'
+import type { RememberedChoices } from '@jush-agent/web-ui/agent/starting-choices'
 import { t } from './locales/text'
 import {
   projectAnswerSchema,
@@ -16,16 +16,16 @@ import {
   type SavedScopeSwitch,
   type SidebarReorder,
   type SavedScope,
-} from '@jush-ai/protocol'
+} from '@jush-agent/protocol'
 import { useSession } from '../auth/session'
 import { useProduct } from './product'
 import { usePreferences } from './preferences'
 import { modelInfo, providerView, setupOf, wireApi } from './catalog'
-import { SIDEBAR_WIDTH } from '@jush-ai/web-ui/sidebar/sidebar-width'
-import { sidebarEntries } from '@jush-ai/web-ui/plugins/page'
-import type { PairingDevice } from '@jush-ai/web-ui/devices/pairing'
-import { vendorLogo } from '@jush-ai/web-ui/settings/vendor-logos'
-import type { SidebarDevice } from '@jush-ai/web-ui/sidebar/types'
+import { SIDEBAR_WIDTH } from '@jush-agent/web-ui/sidebar/sidebar-width'
+import { sidebarEntries } from '@jush-agent/web-ui/plugins/page'
+import type { PairingDevice } from '@jush-agent/web-ui/devices/pairing'
+import { vendorLogo } from '@jush-agent/web-ui/settings/vendor-logos'
+import type { SidebarDevice } from '@jush-agent/web-ui/sidebar/types'
 import { PLUGIN_PAGES } from '../plugins/generated/pages'
 import { pluginEnabled } from '../plugins/enabled'
 import { deviceMarkOf, targetKindOf } from './devices'

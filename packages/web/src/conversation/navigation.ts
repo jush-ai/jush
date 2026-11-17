@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { useRouter, type RouteLocationRaw, type Router } from 'vue-router'
-import type { CreateProject } from '@jush-ai/protocol'
+import type { CreateProject } from '@jush-agent/protocol'
 import { useResources } from '../state/resources'
 import { useConversations } from './store'
 import { useWorkspaces } from '../state/workspaces'

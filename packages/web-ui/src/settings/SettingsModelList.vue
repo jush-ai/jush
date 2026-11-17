@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { Search } from '@lucide/vue'
 import AsyncRegion from '../ui/AsyncRegion.vue'
-import TextInput from '@jush-ai/web-ui/ui/TextInput.vue'
-import { ICON_PX } from '@jush-ai/web-ui/ui/icon-metrics'
+import TextInput from '@jush-agent/web-ui/ui/TextInput.vue'
+import { ICON_PX } from '@jush-agent/web-ui/ui/icon-metrics'
 import type { SentenceText } from '../ui/ui-text'
 
 /**

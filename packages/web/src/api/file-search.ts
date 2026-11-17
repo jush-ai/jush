@@ -1,6 +1,6 @@
-import { FileBrowserError, type FileSearchEvent } from '@jush-ai/web-ui/files/types'
+import { FileBrowserError, type FileSearchEvent } from '@jush-agent/web-ui/files/types'
 import { invalidResponse } from './client'
-import { searchLineSchema } from '@jush-ai/protocol'
+import { searchLineSchema } from '@jush-agent/protocol'
 import { t } from './locales/text'
 
 /**

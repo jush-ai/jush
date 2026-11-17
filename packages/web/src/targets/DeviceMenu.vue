@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { keptComputed } from '@jush-ai/web-ui/infra/keep-same'
+import { keptComputed } from '@jush-agent/web-ui/infra/keep-same'
 import { computed } from 'vue'
-import DeviceMenu from '@jush-ai/web-ui/targets/DeviceMenu.vue'
-import type { DeviceChoice, MenuDevice } from '@jush-ai/web-ui/targets/types'
+import DeviceMenu from '@jush-agent/web-ui/targets/DeviceMenu.vue'
+import type { DeviceChoice, MenuDevice } from '@jush-agent/web-ui/targets/types'
 import type { Conversation } from '../state/types'
 import { useResources } from '../state/resources'
 import { targetKindOf } from '../state/devices'
-import type { MoveLock } from '@jush-ai/web-ui/targets/move-question'
+import type { MoveLock } from '@jush-agent/web-ui/targets/move-question'
 import { executionFor, deviceOptions, primaryDeviceOf } from './execution'
 import { useConversations } from '../conversation/store'
 

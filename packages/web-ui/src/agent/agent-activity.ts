@@ -1,4 +1,4 @@
-import type { PendingCall } from '@jush-ai/protocol'
+import type { PendingCall } from '@jush-agent/protocol'
 import type { ConversationState } from './types'
 
 /**

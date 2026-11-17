@@ -1,6 +1,6 @@
 import { reactive } from 'vue'
-import type { SettingsWorkspace, WorkspaceEdit } from '@jush-ai/web-ui/settings/SettingsWorkspaces.vue'
-import { WORKSPACE_COLORS, WORKSPACE_ICONS, newWorkspaceName } from '@jush-ai/web-ui/workspaces/workspaces'
+import type { SettingsWorkspace, WorkspaceEdit } from '@jush-agent/web-ui/settings/SettingsWorkspaces.vue'
+import { WORKSPACE_COLORS, WORKSPACE_ICONS, newWorkspaceName } from '@jush-agent/web-ui/workspaces/workspaces'
 
 /**
  * The gallery's workspaces, which the sidebar's switcher and Settings ›

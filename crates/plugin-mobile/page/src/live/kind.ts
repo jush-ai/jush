@@ -1,7 +1,7 @@
 import { defineComponent, h, onBeforeUnmount, type PropType } from 'vue'
 import { z } from 'zod'
 import { Smartphone } from '@lucide/vue'
-import { ICON_PX, SystemLogo, usePage, type KindTab, type TabKind, type WindowKind } from '@jush-ai/plugin-sdk'
+import { ICON_PX, SystemLogo, usePage, type KindTab, type TabKind, type WindowKind } from '@jush-agent/plugin-sdk'
 import MobileTabContent from './MobileTabContent.vue'
 import OpenMenu from './OpenMenu.vue'
 import OpeningStatus from './OpeningStatus.vue'

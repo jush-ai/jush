@@ -1,4 +1,4 @@
-import type { WorkflowList } from '@jush-ai/web-ui/agent/workflow-menu'
+import type { WorkflowList } from '@jush-agent/web-ui/agent/workflow-menu'
 
 /** A project's workflows as the backend lists them: two that read and one that does not. */
 export const projectWorkflows: WorkflowList = {

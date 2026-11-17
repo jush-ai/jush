@@ -5,7 +5,7 @@ import {
   type ConversationDraft,
   type DraftSave,
   type DraftWritten,
-} from '@jush-ai/protocol'
+} from '@jush-agent/protocol'
 
 /** A conversation's draft. */
 function draftPath(conversationId: string): string {

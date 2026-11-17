@@ -10,7 +10,7 @@
  */
 import { onScopeDispose } from 'vue'
 import type { z } from 'zod'
-import { PluginCallError, type ConversationPlugin, type DeviceDownload, type OpenUserStream } from '@jush-ai/plugin-sdk'
+import { PluginCallError, type ConversationPlugin, type DeviceDownload, type OpenUserStream } from '@jush-agent/plugin-sdk'
 import {
   appearanceResultSchema,
   closeResultSchema,

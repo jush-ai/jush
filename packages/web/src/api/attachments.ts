@@ -1,7 +1,7 @@
 import { shallowReactive } from 'vue'
-import { conversationAttachmentSchema, type ConversationAttachment } from '@jush-ai/protocol'
-import type { AttachmentLookup, MessageAttachment } from '@jush-ai/web-ui/markdown/types'
-import type { BlobUrl } from '@jush-ai/web-ui/agent/media-source'
+import { conversationAttachmentSchema, type ConversationAttachment } from '@jush-agent/protocol'
+import type { AttachmentLookup, MessageAttachment } from '@jush-agent/web-ui/markdown/types'
+import type { BlobUrl } from '@jush-agent/web-ui/agent/media-source'
 import { ApiError, apiRequest, readResponse } from './client'
 
 /**

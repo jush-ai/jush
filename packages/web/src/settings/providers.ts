@@ -27,16 +27,16 @@ import {
   type QuotaRequest,
   type SubscriptionLogin,
   type TestRequest,
-} from '@jush-ai/protocol'
-import { SerialQueue, isAbortError } from '@jush-ai/utils'
-import { errorMessage, reportError, shownError, type ShownError } from '@jush-ai/web-ui/infra/errors'
-import type { ProviderLoginPhase } from '@jush-ai/web-ui/settings/types'
-import type { HeadlineText } from '@jush-ai/web-ui/ui/ui-text'
-import { providerLogo } from '@jush-ai/web-ui/settings/vendor-logos'
-import { canTest, testedModel } from '@jush-ai/web-ui/settings/tested-model'
-import { providerOperation, providerTarget } from '@jush-ai/web-ui/settings/provider-operations'
-import type { ProviderShareService } from '@jush-ai/web-ui/settings/provider-sharing'
-import { operations } from '@jush-ai/web-ui/ui/operations'
+} from '@jush-agent/protocol'
+import { SerialQueue, isAbortError } from '@jush-agent/utils'
+import { errorMessage, reportError, shownError, type ShownError } from '@jush-agent/web-ui/infra/errors'
+import type { ProviderLoginPhase } from '@jush-agent/web-ui/settings/types'
+import type { HeadlineText } from '@jush-agent/web-ui/ui/ui-text'
+import { providerLogo } from '@jush-agent/web-ui/settings/vendor-logos'
+import { canTest, testedModel } from '@jush-agent/web-ui/settings/tested-model'
+import { providerOperation, providerTarget } from '@jush-agent/web-ui/settings/provider-operations'
+import type { ProviderShareService } from '@jush-agent/web-ui/settings/provider-sharing'
+import { operations } from '@jush-agent/web-ui/ui/operations'
 import {
   SETTINGS_MEDIA_KINDS,
   type SettingsModelDraft,
@@ -48,7 +48,7 @@ import {
   type SettingsProviderModel,
   type SettingsVendor,
   type SettingsWireApi,
-} from '@jush-ai/web-ui/settings/types'
+} from '@jush-agent/web-ui/settings/types'
 import { ApiError, apiRequest, jsonBody, readResponse } from '../api/client'
 import { useResources } from '../state/resources'
 import { usePreferences } from '../state/preferences'

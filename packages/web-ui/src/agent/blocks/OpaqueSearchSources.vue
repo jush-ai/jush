@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { SearchSource } from '@jush-ai/protocol'
+import type { SearchSource } from '@jush-agent/protocol'
 import { sourceHost, sourcePage } from '../opaque-steps'
 
 /**

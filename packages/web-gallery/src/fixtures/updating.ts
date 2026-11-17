@@ -1,5 +1,5 @@
-import type { RestartStep, RestartStepKind, UpdateProgress } from '@jush-ai/web-ui/ui/UpdatingScreen.vue'
-import type { StepState } from '@jush-ai/web-ui/ui/update-steps'
+import type { RestartStep, RestartStepKind, UpdateProgress } from '@jush-agent/web-ui/ui/UpdatingScreen.vue'
+import type { StepState } from '@jush-agent/web-ui/ui/update-steps'
 
 const MB = 1024 * 1024
 const KINDS: readonly RestartStepKind[] = ['stopDemi', 'saveClouds', 'keepDatabases', 'switch', 'startManager', 'startDemi', 'updateControl', 'updateConversations']

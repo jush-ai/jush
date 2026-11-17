@@ -1,5 +1,5 @@
 import { reactive } from 'vue'
-import type { SettingsUser } from '@jush-ai/web-ui/settings/types'
+import type { SettingsUser } from '@jush-agent/web-ui/settings/types'
 import { DAY, HOUR, MINUTE, ago } from './time'
 
 /** An account's Cloud disks until an administrator changes them. */

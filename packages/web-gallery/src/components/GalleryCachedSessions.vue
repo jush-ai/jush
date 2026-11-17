@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, reactive, ref } from 'vue'
-import AgentMessageList from '@jush-ai/web-ui/agent/AgentMessageList.vue'
-import { ConversationCache } from '@jush-ai/web-ui/agent/conversation-cache'
-import type { SessionLoad } from '@jush-ai/web-ui/agent/session-status'
-import Button from '@jush-ai/web-ui/ui/Button.vue'
+import AgentMessageList from '@jush-agent/web-ui/agent/AgentMessageList.vue'
+import { ConversationCache } from '@jush-agent/web-ui/agent/conversation-cache'
+import type { SessionLoad } from '@jush-agent/web-ui/agent/session-status'
+import Button from '@jush-agent/web-ui/ui/Button.vue'
 import { transcriptDemoBlocks } from '../fixtures/blocks'
 
 const cache = new ConversationCache()

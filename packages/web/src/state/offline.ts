@@ -18,14 +18,14 @@ import {
   type UserDto,
   type PageState,
   type ReadState,
-} from '@jush-ai/protocol'
-import { reportError } from '@jush-ai/web-ui/infra/errors'
-import { pageLog } from '@jush-ai/web-ui/infra/log'
-import { viewSupplied } from '@jush-ai/web-ui/infra/view-timing'
-import { heldTranscript, type HeldBlock, type HeldTranscript, type TranscriptWindow } from '@jush-ai/web-ui/transport/protocol'
+} from '@jush-agent/protocol'
+import { reportError } from '@jush-agent/web-ui/infra/errors'
+import { pageLog } from '@jush-agent/web-ui/infra/log'
+import { viewSupplied } from '@jush-agent/web-ui/infra/view-timing'
+import { heldTranscript, type HeldBlock, type HeldTranscript, type TranscriptWindow } from '@jush-agent/web-ui/transport/protocol'
 import { heldAccount, holds } from './account-owner'
 import { pageBuild } from './product'
-import { IndexedDatabase } from '@jush-ai/web-ui/infra/indexed-db'
+import { IndexedDatabase } from '@jush-agent/web-ui/infra/indexed-db'
 import { t } from './locales/text'
 
 /**

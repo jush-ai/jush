@@ -38,7 +38,7 @@ jobs:
         with:
           key: site
       - run: bun install --frozen-lockfile
-      - run: bun --filter @jush-ai/utils --filter @jush-ai/protocol --filter @jush-ai/conversation-client build
+      - run: bun --filter @jush-agent/utils --filter @jush-agent/protocol --filter @jush-agent/conversation-client build
       - run: bunx playwright install --with-deps chromium
         working-directory: packages/site
       - run: bun run build

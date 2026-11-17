@@ -1,9 +1,9 @@
 import { DEMO_BUN_TEST, DEMO_GIT_DIFF, DEMO_RG } from './terminal-output'
-import { endedTerminal, type EndedCommandEntry, type EndedOutputText, type TerminalRecord } from '@jush-ai/web-ui/agent/terminals'
+import { endedTerminal, type EndedCommandEntry, type EndedOutputText, type TerminalRecord } from '@jush-agent/web-ui/agent/terminals'
 import { BASH_SCRIPT, steppedRunCall, LEFT_RUNNING_CALL, RUNNING_RUN_CALL, RUNNING_SHELL_DESCRIPTION, RUNNING_SHELL_SCRIPT, returnedShellTool, runningShellTool } from './blocks'
 import { ago } from './time'
-import { parseToolCallInput } from '@jush-ai/web-ui/agent/block-helpers'
-import { shellDevice } from '@jush-ai/web-ui/agent/tool-rendering'
+import { parseToolCallInput } from '@jush-agent/web-ui/agent/block-helpers'
+import { shellDevice } from '@jush-agent/web-ui/agent/tool-rendering'
 
 /**
  * The live command: the running call of the demo transcript started it, so

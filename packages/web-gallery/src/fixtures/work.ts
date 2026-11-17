@@ -1,28 +1,28 @@
 import { computed, nextTick, reactive, ref, watch } from 'vue'
-import { browserPage } from '@jush-ai/plugin-browser'
-import { mobilePage } from '@jush-ai/plugin-mobile'
-import { WorkTabs, closeWorkTabs, updateWorkTab } from '@jush-ai/web-ui/agent/work-changes'
+import { browserPage } from '@jush-agent/plugin-browser'
+import { mobilePage } from '@jush-agent/plugin-mobile'
+import { WorkTabs, closeWorkTabs, updateWorkTab } from '@jush-agent/web-ui/agent/work-changes'
 import {
   openIntent,
   pendingShows,
   type AppliedShows,
   type TabsState,
   type PinnedTabs,
-} from '@jush-ai/web-ui/agent/work-tabs'
-import { selectTab } from '@jush-ai/web-ui/agent/tab-close'
-import type { RequestEditSelection } from '@jush-ai/web-ui/files/request-changes'
-import type { IntentRequest } from '@jush-ai/web-ui/plugins/intents'
-import type { FrontCause, WorkRequest } from '@jush-ai/web-ui/windows/session-work'
-import { readTab } from '@jush-ai/web-ui/agent/tab-kinds/kind'
-import type { TabUpdate } from '@jush-ai/web-ui/plugins/page'
-import { disposePluginStores } from '@jush-ai/web-ui/plugins/stores'
+} from '@jush-agent/web-ui/agent/work-tabs'
+import { selectTab } from '@jush-agent/web-ui/agent/tab-close'
+import type { RequestEditSelection } from '@jush-agent/web-ui/files/request-changes'
+import type { IntentRequest } from '@jush-agent/web-ui/plugins/intents'
+import type { FrontCause, WorkRequest } from '@jush-agent/web-ui/windows/session-work'
+import { readTab } from '@jush-agent/web-ui/agent/tab-kinds/kind'
+import type { TabUpdate } from '@jush-agent/web-ui/plugins/page'
+import { disposePluginStores } from '@jush-agent/web-ui/plugins/stores'
 import {
   intentKind,
   useBoundKinds,
   type AnyPluginPage,
   type ConversationFileService,
-} from '@jush-ai/web-ui/plugins/page'
-import type { ChangeSetSource } from '@jush-ai/web-ui/files/changes'
+} from '@jush-agent/web-ui/plugins/page'
+import type { ChangeSetSource } from '@jush-agent/web-ui/files/changes'
 import { PLUGIN_PAGES } from '../generated/pages'
 import { productWould } from '../product-would'
 import { readGalleryEdit } from './blobs'

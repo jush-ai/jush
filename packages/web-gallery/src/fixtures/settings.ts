@@ -1,9 +1,9 @@
 import { createSmallModelState } from './small-model'
 import { DEMO_PERSONAL_INSTRUCTIONS } from './instructions'
 import { reactive } from 'vue'
-import { appShortcuts } from '@jush-ai/web-ui/settings/shortcuts'
-import { providerLogo, vendorLogo } from '@jush-ai/web-ui/settings/vendor-logos'
-import { DEFAULT_TRANSCRIPT_TEXT_SIZE } from '@jush-ai/web-ui/theme/productAppearance'
+import { appShortcuts } from '@jush-agent/web-ui/settings/shortcuts'
+import { providerLogo, vendorLogo } from '@jush-agent/web-ui/settings/vendor-logos'
+import { DEFAULT_TRANSCRIPT_TEXT_SIZE } from '@jush-agent/web-ui/theme/productAppearance'
 import type {
   SettingsArchivedConversation,
   SettingsCacheTtl,
@@ -13,14 +13,14 @@ import type {
   SettingsModelMatch,
   SettingsProviderModel,
   SettingsVendor
-} from '@jush-ai/web-ui/settings/types'
-import type { SkillsState, SourceState } from '@jush-ai/plugin-skills'
-import type { WebState } from '@jush-ai/plugin-web'
+} from '@jush-agent/web-ui/settings/types'
+import type { SkillsState, SourceState } from '@jush-agent/plugin-skills'
+import type { WebState } from '@jush-agent/plugin-web'
 import { commitOf } from './plugins'
 import { DAY_SECONDS, HOUR_SECONDS, WEEK_SECONDS, windowNamed } from './usage-limits'
 import { createCredentialState, demoCredentials, manyCredentials } from './credentials'
 import { createUsersState } from './users'
-import type { SettingsCompatibleShapes, SettingsPasskey, SettingsSession } from '@jush-ai/web-ui/settings/types'
+import type { SettingsCompatibleShapes, SettingsPasskey, SettingsSession } from '@jush-agent/web-ui/settings/types'
 
 const DAY_MS = 24 * 3_600_000
 

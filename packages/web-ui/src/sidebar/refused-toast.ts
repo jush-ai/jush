@@ -1,5 +1,5 @@
 import { t } from './locales/text'
-import { sliceHead, upperFirst } from '@jush-ai/utils'
+import { sliceHead, upperFirst } from '@jush-agent/utils'
 import { showToast } from '../infra/toast'
 import type { HeadlineText, SentenceText } from '../ui/ui-text'
 

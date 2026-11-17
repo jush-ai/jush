@@ -1,4 +1,4 @@
-import { delay } from '@jush-ai/utils'
+import { delay } from '@jush-agent/utils'
 
 export const PROTOTYPE_RESTORE_MS = 900
 

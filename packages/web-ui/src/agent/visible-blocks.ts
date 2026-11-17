@@ -1,4 +1,4 @@
-import type { Block } from '@jush-ai/protocol'
+import type { Block } from '@jush-agent/protocol'
 import { reportShown } from './command-reports'
 
 /**

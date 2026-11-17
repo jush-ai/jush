@@ -1,4 +1,4 @@
-import type { Versions } from '@jush-ai/protocol'
+import type { Versions } from '@jush-agent/protocol'
 import type { MessageListBlock } from './pending-steers'
 
 /**

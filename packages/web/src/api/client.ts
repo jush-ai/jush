@@ -1,8 +1,8 @@
 import { z } from 'zod'
-import { errorBodySchema, errorCodeSchema, schemaRefusal, type ErrorBody, type ErrorCode } from '@jush-ai/protocol'
-import { httpStatusLine, isAbortError } from '@jush-ai/utils'
-import { coded, environmental, errorFields } from '@jush-ai/web-ui/infra/errors'
-import { pageLog } from '@jush-ai/web-ui/infra/log'
+import { errorBodySchema, errorCodeSchema, schemaRefusal, type ErrorBody, type ErrorCode } from '@jush-agent/protocol'
+import { httpStatusLine, isAbortError } from '@jush-agent/utils'
+import { coded, environmental, errorFields } from '@jush-agent/web-ui/infra/errors'
+import { pageLog } from '@jush-agent/web-ui/infra/log'
 import { noteUpdating } from '../state/update'
 import { programPage } from '../program-page'
 

@@ -1,4 +1,4 @@
-// `@jush-ai/sdk`: Jush's agents in a program. It starts `jush-core`, the
+// `@jush-agent/sdk`: Jush's agents in a program. It starts `jush-core`, the
 // process a program's cores run in, and speaks HTTP/2 to it on its standard
 // input and output, or connects to one that runs on its own; it gives the
 // program its cores, their conversations, providers, devices and product
@@ -25,7 +25,7 @@
 // ```
 //
 // The SDK writes no client of its own: what a page and a program both need
-// is in `@jush-ai/protocol` and `@jush-ai/conversation-client`.
+// is in `@jush-agent/protocol` and `@jush-agent/conversation-client`.
 
 export { Jush, type JushConnection, type JushOptions } from './jush'
 export {

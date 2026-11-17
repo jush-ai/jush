@@ -1,8 +1,8 @@
 {
-  "name": "@jush-ai/conversation-client",
+  "name": "@jush-agent/conversation-client",
   "description": "The client of a Jush core's page connection: its lanes, ConversationClient on a conversation's lane, and the transcript patch applier.",
   "version": "0.24.0",
-  "private": false,
+  "private": true,
   "type": "module",
   "exports": {
     ".": {
@@ -12,8 +12,8 @@
     }
   },
   "dependencies": {
-    "@jush-ai/protocol": "workspace:^",
-    "@jush-ai/utils": "workspace:^"
+    "@jush-agent/protocol": "workspace:^",
+    "@jush-agent/utils": "workspace:^"
   },
   "license": "Apache-2.0",
   "main": "./dist/index.mjs",
@@ -25,9 +25,6 @@
   "scripts": {
     "build": "tsdown",
     "typecheck": "tsgo --noEmit -p tsconfig.json"
-  },
-  "publishConfig": {
-    "access": "public"
   },
   "repository": {
     "type": "git",

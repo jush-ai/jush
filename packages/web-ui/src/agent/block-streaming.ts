@@ -1,4 +1,4 @@
-import type { Block, SessionPhase } from '@jush-ai/protocol'
+import type { Block, SessionPhase } from '@jush-agent/protocol'
 
 function isTailBlockOfType(
   blocks: readonly Block[],

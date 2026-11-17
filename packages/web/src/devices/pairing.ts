@@ -1,7 +1,7 @@
 import { computed, type ComputedRef } from 'vue'
-import type { PairingResult } from '@jush-ai/web-ui/devices/pairing'
+import type { PairingResult } from '@jush-agent/web-ui/devices/pairing'
 import { ApiError, apiRequest, jsonBody, readResponse } from '../api/client'
-import { deviceAnswerSchema, type Claim, type InstallCommands } from '@jush-ai/protocol'
+import { deviceAnswerSchema, type Claim, type InstallCommands } from '@jush-agent/protocol'
 import { useProduct } from '../state/product'
 
 /** The refusals of a pairing code the dialog words itself. */

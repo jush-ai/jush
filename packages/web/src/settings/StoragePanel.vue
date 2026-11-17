@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, shallowRef } from 'vue'
-import { systemName } from '@jush-ai/web-ui/devices/report'
-import { errorMessage, reportError } from '@jush-ai/web-ui/infra/errors'
-import { appOverlayStore } from '@jush-ai/web-ui/overlay/appOverlay'
-import SettingsStorage from '@jush-ai/web-ui/settings/SettingsStorage.vue'
-import type { LogRetention, StorageAction, StorageDevice, StorageRules } from '@jush-ai/web-ui/settings/storage'
+import { systemName } from '@jush-agent/web-ui/devices/report'
+import { errorMessage, reportError } from '@jush-agent/web-ui/infra/errors'
+import { appOverlayStore } from '@jush-agent/web-ui/overlay/appOverlay'
+import SettingsStorage from '@jush-agent/web-ui/settings/SettingsStorage.vue'
+import type { LogRetention, StorageAction, StorageDevice, StorageRules } from '@jush-agent/web-ui/settings/storage'
 import { apiRequest, jsonBody, readResponse } from '../api/client'
 import {
   deviceStorageReportSchema,
@@ -12,7 +12,7 @@ import {
   storageRulesSchema,
   storageSchema,
   type Storage,
-} from '@jush-ai/protocol'
+} from '@jush-agent/protocol'
 import { useProduct } from '../state/product'
 import { deviceLabel, deviceMarkOf, targetKindOf } from '../state/devices'
 import { useSettingsAddress } from './address'

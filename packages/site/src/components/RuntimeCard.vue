@@ -6,9 +6,9 @@
 // and a bar shows how full the context the model reads is, which a
 // compaction empties.
 import { computed } from 'vue'
-import claudeUrl from '@jush-ai/web-ui/settings/logos/claude.svg?url&no-inline'
-import geminiUrl from '@jush-ai/web-ui/settings/logos/google.svg?url&no-inline'
-import openaiUrl from '@jush-ai/web-ui/settings/logos/openai.svg?url&no-inline'
+import claudeUrl from '@jush-agent/web-ui/settings/logos/claude.svg?url&no-inline'
+import geminiUrl from '@jush-agent/web-ui/settings/logos/google.svg?url&no-inline'
+import openaiUrl from '@jush-agent/web-ui/settings/logos/openai.svg?url&no-inline'
 import { OTTER_SVG } from '@/brand'
 import type { RuntimePart, StageCard } from '@/demo/message'
 import { useKept } from './stageCard'

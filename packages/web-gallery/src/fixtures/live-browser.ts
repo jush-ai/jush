@@ -3,8 +3,8 @@
  * draws a page, encodes it as the device's capture would, and speaks the live
  * protocol, so the view's pictures, input, controls and dialogs show here.
  */
-import { LIVE_CAPTURE_STOPPED, LIVE_CAPTURE_UNAVAILABLE } from '@jush-ai/plugin-browser/generated/plugin'
-import { LIVE_CONTROL_FRAME, LIVE_VIDEO_CODEC, type ViewerInput } from '@jush-ai/protocol'
+import { LIVE_CAPTURE_STOPPED, LIVE_CAPTURE_UNAVAILABLE } from '@jush-agent/plugin-browser/generated/plugin'
+import { LIVE_CONTROL_FRAME, LIVE_VIDEO_CODEC, type ViewerInput } from '@jush-agent/protocol'
 import type {
   BrowserTab,
   BrowserViewport,
@@ -14,14 +14,14 @@ import type {
   LiveModuleMessage,
   LiveTab,
   LiveViewerMessage,
-} from '@jush-ai/plugin-browser/generated/plugin'
+} from '@jush-agent/plugin-browser/generated/plugin'
 import { shallowRef, type ShallowRef } from 'vue'
-import { encodeControl, encodeVideo } from '@jush-ai/web-ui/live/frames'
-import type { OpenUserStream, UserStreamHandlers } from '@jush-ai/web-ui/plugins/streams'
-import { CONTROL, META } from '@jush-ai/web-ui/live/input'
-import { BrowserTabsError, type BrowserTabList, type StartingPhase } from '@jush-ai/plugin-browser/live/tabs'
-import type { DeviceDownload } from '@jush-ai/web-ui/devices/installed'
-import type { ControlReason } from '@jush-ai/plugin-browser/generated/plugin'
+import { encodeControl, encodeVideo } from '@jush-agent/web-ui/live/frames'
+import type { OpenUserStream, UserStreamHandlers } from '@jush-agent/web-ui/plugins/streams'
+import { CONTROL, META } from '@jush-agent/web-ui/live/input'
+import { BrowserTabsError, type BrowserTabList, type StartingPhase } from '@jush-agent/plugin-browser/live/tabs'
+import type { DeviceDownload } from '@jush-agent/web-ui/devices/installed'
+import type { ControlReason } from '@jush-agent/plugin-browser/generated/plugin'
 import { PROJECT_ROOT } from './project'
 
 /** How often the drawn page is painted and sent: a still page needs few frames. */

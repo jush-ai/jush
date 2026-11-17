@@ -1,4 +1,4 @@
-import { nonEmptyString, truncate } from '@jush-ai/utils'
+import { nonEmptyString, truncate } from '@jush-agent/utils'
 import { t } from './locales/text'
 
 /**

@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { appOverlayStore } from '@jush-ai/web-ui/overlay/appOverlay'
-import ProviderShareDialog from '@jush-ai/web-ui/settings/ProviderShareDialog.vue'
-import { useProviderShare } from '@jush-ai/web-ui/settings/provider-sharing'
+import { appOverlayStore } from '@jush-agent/web-ui/overlay/appOverlay'
+import ProviderShareDialog from '@jush-agent/web-ui/settings/ProviderShareDialog.vue'
+import { useProviderShare } from '@jush-agent/web-ui/settings/provider-sharing'
 import { galleryShareKeys, useGalleryShareKeys } from '../fixtures/provider-sharing'
 import GalleryDialogFrame from './GalleryDialogFrame.vue'
 

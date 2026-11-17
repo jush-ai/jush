@@ -153,7 +153,7 @@ const shared = {
   resolve: {
     alias: {
       '@': resolve(import.meta.dirname, 'src'),
-      '@jush-ai/web-ui': resolve(import.meta.dirname, '../web-ui/src'),
+      '@jush-agent/web-ui': resolve(import.meta.dirname, '../web-ui/src'),
     },
   },
 }
@@ -162,7 +162,7 @@ const shared = {
  * The elements' build (`vite build --mode elements`): the second entry of
  * the web app, its views as custom elements (`src/elements/main.ts`), one
  * module and one stylesheet with what they load later beside them, in the
- * `@jush-ai/web-components` package.
+ * `@jush-agent/web-components` package.
  */
 const elements = defineConfig({
   ...shared,

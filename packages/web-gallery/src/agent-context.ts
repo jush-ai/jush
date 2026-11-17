@@ -1,4 +1,4 @@
-import type { InstructionEntry } from '@jush-ai/protocol'
+import type { InstructionEntry } from '@jush-agent/protocol'
 import { demoOpenInstruction } from './fixtures/instructions'
 import { useCardLimits } from './fixtures/usage-limits'
 import { productWould } from './product-would'

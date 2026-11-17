@@ -54,7 +54,7 @@ import {
   type LaneRefusal,
   type LaneTarget,
   type PageConnectionMessage,
-} from '@jush-ai/protocol'
+} from '@jush-agent/protocol'
 
 export type { LaneRefusal, LaneTarget }
 

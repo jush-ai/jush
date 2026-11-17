@@ -1,6 +1,6 @@
 {
-  "name": "@jush-ai/web-components",
-  "description": "Jush's conversation view as a custom element, for a program's page that runs Jush's agents with @jush-ai/sdk.",
+  "name": "@jush-agent/web-components",
+  "description": "Jush's conversation view as a custom element, for a program's page that runs Jush's agents with @jush-agent/sdk.",
   "version": "0.24.0",
   "private": false,
   "type": "module",
@@ -9,7 +9,7 @@
     "./style.css": "./dist/jush-web-components.css"
   },
   "devDependencies": {
-    "@jush-ai/web": "workspace:^"
+    "@jush-agent/web": "workspace:^"
   },
   "license": "Apache-2.0",
   "files": [

@@ -1,7 +1,7 @@
-# @jush-ai/utils
+# @jush-agent/utils
 
 Small generic helpers that Jush's browser packages share:
-`@jush-ai/conversation-client`, `@jush-ai/web-ui`, and the web application
+`@jush-agent/conversation-client`, `@jush-agent/web-ui`, and the web application
 and its component gallery.
 
 Each is a pure function or a small primitive with no dependency and no domain
@@ -23,7 +23,7 @@ The package has these modules:
 Import a helper from the package root:
 
 ```ts
-import { createId, deferred, truncate } from '@jush-ai/utils'
+import { createId, deferred, truncate } from '@jush-agent/utils'
 ```
 
 Part of [Jush](../../README.md). The package is under the Apache License 2.0.

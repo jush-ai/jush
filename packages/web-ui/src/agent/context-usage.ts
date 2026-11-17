@@ -1,7 +1,7 @@
 import type { Ref } from 'vue'
 import type { ShownError } from '../infra/errors'
 import { useLocalStorage } from '@vueuse/core'
-import type { ContextRowKind, ContextUsage } from '@jush-ai/protocol'
+import type { ContextRowKind, ContextUsage } from '@jush-agent/protocol'
 import type { SettingsQuotaWindow } from '../settings/types'
 import { pageLanguage } from '../i18n/text'
 import { formatPercent } from '../ui/percent'

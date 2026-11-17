@@ -1,4 +1,4 @@
-import type { AgentMessage, Block } from '@jush-ai/protocol'
+import type { AgentMessage, Block } from '@jush-agent/protocol'
 import { inject, provide, type InjectionKey } from 'vue'
 import { homePath } from '../files/paths'
 import { codeText } from '../infra/errors'

@@ -4,13 +4,13 @@ import {
   type ReplyBlockFacts,
   type SharedConversation,
   type SharedTranscriptPage,
-} from '@jush-ai/protocol'
-import { oneRunPerKey } from '@jush-ai/utils'
-import type { BlobUrl } from '@jush-ai/web-ui/agent/media-source'
-import { pageBeside, shownWindow } from '@jush-ai/web-ui/agent/history'
-import type { HistoryReading } from '@jush-ai/web-ui/agent/history-reading'
-import type { SharedItem } from '@jush-ai/web-ui/share/shared-items'
-import { addWindow, type HeldTranscript } from '@jush-ai/web-ui/transport/protocol'
+} from '@jush-agent/protocol'
+import { oneRunPerKey } from '@jush-agent/utils'
+import type { BlobUrl } from '@jush-agent/web-ui/agent/media-source'
+import { pageBeside, shownWindow } from '@jush-agent/web-ui/agent/history'
+import type { HistoryReading } from '@jush-agent/web-ui/agent/history-reading'
+import type { SharedItem } from '@jush-agent/web-ui/share/shared-items'
+import { addWindow, type HeldTranscript } from '@jush-agent/web-ui/transport/protocol'
 import { ApiError, apiRequest, apiUrl, readResponse } from '../api/client'
 import { createReading } from '../conversation/reading'
 

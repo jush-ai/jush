@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { provide, ref } from 'vue'
-import Button from '@jush-ai/web-ui/ui/Button.vue'
-import { overlayContainerKey, overlayInlineKey } from '@jush-ai/web-ui/overlay/overlayContainer'
+import Button from '@jush-agent/web-ui/ui/Button.vue'
+import { overlayContainerKey, overlayInlineKey } from '@jush-agent/web-ui/overlay/overlayContainer'
 
 /**
  * A dialog shown as a plain panel, in flow at its own size: no scrim, no

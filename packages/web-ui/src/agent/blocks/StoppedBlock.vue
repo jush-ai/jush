@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { CircleStop } from '@lucide/vue'
-import { ICON_PX } from '@jush-ai/web-ui/ui/icon-metrics'
+import { ICON_PX } from '@jush-agent/web-ui/ui/icon-metrics'
 import FunctionalBlock from './FunctionalBlock.vue'
 import { t } from '../locales/text'
 
