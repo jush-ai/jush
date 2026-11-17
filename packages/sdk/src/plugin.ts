@@ -35,7 +35,7 @@ import {
   type Request as PluginRequest,
   type RpcInvocation,
   schemaRefusal,
-} from '@jush-ai/protocol'
+} from '@jush-agent/protocol'
 import { decodeApart, encodeApart } from './apart'
 
 /** A command group under `jush`, as `GroupBuilder` declares one. */

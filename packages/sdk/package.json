@@ -1,5 +1,5 @@
 {
-  "name": "@jush-ai/sdk",
+  "name": "@jush-agent/sdk",
   "description": "Jush's agents in a program: its cores, conversations, providers, devices and plugins, in a process of the program's own.",
   "version": "0.24.0",
   "private": false,
@@ -12,9 +12,11 @@
     }
   },
   "dependencies": {
-    "@jush-ai/conversation-client": "workspace:^",
-    "@jush-ai/protocol": "workspace:^",
     "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@jush-agent/conversation-client": "workspace:^",
+    "@jush-agent/protocol": "workspace:^"
   },
   "engines": {
     "node": ">=22"

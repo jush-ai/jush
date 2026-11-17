@@ -17,7 +17,7 @@ use super::{Directory, Error, module, read_definitions, received, register, sour
 
 /// The workspace's packages share one scope; a plugin's page package
 /// `plugin-<name>` lives in its plugin's directory, `crates/plugin-<name>/page`.
-pub const SCOPE: &str = "@jush-ai/";
+pub const SCOPE: &str = "@jush-agent/";
 
 /// Each plugin the backend registers whose manifest names a page package,
 /// with its page, in registration order.
@@ -55,7 +55,7 @@ pub fn modules() -> Result<Vec<Directory>, Error> {
 }
 
 /// The module of `page`, the page of `manifest`'s plugin. Definitions
-/// `@jush-ai/protocol` declares are imported through the SDK, which
+/// `@jush-agent/protocol` declares are imported through the SDK, which
 /// re-exports them, so a package never declares a protocol type a second
 /// time.
 fn page_module(manifest: &Manifest, page: &Page) -> Result<String, Error> {

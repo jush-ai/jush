@@ -1,4 +1,4 @@
-# @jush-ai/sdk
+# @jush-agent/sdk
 
 Jush's agents in your program. The SDK starts `jush-core`, the process your
 program's cores run in, and gives your program the cores, their
@@ -12,12 +12,12 @@ core for each team it serves.
 ## Install
 
 ```sh
-npm install @jush-ai/sdk zod
+npm install @jush-agent/sdk zod
 ```
 
 The package installs the executables of your machine's platform, macOS,
 Linux or Windows on x86-64 or ARM64, from its optional platform packages,
-such as `@jush-ai/sdk-linux-x64`. It runs on Node.js 22 or later, Bun and
+such as `@jush-agent/sdk-linux-x64`. It runs on Node.js 22 or later, Bun and
 Deno. `zod` defines your plugins' command arguments.
 
 ## Quick start
@@ -26,7 +26,7 @@ The following program opens a core, gives it an Anthropic API key and a
 device on your machine, and runs one turn:
 
 ```ts
-import { Jush } from '@jush-ai/sdk'
+import { Jush } from '@jush-agent/sdk'
 
 const jush = await Jush.start()
 const core = await jush.open('./data/team-a')
@@ -81,8 +81,8 @@ program restarts, or to share them between several services, run
 
 ```sh
 export JUSH_CORE_TOKEN=7f3c9e2a51d84b06
-export JUSH_RELEASE=node_modules/@jush-ai/sdk/release:node_modules/@jush-ai/sdk-linux-x64/release
-node_modules/@jush-ai/sdk-linux-x64/bin/jush-core serve --listen 127.0.0.1:4100
+export JUSH_RELEASE=node_modules/@jush-agent/sdk/release:node_modules/@jush-agent/sdk-linux-x64/release
+node_modules/@jush-agent/sdk-linux-x64/bin/jush-core serve --listen 127.0.0.1:4100
 ```
 
 `jush-core` is in your platform's package. `JUSH_RELEASE` lists the
@@ -382,7 +382,7 @@ plugin adds `jush chat send`, which posts to the chat a conversation answers
 in:
 
 ```ts
-import { Jush, definePlugin, leaf } from '@jush-ai/sdk'
+import { Jush, definePlugin, leaf } from '@jush-agent/sdk'
 import { z } from 'zod'
 
 const chat = definePlugin({
@@ -477,7 +477,7 @@ conversation already.
 
 ## Showing conversations on your pages
 
-[`@jush-ai/web-components`](../web-components/README.md) shows a
+[`@jush-agent/web-components`](../web-components/README.md) shows a
 conversation on your own pages with the app's own views: its transcript,
 its composer, and its work in windows with a taskbar.
 Your server forwards the pages' requests with `core.fetch(request, base)`

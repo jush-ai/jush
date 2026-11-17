@@ -4,8 +4,8 @@
  * worker hands it, and tells the worker the build it runs, which the worker
  * then keeps for opening offline.
  */
-import { pageLog } from '@jush-ai/web-ui/infra/log'
-import { errorFields } from '@jush-ai/web-ui/infra/errors'
+import { pageLog } from '@jush-agent/web-ui/infra/log'
+import { errorFields } from '@jush-agent/web-ui/infra/errors'
 import { answerRawRequests } from '../direct/raw-bridge'
 import { WORKER_LOG } from './notifications'
 

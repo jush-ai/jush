@@ -1,6 +1,6 @@
 //! The `changes` plugin: its identity and its page package, and nothing else.
 //!
-//! Its page, `@jush-ai/plugin-changes`, shows the Changes window's Change view
+//! Its page, `@jush-agent/plugin-changes`, shows the Changes window's Change view
 //! over the product's edit tracking and file routes
 //! (`crates/xtask/src/contracts/registry.rs`).
 //!
@@ -33,7 +33,7 @@ impl Changes {
             "Changes",
             "Shows the uncommitted changes in the conversation's working directory, and what each of the agent's commands changed, as diffs in the Changes window.",
         );
-        manifest.page = Some(Page::new("@jush-ai/plugin-changes"));
+        manifest.page = Some(Page::new("@jush-agent/plugin-changes"));
         Self { manifest }
     }
 }

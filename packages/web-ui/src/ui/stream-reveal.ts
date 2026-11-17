@@ -1,8 +1,8 @@
-import { sliceHead } from '@jush-ai/utils'
+import { sliceHead } from '@jush-agent/utils'
 import { openBlockMathAt } from '../markdown/math-syntax'
 import { ATTACHMENT_TAG } from '../markdown/attachment-block'
 import { CREDENTIAL_TAG } from '../markdown/credential-block'
-import type { TextArrival } from '@jush-ai/conversation-client'
+import type { TextArrival } from '@jush-agent/conversation-client'
 
 /**
  * How a streaming reply's text reaches the reader (the gallery's Streaming Text):

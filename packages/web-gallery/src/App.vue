@@ -1,17 +1,17 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { useSavedScroll } from '@jush-ai/web-ui/composables/useSavedScroll'
-import ScrollArea from '@jush-ai/web-ui/ui/ScrollArea.vue'
-import Segmented from '@jush-ai/web-ui/ui/Segmented.vue'
-import ToastHost from '@jush-ai/web-ui/ui/ToastHost.vue'
-import ContextMenu from '@jush-ai/web-ui/ui/ContextMenu.vue'
-import SelectionFieldHost from '@jush-ai/web-ui/agent/comments/SelectionFieldHost.vue'
-import MediaViewer from '@jush-ai/web-ui/files/MediaViewer.vue'
-import SidebarLayout from '@jush-ai/web-ui/sidebar/SidebarLayout.vue'
-import { provideBlobUrl } from '@jush-ai/web-ui/agent/media-source'
-import { provideMediaViewer } from '@jush-ai/web-ui/files/media-viewer'
-import { baseName } from '@jush-ai/utils'
-import { provideMessageFiles } from '@jush-ai/web-ui/markdown/message-files'
+import { useSavedScroll } from '@jush-agent/web-ui/composables/useSavedScroll'
+import ScrollArea from '@jush-agent/web-ui/ui/ScrollArea.vue'
+import Segmented from '@jush-agent/web-ui/ui/Segmented.vue'
+import ToastHost from '@jush-agent/web-ui/ui/ToastHost.vue'
+import ContextMenu from '@jush-agent/web-ui/ui/ContextMenu.vue'
+import SelectionFieldHost from '@jush-agent/web-ui/agent/comments/SelectionFieldHost.vue'
+import MediaViewer from '@jush-agent/web-ui/files/MediaViewer.vue'
+import SidebarLayout from '@jush-agent/web-ui/sidebar/SidebarLayout.vue'
+import { provideBlobUrl } from '@jush-agent/web-ui/agent/media-source'
+import { provideMediaViewer } from '@jush-agent/web-ui/files/media-viewer'
+import { baseName } from '@jush-agent/utils'
+import { provideMessageFiles } from '@jush-agent/web-ui/markdown/message-files'
 import { RouterLink, RouterView, useRoute } from 'vue-router'
 import GalleryAppearanceMenu from './components/GalleryAppearanceMenu.vue'
 import GalleryLanguageMenu from './components/GalleryLanguageMenu.vue'
@@ -20,9 +20,9 @@ import { galleryBlobUrl, keepGalleryPicture } from './fixtures/blobs'
 import { galleryConversationFiles } from './fixtures/message-files'
 import { createGalleryProject } from './fixtures/project'
 import { productWould } from './product-would'
-import { provideSendTargets, type SendTargetLook } from '@jush-ai/web-ui/agent/send-to-conversation'
-import { provideKeepPicture } from '@jush-ai/web-ui/agent/comments/pictures'
-import { conversationTitle } from '@jush-ai/web-ui/agent/conversation-title'
+import { provideSendTargets, type SendTargetLook } from '@jush-agent/web-ui/agent/send-to-conversation'
+import { provideKeepPicture } from '@jush-agent/web-ui/agent/comments/pictures'
+import { conversationTitle } from '@jush-agent/web-ui/agent/conversation-title'
 import { fixtureSearch, searchConversations } from './fixtures/search'
 import { galleryNav } from './router'
 
@@ -108,7 +108,7 @@ const mainClass = computed(() => {
       >
         <div class="px-4 py-4">
           <div class="text-[13px] font-medium text-fg-emphasis">Jush Gallery</div>
-          <div class="mt-1 text-[12px] leading-4 text-fg-subtle">@jush-ai/web-ui</div>
+          <div class="mt-1 text-[12px] leading-4 text-fg-subtle">@jush-agent/web-ui</div>
         </div>
         <ScrollArea class="flex-1" viewport-class="px-2 pb-2">
           <nav class="flex flex-col gap-0.5">

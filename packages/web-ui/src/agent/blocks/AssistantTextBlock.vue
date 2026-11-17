@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import type { CodeFile, ReplyPicture } from '@jush-ai/protocol'
+import type { CodeFile, ReplyPicture } from '@jush-agent/protocol'
 import { computed, ref } from 'vue'
-import StreamedMarkdown from '@jush-ai/web-ui/ui/StreamedMarkdown.vue'
+import StreamedMarkdown from '@jush-agent/web-ui/ui/StreamedMarkdown.vue'
 import AssistantMessageFooter from './AssistantMessageFooter.vue'
 import type { MessageForkState } from '../message-fork'
 import type { AnswerShare } from '../sharing'

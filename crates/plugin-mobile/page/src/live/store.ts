@@ -9,7 +9,7 @@
  * past the limit, the least recently watched is released.
  */
 import { effectScope, onScopeDispose, watch } from 'vue'
-import { KeptSessions, definePluginStore, type KeptSession, type PageContext, type PluginStore } from '@jush-ai/plugin-sdk'
+import { KeptSessions, definePluginStore, type KeptSession, type PageContext, type PluginStore } from '@jush-agent/plugin-sdk'
 import { mobileApi } from '../devices'
 import { MobileDevicesController, type MobileControllerOptions } from './controller'
 import { KIND, mobileTabDataSchema } from './kind'

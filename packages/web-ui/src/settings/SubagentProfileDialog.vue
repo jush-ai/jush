@@ -9,7 +9,7 @@ import type { OverlayStore } from '../overlay/overlayStore'
 import type { ModelInfo, ProviderInfo } from '../transport/protocol'
 import ModelMenu from '../agent/ModelMenu.vue'
 import ContextMenu from '../agent/ContextMenu.vue'
-import { offersContext } from '@jush-ai/protocol'
+import { offersContext } from '@jush-agent/protocol'
 import { profileContextChoice, profileContextOptions } from '../agent/context-limit'
 import {
   applyModelChange,

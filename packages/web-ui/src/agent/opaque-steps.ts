@@ -1,4 +1,4 @@
-import type { SearchAction } from '@jush-ai/protocol'
+import type { SearchAction } from '@jush-agent/protocol'
 import { t } from './locales/text'
 
 /**

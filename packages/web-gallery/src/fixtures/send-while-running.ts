@@ -1,7 +1,7 @@
 import { reactive } from 'vue'
-import { IDLE_COMPACTION_CONTEXT } from '@jush-ai/protocol'
-import { DEFAULT_SEND_WHILE_RUNNING, type SendWhileRunning } from '@jush-ai/web-ui/agent/send-way'
-import type { IdleLifetime } from '@jush-ai/web-ui/settings/types'
+import { IDLE_COMPACTION_CONTEXT } from '@jush-agent/protocol'
+import { DEFAULT_SEND_WHILE_RUNNING, type SendWhileRunning } from '@jush-agent/web-ui/agent/send-way'
+import type { IdleLifetime } from '@jush-agent/web-ui/settings/types'
 
 /**
  * The gallery's stand-in for the user's message preferences:

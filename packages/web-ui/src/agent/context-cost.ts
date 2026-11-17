@@ -1,6 +1,6 @@
 import { useLocalStorage } from '@vueuse/core'
 import { inject, provide, type InjectionKey, type Ref } from 'vue'
-import type { AgentCost, CacheChart, CostPrice, CostTotals } from '@jush-ai/protocol'
+import type { AgentCost, CacheChart, CostPrice, CostTotals } from '@jush-agent/protocol'
 import { t } from './locales/text'
 
 /**

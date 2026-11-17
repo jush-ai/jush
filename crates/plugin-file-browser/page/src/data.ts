@@ -1,6 +1,6 @@
 import { ref } from 'vue'
 import { z } from 'zod'
-import { definePlace, isAbsoluteDevicePath, joinPath, type IntentPayloads } from '@jush-ai/plugin-sdk'
+import { definePlace, isAbsoluteDevicePath, joinPath, type IntentPayloads } from '@jush-agent/plugin-sdk'
 
 /**
  * What the File view shows: one file of the conversation's device, by its

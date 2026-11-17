@@ -1,5 +1,5 @@
-import type { Block, ChangedFile, EditedFile, PathChange } from '@jush-ai/protocol'
-import type { ToolCallBlock } from '@jush-ai/web-ui/agent/block-types'
+import type { Block, ChangedFile, EditedFile, PathChange } from '@jush-agent/protocol'
+import type { ToolCallBlock } from '@jush-agent/web-ui/agent/block-types'
 import { binaryFile, demoModel, inRequests, inRun, listedFile, listedFiles, ownLists, shellView, uncopiedFile, withEnd, withLists } from './blocks'
 import { editCopies } from './blobs'
 import { ago } from './time'

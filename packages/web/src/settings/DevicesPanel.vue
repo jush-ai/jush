@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed, watch, watchEffect } from 'vue'
 import { storeToRefs } from 'pinia'
-import { appOverlayStore } from '@jush-ai/web-ui/overlay/appOverlay'
-import SettingsDevices from '@jush-ai/web-ui/settings/SettingsDevices.vue'
-import type { SettingsDevice } from '@jush-ai/web-ui/settings/types'
+import { appOverlayStore } from '@jush-agent/web-ui/overlay/appOverlay'
+import SettingsDevices from '@jush-agent/web-ui/settings/SettingsDevices.vue'
+import type { SettingsDevice } from '@jush-agent/web-ui/settings/types'
 import { useResources } from '../state/resources'
 import { useProduct } from '../state/product'
 import { claimDevice, useInstallCommands } from '../devices/pairing'

@@ -1,7 +1,7 @@
-import type { EditCopies } from '@jush-ai/protocol'
-import type { BlobUrl } from '@jush-ai/web-ui/agent/media-source'
-import type { ReadCallChange } from '@jush-ai/web-ui/files/changes'
-import type { KeepPicture } from '@jush-ai/web-ui/agent/comments/pictures'
+import type { EditCopies } from '@jush-agent/protocol'
+import type { BlobUrl } from '@jush-agent/web-ui/agent/media-source'
+import type { ReadCallChange } from '@jush-agent/web-ui/files/changes'
+import type { KeepPicture } from '@jush-agent/web-ui/agent/comments/pictures'
 
 /**
  * The gallery's stand-in for the backend's blob route: fixture files under

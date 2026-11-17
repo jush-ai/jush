@@ -1,4 +1,4 @@
-import type { QuotaWindowName } from '@jush-ai/protocol'
+import type { QuotaWindowName } from '@jush-agent/protocol'
 import { pageLanguage } from '../i18n/text'
 import { t } from './locales/text'
 

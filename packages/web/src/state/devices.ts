@@ -1,7 +1,7 @@
-import type { DeviceDto, DeviceKind } from '@jush-ai/protocol'
-import { shownMark, type DeviceMark } from '@jush-ai/web-ui/devices/mark'
-import type { TargetKind } from '@jush-ai/web-ui/targets/types'
-import { t as shared } from '@jush-ai/web-ui/locales/text'
+import type { DeviceDto, DeviceKind } from '@jush-agent/protocol'
+import { shownMark, type DeviceMark } from '@jush-agent/web-ui/devices/mark'
+import type { TargetKind } from '@jush-agent/web-ui/targets/types'
+import { t as shared } from '@jush-agent/web-ui/locales/text'
 import { t } from './locales/text'
 
 /**

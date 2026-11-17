@@ -1,16 +1,16 @@
 import { computed, markRaw, reactive, type Raw, ref, toRaw, watch } from 'vue'
 import { defineStore } from 'pinia'
-import { SerialQueue, deferred, delay, isAbortError, moveBefore } from '@jush-ai/utils'
-import type { HeadlineText, TitleText } from '@jush-ai/web-ui/ui/ui-text'
-import { FIRST_BLOCKS, type ClientComment, type ClientContent, type MessageComment } from '@jush-ai/protocol'
-import { commentsReplaced, inReadingOrder, type DraftMessage, type MessageFiles, type ReplyCommenting, type ShownComment, type WaitingComment } from '@jush-ai/web-ui/agent/comments/comments'
-import { ConversationCache, type CachedConversation } from '@jush-ai/web-ui/agent/conversation-cache'
-import { isRunning } from '@jush-ai/web-ui/agent/conversation-status'
-import { NO_COST, agentCost, conversationCost, recentOf, type CostShown, type CostWindow } from '@jush-ai/web-ui/agent/context-cost'
-import { latestBlocks, type TranscriptReveal } from '@jush-ai/web-ui/agent/history'
-import { conversationTitle } from '@jush-ai/web-ui/agent/conversation-title'
-import { finishedSubagents, runningSubagents } from '@jush-ai/web-ui/agent/subagents'
-import { ConversationRuntime, RemovalRefusedError, isRecordedTurnFailure, untilUnsent } from '@jush-ai/web-ui/agent/conversation-runtime'
+import { SerialQueue, deferred, delay, isAbortError, moveBefore } from '@jush-agent/utils'
+import type { HeadlineText, TitleText } from '@jush-agent/web-ui/ui/ui-text'
+import { FIRST_BLOCKS, type ClientComment, type ClientContent, type MessageComment } from '@jush-agent/protocol'
+import { commentsReplaced, inReadingOrder, type DraftMessage, type MessageFiles, type ReplyCommenting, type ShownComment, type WaitingComment } from '@jush-agent/web-ui/agent/comments/comments'
+import { ConversationCache, type CachedConversation } from '@jush-agent/web-ui/agent/conversation-cache'
+import { isRunning } from '@jush-agent/web-ui/agent/conversation-status'
+import { NO_COST, agentCost, conversationCost, recentOf, type CostShown, type CostWindow } from '@jush-agent/web-ui/agent/context-cost'
+import { latestBlocks, type TranscriptReveal } from '@jush-agent/web-ui/agent/history'
+import { conversationTitle } from '@jush-agent/web-ui/agent/conversation-title'
+import { finishedSubagents, runningSubagents } from '@jush-agent/web-ui/agent/subagents'
+import { ConversationRuntime, RemovalRefusedError, isRecordedTurnFailure, untilUnsent } from '@jush-agent/web-ui/agent/conversation-runtime'
 import {
   beginSavedEdit,
   changeEditComments,
@@ -23,25 +23,25 @@ import {
   type MessageEditContent,
   type MessageEditHost,
   type MessageEditRequest,
-} from '@jush-ai/web-ui/agent/message-editing'
-import { coded, errorCode, errorFields, errorMessage, reportError, requestIdOf, shownError, type ReportErrorOptions } from '@jush-ai/web-ui/infra/errors'
-import { t as shared } from '@jush-ai/web-ui/locales/text'
-import { ConversationLaneError } from '@jush-ai/web-ui/transport/conversation-lane'
-import { browserOnline, userWaits } from '@jush-ai/web-ui/transport/liveness'
-import { operations } from '@jush-ai/web-ui/ui/operations'
-import { sendNowOperation } from '@jush-ai/web-ui/agent/pending-steers'
-import { sessionShown, transcriptShown } from '@jush-ai/web-ui/agent/session-status'
-import { dismissToast, showToast } from '@jush-ai/web-ui/infra/toast'
-import { plainCopy } from '@jush-ai/web-ui/infra/plain-copy'
-import { pageLog } from '@jush-ai/web-ui/infra/log'
-import { viewAbandoned, viewOpened, viewRead } from '@jush-ai/web-ui/infra/view-timing'
-import { Slot, type SlotChange } from '@jush-ai/web-ui/infra/slot'
-import { showArchived, updateArchived } from '@jush-ai/web-ui/sidebar/archived-toast'
-import { showRefused, type Refusal, type RefusedAction } from '@jush-ai/web-ui/sidebar/refused-toast'
+} from '@jush-agent/web-ui/agent/message-editing'
+import { coded, errorCode, errorFields, errorMessage, reportError, requestIdOf, shownError, type ReportErrorOptions } from '@jush-agent/web-ui/infra/errors'
+import { t as shared } from '@jush-agent/web-ui/locales/text'
+import { ConversationLaneError } from '@jush-agent/web-ui/transport/conversation-lane'
+import { browserOnline, userWaits } from '@jush-agent/web-ui/transport/liveness'
+import { operations } from '@jush-agent/web-ui/ui/operations'
+import { sendNowOperation } from '@jush-agent/web-ui/agent/pending-steers'
+import { sessionShown, transcriptShown } from '@jush-agent/web-ui/agent/session-status'
+import { dismissToast, showToast } from '@jush-agent/web-ui/infra/toast'
+import { plainCopy } from '@jush-agent/web-ui/infra/plain-copy'
+import { pageLog } from '@jush-agent/web-ui/infra/log'
+import { viewAbandoned, viewOpened, viewRead } from '@jush-agent/web-ui/infra/view-timing'
+import { Slot, type SlotChange } from '@jush-agent/web-ui/infra/slot'
+import { showArchived, updateArchived } from '@jush-agent/web-ui/sidebar/archived-toast'
+import { showRefused, type Refusal, type RefusedAction } from '@jush-agent/web-ui/sidebar/refused-toast'
 import { readRecentCost } from '../api/cost'
 import { forkConversation } from '../api/message-fork'
 import { createRecentCostWatch } from './recent-cost'
-import type { MessageForkRequest } from '@jush-ai/web-ui/agent/message-fork'
+import type { MessageForkRequest } from '@jush-agent/web-ui/agent/message-fork'
 import {
   applyModelChange,
   composerModel,
@@ -50,15 +50,15 @@ import {
   offeredSettings,
   type ModelSettings,
   type ModelSettingsChange,
-} from '@jush-ai/web-ui/agent/model-selection'
-import { hasAcceptedSubmission, isWritten } from '@jush-ai/web-ui/agent/submission'
-import { agentWorks, chooseSendWay, markSent, markWithdrawn, turnStartingMessage, type SendWay } from '@jush-ai/web-ui/agent/send-way'
+} from '@jush-agent/web-ui/agent/model-selection'
+import { hasAcceptedSubmission, isWritten } from '@jush-agent/web-ui/agent/submission'
+import { agentWorks, chooseSendWay, markSent, markWithdrawn, turnStartingMessage, type SendWay } from '@jush-agent/web-ui/agent/send-way'
 import {
   applyAttachmentUpdate,
   composerAttachmentFromFile,
   composerRemoteAttachment,
   isComposerFile,
-} from '@jush-ai/web-ui/agent/message-input/attachments'
+} from '@jush-agent/web-ui/agent/message-input/attachments'
 import {
   contentCopy,
   missingFilesToast,
@@ -68,13 +68,13 @@ import {
   type CopiedStoredFile,
   type PasteHost,
   type PastedMessage,
-} from '@jush-ai/web-ui/agent/message-input/copied-message'
-import { composerCapsule, composerTransfer, contentMessage } from '@jush-ai/web-ui/agent/message-editor/capsules'
-import { showRecalled } from '@jush-ai/web-ui/agent/recalled-toast'
-import { ATTACHMENT_MARK, parseTypedMarkdown, serializeTypedMarkdown } from '@jush-ai/web-ui/markdown/user-markdown'
-import { createConversationClient } from '@jush-ai/web-ui/transport/conversation-lane'
-import { SessionError } from '@jush-ai/conversation-client'
-import type { ConversationClient, ConversationClientOptions, ConversationHeld, ConversationReader, HeldTranscript, TranscriptRead } from '@jush-ai/web-ui/transport/protocol'
+} from '@jush-agent/web-ui/agent/message-input/copied-message'
+import { composerCapsule, composerTransfer, contentMessage } from '@jush-agent/web-ui/agent/message-editor/capsules'
+import { showRecalled } from '@jush-agent/web-ui/agent/recalled-toast'
+import { ATTACHMENT_MARK, parseTypedMarkdown, serializeTypedMarkdown } from '@jush-agent/web-ui/markdown/user-markdown'
+import { createConversationClient } from '@jush-agent/web-ui/transport/conversation-lane'
+import { SessionError } from '@jush-agent/conversation-client'
+import type { ConversationClient, ConversationClientOptions, ConversationHeld, ConversationReader, HeldTranscript, TranscriptRead } from '@jush-agent/web-ui/transport/protocol'
 import { ApiError, REQUEST_ID_HEADER, apiRequest, jsonBody, logReadAnswered, logReadFailed, readResponse, readSizedResponse } from '../api/client'
 import { readSaved } from '../api/saved'
 import type { z } from 'zod'
@@ -107,21 +107,21 @@ import {
   type SidebarReorder,
   type ScheduleChange,
   type SuggestedReplyUse,
-} from '@jush-ai/protocol'
-import type { WorkflowChoice } from '@jush-ai/protocol'
-import { isEmptyMessage, joinMessageContent, storedMessageContent } from '@jush-ai/web-ui/agent/message-input/message-content'
-import { startingChoices, startingWorkflow, type RememberedChoices } from '@jush-ai/web-ui/agent/starting-choices'
-import type { WorkflowList } from '@jush-ai/web-ui/agent/workflow-menu'
+} from '@jush-agent/protocol'
+import type { WorkflowChoice } from '@jush-agent/protocol'
+import { isEmptyMessage, joinMessageContent, storedMessageContent } from '@jush-agent/web-ui/agent/message-input/message-content'
+import { startingChoices, startingWorkflow, type RememberedChoices } from '@jush-agent/web-ui/agent/starting-choices'
+import type { WorkflowList } from '@jush-agent/web-ui/agent/workflow-menu'
 import { blobPicture, commentFileIds, createConversationUploads, pendingFileIds, referenced, sendingFileIds } from './uploads'
 import { useWorkspaces } from '../state/workspaces'
 import { useResources } from '../state/resources'
-import { known } from '@jush-ai/protocol'
+import { known } from '@jush-agent/protocol'
 import { useProduct, type ProductChange } from '../state/product'
-import type { PageState } from '@jush-ai/protocol'
+import type { PageState } from '@jush-agent/protocol'
 import { usePreferences } from '../state/preferences'
 import { useSession } from '../auth/session'
 import type { Conversation, PendingSend, ProductAttachment } from '../state/types'
-import type { PendingSubmissionState } from '@jush-ai/web-ui/agent/types'
+import type { PendingSubmissionState } from '@jush-agent/web-ui/agent/types'
 import { applyConversationEvent, describeAttachments, describeReplyBlocks, takeAgents, updateLiveStatus } from './activity'
 import { composerWriting, createRecordSync, draftFile, editedMessage, newRecord, wholeListed, type Message, type Writing } from './record'
 import { createConversationHistoryReads } from './history'
@@ -130,7 +130,7 @@ import { createConversationCopies } from './offline'
 import { readConversationCopy, readNodeCopy } from '../state/offline'
 import { t } from './locales/text'
 import { attending } from '../state/attention'
-import { EMPTY_TRANSCRIPT, addPage, heldEdge } from '@jush-ai/web-ui/transport/protocol'
+import { EMPTY_TRANSCRIPT, addPage, heldEdge } from '@jush-agent/web-ui/transport/protocol'
 import {
   deleteDraft,
   readDraft,

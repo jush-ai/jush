@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import type { AgentMessage } from '@jush-ai/protocol'
-import { ICON_PX } from '@jush-ai/web-ui/ui/icon-metrics'
+import type { AgentMessage } from '@jush-agent/protocol'
+import { ICON_PX } from '@jush-agent/web-ui/ui/icon-metrics'
 import NoticeRow from './NoticeRow.vue'
 import AgentReceiptFace from './AgentReceiptFace.vue'
 import { receiptIcon } from './tool-row-icon'

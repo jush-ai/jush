@@ -2,11 +2,11 @@ import { t } from './locales/text'
 import { defineStore } from 'pinia'
 import { useSession } from '../auth/session'
 import { computed, onScopeDispose, ref, watch } from 'vue'
-import { SerialQueue } from '@jush-ai/utils'
-import type { HeadlineText } from '@jush-ai/web-ui/ui/ui-text'
-import { errorCode, errorFields, reportError, shownError, type ShownError } from '@jush-ai/web-ui/infra/errors'
-import { showToast } from '@jush-ai/web-ui/infra/toast'
-import { pageLog } from '@jush-ai/web-ui/infra/log'
+import { SerialQueue } from '@jush-agent/utils'
+import type { HeadlineText } from '@jush-agent/web-ui/ui/ui-text'
+import { errorCode, errorFields, reportError, shownError, type ShownError } from '@jush-agent/web-ui/infra/errors'
+import { showToast } from '@jush-agent/web-ui/infra/toast'
+import { pageLog } from '@jush-agent/web-ui/infra/log'
 import {
   known,
   cloudResetAnswerSchema,
@@ -16,7 +16,7 @@ import {
   type CloudReset,
   type ChangeDevice,
   type DeviceRoute,
-} from '@jush-ai/protocol'
+} from '@jush-agent/protocol'
 import { useProduct } from '../state/product'
 import { cloudDeviceIn } from '../state/devices'
 import { ApiError, apiRequest, jsonBody, readResponse } from '../api/client'

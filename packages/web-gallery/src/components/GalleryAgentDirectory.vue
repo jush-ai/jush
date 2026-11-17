@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { reactive, ref } from 'vue'
-import { provideEditSelection } from '@jush-ai/web-ui/agent/edit-selection'
-import { agentDirectories } from '@jush-ai/web-ui/agent/working-directory'
-import { provideMessageFiles } from '@jush-ai/web-ui/markdown/message-files'
-import Button from '@jush-ai/web-ui/ui/Button.vue'
+import { provideEditSelection } from '@jush-agent/web-ui/agent/edit-selection'
+import { agentDirectories } from '@jush-agent/web-ui/agent/working-directory'
+import { provideMessageFiles } from '@jush-agent/web-ui/markdown/message-files'
+import Button from '@jush-agent/web-ui/ui/Button.vue'
 import { galleryConversationFiles } from '../fixtures/message-files'
 import { SLOT_NODE, slotBlocks } from '../fixtures/request-changes'
 import { slotSubagent } from '../fixtures/subagents'

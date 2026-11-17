@@ -1,5 +1,5 @@
 import { inject, provide, type InjectionKey } from 'vue'
-import type { ScheduleMark } from '@jush-ai/protocol'
+import type { ScheduleMark } from '@jush-agent/protocol'
 import { shortMoment } from '../schedules/words'
 
 /**

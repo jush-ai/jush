@@ -1,4 +1,4 @@
-import type { Block } from '@jush-ai/protocol'
+import type { Block } from '@jush-agent/protocol'
 import type { MessageFiles } from '../markdown/types'
 import { isSubagentRunning, type SubagentRecord } from './subagents'
 

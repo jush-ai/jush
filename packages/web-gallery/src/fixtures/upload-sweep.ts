@@ -1,7 +1,7 @@
-import type { UserContentBlock } from '@jush-ai/protocol'
-import { delay } from '@jush-ai/utils'
-import type { MessageEditContent } from '@jush-ai/web-ui/agent/message-editing'
-import { clampUnit, encodeRemoteReference, type ClaimFile, type UploadedFile, type UploadFile } from '@jush-ai/web-ui/agent/message-input/attachments'
+import type { UserContentBlock } from '@jush-agent/protocol'
+import { delay } from '@jush-agent/utils'
+import type { MessageEditContent } from '@jush-agent/web-ui/agent/message-editing'
+import { clampUnit, encodeRemoteReference, type ClaimFile, type UploadedFile, type UploadFile } from '@jush-agent/web-ui/agent/message-input/attachments'
 import { galleryBlobUrl, galleryHoldsBlob } from './blobs'
 
 const PROTOTYPE_UPLOAD_MS = 1400

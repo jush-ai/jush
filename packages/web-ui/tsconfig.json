@@ -6,8 +6,8 @@
     "lib": ["ESNext", "DOM", "DOM.Iterable"],
     "types": ["bun"],
     "paths": {
-      "@jush-ai/web-ui/*": ["./src/*"],
-      "@jush-ai/*": ["../*/src/index.ts", "../../crates/*/page/src/index.ts"]
+      "@jush-agent/web-ui/*": ["./src/*"],
+      "@jush-agent/*": ["../*/src/index.ts", "../../crates/*/page/src/index.ts"]
     }
   },
   "include": ["src"],

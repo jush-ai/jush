@@ -1,7 +1,7 @@
-import type { DeviceMark } from '@jush-ai/web-ui/devices/mark'
+import type { DeviceMark } from '@jush-agent/web-ui/devices/mark'
 import { GALLERY_MARKS, shownAmong } from './device-marks'
-import { createMemoryFileSource, dir, file, link, type MemoryDirectory } from '@jush-ai/web-ui/files/memory-source'
-import type { FileBrowserDevice, FileBrowserPlaceGroup, FileBrowserSource } from '@jush-ai/web-ui/files/types'
+import { createMemoryFileSource, dir, file, link, type MemoryDirectory } from '@jush-agent/web-ui/files/memory-source'
+import type { FileBrowserDevice, FileBrowserPlaceGroup, FileBrowserSource } from '@jush-agent/web-ui/files/types'
 
 /**
  * Two devices' worth of directories for the file browser: a laptop with projects,

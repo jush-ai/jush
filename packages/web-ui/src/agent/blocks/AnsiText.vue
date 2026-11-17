@@ -2,8 +2,8 @@
 import { computed, toRef } from 'vue'
 import { refThrottled } from '@vueuse/core'
 import AnsiToHtml from 'ansi-to-html'
-import { useTerminalTheme } from '@jush-ai/web-ui/composables/useTerminalTheme'
-import ScrollArea from '@jush-ai/web-ui/ui/ScrollArea.vue'
+import { useTerminalTheme } from '@jush-agent/web-ui/composables/useTerminalTheme'
+import ScrollArea from '@jush-agent/web-ui/ui/ScrollArea.vue'
 
 const RENDER_THROTTLE = 80
 

@@ -5,30 +5,28 @@
 //!
 //! ```text
 //! <output>/
-//!   sdk/                     @jush-ai/sdk
+//!   sdk/                     @jush-agent/sdk
 //!     package.json           at the build version, with each platform's
 //!                            package an optional dependency
 //!     dist/                  its build
 //!     release/commands/      every command package's descriptor
-//!   sdk-darwin-arm64/        @jush-ai/sdk-darwin-arm64, one for each target
+//!   sdk-darwin-arm64/        @jush-agent/sdk-darwin-arm64, one for each target
 //!     package.json           with its `os` and `cpu`
 //!     bin/jush-core          the target's process and runner
 //!     bin/jush-runner
 //!     release/files/         the target's command programs, compressed
-//!   web-components/          @jush-ai/web-components
-//!   conversation-client/     each package of the workspace the SDK or the
-//!   protocol/                web components depend on, which they are
-//!   ...                      published beside
+//!   web-components/          @jush-agent/web-components
 //! ```
 //!
 //! A package manager installs only the platform package whose `os` and `cpu`
 //! are the machine's, as esbuild's are installed. The SDK finds its
 //! executables and release in this layout (`packages/sdk/src/binaries.ts`).
 //!
-//! Every package is at the build version, and so is each dependency of one
-//! in the workspace. A workspace package's manifest leaves out what only the
-//! workspace uses: its `development` export, which names its sources, its
-//! scripts and its development dependencies.
+//! Every package is at the build version. A published package bundles the
+//! workspace's packages it uses, which are private, so it depends on none of
+//! them. Its manifest leaves out what only the workspace uses: its
+//! `development` export, which names its sources, its scripts and its
+//! development dependencies.
 
 use std::path::{Path, PathBuf};
 
@@ -39,14 +37,13 @@ use tokio_util::sync::CancellationToken;
 use crate::native::{self, Caches, Executable, Spec, Versioning};
 
 /// The SDK's main package's name, and the prefix of each platform package's.
-const SDK: &str = "@jush-ai/sdk";
+const SDK: &str = "@jush-agent/sdk";
 
 /// The scope of the workspace's packages, each in the directory of its
 /// name under `packages/`.
-const SCOPE: &str = "@jush-ai/";
+const SCOPE: &str = "@jush-agent/";
 
-/// The workspace's packages a program installs, by directory, besides those
-/// they depend on.
+/// The workspace's packages a program installs, by directory.
 const PROGRAM_PACKAGES: [&str; 2] = ["sdk", "web-components"];
 
 #[derive(clap::Args)]
@@ -237,34 +234,30 @@ struct WorkspacePackage {
     manifest: Value,
 }
 
-/// [`PROGRAM_PACKAGES`] and every package of the workspace they depend on.
+/// [`PROGRAM_PACKAGES`], each of which depends on no package of the
+/// workspace: one it uses is bundled into its build.
 async fn workspace_packages(repository: &Path) -> Result<Vec<WorkspacePackage>, Error> {
-    let mut packages: Vec<WorkspacePackage> = Vec::new();
-    let mut waiting: Vec<String> = PROGRAM_PACKAGES.iter().map(|&directory| directory.to_owned()).collect();
-    while let Some(directory) = waiting.pop() {
-        if packages.iter().any(|package| package.directory == directory) {
-            continue;
-        }
-        let source = repository.join("packages").join(&directory);
+    let mut packages = Vec::new();
+    for directory in PROGRAM_PACKAGES {
+        let source = repository.join("packages").join(directory);
         let path = source.join("package.json");
         let manifest: Value = serde_json::from_slice(&tokio::fs::read(&path).await?)
             .map_err(|error| Error::Manifest(path.clone(), error.to_string()))?;
         if manifest.get("name").and_then(Value::as_str) != Some(&format!("{SCOPE}{directory}")) {
             return Err(Error::Manifest(path, format!("not named {SCOPE}{directory}")));
         }
-        if let Some(Value::Object(dependencies)) = manifest.get("dependencies") {
-            for (name, range) in dependencies {
-                if !range.as_str().is_some_and(|range| range.starts_with("workspace:")) {
-                    continue;
-                }
-                let dependency = name
-                    .strip_prefix(SCOPE)
-                    .ok_or_else(|| Error::Manifest(path.clone(), format!("{name} is in the workspace but not in {SCOPE}")))?;
-                waiting.push(dependency.to_owned());
-            }
+        if let Some(Value::Object(dependencies)) = manifest.get("dependencies")
+            && let Some((name, _)) = dependencies
+                .iter()
+                .find(|(_, range)| range.as_str().is_some_and(|range| range.starts_with("workspace:")))
+        {
+            return Err(Error::Manifest(
+                path,
+                format!("{name} is a package of the workspace, which is not published: bundle it, and list it in devDependencies"),
+            ));
         }
         packages.push(WorkspacePackage {
-            directory,
+            directory: directory.to_owned(),
             source,
             manifest,
         });
@@ -273,21 +266,13 @@ async fn workspace_packages(repository: &Path) -> Result<Vec<WorkspacePackage>, 
 }
 
 /// A workspace package's `manifest` as its package publishes it: at
-/// `version`, with its dependencies in the workspace at `version` too, and
-/// without its `development` export, its scripts and its development
-/// dependencies.
+/// `version`, and without its `development` export, its scripts and its
+/// development dependencies.
 fn published_manifest(mut manifest: Value, version: &str) -> Value {
     let Some(object) = manifest.as_object_mut() else {
         return manifest;
     };
     object.insert("version".to_owned(), Value::String(version.to_owned()));
-    if let Some(Value::Object(dependencies)) = object.get_mut("dependencies") {
-        for value in dependencies.values_mut() {
-            if value.as_str().is_some_and(|range| range.starts_with("workspace:")) {
-                *value = Value::String(version.to_owned());
-            }
-        }
-    }
     if let Some(Value::Object(exports)) = object.get_mut("exports") {
         for entry in exports.values_mut() {
             if let Value::Object(conditions) = entry {

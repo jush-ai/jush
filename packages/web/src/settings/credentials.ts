@@ -1,8 +1,8 @@
 import { computed } from 'vue'
 import { defineStore } from 'pinia'
-import { reportError } from '@jush-ai/web-ui/infra/errors'
-import type { CredentialReveal, MessageCredentials } from '@jush-ai/web-ui/markdown/types'
-import type { SettingsCredential, SettingsCredentialDraft, SettingsCredentialPatch } from '@jush-ai/web-ui/settings/types'
+import { reportError } from '@jush-agent/web-ui/infra/errors'
+import type { CredentialReveal, MessageCredentials } from '@jush-agent/web-ui/markdown/types'
+import type { SettingsCredential, SettingsCredentialDraft, SettingsCredentialPatch } from '@jush-agent/web-ui/settings/types'
 import { ApiError, apiRequest, jsonBody, readResponse } from '../api/client'
 import {
   credentialAnswerSchema,
@@ -10,7 +10,7 @@ import {
   type CredentialDto,
   type CredentialPatch,
   type NewCredential,
-} from '@jush-ai/protocol'
+} from '@jush-agent/protocol'
 import { confirmationHost } from '../auth/handoff'
 import { useResources } from '../state/resources'
 import { useHeldList, useProduct, type Answer } from '../state/product'

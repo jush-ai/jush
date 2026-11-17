@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { Palette } from '@lucide/vue'
-import { appOverlayStore } from '@jush-ai/web-ui/overlay/appOverlay'
-import Dropdown from '@jush-ai/web-ui/ui/Dropdown.vue'
-import IconButton from '@jush-ai/web-ui/ui/IconButton.vue'
-import ScrollArea from '@jush-ai/web-ui/ui/ScrollArea.vue'
+import { appOverlayStore } from '@jush-agent/web-ui/overlay/appOverlay'
+import Dropdown from '@jush-agent/web-ui/ui/Dropdown.vue'
+import IconButton from '@jush-agent/web-ui/ui/IconButton.vue'
+import ScrollArea from '@jush-agent/web-ui/ui/ScrollArea.vue'
 import {
   applyParadigm,
   FONT_IDS,
@@ -11,7 +11,7 @@ import {
   PARADIGMS,
   type ParadigmId,
 } from '../gallery-state'
-import { t as ui } from '@jush-ai/web-ui/locales/text'
+import { t as ui } from '@jush-agent/web-ui/locales/text'
 import { t } from '../locales/text'
 import AccentPicker from './AccentPicker.vue'
 import AxisPicker from './AxisPicker.vue'

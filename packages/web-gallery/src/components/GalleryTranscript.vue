@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { Block } from '@jush-ai/protocol'
-import { provideTranscript } from '@jush-ai/web-ui/agent/edit-selection'
-import { useMediaAddress } from '@jush-ai/web-ui/agent/media-source'
-import { transcriptPictures } from '@jush-ai/web-ui/agent/transcript-pictures'
-import { useMessageFiles } from '@jush-ai/web-ui/markdown/message-files'
-import { storedRequests } from '@jush-ai/web-ui/files/request-changes'
+import type { Block } from '@jush-agent/protocol'
+import { provideTranscript } from '@jush-agent/web-ui/agent/edit-selection'
+import { useMediaAddress } from '@jush-agent/web-ui/agent/media-source'
+import { transcriptPictures } from '@jush-agent/web-ui/agent/transcript-pictures'
+import { useMessageFiles } from '@jush-agent/web-ui/markdown/message-files'
+import { storedRequests } from '@jush-agent/web-ui/files/request-changes'
 import { useGalleryTranscripts } from '../fixtures/transcripts'
 
 /**

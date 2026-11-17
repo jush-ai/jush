@@ -1,5 +1,5 @@
 import { ref } from 'vue'
-import { holdsTarget, type ExistingShare, type ShareService, type ShareTarget } from '@jush-ai/web-ui/agent/sharing'
+import { holdsTarget, type ExistingShare, type ShareService, type ShareTarget } from '@jush-agent/web-ui/agent/sharing'
 import { productWould } from '../product-would'
 import { simulatedRequestId } from './request-failures'
 import { slow } from './slow'

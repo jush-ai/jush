@@ -1,6 +1,6 @@
 import { z } from 'zod'
-import { logStorageFailed } from '@jush-ai/web-ui/infra/log'
-import { SIDEBAR_GROUPS } from '@jush-ai/web-ui/sidebar/list-model'
+import { logStorageFailed } from '@jush-agent/web-ui/infra/log'
+import { SIDEBAR_GROUPS } from '@jush-agent/web-ui/sidebar/list-model'
 import { holds } from './account-owner'
 
 const localStateSchema = z.object({

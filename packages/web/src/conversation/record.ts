@@ -8,14 +8,14 @@ import type {
   ListedSavedMessage,
   Revisions,
   SavedListing,
-} from '@jush-ai/protocol'
-import { SerialQueue } from '@jush-ai/utils'
-import type { HeadlineText } from '@jush-ai/web-ui/ui/ui-text'
-import { Slot, type SlotChange } from '@jush-ai/web-ui/infra/slot'
-import { isComposerFile } from '@jush-ai/web-ui/agent/message-input/attachments'
-import { ATTACHMENT_MARK } from '@jush-ai/web-ui/markdown/user-markdown'
-import type { MessageEditContent } from '@jush-ai/web-ui/agent/message-editing'
-import { splitMessageContent } from '@jush-ai/web-ui/agent/message-input/message-content'
+} from '@jush-agent/protocol'
+import { SerialQueue } from '@jush-agent/utils'
+import type { HeadlineText } from '@jush-agent/web-ui/ui/ui-text'
+import { Slot, type SlotChange } from '@jush-agent/web-ui/infra/slot'
+import { isComposerFile } from '@jush-agent/web-ui/agent/message-input/attachments'
+import { ATTACHMENT_MARK } from '@jush-agent/web-ui/markdown/user-markdown'
+import type { MessageEditContent } from '@jush-agent/web-ui/agent/message-editing'
+import { splitMessageContent } from '@jush-agent/web-ui/agent/message-input/message-content'
 import { ApiError } from '../api/client'
 import { OVER_ANY } from './drafts'
 import { saveDraft } from '../api/drafts'

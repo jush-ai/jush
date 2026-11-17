@@ -19,31 +19,31 @@
       "@/*": [
         "./src/*"
       ],
-      "@jush-ai/web-ui/*": [
+      "@jush-agent/web-ui/*": [
         "../web-ui/src/*"
       ],
-      "@jush-ai/web-gallery/*": [
+      "@jush-agent/web-gallery/*": [
         "../web-gallery/src/*"
       ],
-      "@jush-ai/plugin-browser/*": [
+      "@jush-agent/plugin-browser/*": [
         "../../crates/plugin-browser/page/src/*"
       ],
-      "@jush-ai/plugin-mobile/*": [
+      "@jush-agent/plugin-mobile/*": [
         "../../crates/plugin-mobile/page/src/*"
       ],
-      "@jush-ai/plugin-changes/*": [
+      "@jush-agent/plugin-changes/*": [
         "../../crates/plugin-changes/page/src/*"
       ],
-      "@jush-ai/plugin-file-browser/*": [
+      "@jush-agent/plugin-file-browser/*": [
         "../../crates/plugin-file-browser/page/src/*"
       ],
-      "@jush-ai/plugin-skills/*": [
+      "@jush-agent/plugin-skills/*": [
         "../../crates/plugin-skills/page/src/*"
       ],
-      "@jush-ai/plugin-web/*": [
+      "@jush-agent/plugin-web/*": [
         "../../crates/plugin-web/page/src/*"
       ],
-      "@jush-ai/*": [
+      "@jush-agent/*": [
         "../*/src/index.ts",
         "../../crates/*/page/src/index.ts"
       ]

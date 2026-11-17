@@ -1,6 +1,6 @@
 import { reactive, ref, type Ref } from 'vue'
 import { z } from 'zod'
-import { clamp } from '@jush-ai/utils'
+import { clamp } from '@jush-agent/utils'
 import { WINDOW_MIN, type WindowRect } from '../ui/floating-window'
 import { moved, rearranged } from '../ui/drag-order'
 

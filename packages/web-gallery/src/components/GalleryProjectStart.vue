@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue'
-import Button from '@jush-ai/web-ui/ui/Button.vue'
-import Segmented from '@jush-ai/web-ui/ui/Segmented.vue'
-import type { ModelSettings } from '@jush-ai/web-ui/agent/model-selection'
-import { startingChoices, startingWorkflow, type RememberedChoices } from '@jush-ai/web-ui/agent/starting-choices'
-import type { WorkflowChoice } from '@jush-ai/web-ui/agent/workflow-menu'
-import type { WorkflowList } from '@jush-ai/web-ui/agent/workflow-menu'
+import Button from '@jush-agent/web-ui/ui/Button.vue'
+import Segmented from '@jush-agent/web-ui/ui/Segmented.vue'
+import type { ModelSettings } from '@jush-agent/web-ui/agent/model-selection'
+import { startingChoices, startingWorkflow, type RememberedChoices } from '@jush-agent/web-ui/agent/starting-choices'
+import type { WorkflowChoice } from '@jush-agent/web-ui/agent/workflow-menu'
+import type { WorkflowList } from '@jush-agent/web-ui/agent/workflow-menu'
 import { projectWorkflows } from '../fixtures/workflows'
 import GalleryComposer from './GalleryComposer.vue'
 

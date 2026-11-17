@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { shownError } from '@jush-ai/web-ui/infra/errors'
+import { shownError } from '@jush-agent/web-ui/infra/errors'
 import { onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import SetupForm, { type SetupPhase } from '@jush-ai/web-ui/auth/SetupPage.vue'
+import SetupForm, { type SetupPhase } from '@jush-agent/web-ui/auth/SetupPage.vue'
 import { ApiError } from '../api/client'
 import { addPasskey } from './passkeys'
 import { setupStatus, useSession } from './session'

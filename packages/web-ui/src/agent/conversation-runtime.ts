@@ -15,8 +15,8 @@ import {
   type ConversationHeld,
   type ClientSessionEvent,
   type HeldEdge,
-} from '@jush-ai/conversation-client'
-import { asError, createId, deferred } from '@jush-ai/utils'
+} from '@jush-agent/conversation-client'
+import { asError, createId, deferred } from '@jush-agent/utils'
 import type {
   AgentEntry,
   ClientContent,
@@ -26,7 +26,7 @@ import type {
   SavedDelivery,
   Version,
   QueuedMessage,
-} from '@jush-ai/protocol'
+} from '@jush-agent/protocol'
 import { ConversationLaneError } from '../transport/conversation-lane'
 import { pendingReturnCheck, waitToReconnect } from '../transport/liveness'
 import { failureHeadline } from './error-detail'

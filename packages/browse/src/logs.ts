@@ -16,7 +16,7 @@
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import type { BrowserContext, Page, Request, WebSocket } from 'playwright'
 import { z } from 'zod'
-import { BINARY_FLAG, CLOSE_FRAME, CONNECTION_FRAME, CREDIT_FRAME, DATA_FRAME, MORE_FLAG, OPENED_FRAME, OPEN_FRAME, REFUSED_FRAME } from '@jush-ai/protocol'
+import { BINARY_FLAG, CLOSE_FRAME, CONNECTION_FRAME, CREDIT_FRAME, DATA_FRAME, MORE_FLAG, OPENED_FRAME, OPEN_FRAME, REFUSED_FRAME } from '@jush-agent/protocol'
 
 export const LOG_KINDS = ['console', 'network', 'sockets'] as const
 export type LogKind = typeof LOG_KINDS[number]

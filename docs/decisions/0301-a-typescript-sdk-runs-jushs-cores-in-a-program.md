@@ -16,12 +16,12 @@ each would drift from the web app, which does the same work for its pages.
 
 ## Decision
 
-`@jush-ai/sdk` starts the process and gives a program the cores, their
+`@jush-agent/sdk` starts the process and gives a program the cores, their
 conversations, providers, devices and state, and the program's plugins, with
 the clients the web app uses.
 
 ```ts
-import { Jush, definePlugin, leaf } from '@jush-ai/sdk'
+import { Jush, definePlugin, leaf } from '@jush-agent/sdk'
 import { z } from 'zod'
 
 const chat = definePlugin({
@@ -77,14 +77,14 @@ a program needs too moves out of the web app, framework-free, into the
 public packages both import:
 
 - the web API's generated schemas (`packages/web/src/api/generated`) move
-  into `@jush-ai/protocol`, beside the lane schemas already there;
+  into `@jush-agent/protocol`, beside the lane schemas already there;
 - the product state's applier (`withPart`, now in the web app's Pinia
-  store) moves into `@jush-ai/protocol`;
+  store) moves into `@jush-agent/protocol`;
 - the lane client (`page-connection.ts`, which holds two Vue refs of the
   connection's state) moves out of `web-ui` into
-  `@jush-ai/conversation-client` as `PageConnection`, a class that tells
+  `@jush-agent/conversation-client` as `PageConnection`, a class that tells
   whoever shows the connection's state through the host it is given;
-- `ConversationClient` (`@jush-ai/conversation-client`) is used as it is,
+- `ConversationClient` (`@jush-agent/conversation-client`) is used as it is,
   over a lane of the process's connection.
 
 ### What each call is
@@ -144,23 +144,23 @@ unless the core refused them.
 
 ### Packaging
 
-`@jush-ai/sdk` depends on one package for each target the runner is
+`@jush-agent/sdk` depends on one package for each target the runner is
 built for, macOS, Linux and Windows, each on x86-64 and ARM64, as esbuild
 does: they are its `optionalDependencies`, and each declares its `os` and
 `cpu`, so a package manager installs only the machine's own.
 
 ```text
-@jush-ai/sdk                 release/commands/   every command package's
-                                                   descriptor
-@jush-ai/sdk-darwin-arm64    bin/jush-core, bin/jush-runner,
-                               release/files/      this target's programs
-@jush-ai/sdk-linux-x64       ...
+@jush-agent/sdk                 release/commands/   every command package's
+                                                    descriptor
+@jush-agent/sdk-darwin-arm64    bin/jush-core, bin/jush-runner,
+                                release/files/      this target's programs
+@jush-agent/sdk-linux-x64       ...
 ```
 
-The packages of the workspace the SDK depends on,
-`@jush-ai/conversation-client`, `@jush-ai/protocol` and
-`@jush-ai/utils`, are packed beside it at the same version, as the web
-components are, so that each dependency the SDK names exists.
+The packages of the workspace the SDK uses,
+`@jush-agent/conversation-client`, `@jush-agent/protocol` and
+`@jush-agent/utils`, are bundled into it, their code and their type
+declarations, so that the SDK names no dependency that is not published.
 
 The SDK gives the process the release as a list of roots, the main
 package's and each platform package's that is installed, in
@@ -181,9 +181,9 @@ The SDK runs on Node.js 22 or later, Bun and Deno, with their
 | What the design uses | Where it is today | New |
 | --- | --- | --- |
 | The lane client | `web-ui/src/transport/page-connection.ts` | out of `web-ui`, without Vue |
-| A conversation's client | `@jush-ai/conversation-client`, public | |
-| The schemas | `@jush-ai/protocol`, and `packages/web/src/api/generated` | all in `@jush-ai/protocol` |
-| The product state's changes | `withPart` in the web app's store | in `@jush-ai/protocol` |
+| A conversation's client | `@jush-agent/conversation-client`, public | |
+| The schemas | `@jush-agent/protocol`, and `packages/web/src/api/generated` | all in `@jush-agent/protocol` |
+| The product state's changes | `withPart` in the web app's store | in `@jush-agent/protocol` |
 | A conversation's status | `ConversationStatus` in its summary | |
 | Permission requests | the metadata's `permissions`, and the decide route | |
 | Sign-ins | the subscription-login routes and the product state's `logins` | |

@@ -1,4 +1,4 @@
-import type { PageState } from '@jush-ai/protocol'
+import type { PageState } from '@jush-agent/protocol'
 
 /** Whether the user has `plugin` on, by the product state's plugin list. */
 export function pluginEnabled(snapshot: PageState | null, plugin: string): boolean {

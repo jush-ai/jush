@@ -1,6 +1,6 @@
 import { reactive } from 'vue'
-import type { SettingsSubagentProfile } from '@jush-ai/web-ui/settings/types'
-import type { LimitValue } from '@jush-ai/web-ui/ui/limit-field'
+import type { SettingsSubagentProfile } from '@jush-agent/web-ui/settings/types'
+import type { LimitValue } from '@jush-agent/web-ui/ui/limit-field'
 
 /**
  * A user's profiles, one of each kind the section shows:

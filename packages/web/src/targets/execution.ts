@@ -1,5 +1,5 @@
-import type { MoveLock } from '@jush-ai/web-ui/targets/move-question'
-import type { DeviceOption, MenuDevice } from '@jush-ai/web-ui/targets/types'
+import type { MoveLock } from '@jush-agent/web-ui/targets/move-question'
+import type { DeviceOption, MenuDevice } from '@jush-agent/web-ui/targets/types'
 import type { Conversation, Device } from '../state/types'
 import { useProduct } from '../state/product'
 import { directPath, lastDirectPath } from '../direct'

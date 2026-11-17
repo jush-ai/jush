@@ -22,14 +22,14 @@ import {
   type SyncFollow,
   type SyncFollowed,
   type VendorCatalog,
-} from '@jush-ai/protocol'
-import { errorMessage, reportError } from '@jush-ai/web-ui/infra/errors'
-import { pageLog } from '@jush-ai/web-ui/infra/log'
-import { Slot, type SlotAnswer } from '@jush-ai/web-ui/infra/slot'
-import { browserOnline, waitToReconnect, type ReconnectWait } from '@jush-ai/web-ui/transport/liveness'
-import { Lane, backendRestarting, connectionFailures, openLane } from '@jush-ai/web-ui/transport/page-connection'
-import { backendUnreachable, connectionCause, connectionState, type ConnectionState } from '@jush-ai/web-ui/transport/connection'
-import { reloadFailedMedia } from '@jush-ai/web-ui/files/media-reload'
+} from '@jush-agent/protocol'
+import { errorMessage, reportError } from '@jush-agent/web-ui/infra/errors'
+import { pageLog } from '@jush-agent/web-ui/infra/log'
+import { Slot, type SlotAnswer } from '@jush-agent/web-ui/infra/slot'
+import { browserOnline, waitToReconnect, type ReconnectWait } from '@jush-agent/web-ui/transport/liveness'
+import { Lane, backendRestarting, connectionFailures, openLane } from '@jush-agent/web-ui/transport/page-connection'
+import { backendUnreachable, connectionCause, connectionState, type ConnectionState } from '@jush-agent/web-ui/transport/connection'
+import { reloadFailedMedia } from '@jush-agent/web-ui/files/media-reload'
 import { t } from './locales/text'
 import { ApiError, apiRequest, logReadAnswered, logReadFailed, notifySessionEnded, readResponse, unreachable as backendNotReached, waitForBackendWith } from '../api/client'
 import { programPage } from '../program-page'

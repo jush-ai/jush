@@ -12,7 +12,7 @@
  *
  * The window's tabs, controls, touches and the agent's activity show here.
  */
-import { LIVE_CONTROL_FRAME, LIVE_VIDEO_CODEC, type LiveActivity, type ViewerInput } from '@jush-ai/protocol'
+import { LIVE_CONTROL_FRAME, LIVE_VIDEO_CODEC, type LiveActivity, type ViewerInput } from '@jush-agent/protocol'
 import {
   closeResultSchema,
   foldDeviceSchema,
@@ -33,12 +33,12 @@ import {
   type MobilePlatform,
   type Orientation,
   mobileTabDataSchema,
-} from '@jush-ai/plugin-mobile'
-import { PluginCallError } from '@jush-ai/web-ui/plugins/page'
-import type { DeviceDownload } from '@jush-ai/web-ui/devices/installed'
-import { encodeControl, encodeVideo } from '@jush-ai/web-ui/live/frames'
-import type { OpenUserStream, UserStreamHandlers } from '@jush-ai/web-ui/plugins/streams'
-import type { WorkTab } from '@jush-ai/web-ui/agent/work-tabs'
+} from '@jush-agent/plugin-mobile'
+import { PluginCallError } from '@jush-agent/web-ui/plugins/page'
+import type { DeviceDownload } from '@jush-agent/web-ui/devices/installed'
+import { encodeControl, encodeVideo } from '@jush-agent/web-ui/live/frames'
+import type { OpenUserStream, UserStreamHandlers } from '@jush-agent/web-ui/plugins/streams'
+import type { WorkTab } from '@jush-agent/web-ui/agent/work-tabs'
 import { shallowRef } from 'vue'
 import { productWould } from '../product-would'
 import type { GalleryWorkRecord } from './work-record'

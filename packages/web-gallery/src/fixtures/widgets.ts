@@ -1,6 +1,6 @@
-import widgetPage from '@jush-ai/plugin-widget'
+import widgetPage from '@jush-agent/plugin-widget'
 import { GALLERY_WIDGETS } from '../generated/widgets'
-import type { ReplyBlockLookup } from '@jush-ai/web-ui/markdown/types'
+import type { ReplyBlockLookup } from '@jush-agent/web-ui/markdown/types'
 import type { GalleryPlugin } from './plugins'
 
 /** A reply that shows three widgets among its sentences: a chart, a grid and a diagram. */

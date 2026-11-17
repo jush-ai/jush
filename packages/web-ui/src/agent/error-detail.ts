@@ -1,4 +1,4 @@
-import type { ProviderErrorDiagnostics } from '@jush-ai/protocol'
+import type { ProviderErrorDiagnostics } from '@jush-agent/protocol'
 import { z } from 'zod'
 import { codeText } from '../infra/errors'
 import { formatVerbAt } from '../ui/dates'

@@ -5,15 +5,15 @@ import {
   PRODUCT_ACCENTS,
   productAppearance,
   type ProductAccent
-} from '@jush-ai/web-ui/theme/productAppearance'
+} from '@jush-agent/web-ui/theme/productAppearance'
 import {
   appThemeStore,
   setTheme,
   themeModeSchema,
   type ThemeMode,
-} from '@jush-ai/web-ui/theme/appTheme'
-import { LANGUAGES, type LanguageChoice } from '@jush-ai/web-ui/i18n/languages'
-import type { SentenceText } from '@jush-ai/web-ui/ui/ui-text'
+} from '@jush-agent/web-ui/theme/appTheme'
+import { LANGUAGES, type LanguageChoice } from '@jush-agent/web-ui/i18n/languages'
+import type { SentenceText } from '@jush-agent/web-ui/ui/ui-text'
 
 const paradigmIdSchema = z.enum(['ink', 'warm', 'flat'])
 /** The faces on trial for the product, beside the system's. */

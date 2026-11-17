@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import DeviceMenu from '@jush-ai/web-ui/targets/DeviceMenu.vue'
-import MoveConversationDialog from '@jush-ai/web-ui/targets/MoveConversationDialog.vue'
-import { useMoveQuestion } from '@jush-ai/web-ui/targets/move-question'
-import type { DeviceOption, MenuDevice } from '@jush-ai/web-ui/targets/types'
-import { appOverlayStore } from '@jush-ai/web-ui/overlay/appOverlay'
+import DeviceMenu from '@jush-agent/web-ui/targets/DeviceMenu.vue'
+import MoveConversationDialog from '@jush-agent/web-ui/targets/MoveConversationDialog.vue'
+import { useMoveQuestion } from '@jush-agent/web-ui/targets/move-question'
+import type { DeviceOption, MenuDevice } from '@jush-agent/web-ui/targets/types'
+import { appOverlayStore } from '@jush-agent/web-ui/overlay/appOverlay'
 import { slow } from '../fixtures/slow'
 import { productWould } from '../product-would'
 
