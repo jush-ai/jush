@@ -17,6 +17,9 @@ import GallerySection from '../components/GallerySection.vue'
 import GallerySettingsFull from '../components/GallerySettingsFull.vue'
 import GallerySpecimen from '../components/GallerySpecimen.vue'
 import AppSidebar from '@jush-ai/web-ui/sidebar/AppSidebar.vue'
+import SidebarUnreadEntry from '@jush-ai/web-ui/sidebar/SidebarUnreadEntry.vue'
+import { FRAME_INPUT, USER_ACTION_EVENTS } from '@jush-ai/web-ui/ui/user-input'
+import type { UnreadEntry } from '@jush-ai/web-ui/sidebar/unread-entry'
 import ChatSession from '@jush-ai/web-ui/agent/ChatSession.vue'
 import { useMessageFiles } from '@jush-ai/web-ui/markdown/message-files'
 import GalleryComposer from '../components/GalleryComposer.vue'
@@ -269,12 +272,49 @@ function show(id: string): void {
   )
 }
 
+/** The unread entry in each state it shows. */
+const UNREAD_ENTRY_SPECIMENS: { variant: string; entry: UnreadEntry }[] = [
+  { variant: 'a failure first', entry: { kind: 'unread', count: 3, tone: 'danger' } },
+  { variant: 'a request first', entry: { kind: 'unread', count: 2, tone: 'attention' } },
+  { variant: 'answers only', entry: { kind: 'unread', count: 1, tone: 'success' } },
+  { variant: 'running', entry: { kind: 'running', count: 2, working: true } },
+  { variant: 'waiting on commands', entry: { kind: 'running', count: 1, working: false } },
+  { variant: 'nothing running', entry: { kind: 'idle' } },
+  { variant: 'list loading', entry: { kind: 'unknown' } },
+]
+
 function select(id: string): void {
   show(id)
   conversations.value = conversations.value.map((conversation) => (
     conversation.id === id ? read(conversation) : conversation
   ))
 }
+
+/** The conversation the unread entry shows, unread until an action in it, as the product reads it. */
+const glanced = ref<string | null>(null)
+
+function glance(id: string): void {
+  show(id)
+  glanced.value = id
+}
+
+/** An action in the conversation, outside its header bar, reads the one the unread entry showed. */
+function actInConversation(event?: Event): void {
+  if (event?.target instanceof Element && event.target.closest('header'))
+    return
+  const id = glanced.value
+  glanced.value = null
+  if (id !== null && id === activeId.value)
+    conversations.value = conversations.value.map((conversation) => (conversation.id === id ? read(conversation) : conversation))
+}
+
+// The composer's field is a frame, which tells the page of its input.
+const frameInput = (event: Event): void => {
+  if ((USER_ACTION_EVENTS as readonly string[]).includes((event as CustomEvent<string>).detail))
+    actInConversation()
+}
+window.addEventListener(FRAME_INPUT, frameInput)
+onBeforeUnmount(() => window.removeEventListener(FRAME_INPUT, frameInput))
 
 /** The open conversation was sent to: it holds a message now, so it stays listed when the user leaves it. */
 function keepDraft(): void {
@@ -790,7 +830,8 @@ onBeforeUnmount(() => {
             @move-to-workspace="moveToWorkspace"
             @search="productWould('Open the Search Window')"
             @reorder="reorder"
-            @select="select"
+            @select="(id) => { glanced = null; select(id) }"
+            @glance="glance"
             @create="create"
             @add-project="addProject"
             @remove-project="(id) => deleteProject('demo', id)"
@@ -804,6 +845,13 @@ onBeforeUnmount(() => {
             @sign-out="productWould('Sign Out')"
           />
           </template>
+          <!-- An action in the conversation, as the product counts one, reads what the unread entry showed. -->
+          <div
+            class="contents"
+            @pointerdown.capture="actInConversation"
+            @keydown.capture="actInConversation"
+            @wheel.capture.passive="actInConversation"
+          >
           <ChatSession
             :conversation="session"
             :files="messageFiles()"
@@ -838,6 +886,7 @@ onBeforeUnmount(() => {
               />
             </template>
           </ChatSession>
+          </div>
           <template #dialogs>
             <SettingsDialog
               v-slot="{ section }"
@@ -862,6 +911,22 @@ onBeforeUnmount(() => {
         </div>
         </GalleryOverlayWell>
       </GallerySpecimen>
+    </GallerySection>
+
+    <GallerySection
+      title="Unread Entry"
+      note="Below Archived, the unread entry, a rounded button framed as the workspace switcher is, counts the workspace’s conversations whose dot says something is new, beside the dot of the most urgent, red, then yellow, then green; with none, it counts those that run, beside the accent, which breathes while a model works; with neither it says Nothing Running, faint, and does nothing; while the list loads it shows its frame alone. It keeps its one row in every state, so the list below never moves. A click on news shows the next conversation in its order, the most urgent and then the most recent first, without reading it: the conversation keeps its dot until an action in it, a click, a key or a wheel in the conversation below its header bar, so the next click goes on to the one after it, even after the shown one is read. The entry’s own click reads nothing, and the composer does not take the focus from it. With only running conversations, a click opens the next one as its row would. In the product frame above, Unread goes through the green and red rows; click in the conversation to read the one shown. These specimens show each state; a click says what the product would show."
+    >
+      <div class="specimen-row specimen-row-wide items-start">
+        <GallerySpecimen v-for="specimen in UNREAD_ENTRY_SPECIMENS" :key="specimen.variant" :variant="specimen.variant">
+          <div class="w-60 bg-surface-base px-2 py-2">
+            <SidebarUnreadEntry
+              :entry="specimen.entry"
+              @next="productWould(specimen.entry.kind === 'unread' ? 'Show the Next Unread Conversation' : 'Show the Next Running Conversation')"
+            />
+          </div>
+        </GallerySpecimen>
+      </div>
     </GallerySection>
 
     <GallerySection
@@ -895,6 +960,7 @@ onBeforeUnmount(() => {
                 @sign-out="productWould('Sign Out')"
                 @hand-off="wouldHandOff"
                 @select="selectFold"
+                @glance="(id) => (foldActive = id)"
                 @reorder="(request) => productWould(request.kind === 'project' ? 'Move the Project' : 'Move the Conversation')"
                 @rename="(id, title) => (foldConversations = foldConversations.map((c) => (c.id === id ? { ...c, title } : c)))"
                 @pin="(ids, pinned) => (foldConversations = foldConversations.map((c) => (ids.includes(c.id) ? { ...c, pinned } : c)))"
@@ -984,6 +1050,7 @@ onBeforeUnmount(() => {
                 @sign-out="productWould('Sign Out')"
                 @hand-off="wouldHandOff"
                 @select="(id) => (hoverActive = id)"
+                @glance="(id) => (hoverActive = id)"
                 @reorder="(request) => productWould(request.kind === 'project' ? 'Move the Project' : 'Move the Conversation')"
                 @rename="(id, title) => (hoverConversations = hoverConversations.map((c) => (c.id === id ? { ...c, title } : c)))"
                 @pin="pinHover"
@@ -1032,6 +1099,7 @@ onBeforeUnmount(() => {
                 @sign-out="productWould('Sign Out')"
                 @hand-off="wouldHandOff"
                 @select="(id) => (markActive = id)"
+                @glance="(id) => (markActive = id)"
                 @reorder="(request) => productWould(request.kind === 'project' ? 'Move the Project' : 'Move the Conversation')"
                 @rename="(id, title) => (markConversations = markConversations.map((c) => (c.id === id ? { ...c, title } : c)))"
                 @pin="pinMarks"
@@ -1093,6 +1161,7 @@ onBeforeUnmount(() => {
                 @sign-out="productWould('Sign Out')"
                 @hand-off="wouldHandOff"
                 @select="selectStatus"
+                @glance="(id) => (statusActive = id)"
                 @reorder="(request) => productWould(request.kind === 'project' ? 'Move the Project' : 'Move the Conversation')"
                 @rename="(id, title) => (statusConversations = statusConversations.map((c) => (c.id === id ? { ...c, title } : c)))"
                 @pin="(ids, pinned) => (statusConversations = statusConversations.map((c) => (ids.includes(c.id) ? { ...c, pinned } : c)))"
@@ -1192,6 +1261,7 @@ onBeforeUnmount(() => {
               @hand-off="wouldHandOff"
               @sign-out="productWould('Sign Out')"
               @select="(id) => (recoveredActive = id)"
+              @glance="(id) => (recoveredActive = id)"
               @archive="(ids) => (recoveredConversations = without(recoveredConversations, ids))"
               @delete="(ids) => (recoveredConversations = without(recoveredConversations, ids))"
             />

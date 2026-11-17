@@ -57,6 +57,13 @@
     "attention": "{count} zu erledigen",
     "success": "{count} erledigt"
   },
+  "unreadEntry": {
+    "unread": "{count} ungelesen",
+    "running": "{count} in Arbeit",
+    "idle": "Nichts in Arbeit",
+    "nextUnread": "Nächsten ungelesenen Chat anzeigen, ohne ihn als gelesen zu markieren",
+    "nextRunning": "Nächsten laufenden Chat anzeigen"
+  },
   "selection": {
     "open": "Öffnen",
     "rename": "Umbenennen",

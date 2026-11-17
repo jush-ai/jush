@@ -76,6 +76,7 @@ function remove(id: string): void {
           :search-shortcut="appShortcuts().find((shortcut) => shortcut.id === 'search')?.keys"
           :settings-shortcut="appShortcuts().find((shortcut) => shortcut.id === 'settings')?.keys"
           @select="select"
+          @glance="select"
           @create="productWould('Open a New Conversation')"
           @search="productWould('Open the Search Window')"
           @add-project="productWould('Add a Project')"

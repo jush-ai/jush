@@ -57,6 +57,13 @@
     "attention": "{count} a fazer",
     "success": "{count} concluídas"
   },
+  "unreadEntry": {
+    "unread": "{count} não lida | {count} não lidas",
+    "running": "{count} em andamento",
+    "idle": "Nada em andamento",
+    "nextUnread": "Mostrar a próxima conversa não lida, sem marcá-la como lida",
+    "nextRunning": "Mostrar a próxima conversa em andamento"
+  },
   "selection": {
     "open": "Abrir",
     "rename": "Renomear",

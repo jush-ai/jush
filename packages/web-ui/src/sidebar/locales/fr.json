@@ -57,6 +57,13 @@
     "attention": "{count} à faire",
     "success": "{count} terminées"
   },
+  "unreadEntry": {
+    "unread": "{count} non lue | {count} non lues",
+    "running": "{count} en cours",
+    "idle": "Rien en cours",
+    "nextUnread": "Afficher la conversation non lue suivante, sans la marquer comme lue",
+    "nextRunning": "Afficher la conversation en cours suivante"
+  },
   "selection": {
     "open": "Ouvrir",
     "rename": "Renommer",

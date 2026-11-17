@@ -57,6 +57,13 @@
     "attention": "{count} to do",
     "success": "{count} done"
   },
+  "unreadEntry": {
+    "unread": "{count} Unread",
+    "running": "{count} Running",
+    "idle": "Nothing Running",
+    "nextUnread": "Show the next unread conversation, keeping it unread",
+    "nextRunning": "Show the next running conversation"
+  },
   "selection": {
     "open": "Open",
     "rename": "Rename",
