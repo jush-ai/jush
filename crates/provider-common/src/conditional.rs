@@ -7,10 +7,18 @@
 //! the media catalog both download this way; what each keeps and when it asks
 //! is its own.
 
+use std::time::Duration;
+
 use bytes::Bytes;
 use http::header::{ACCEPT, ETAG, IF_MODIFIED_SINCE, IF_NONE_MATCH, LAST_MODIFIED};
 use http::{HeaderValue, StatusCode};
 use reqwest::Url;
+
+/// How long one download may take, its body included. Without it, a proxy
+/// or a network that takes the request and never answers holds the download,
+/// and everything that waits for the document, such as adding a vendor's
+/// provider, forever; the documents are megabytes.
+const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// What revalidates a downloaded copy.
 #[derive(Debug, Clone, Default)]
@@ -41,7 +49,8 @@ pub(crate) enum Failure {
 pub(crate) async fn get(http: &reqwest::Client, url: &Url, copy: Option<&Validators>) -> Result<Answer, Failure> {
     let mut request = http
         .get(url.clone())
-        .header(ACCEPT, HeaderValue::from_static("application/json"));
+        .header(ACCEPT, HeaderValue::from_static("application/json"))
+        .timeout(DOWNLOAD_TIMEOUT);
     if let Some(copy) = copy {
         if let Some(etag) = &copy.etag {
             request = request.header(IF_NONE_MATCH, etag.clone());

@@ -48,9 +48,6 @@ const FILE: [&str; 4] = ["catalog", "media", "v1", "models.json"];
 /// How often the file is downloaded again after the start.
 const REFRESH_EVERY: Duration = Duration::from_secs(24 * 60 * 60);
 
-/// How long one download may take.
-const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(60);
-
 /// The file as the release carries it.
 const CARRIED: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../catalog/media/v1/models.json"));
 
@@ -658,23 +655,19 @@ impl MediaCatalog {
     /// One download and its use, saying in `facts` what it found.
     async fn download(&self, url: &reqwest::Url, facts: &mut Refreshed) -> &'static str {
         let validators = self.inner.lock().validators.clone();
-        let answer = tokio::time::timeout(
-            DOWNLOAD_TIMEOUT,
-            conditional::get(&self.inner.http, url, validators.as_ref()),
-        )
-        .await;
+        let answer = conditional::get(&self.inner.http, url, validators.as_ref()).await;
         let (body, validators) = match answer {
-            Ok(Ok(Answer::NotModified)) => return "not_modified",
-            Ok(Ok(Answer::Fetched { body, validators })) => (body, validators),
-            Ok(Err(Failure::Status(status))) => {
+            Ok(Answer::NotModified) => return "not_modified",
+            Ok(Answer::Fetched { body, validators }) => (body, validators),
+            Err(Failure::Status(status)) => {
                 facts.status = Some(status.as_u16());
                 return "http_status";
             }
-            Ok(Err(Failure::Transport(error))) => {
+            Err(Failure::Transport(error)) if error.is_timeout() => return "timeout",
+            Err(Failure::Transport(error)) => {
                 facts.error = Some(error.to_string());
                 return "error";
             }
-            Err(_) => return "timeout",
         };
         let decoded = Catalog::decode(&body);
         self.inner.lock().validators = Some(validators);
