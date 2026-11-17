@@ -505,6 +505,11 @@ export class ConversationClient {
         if (at !== undefined && this.holdsVersion(at)) {
           return { resolve: undefined }
         }
+        // A turn that fails once the session took the message fails the
+        // turn, not the send.
+        if (at !== undefined && event.type === 'error') {
+          return undefined
+        }
         return this.failure(event, 'send')
       },
     )
@@ -544,6 +549,11 @@ export class ConversationClient {
         }
         if (at !== undefined && this.holdsVersion(at)) {
           return { resolve: undefined }
+        }
+        // As a send's: a turn that fails once the session took the message
+        // fails the turn.
+        if (at !== undefined && event.type === 'error') {
+          return undefined
         }
         if (event.type === 'rejected' && event.command === 'send_saved' && event.code === 'saved_not_found') {
           return { reject: new SavedGoneError() }
@@ -1017,12 +1027,24 @@ export class ConversationClient {
 
   /**
    * Whether the client holds the agents at `at`, the version a command's
-   * answer names: at or past its revision, or at another epoch, whose reset
-   * showed the whole state; null names no tree, and nothing to wait for.
+   * answer names: at or past its revision, or at another epoch once no read
+   * of the agents is under way; null names no tree, and nothing to wait for.
+   *
+   * The answer comes after its step reached the page, so a page that held
+   * another epoch, such as the stored one it read before its open restored
+   * the tree, which the open's follow answered as stale, has begun reading
+   * the agents again by then: the read shows the whole state, the command's
+   * step included.
    */
   private holdsVersion(at: Version | null): boolean {
     const held = this.agentsVersion
-    return at === null || (held !== null && (held.epoch !== at.epoch || held.revision >= at.revision))
+    if (at === null) {
+      return true
+    }
+    if (held === null) {
+      return false
+    }
+    return held.epoch === at.epoch ? held.revision >= at.revision : !this.agentsReading
   }
 
   /** The wait of a `send` whose message has not run. */
