@@ -1,13 +1,13 @@
 <script setup lang="ts">
-import FileBrowser from '@jush-ai/web-ui/files/FileBrowser.vue'
-import { DeviceFiles } from '@jush-ai/web-ui/files/file-cache'
-import { keptSource } from '@jush-ai/web-ui/files/kept-source'
+import FileBrowser from '@jush-agent/web-ui/files/FileBrowser.vue'
+import { DeviceFiles } from '@jush-agent/web-ui/files/file-cache'
+import { keptSource } from '@jush-agent/web-ui/files/kept-source'
 import {
   FileBrowserError,
   type FileBrowserFailure,
   type FileBrowserSource,
-} from '@jush-ai/web-ui/files/types'
-import type { SentenceText } from '@jush-ai/web-ui/ui/ui-text'
+} from '@jush-agent/web-ui/files/types'
+import type { SentenceText } from '@jush-agent/web-ui/ui/ui-text'
 import GallerySection from './GallerySection.vue'
 import GallerySpecimen from './GallerySpecimen.vue'
 

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import type { AppAnswer, AppRequest } from '../generated/plugin'
-import { Button, CopyButton } from '@jush-ai/plugin-sdk'
+import { Button, CopyButton } from '@jush-agent/plugin-sdk'
 import { t } from '../locales/text'
 
 /**

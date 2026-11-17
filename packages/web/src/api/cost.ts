@@ -1,5 +1,5 @@
 import { apiRequest, readResponse } from './client'
-import { recentCostSchema, type CostWindow, type RecentCost } from '@jush-ai/protocol'
+import { recentCostSchema, type CostWindow, type RecentCost } from '@jush-agent/protocol'
 
 /**
  * What the conversation's calls of the last hour or the last day cost, as the

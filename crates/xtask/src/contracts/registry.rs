@@ -87,7 +87,7 @@ fn pages_of(
 /// The module: one import per page, and the list in order.
 fn module(header: &str, pages: &[(String, String)], name: &str, what: &str) -> String {
     let mut source = String::from(header);
-    source.push_str("import type { AnyPluginPage } from \"@jush-ai/plugin-sdk\"\n");
+    source.push_str("import type { AnyPluginPage } from \"@jush-agent/plugin-sdk\"\n");
     for (plugin, package) in pages {
         writeln!(source, "import {} from \"{package}\"", binding(plugin))
             .expect("writing to a string");
@@ -123,7 +123,7 @@ fn binding(plugin: &str) -> String {
 /// its replies name them by (`jush_plugin_widget::specimens`).
 fn widgets(header: &str) -> String {
     let mut module = String::from(header);
-    module.push_str("import type { FrameSize } from \"@jush-ai/plugin-widget/generated/plugin\"\n\n");
+    module.push_str("import type { FrameSize } from \"@jush-agent/plugin-widget/generated/plugin\"\n\n");
     module.push_str("/** The guide's pages as a reply draws them, by the IDs the gallery's replies name them by. */\n");
     module.push_str("export const GALLERY_WIDGETS: Record<string, { frame: FrameSize; title: string | null; document: string }> = {\n");
     for (id, widget) in jush_plugin_widget::specimens() {

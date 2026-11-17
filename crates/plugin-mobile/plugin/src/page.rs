@@ -132,7 +132,7 @@ pub struct Saved {
 /// The page: its controls, each declared with the operations it calls,
 /// and its tab kind.
 pub(crate) fn page() -> Page {
-    Page::new("@jush-ai/plugin-mobile")
+    Page::new("@jush-agent/plugin-mobile")
         .tab_kind(KIND)
         .method(Method::new::<ListInput, ListResult>("list", Scope::Conversation).calls(operation("list")))
         .method(Method::new::<OpenInput, Opened>("open", Scope::Conversation).calls(operation("open")))

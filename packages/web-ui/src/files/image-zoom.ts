@@ -1,4 +1,4 @@
-import { clamp } from '@jush-ai/utils'
+import { clamp } from '@jush-agent/utils'
 import type { PixelSize } from './thumbnail'
 
 /**

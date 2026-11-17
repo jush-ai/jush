@@ -19,7 +19,7 @@ import {
   resetTranscript,
   type ClientSessionEvent,
   type HeldTranscript,
-} from '@jush-ai/conversation-client'
+} from '@jush-agent/conversation-client'
 import {
   conversationDetailSchema,
   conversationFrameSchema,
@@ -36,7 +36,7 @@ import {
   type PermissionRequest,
   type RequestedValues,
   type TurnOutcome,
-} from '@jush-ai/protocol'
+} from '@jush-agent/protocol'
 import { randomUUID } from 'node:crypto'
 import type { CoreRoutes } from './routes'
 

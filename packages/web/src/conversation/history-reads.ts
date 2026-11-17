@@ -1,4 +1,4 @@
-import { withAdded } from '@jush-ai/web-ui/infra/keep-same'
+import { withAdded } from '@jush-agent/web-ui/infra/keep-same'
 import {
   EMPTY_TRANSCRIPT,
   addPage,
@@ -9,10 +9,10 @@ import {
   type HeldBlock,
   type HeldTranscript,
   type TranscriptWindow,
-} from '@jush-ai/web-ui/transport/protocol'
-import { boundedHistory, pageBeside, shownWindow } from '@jush-ai/web-ui/agent/history'
-import type { HistoryReading } from '@jush-ai/web-ui/agent/history-reading'
-import { oneRunPerKey } from '@jush-ai/utils'
+} from '@jush-agent/web-ui/transport/protocol'
+import { boundedHistory, pageBeside, shownWindow } from '@jush-agent/web-ui/agent/history'
+import type { HistoryReading } from '@jush-agent/web-ui/agent/history-reading'
+import { oneRunPerKey } from '@jush-agent/utils'
 import { ApiError, apiRequest, logReadAnswered, logReadFailed, readResponse, readSizedResponse } from '../api/client'
 import { createReading } from './reading'
 import {
@@ -24,9 +24,9 @@ import {
   type ConversationAttachment,
   type InstructionEntry,
   type ProviderFailureFacts,
-} from '@jush-ai/protocol'
+} from '@jush-agent/protocol'
 import { describeAttachments, describeReplyBlocks } from './activity'
-import { viewRead } from '@jush-ai/web-ui/infra/view-timing'
+import { viewRead } from '@jush-agent/web-ui/infra/view-timing'
 
 /** The blocks a disk copy holds whole, with the facts of their failures. */
 export interface KeptBlocks {

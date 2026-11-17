@@ -4,7 +4,7 @@
  * it opens.
  */
 import { resolve } from 'node:path'
-import { openedCoreSchema } from '@jush-ai/protocol'
+import { openedCoreSchema } from '@jush-agent/protocol'
 import { binaries } from './binaries'
 import { Core } from './core'
 import type { Plugin } from './plugin'

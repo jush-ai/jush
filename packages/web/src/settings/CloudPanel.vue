@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { t } from '@jush-ai/web-ui/settings/locales/text'
-import { appOverlayStore } from '@jush-ai/web-ui/overlay/appOverlay'
-import { reportError, shownError } from '@jush-ai/web-ui/infra/errors'
-import { showToast } from '@jush-ai/web-ui/infra/toast'
-import SettingsCloud from '@jush-ai/web-ui/settings/SettingsCloud.vue'
+import { t } from '@jush-agent/web-ui/settings/locales/text'
+import { appOverlayStore } from '@jush-agent/web-ui/overlay/appOverlay'
+import { reportError, shownError } from '@jush-agent/web-ui/infra/errors'
+import { showToast } from '@jush-agent/web-ui/infra/toast'
+import SettingsCloud from '@jush-agent/web-ui/settings/SettingsCloud.vue'
 import {
   destinationProblemText,
   type CloudIsolationSetting,
@@ -15,8 +15,8 @@ import {
   type NetworkGroup,
   type NetworkPolicy,
   withPolicy,
-} from '@jush-ai/web-ui/settings/cloud'
-import type { SentenceText } from '@jush-ai/web-ui/ui/ui-text'
+} from '@jush-agent/web-ui/settings/cloud'
+import type { SentenceText } from '@jush-agent/web-ui/ui/ui-text'
 import { ApiError, apiRequest, jsonBody, readResponse } from '../api/client'
 import {
   cloudIsolationSchema,
@@ -25,7 +25,7 @@ import {
   type IsolationDownload as IsolationDownloadRead,
   type SetCloudIsolation,
   type SetCloudNetwork,
-} from '@jush-ai/protocol'
+} from '@jush-agent/protocol'
 import { useHeldList, useProduct } from '../state/product'
 
 /**

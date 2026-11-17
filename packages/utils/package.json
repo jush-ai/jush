@@ -1,8 +1,8 @@
 {
-  "name": "@jush-ai/utils",
+  "name": "@jush-agent/utils",
   "description": "Small generic helpers shared by the Jush browser packages.",
   "version": "0.24.0",
-  "private": false,
+  "private": true,
   "type": "module",
   "main": "./dist/index.mjs",
   "module": "./dist/index.mjs",
@@ -22,9 +22,6 @@
     "typecheck": "tsgo --noEmit -p tsconfig.json"
   },
   "license": "Apache-2.0",
-  "publishConfig": {
-    "access": "public"
-  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/jush-ai/jush.git",

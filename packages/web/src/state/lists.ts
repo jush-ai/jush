@@ -11,7 +11,7 @@ import {
   type ProductState,
   type SyncEvent,
   type Untagged,
-} from '@jush-ai/protocol'
+} from '@jush-agent/protocol'
 
 /**
  * A list the page holds only while a view shows it, named as the message

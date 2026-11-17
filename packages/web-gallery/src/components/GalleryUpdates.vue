@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { onUnmounted, ref, watch } from 'vue'
-import { appOverlayStore } from '@jush-ai/web-ui/overlay/appOverlay'
-import SettingsUpdates from '@jush-ai/web-ui/settings/SettingsUpdates.vue'
-import type { OfferedRelease, UpgradeChannel, ServerUpgrade, UpgradePreparation, UpgradeStep, UpgradeStepKind } from '@jush-ai/web-ui/settings/server-upgrade'
-import type { StepState } from '@jush-ai/web-ui/ui/update-steps'
+import { appOverlayStore } from '@jush-agent/web-ui/overlay/appOverlay'
+import SettingsUpdates from '@jush-agent/web-ui/settings/SettingsUpdates.vue'
+import type { OfferedRelease, UpgradeChannel, ServerUpgrade, UpgradePreparation, UpgradeStep, UpgradeStepKind } from '@jush-agent/web-ui/settings/server-upgrade'
+import type { StepState } from '@jush-agent/web-ui/ui/update-steps'
 import { slow } from '../fixtures/slow'
 import { productWould } from '../product-would'
 

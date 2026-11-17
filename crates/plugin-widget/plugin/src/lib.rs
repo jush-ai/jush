@@ -51,7 +51,7 @@ impl Widgets {
         );
         manifest.commands = commands::manifest_commands(&commands::commands());
         manifest.conversations = true;
-        manifest.page = Some(Page::new("@jush-ai/plugin-widget").block::<widget::WidgetFacts>("widget", true));
+        manifest.page = Some(Page::new("@jush-agent/plugin-widget").block::<widget::WidgetFacts>("widget", true));
         Self { manifest }
     }
 }

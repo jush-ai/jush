@@ -1,5 +1,5 @@
 import { computed, watch, type ComputedRef } from 'vue'
-import type { SessionPhase } from '@jush-ai/protocol'
+import type { SessionPhase } from '@jush-agent/protocol'
 import { pageLog } from '../infra/log'
 import { activitySlotKind, type ActivityKind, type ActivitySlotInput } from './activity-slot'
 import { turnStartingMessage } from './send-way'

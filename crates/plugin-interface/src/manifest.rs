@@ -243,7 +243,7 @@ pub struct Constant {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Page {
-    /// The page package, such as `@jush-ai/plugin-browser`, which the web
+    /// The page package, such as `@jush-agent/plugin-browser`, which the web
     /// app's registry lists and the plugin's types are generated into.
     pub package: String,
     /// Its state for the user, which reaches every page on the sync channel.

@@ -1,6 +1,6 @@
 import { keptComputed } from '../infra/keep-same'
 import { computed, ref, toRaw, watch, type ComputedRef } from 'vue'
-import type { Block, QueuedMessage, SessionPhase } from '@jush-ai/protocol'
+import type { Block, QueuedMessage, SessionPhase } from '@jush-agent/protocol'
 import { assistantFooterIds, replyEndIds } from './assistant-footer'
 import type { PendingAction } from './activity-slot'
 import { listTailBlocks, submissionRows, undeliveredPlaces } from './list-tail'

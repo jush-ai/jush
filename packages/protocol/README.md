@@ -1,4 +1,4 @@
-# @jush-ai/protocol
+# @jush-agent/protocol
 
 The TypeScript form of Jush's Rust contracts. It holds:
 
@@ -15,13 +15,13 @@ Parse a value from the network with its schema, and take its type from the
 schema:
 
 ```ts
-import { serverFrameSchema, type ServerFrame } from '@jush-ai/protocol'
+import { serverFrameSchema, type ServerFrame } from '@jush-agent/protocol'
 
 const frame: ServerFrame = serverFrameSchema.parse(JSON.parse(message))
 ```
 
 Jush has no TypeScript SDK. This package and
-[`@jush-ai/conversation-client`](../conversation-client/README.md) are the
+[`@jush-agent/conversation-client`](../conversation-client/README.md) are the
 web app's client of the conversation lane, not a way to run Jush's agent in
 another program ([ARCHITECTURE.md](../../ARCHITECTURE.md)).
 

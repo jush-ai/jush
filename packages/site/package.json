@@ -1,5 +1,5 @@
 {
-  "name": "@jush-ai/site",
+  "name": "@jush-agent/site",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -12,9 +12,9 @@
     "deploy": "wrangler deploy"
   },
   "dependencies": {
-    "@jush-ai/protocol": "workspace:^",
-    "@jush-ai/web-gallery": "workspace:^",
-    "@jush-ai/web-ui": "workspace:^",
+    "@jush-agent/protocol": "workspace:^",
+    "@jush-agent/web-gallery": "workspace:^",
+    "@jush-agent/web-ui": "workspace:^",
     "@fontsource-variable/geist-mono": "^5.3.0",
     "@fontsource-variable/inter": "^5.3.0",
     "@fontsource-variable/newsreader": "^5.3.0",

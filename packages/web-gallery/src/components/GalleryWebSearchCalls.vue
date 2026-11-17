@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { reactive } from 'vue'
-import WebSearchSettings from '@jush-ai/plugin-web/WebSearchSettings.vue'
-import { webPage, type WebState } from '@jush-ai/plugin-web'
-import { PageScope, providePageHost } from '@jush-ai/web-ui/plugins/page'
+import WebSearchSettings from '@jush-agent/plugin-web/WebSearchSettings.vue'
+import { webPage, type WebState } from '@jush-agent/plugin-web'
+import { PageScope, providePageHost } from '@jush-agent/web-ui/plugins/page'
 import { galleryPageHost, openExaSignIn, webPlugin } from '../fixtures/plugins'
 
 /**

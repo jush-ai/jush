@@ -1,5 +1,5 @@
 {
-  "name": "@jush-ai/plugin-mobile",
+  "name": "@jush-agent/plugin-mobile",
   "description": "The simulators plugin's page: its tab kind.",
   "version": "0.0.0",
   "private": true,
@@ -10,8 +10,8 @@
     "./*": "./src/*.ts"
   },
   "dependencies": {
-    "@jush-ai/plugin-sdk": "workspace:^",
-    "@jush-ai/utils": "workspace:^",
+    "@jush-agent/plugin-sdk": "workspace:^",
+    "@jush-agent/utils": "workspace:^",
     "@lucide/vue": "^1.40.0",
     "three": "^0.186.1",
     "vue": "^3.5.38",

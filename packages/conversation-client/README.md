@@ -1,7 +1,7 @@
-# @jush-ai/conversation-client
+# @jush-agent/conversation-client
 
 The client of a Jush core's page connection, which the web app and
-[`@jush-ai/sdk`](../sdk/README.md) both use. It exports four things:
+[`@jush-agent/sdk`](../sdk/README.md) both use. It exports four things:
 
 - `PageConnection` keeps the page connection open and carries its lanes; a
   host it is given opens the socket and hears how the connection stands.
@@ -13,15 +13,15 @@ The client of a Jush core's page connection, which the web app and
 - `applyTranscriptPatches` applies a patch list to a transcript.
 
 The client validates every frame the backend sends against the schemas of
-[`@jush-ai/protocol`](../protocol/README.md) before it acts on the frame. It
+[`@jush-agent/protocol`](../protocol/README.md) before it acts on the frame. It
 refuses a frame over the backend's message limit locally, as the backend would
 refuse it.
 
 The following example opens a conversation and sends a message:
 
 ```ts
-import { createConversationClient } from '@jush-ai/conversation-client'
-import { pageConnection } from '@jush-ai/web-ui/transport/page-connection'
+import { createConversationClient } from '@jush-agent/conversation-client'
+import { pageConnection } from '@jush-agent/web-ui/transport/page-connection'
 
 // The client opens the conversation's lane of the page connection.
 const client = createConversationClient(pageConnection, id)
@@ -35,7 +35,7 @@ await client.submit([{ type: 'text', text: 'Fix the failing test.' }])
 ```
 
 The client drives a conversation a core runs. It does not run Jush's agent
-itself: a program runs cores with `@jush-ai/sdk`
+itself: a program runs cores with `@jush-agent/sdk`
 ([ARCHITECTURE.md](../../ARCHITECTURE.md)).
 
 Part of [Jush](../../README.md). The package is under the Apache License 2.0.

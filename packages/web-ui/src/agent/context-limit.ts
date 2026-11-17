@@ -1,4 +1,4 @@
-import { contextLimits } from '@jush-ai/protocol'
+import { contextLimits } from '@jush-agent/protocol'
 import type { ModelInfo } from '../transport/protocol'
 import { formatDecimal } from '../ui/numbers'
 import { formatTokens } from '../ui/token-count'

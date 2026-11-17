@@ -52,7 +52,7 @@ import {
   type OpenUserStream,
   type PluginCache,
   type ViewerInput,
-} from '@jush-ai/plugin-sdk'
+} from '@jush-agent/plugin-sdk'
 import {
   LIVE_CAPTURE_FAILED,
   LIVE_CAPTURE_UNAVAILABLE,
@@ -74,7 +74,7 @@ import {
 } from '../generated/plugin'
 import { DisplayPictures } from './display-pictures'
 
-export { REFUSED_FRAME, SILENT_STREAM, type LiveConnection } from '@jush-ai/plugin-sdk'
+export { REFUSED_FRAME, SILENT_STREAM, type LiveConnection } from '@jush-agent/plugin-sdk'
 
 /** A generation of the device's pictures, as the module announced it. */
 export interface DeviceStream {

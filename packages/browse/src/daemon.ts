@@ -50,10 +50,10 @@ if (existsSync(paths.socket)) {
 const code = [
   import.meta.dir,
   // The protocol's sources, its generated contracts among them.
-  dirname(Bun.resolveSync('@jush-ai/protocol', import.meta.dir)),
+  dirname(Bun.resolveSync('@jush-agent/protocol', import.meta.dir)),
   // What the transcript's rules read of the product: where a reader is at the end, and how long a fold takes.
-  Bun.resolveSync('@jush-ai/web-ui/composables/scroll-bottom', import.meta.dir),
-  Bun.resolveSync('@jush-ai/web-ui/ui/fold', import.meta.dir),
+  Bun.resolveSync('@jush-agent/web-ui/composables/scroll-bottom', import.meta.dir),
+  Bun.resolveSync('@jush-agent/web-ui/ui/fold', import.meta.dir),
 ]
 
 /** When the tool's code last changed as this server started; a later change ends it. */

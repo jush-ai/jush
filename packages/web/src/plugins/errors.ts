@@ -1,5 +1,5 @@
-import { errorMessage } from '@jush-ai/web-ui/infra/errors'
-import { PluginCallError } from '@jush-ai/web-ui/plugins/page'
+import { errorMessage } from '@jush-agent/web-ui/infra/errors'
+import { PluginCallError } from '@jush-agent/web-ui/plugins/page'
 import { ApiError, UnreadableResponse } from '../api/client'
 
 /**

@@ -1,6 +1,6 @@
-import type { EditCopies } from '@jush-ai/protocol'
+import type { EditCopies } from '@jush-agent/protocol'
 import { compareFileNames } from './file-browser-state'
-import { baseName } from '@jush-ai/utils'
+import { baseName } from '@jush-agent/utils'
 import type { Showing } from './file-cache'
 import type { TreeRow } from './tree'
 import type { RequestChangeSource, RequestFile } from './request-changes'

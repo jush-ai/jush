@@ -16,7 +16,7 @@ them, and its copy would fall behind every change to Jush's.
 
 ## Decision
 
-`@jush-ai/web-components` defines a custom element, built from the web
+`@jush-agent/web-components` defines a custom element, built from the web
 app's own views, which talks to a core through the path where the program
 forwards the core's routes (0301's `core.fetch` and `core.accept`):
 

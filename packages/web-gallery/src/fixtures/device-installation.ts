@@ -1,5 +1,5 @@
-import type { DeviceInstallCommands, DeviceStart, DeviceSystem } from '@jush-ai/web-ui/devices/installation'
-import type { DeviceReport } from '@jush-ai/web-ui/devices/report'
+import type { DeviceInstallCommands, DeviceStart, DeviceSystem } from '@jush-agent/web-ui/devices/installation'
+import type { DeviceReport } from '@jush-agent/web-ui/devices/report'
 
 /** The install commands the demo backend composes, for the visual prototype, not published downloads. */
 export const demoInstallCommands: DeviceInstallCommands = {

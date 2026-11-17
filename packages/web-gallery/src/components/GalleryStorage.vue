@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { appOverlayStore } from '@jush-ai/web-ui/overlay/appOverlay'
-import SettingsStorage from '@jush-ai/web-ui/settings/SettingsStorage.vue'
+import { appOverlayStore } from '@jush-agent/web-ui/overlay/appOverlay'
+import SettingsStorage from '@jush-agent/web-ui/settings/SettingsStorage.vue'
 import {
   GB,
   type ConversationFiles,
@@ -11,7 +11,7 @@ import {
   type StorageDevice,
   type StorageRules,
   type StorageView,
-} from '@jush-ai/web-ui/settings/storage'
+} from '@jush-agent/web-ui/settings/storage'
 import { GALLERY_MARKS } from '../fixtures/device-marks'
 import { slow } from '../fixtures/slow'
 import { productWould } from '../product-would'

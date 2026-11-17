@@ -12,8 +12,8 @@ export default defineConfig(({ mode }) => ({
   resolve: {
     alias: {
       '@': resolve(import.meta.dirname, 'src'),
-      '@jush-ai/web-ui': resolve(import.meta.dirname, '../web-ui/src'),
-      '@jush-ai/web-gallery': resolve(import.meta.dirname, '../web-gallery/src'),
+      '@jush-agent/web-ui': resolve(import.meta.dirname, '../web-ui/src'),
+      '@jush-agent/web-gallery': resolve(import.meta.dirname, '../web-gallery/src'),
     },
   },
   build: {

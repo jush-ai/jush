@@ -19,16 +19,16 @@
       "@/*": [
         "./src/*"
       ],
-      "@jush-ai/web-ui/*": [
+      "@jush-agent/web-ui/*": [
         "../web-ui/src/*"
       ],
-      "@jush-ai/plugin-browser/*": [
+      "@jush-agent/plugin-browser/*": [
         "../../crates/plugin-browser/page/src/*"
       ],
-      "@jush-ai/plugin-mobile/*": [
+      "@jush-agent/plugin-mobile/*": [
         "../../crates/plugin-mobile/page/src/*"
       ],
-      "@jush-ai/*": [
+      "@jush-agent/*": [
         "../*/src/index.ts",
         "../../crates/*/page/src/index.ts"
       ]

@@ -1,4 +1,4 @@
-import { clamp } from '@jush-ai/utils'
+import { clamp } from '@jush-agent/utils'
 import { fitScale } from './image-zoom'
 
 /** A picture's size in pixels. */

@@ -1,8 +1,8 @@
 import type { Component } from 'vue'
-import type { ConversationStatus } from '@jush-ai/web-ui/agent/conversation-status'
-import type { DeviceMark } from '@jush-ai/web-ui/devices/mark'
-import type { DeviceState } from '@jush-ai/web-ui/devices/state'
-import type { ListLoad } from '@jush-ai/web-ui/agent/session-status'
+import type { ConversationStatus } from '@jush-agent/web-ui/agent/conversation-status'
+import type { DeviceMark } from '@jush-agent/web-ui/devices/mark'
+import type { DeviceState } from '@jush-agent/web-ui/devices/state'
+import type { ListLoad } from '@jush-agent/web-ui/agent/session-status'
 
 export type { ListLoad }
 

@@ -1,7 +1,7 @@
-import { DeviceFiles, type Answered } from '@jush-ai/web-ui/files/file-cache'
-import { errorMessage } from '@jush-ai/web-ui/infra/errors'
-import { keptSource, type ContentReads, type FileReads } from '@jush-ai/web-ui/files/kept-source'
-import type { ReadAt, WatchChannel } from '@jush-ai/web-ui/files/watch-channel'
+import { DeviceFiles, type Answered } from '@jush-agent/web-ui/files/file-cache'
+import { errorMessage } from '@jush-agent/web-ui/infra/errors'
+import { keptSource, type ContentReads, type FileReads } from '@jush-agent/web-ui/files/kept-source'
+import type { ReadAt, WatchChannel } from '@jush-agent/web-ui/files/watch-channel'
 import {
   FileBrowserError,
   type FileBrowserEntry,
@@ -9,7 +9,7 @@ import {
   type FileBrowserLink,
   type FileBrowserSource,
   type FileUploadOptions,
-} from '@jush-ai/web-ui/files/types'
+} from '@jush-agent/web-ui/files/types'
 import { z } from 'zod'
 import { ApiError, apiError, apiRequest, apiUrl, invalidResponse, jsonBody, readResponse } from './client'
 import {
@@ -23,12 +23,12 @@ import {
   type HtmlRequest,
   type LinkTarget,
   type SearchRequest,
-} from '@jush-ai/protocol'
+} from '@jush-agent/protocol'
 import { searchEvents } from './file-search'
 import { uploadBytes } from './uploads'
 import { t } from './locales/text'
 import type { Device } from '../state/types'
-import type { SentenceText } from '@jush-ai/web-ui/ui/ui-text'
+import type { SentenceText } from '@jush-agent/web-ui/ui/ui-text'
 
 /**
  * A raw file answer's headers as a file description: its size, its modification

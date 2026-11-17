@@ -1,5 +1,5 @@
 import { computed, inject, provide, type InjectionKey, type Ref } from 'vue'
-import type { DocumentSource, MediaSource as ContentMediaSource, ToolMediaSource } from '@jush-ai/protocol'
+import type { DocumentSource, MediaSource as ContentMediaSource, ToolMediaSource } from '@jush-agent/protocol'
 
 /**
  * Where the bytes of an image, a video or a document are: an address, or a

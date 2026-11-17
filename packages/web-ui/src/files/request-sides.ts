@@ -1,6 +1,6 @@
 import { onScopeDispose, shallowRef, watch, type Ref } from 'vue'
 import { shownError } from '../infra/errors'
-import type { EditCopies } from '@jush-ai/protocol'
+import type { EditCopies } from '@jush-agent/protocol'
 import type { ChangeSides, ReadCallChange } from './changes'
 import { FileBrowserError } from './types'
 

@@ -1,6 +1,6 @@
 # Jush Gallery
 
-Live component catalog for `@jush-ai/web-ui`.
+Live component catalog for `@jush-agent/web-ui`.
 
 Style axes remap token values (`surface`, `fg`, `line`, shadow, radius,
 density, accent) so you can compare paradigms against the catalog. The product

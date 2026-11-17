@@ -9,23 +9,23 @@ import {
   type TabsState,
   type WorkTab,
   type PinnedTabs,
-} from '@jush-ai/web-ui/agent/work-tabs'
+} from '@jush-agent/web-ui/agent/work-tabs'
 import {
   addressSelection,
   workAddress,
   placeData,
   sameAddress,
   type WorkAddress,
-} from '@jush-ai/web-ui/agent/work-address'
-import { WorkTabs, closeWorkTabs, updateWorkTab } from '@jush-ai/web-ui/agent/work-changes'
-import { TAB_HISTORY, selectTab } from '@jush-ai/web-ui/agent/tab-close'
-import { usePhone } from '@jush-ai/web-ui/ui/phone'
-import { intentKind, type HistoryDirection, type TabUpdate } from '@jush-ai/web-ui/plugins/page'
-import type { IntentName, IntentRequest } from '@jush-ai/web-ui/plugins/intents'
-import type { FrontCause, WorkRequest } from '@jush-ai/web-ui/windows/session-work'
-import { readTab } from '@jush-ai/web-ui/agent/tab-kinds/kind'
+} from '@jush-agent/web-ui/agent/work-address'
+import { WorkTabs, closeWorkTabs, updateWorkTab } from '@jush-agent/web-ui/agent/work-changes'
+import { TAB_HISTORY, selectTab } from '@jush-agent/web-ui/agent/tab-close'
+import { usePhone } from '@jush-agent/web-ui/ui/phone'
+import { intentKind, type HistoryDirection, type TabUpdate } from '@jush-agent/web-ui/plugins/page'
+import type { IntentName, IntentRequest } from '@jush-agent/web-ui/plugins/intents'
+import type { FrontCause, WorkRequest } from '@jush-agent/web-ui/windows/session-work'
+import { readTab } from '@jush-agent/web-ui/agent/tab-kinds/kind'
 import { workBackend } from '../api/work'
-import { reportError } from '@jush-ai/web-ui/infra/errors'
+import { reportError } from '@jush-agent/web-ui/infra/errors'
 import { t } from './locales/text'
 import { useResources } from '../state/resources'
 import { useProduct } from '../state/product'

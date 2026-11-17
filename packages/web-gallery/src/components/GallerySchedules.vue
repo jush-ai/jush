@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { reactive, ref } from 'vue'
-import AssistantTextBlock from '@jush-ai/web-ui/agent/blocks/AssistantTextBlock.vue'
-import SchedulesButton from '@jush-ai/web-ui/schedules/SchedulesButton.vue'
-import Button from '@jush-ai/web-ui/ui/Button.vue'
+import AssistantTextBlock from '@jush-agent/web-ui/agent/blocks/AssistantTextBlock.vue'
+import SchedulesButton from '@jush-agent/web-ui/schedules/SchedulesButton.vue'
+import Button from '@jush-agent/web-ui/ui/Button.vue'
 import { gallerySchedules, switched } from '../fixtures/schedules'
 import { gallerySubagents } from '../fixtures/subagents'
 import { previewService, runningRunCommand } from '../fixtures/terminals'

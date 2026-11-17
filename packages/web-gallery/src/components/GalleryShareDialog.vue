@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { appOverlayStore } from '@jush-ai/web-ui/overlay/appOverlay'
-import ShareDialog from '@jush-ai/web-ui/agent/ShareDialog.vue'
-import { useShare, type ShareTarget } from '@jush-ai/web-ui/agent/sharing'
+import { appOverlayStore } from '@jush-agent/web-ui/overlay/appOverlay'
+import ShareDialog from '@jush-agent/web-ui/agent/ShareDialog.vue'
+import { useShare, type ShareTarget } from '@jush-agent/web-ui/agent/sharing'
 import { listed, useGalleryShares } from '../fixtures/sharing'
 import GalleryDialogFrame from './GalleryDialogFrame.vue'
 

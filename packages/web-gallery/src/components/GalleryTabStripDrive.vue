@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from 'vue'
-import Button from '@jush-ai/web-ui/ui/Button.vue'
-import { browserPage } from '@jush-ai/plugin-browser'
-import { changesPage } from '@jush-ai/plugin-changes'
-import { fileBrowserPage } from '@jush-ai/plugin-file-browser'
+import Button from '@jush-agent/web-ui/ui/Button.vue'
+import { browserPage } from '@jush-agent/plugin-browser'
+import { changesPage } from '@jush-agent/plugin-changes'
+import { fileBrowserPage } from '@jush-agent/plugin-file-browser'
 import { galleryBrowser } from '../fixtures/live-browser'
 import { galleryFiles, useGalleryWork } from '../fixtures/work'
 import { createGalleryProject } from '../fixtures/project'

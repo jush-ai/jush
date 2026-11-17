@@ -12,7 +12,7 @@
  */
 import { reactive } from 'vue'
 import { goneMessage, type Answered, type DeviceFiles, type KeptSpec, type Read, type Showing } from './file-cache'
-import { baseName } from '@jush-ai/utils'
+import { baseName } from '@jush-agent/utils'
 import { t } from './locales/text'
 import { parentPath } from './paths'
 import type { ChangeSetSource, ChangeSides, WorkingTreeChange } from './changes'

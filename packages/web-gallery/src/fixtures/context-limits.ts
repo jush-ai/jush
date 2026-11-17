@@ -1,7 +1,7 @@
 import { computed, reactive } from 'vue'
-import { appliedContextLimit } from '@jush-ai/protocol'
-import type { ContextLimitChange } from '@jush-ai/web-ui/agent/context-limit'
-import type { ModelInfo, ProviderInfo } from '@jush-ai/web-ui/transport/protocol'
+import { appliedContextLimit } from '@jush-agent/protocol'
+import type { ContextLimitChange } from '@jush-agent/web-ui/agent/context-limit'
+import type { ModelInfo, ProviderInfo } from '@jush-agent/web-ui/transport/protocol'
 import { demoModels } from './catalog'
 
 /**

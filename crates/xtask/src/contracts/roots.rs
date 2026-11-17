@@ -64,7 +64,7 @@ fn sends<T: JsonSchema>() -> Root {
     }
 }
 
-/// `@jush-ai/protocol`: core's types, the conversation lane's frames,
+/// `@jush-agent/protocol`: core's types, the conversation lane's frames,
 /// the live view's own messages and a program's plugins' contract. Core's
 /// types are listed whether or not a frame refers to them, so that they are
 /// declared here and `web` imports them.
@@ -119,7 +119,7 @@ pub fn protocol() -> Vec<Root> {
     ]
 }
 
-/// `@jush-ai/protocol`'s `web-api.ts`: every REST request and response
+/// `@jush-agent/protocol`'s `web-api.ts`: every REST request and response
 /// body, which the web app and a program's SDK send and read.
 pub fn web() -> Vec<Root> {
     use api::{

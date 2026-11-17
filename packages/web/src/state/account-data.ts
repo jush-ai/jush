@@ -1,4 +1,4 @@
-import { clearPluginCaches } from '@jush-ai/web-ui/plugins/cache'
+import { clearPluginCaches } from '@jush-agent/web-ui/plugins/cache'
 import { deleteDraftsBut } from '../conversation/drafts'
 import { deleteAccountCache } from './offline'
 import { heldAccount, holds, setOwner } from './account-owner'

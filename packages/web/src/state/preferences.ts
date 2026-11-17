@@ -8,18 +8,18 @@ import {
   type Preferences,
   type PreferencesPatch,
   type ShortcutsPatch,
-} from '@jush-ai/protocol'
-import { SerialQueue } from '@jush-ai/utils'
-import { reportError } from '@jush-ai/web-ui/infra/errors'
+} from '@jush-agent/protocol'
+import { SerialQueue } from '@jush-agent/utils'
+import { reportError } from '@jush-agent/web-ui/infra/errors'
 import { t } from './locales/text'
 import { apiRequest, jsonBody, readResponse } from '../api/client'
 import { useProduct, type Answer, type ProductChange } from './product'
-import { appShortcuts } from '@jush-ai/web-ui/settings/shortcuts'
-import { shortcutSet } from '@jush-ai/web-ui/ui/shortcut'
-import { appThemeStore } from '@jush-ai/web-ui/theme/appTheme'
-import { resolveLanguage } from '@jush-ai/web-ui/i18n/languages'
-import { DEFAULT_SEND_WHILE_RUNNING } from '@jush-ai/web-ui/agent/send-way'
-import { DEFAULT_ACCENT, DEFAULT_TRANSCRIPT_TEXT_SIZE } from '@jush-ai/web-ui/theme/productAppearance'
+import { appShortcuts } from '@jush-agent/web-ui/settings/shortcuts'
+import { shortcutSet } from '@jush-agent/web-ui/ui/shortcut'
+import { appThemeStore } from '@jush-agent/web-ui/theme/appTheme'
+import { resolveLanguage } from '@jush-agent/web-ui/i18n/languages'
+import { DEFAULT_SEND_WHILE_RUNNING } from '@jush-agent/web-ui/agent/send-way'
+import { DEFAULT_ACCENT, DEFAULT_TRANSCRIPT_TEXT_SIZE } from '@jush-agent/web-ui/theme/productAppearance'
 
 /**
  * `preferences` with what `patch` changes, as the backend applies it: appearance

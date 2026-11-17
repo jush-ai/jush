@@ -1,5 +1,5 @@
 import { computed, shallowRef, watch, type ComputedRef } from 'vue'
-import { TEXT_FILE_BYTES } from '@jush-ai/protocol'
+import { TEXT_FILE_BYTES } from '@jush-agent/protocol'
 import { useShowing } from './showing'
 import type { FileContents } from './types'
 

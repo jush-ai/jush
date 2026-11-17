@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import ContextMenu from '@jush-ai/web-ui/ui/ContextMenu.vue'
-import ToastHost from '@jush-ai/web-ui/ui/ToastHost.vue'
-import SelectionFieldHost from '@jush-ai/web-ui/agent/comments/SelectionFieldHost.vue'
-import MediaViewer from '@jush-ai/web-ui/files/MediaViewer.vue'
+import ContextMenu from '@jush-agent/web-ui/ui/ContextMenu.vue'
+import ToastHost from '@jush-agent/web-ui/ui/ToastHost.vue'
+import SelectionFieldHost from '@jush-agent/web-ui/agent/comments/SelectionFieldHost.vue'
+import MediaViewer from '@jush-agent/web-ui/files/MediaViewer.vue'
 import TargetDialog from '../targets/TargetDialog.vue'
 import type { ElementsPage } from './page'
 

@@ -3,7 +3,7 @@ import {
   decidePermissionSchema,
   type PermissionDecision,
   type RequestedValues,
-} from '@jush-ai/protocol'
+} from '@jush-agent/protocol'
 
 /** A conversation's permission routes. */
 function permissionsPath(conversationId: string): string {

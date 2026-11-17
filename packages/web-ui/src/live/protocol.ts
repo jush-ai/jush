@@ -28,4 +28,4 @@ export {
   type LiveRelease,
   type Platform,
   type ViewerInput,
-} from '@jush-ai/protocol'
+} from '@jush-agent/protocol'

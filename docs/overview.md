@@ -108,7 +108,7 @@ restarts, and runners dial it as they dial a server.
 ```text
 +--------------------+  HTTP/2 on stdio   +--------------------+
 | Program            |------------------->| jush-core          |
-| @jush-ai/sdk     |  the web API, the  | the cores the      |
+| @jush-agent/sdk    |  the web API, the  | the cores the      |
 | and its plugins    |  lanes, runners'   | program opened     |
 +--------------------+  channels          +--------------------+
    ^           |

@@ -14,7 +14,7 @@
  * - The writing stops once it is larger than a page sends, so a large object
  *   graph does not hold the tab, and answers `too_large`.
  */
-import { DEBUG_VALUE_DEPTH, MAX_PAGE_MESSAGE_BYTES, type RunOutcome } from '@jush-ai/protocol'
+import { DEBUG_VALUE_DEPTH, MAX_PAGE_MESSAGE_BYTES, type RunOutcome } from '@jush-agent/protocol'
 
 /** What a value is written as. */
 type Written = null | boolean | number | string | Written[] | { [key: string]: Written }

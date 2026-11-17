@@ -1,5 +1,5 @@
 import { watch } from 'vue'
-import type { SessionPhase } from '@jush-ai/protocol'
+import type { SessionPhase } from '@jush-agent/protocol'
 import { t } from '../locales/text'
 import { shortcutFor, withCommandKey } from '../ui/shortcut'
 import type { TitleText } from '../ui/ui-text'

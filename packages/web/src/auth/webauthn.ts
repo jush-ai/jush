@@ -1,4 +1,4 @@
-import { coded } from '@jush-ai/web-ui/infra/errors'
+import { coded } from '@jush-agent/web-ui/infra/errors'
 /**
  * The browser's side of passkeys (`crates/backend-accounts/src/passkeys.rs`):
  *
@@ -9,7 +9,7 @@ import { coded } from '@jush-ai/web-ui/infra/errors'
  * Everything here is feature-detected: a browser without `PublicKeyCredential`
  * is offered no passkeys, and one without a signal method is told nothing.
  */
-import { base64urlDecode, base64urlEncode } from '@jush-ai/utils'
+import { base64urlDecode, base64urlEncode } from '@jush-agent/utils'
 import type {
   AuthenticationResponseJson,
   CreationOptionsJson,
@@ -17,7 +17,7 @@ import type {
   PasskeyDto,
   RegistrationResponseJson,
   RequestOptionsJson,
-} from '@jush-ai/protocol'
+} from '@jush-agent/protocol'
 
 /** Whether this browser has WebAuthn at all. */
 export function browserHasPasskeys(): boolean {

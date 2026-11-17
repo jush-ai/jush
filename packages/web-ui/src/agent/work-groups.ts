@@ -35,10 +35,10 @@
  * block where its last piece came (`endedAt`). The wait for the model between
  * steps is not counted.
  */
-import type { HeldBlock, TextArrival } from '@jush-ai/conversation-client'
+import type { HeldBlock, TextArrival } from '@jush-agent/conversation-client'
 import type { MessageListBlock } from './pending-steers'
 import type { ShownBlock } from './whole-blocks'
-import { upperFirst } from '@jush-ai/utils'
+import { upperFirst } from '@jush-agent/utils'
 import { formatSpan } from '../ui/dates'
 import { t } from './locales/text'
 import { pageLanguage } from '../i18n/text'

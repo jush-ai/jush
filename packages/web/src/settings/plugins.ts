@@ -1,9 +1,9 @@
 import { t } from './locales/text'
 import { defineStore } from 'pinia'
-import { SerialQueue } from '@jush-ai/utils'
-import { errorCode, reportError } from '@jush-ai/web-ui/infra/errors'
+import { SerialQueue } from '@jush-agent/utils'
+import { errorCode, reportError } from '@jush-agent/web-ui/infra/errors'
 import { apiRequest, jsonBody } from '../api/client'
-import { known, withPart, type PluginSwitch } from '@jush-ai/protocol'
+import { known, withPart, type PluginSwitch } from '@jush-agent/protocol'
 import { useProduct } from '../state/product'
 
 /**

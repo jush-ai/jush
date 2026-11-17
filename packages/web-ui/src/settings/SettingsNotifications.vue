@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { IN_USE_MINUTES } from '@jush-ai/protocol'
+import { IN_USE_MINUTES } from '@jush-agent/protocol'
 import type { OverlayStore } from '../overlay/overlayStore'
 import Button from '../ui/Button.vue'
 import Switch from '../ui/Switch.vue'

@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { t } from './locales/text'
 import { computed, onUnmounted, ref, watch } from 'vue'
-import SettingsAbout from '@jush-ai/web-ui/settings/SettingsAbout.vue'
-import type { AcknowledgementsState } from '@jush-ai/web-ui/settings/types'
-import { shownError } from '@jush-ai/web-ui/infra/errors'
+import SettingsAbout from '@jush-agent/web-ui/settings/SettingsAbout.vue'
+import type { AcknowledgementsState } from '@jush-agent/web-ui/settings/types'
+import { shownError } from '@jush-agent/web-ui/infra/errors'
 import { useSettingsAddress } from './address'
 
 /**

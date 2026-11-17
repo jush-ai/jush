@@ -1,7 +1,7 @@
 import { GALLERY_MARKS } from '../fixtures/device-marks'
-import type { SavedScope, SidebarAccount, SidebarConversation, SidebarProject } from '@jush-ai/web-ui/sidebar/types'
+import type { SavedScope, SidebarAccount, SidebarConversation, SidebarProject } from '@jush-agent/web-ui/sidebar/types'
 import { productWould } from '../product-would'
-import { conversationRun } from '@jush-ai/web-ui/agent/conversation-status'
+import { conversationRun } from '@jush-agent/web-ui/agent/conversation-status'
 import { ago } from '../fixtures/time'
 
 const HOUR = 60 * 60 * 1000

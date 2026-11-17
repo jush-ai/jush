@@ -1,7 +1,7 @@
 import { ref } from 'vue'
-import type { CacheChart, CacheMiss, ChartPoint } from '@jush-ai/protocol'
-import { type AgentPrice, type ConversationCostView, type CostShown, type CostWindow, type RecentShown, recentOf } from '@jush-ai/web-ui/agent/context-cost'
-import { type GlobalProfiles, workflowProfiles } from '@jush-ai/web-ui/agent/workflow-menu'
+import type { CacheChart, CacheMiss, ChartPoint } from '@jush-agent/protocol'
+import { type AgentPrice, type ConversationCostView, type CostShown, type CostWindow, type RecentShown, recentOf } from '@jush-agent/web-ui/agent/context-cost'
+import { type GlobalProfiles, workflowProfiles } from '@jush-agent/web-ui/agent/workflow-menu'
 import { demoSubagentProfiles } from './subagent-profiles'
 import { DAY, MINUTE } from './time'
 
