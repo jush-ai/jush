@@ -40,6 +40,7 @@ import CloudResetDialog from '@jush-ai/web-ui/cloud/CloudResetDialog.vue'
 import type { CloudState } from '@jush-ai/web-ui/cloud/types'
 import GalleryDialogFrame from '../components/GalleryDialogFrame.vue'
 import GalleryShareDialog from '../components/GalleryShareDialog.vue'
+import GalleryDebugPageDialog from '../components/GalleryDebugPageDialog.vue'
 import GalleryProviderShareDialog from '../components/GalleryProviderShareDialog.vue'
 import GallerySection from '../components/GallerySection.vue'
 import GallerySpecimen from '../components/GallerySpecimen.vue'
@@ -547,6 +548,26 @@ const resetPhases: {
                 />
               </GalleryDialogFrame>
             </div>
+          </GallerySpecimen>
+        </div>
+      </GallerySection>
+
+      <GallerySection
+        title="Debug This Page"
+        note="Debug This Page in the account’s menu opens this dialog and makes the page’s link in it: the field shows Creating link… with a spinner, and Copy Link and Stop Debugging wait, until the link stands there. It says what an agent given the link can do and until when: until the user stops debugging or closes the tab, and at most until the time it names, a day after it began; that sentence keeps its line while the link is made, so the dialog keeps its height. A failure says why under the field, and Try Again takes Copy Link’s place. Copy Link, the default button, turns to Copied. Closing the dialog leaves the page debugged, which a dot on the account’s avatar says (Sidebar › Debug This Page), and the menu item opens the dialog again on the same link. Stop Debugging, apart at the leading edge, ends the link and closes the dialog. The new-link specimens start at Open, which stands for the menu item."
+      >
+        <div class="grid items-start gap-6 lg:grid-cols-2">
+          <GallerySpecimen variant="on" wide>
+            <GalleryDebugPageDialog state="on" />
+          </GallerySpecimen>
+          <GallerySpecimen variant="making the link" wide>
+            <GalleryDebugPageDialog state="starting" />
+          </GallerySpecimen>
+          <GallerySpecimen variant="a new link" wide>
+            <GalleryDebugPageDialog state="new" />
+          </GallerySpecimen>
+          <GallerySpecimen variant="a link that fails first" wide>
+            <GalleryDebugPageDialog state="failing" />
           </GallerySpecimen>
         </div>
       </GallerySection>

@@ -23,7 +23,20 @@
   "account": {
     "label": "帳號",
     "settings": "設定",
-    "signOut": "登出"
+    "signOut": "登出",
+    "debugPage": "偵錯此頁面",
+    "debugging": "智慧體可以偵錯此頁面"
+  },
+  "debug": {
+    "title": "偵錯此頁面",
+    "who": "你把這個連結交給的智慧體可以在此頁面中執行程式碼，檢視並執行你在這裡能做的一切，直到你停止偵錯或關閉此分頁。",
+    "until": "連結將於 {time} 失效。",
+    "field": "偵錯連結",
+    "copyLink": "複製連結",
+    "creating": "正在建立連結…",
+    "tryAgain": "重試",
+    "stop": "停止偵錯",
+    "unreadable": "無法讀取偵錯訊息"
   },
   "row": {
     "unpin": "取消釘選",

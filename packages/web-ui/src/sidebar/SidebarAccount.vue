@@ -3,7 +3,7 @@ import { t } from './locales/text'
 import { computed } from 'vue';
 import { accountDisplayName } from '../auth/account-display';
 import Avatar from '@jush-ai/web-ui/ui/Avatar.vue';
-import { CircleUser, LogOut, Settings } from '@lucide/vue';
+import { Bug, CircleUser, LogOut, Settings } from '@lucide/vue';
 import { appOverlayStore } from '@jush-ai/web-ui/overlay/appOverlay';
 import Dropdown from '@jush-ai/web-ui/ui/Dropdown.vue';
 import Menu from '@jush-ai/web-ui/ui/Menu.vue';
@@ -13,18 +13,25 @@ import { pressOnKey } from '@jush-ai/web-ui/ui/button-events';
 import { ICON_PX } from '@jush-ai/web-ui/ui/icon-metrics';
 import { provideRowTarget, type Action } from '@jush-ai/web-ui/ui/operations';
 import RowSpinner from '@jush-ai/web-ui/ui/RowSpinner.vue';
+import Tooltip from '@jush-ai/web-ui/ui/Tooltip.vue';
 import type { SidebarAccount } from './types';
 import { THIS_SESSION } from './session-target';
 
 /**
- * The signed-in user at the foot of the sidebar; the menu behind it holds settings
- * and sign-out.
+ * The signed-in user at the foot of the sidebar; the menu behind it holds
+ * settings, Debug This Page and sign-out.
  *
  * The row takes what its container leaves it, and a name that does not fit beside the
  * avatar ends in an ellipsis, the menu still showing it.
+ *
+ * While an agent may debug the page, a dot on the avatar's corner says so, as
+ * a browser marks a window under automation; it stands over the avatar, so
+ * nothing moves as it comes and goes.
  */
 const props = defineProps<{
   account: SidebarAccount;
+  /** An agent may run code in this page (`DebugPageDialog`). */
+  debugging?: boolean;
   /** Signs this browser out; the row works until the page goes to the sign-in page. */
   onSignOut?: Action;
   /** The keys Settings has in the keyboard settings, which its item shows; none when it has none. */
@@ -33,6 +40,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   openSettings: [];
+  debugPage: [];
 }>();
 
 // Signing out, from this menu or from Settings, shows on the account's row.
@@ -64,13 +72,22 @@ const displayName = computed(() =>
         @keyup="pressOnKey"
       >
         <!-- 24 px, and 32 px on a phone, as the row grows to a finger's height. -->
-        <Avatar
-          class="phone:size-8 phone:text-[13px]"
-          :account-id="account.id"
-          :name="account.name"
-          :email="account.email"
-          :size="24"
-        />
+        <span class="relative flex shrink-0">
+          <Avatar
+            class="phone:size-8 phone:text-[13px]"
+            :account-id="account.id"
+            :name="account.name"
+            :email="account.email"
+            :size="24"
+          />
+          <Tooltip v-if="debugging" :content="t('account.debugging')" placement="top" class="absolute -bottom-0.5 -right-0.5 flex">
+            <span
+              role="img"
+              :aria-label="t('account.debugging')"
+              class="size-2.5 rounded-full bg-on-warning shadow-[0_0_0_2px_var(--color-surface-base)]"
+            />
+          </Tooltip>
+        </span>
         <span class="min-w-0 flex-1 truncate text-chrome text-fg phone:text-[16px]">{{ displayName }}</span>
         <RowSpinner v-if="signingOut" />
       </div>
@@ -96,6 +113,14 @@ const displayName = computed(() =>
           @select="
             close();
             emit('openSettings');
+          "
+        />
+        <MenuItem
+          :icon="Bug"
+          :label="t('account.debugPage')"
+          @select="
+            close();
+            emit('debugPage');
           "
         />
         <MenuDivider />

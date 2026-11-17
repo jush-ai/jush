@@ -314,6 +314,18 @@ pub fn module(header: &str) -> String {
     );
     writeln!(source, "export const DIRECT_PROBE_LABEL = {:?}", direct::PROBE_LABEL).expect("writing to a string");
 
+    source.push('\n');
+    push_doc(&mut source, Some("The path of the debug links under `/api`."), 0);
+    writeln!(source, "export const DEBUG_ROUTE = {:?}", jush_web_api_protocol::debug::DEBUG_ROUTE)
+        .expect("writing to a string");
+    push_doc(
+        &mut source,
+        Some("How many levels deep a debugged page writes what a run returned."),
+        0,
+    );
+    writeln!(source, "export const DEBUG_VALUE_DEPTH = {}", jush_web_api_protocol::debug::DEBUG_VALUE_DEPTH)
+        .expect("writing to a string");
+
     source
 }
 

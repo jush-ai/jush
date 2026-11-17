@@ -181,6 +181,9 @@ const sectionEntries = computed(() => sidebarEntries(PLUGIN_PAGES, pluginOn))
 const settingsOpen = ref(false)
 const settingsTab = ref<SettingsTab | null>(null)
 
+/** Whether each Debug This Page specimen's page is debugged, as it starts: not, then on. */
+const debugged = ref([false, true])
+
 /** The foot's update: a release offered, and an update that runs. */
 const footUpdates = [
   ['available', { state: 'available', version: '0.1.5500' }],
@@ -923,6 +926,32 @@ onBeforeUnmount(() => {
               @open-settings="wouldOpenSettings"
               @sign-out="productWould('Sign Out')"
               @hand-off="wouldHandOff"
+            />
+          </div>
+        </GallerySpecimen>
+      </div>
+    </GallerySection>
+
+    <GallerySection
+      title="Debug This Page"
+      note="The account’s menu holds Debug This Page under Settings, which opens its dialog (Dialogs › Debug This Page). While an agent may debug the page, an amber dot stands on the avatar’s corner, over it, so the name and the buttons beside it never move as it comes and goes; pointed at, it says why. The specimen’s menu item turns debugging on and off, as starting and Stop Debugging do."
+    >
+      <div class="specimen-row specimen-row-wide items-start">
+        <GallerySpecimen v-for="on in [false, true]" :key="String(on)" :variant="on ? 'debugged · live' : 'not debugged · live'">
+          <div class="gallery-frame flex h-[14rem] w-[16rem] overflow-hidden">
+            <AppSidebar
+              :account="demoAccount"
+              :projects="[]"
+              :conversations="[]"
+              :active-id="null"
+              :debugging="debugged[on ? 1 : 0]"
+              @search="productWould('Open the Search Window')"
+              @create="productWould('Start a New Conversation')"
+              @add-project="productWould('Add a Project')"
+              @open-settings="wouldOpenSettings"
+              @sign-out="productWould('Sign Out')"
+              @hand-off="wouldHandOff"
+              @debug-page="debugged[on ? 1 : 0] = !debugged[on ? 1 : 0]"
             />
           </div>
         </GallerySpecimen>

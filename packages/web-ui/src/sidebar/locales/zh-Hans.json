@@ -23,7 +23,20 @@
   "account": {
     "label": "账户",
     "settings": "设置",
-    "signOut": "退出登录"
+    "signOut": "退出登录",
+    "debugPage": "调试此页面",
+    "debugging": "智能体可以调试此页面"
+  },
+  "debug": {
+    "title": "调试此页面",
+    "who": "你把这个链接交给的智能体可以在此页面中运行代码，查看并执行你在这里能做的一切，直到你停止调试或关闭此标签页。",
+    "until": "链接将于 {time} 失效。",
+    "field": "调试链接",
+    "copyLink": "复制链接",
+    "creating": "正在创建链接…",
+    "tryAgain": "重试",
+    "stop": "停止调试",
+    "unreadable": "无法读取调试消息"
   },
   "row": {
     "unpin": "取消置顶",
