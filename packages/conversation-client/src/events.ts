@@ -11,7 +11,7 @@ import type {
   ServerFrame,
   TranscriptPatch,
   Version,
-} from '@jush-ai/protocol'
+} from '@jush-agent/protocol'
 
 export type ServerFrameOf<Type extends ServerFrame['type']> = Extract<ServerFrame, { type: Type }>
 

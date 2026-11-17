@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import type { CommandReport } from '@jush-ai/protocol'
-import CommandReportBlock from '@jush-ai/web-ui/agent/blocks/CommandReportBlock.vue'
-import { provideCommandRevealer } from '@jush-ai/web-ui/agent/command-reports'
+import type { CommandReport } from '@jush-agent/protocol'
+import CommandReportBlock from '@jush-agent/web-ui/agent/blocks/CommandReportBlock.vue'
+import { provideCommandRevealer } from '@jush-agent/web-ui/agent/command-reports'
 import { productWould } from '../product-would'
 
 /**

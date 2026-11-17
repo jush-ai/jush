@@ -40,7 +40,7 @@
  * `connection.broken` (a connection it let go) to its log, as lines of
  * information, never as error reports.
  */
-import { reconnectWait, SILENCE_MS } from '@jush-ai/conversation-client'
+import { reconnectWait, SILENCE_MS } from '@jush-agent/conversation-client'
 import { readonly, ref } from 'vue'
 import { defaultDocument, defaultNavigator, defaultWindow, useDocumentVisibility, useEventListener } from '@vueuse/core'
 import { PAGE_ID, PAGE_PARAMETER, pageLog } from '../infra/log'

@@ -25,8 +25,8 @@
  * - A watch that is unavailable says so for each subscription, as a device that
  *   cannot watch does.
  */
-import { previewMediaType, TEXT_FILE_BYTES } from '@jush-ai/protocol'
-import { baseName, delay } from '@jush-ai/utils'
+import { previewMediaType, TEXT_FILE_BYTES } from '@jush-agent/protocol'
+import { baseName, delay } from '@jush-agent/utils'
 import { DeviceFiles } from './file-cache'
 import { keptSource, type FileReads } from './kept-source'
 import {

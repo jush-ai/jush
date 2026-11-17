@@ -1,0 +1,75 @@
+# Publishes the SDK's npm packages, at the version of the commit it builds:
+# the SDK, its six platform packages and the web components
+# (crates/xtask/src/sdk_release.rs).
+#
+# Starting it: a tag named after the SDK and the commit's version, pushed on
+# the commit to publish:
+#
+#   version=$(.github/scripts/version.sh <commit>)
+#   git tag "@jush-agent/sdk@$version" <commit>
+#   git push origin "@jush-agent/sdk@$version"
+#
+# A tag starts it rather than a manual start, which GitHub offers only for a
+# workflow the default branch holds. A pushed commit publishes nothing, since
+# a published version cannot be taken back.
+#
+# It builds the commit with build.yml, then publishes by npm's trusted
+# publishing: npm takes the run's OIDC token from this workflow of this
+# repository, as each package names it (`npm trust github <package> --file
+# sdk.yml --repo jush-ai/jush --allow-publish`), so no token is stored, and
+# each version carries its provenance (.github/scripts/publish-sdk.sh).
+name: SDK
+
+on:
+  push:
+    tags: ["@jush-agent/sdk@*"]
+
+permissions:
+  contents: read
+
+# One run at a time, the others waiting in order: the default single pending
+# place would cancel a waiting tag's run.
+concurrency:
+  group: sdk
+  cancel-in-progress: false
+  queue: max
+
+jobs:
+  check:
+    name: Check the tag
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          filter: tree:0
+      # The version counts the commit's history, so a tag that names another
+      # version would publish this commit under it.
+      - run: |
+          version=$(.github/scripts/version.sh)
+          [ "$GITHUB_REF_NAME" = "@jush-agent/sdk@$version" ] || {
+            echo "$GITHUB_REF_NAME does not name this commit's version, $version" >&2
+            exit 1
+          }
+
+  build:
+    name: Build
+    needs: check
+    uses: ./.github/workflows/build.yml
+    secrets: inherit
+
+  publish:
+    name: Publish
+    needs: build
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: sdk
+          path: ${{ runner.temp }}/sdk
+      # The runner's npm, 11.5.1 or later, signs in by trusted publishing.
+      - run: .github/scripts/publish-sdk.sh "$RUNNER_TEMP/sdk"

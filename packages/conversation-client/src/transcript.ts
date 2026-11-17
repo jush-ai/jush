@@ -11,7 +11,7 @@ import type {
   TranscriptPatch,
   Version,
   Versions,
-} from '@jush-ai/protocol'
+} from '@jush-agent/protocol'
 
 /**
  * A node's latest page as the client reads it: its blocks from `start`, the

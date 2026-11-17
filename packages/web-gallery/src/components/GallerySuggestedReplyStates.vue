@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import SuggestedReplies from '@jush-ai/web-ui/agent/blocks/SuggestedReplies.vue'
-import { showToast } from '@jush-ai/web-ui/infra/toast'
+import SuggestedReplies from '@jush-agent/web-ui/agent/blocks/SuggestedReplies.vue'
+import { showToast } from '@jush-agent/web-ui/infra/toast'
 import { CHOICE_SUGGESTIONS, LONG_SUGGESTIONS, SUGGESTION_ROUNDS } from '../fixtures/suggested-replies'
 
 /**

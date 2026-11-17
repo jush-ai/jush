@@ -1,10 +1,10 @@
 import { t } from './locales/text'
 import { computed } from 'vue'
 import { defineStore } from 'pinia'
-import { SerialQueue } from '@jush-ai/utils'
-import { errorCode, reportError } from '@jush-ai/web-ui/infra/errors'
-import type { HeadlineText } from '@jush-ai/web-ui/ui/ui-text'
-import type { SettingsSubagentDraft } from '@jush-ai/web-ui/settings/types'
+import { SerialQueue } from '@jush-agent/utils'
+import { errorCode, reportError } from '@jush-agent/web-ui/infra/errors'
+import type { HeadlineText } from '@jush-agent/web-ui/ui/ui-text'
+import type { SettingsSubagentDraft } from '@jush-agent/web-ui/settings/types'
 import { apiRequest, jsonBody, readResponse } from '../api/client'
 import {
   profileAnswerSchema,
@@ -14,7 +14,7 @@ import {
   type SubagentProfile,
   type SubagentSettings,
   type SubagentsPatch,
-} from '@jush-ai/protocol'
+} from '@jush-agent/protocol'
 import { useHeldList, useProduct, type Answer } from '../state/product'
 
 /** `settings` with `profile` in its place by id, the profiles in name order. */

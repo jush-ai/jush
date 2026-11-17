@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { Component } from 'vue'
-import { disabledTooltip } from '@jush-ai/web-ui/ui/disabled'
-import { useIconPx } from '@jush-ai/web-ui/ui/icon-metrics'
-import Tooltip from '@jush-ai/web-ui/ui/Tooltip.vue'
-import { pressOnKey } from '@jush-ai/web-ui/ui/button-events'
+import { disabledTooltip } from '@jush-agent/web-ui/ui/disabled'
+import { useIconPx } from '@jush-agent/web-ui/ui/icon-metrics'
+import Tooltip from '@jush-agent/web-ui/ui/Tooltip.vue'
+import { pressOnKey } from '@jush-agent/web-ui/ui/button-events'
 import type { SentenceText, TitleText } from '../ui/ui-text'
 
 /**

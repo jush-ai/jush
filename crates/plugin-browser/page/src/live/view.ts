@@ -10,7 +10,7 @@
  * back, by the generation of the picture shown, never by a viewport the tab
  * list reports for a picture that has not arrived.
  */
-import type { TitleText } from '@jush-ai/plugin-sdk'
+import type { TitleText } from '@jush-agent/plugin-sdk'
 import type { BrowserViewport, CursorRegion } from '../generated/plugin'
 import type { LiveStream, PanelReport } from './session'
 import { t } from '../locales/text'

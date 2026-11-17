@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { rootActivity } from '@jush-ai/web-ui/agent/agent-activity'
-import AgentMessageList from '@jush-ai/web-ui/agent/AgentMessageList.vue'
-import SessionDock from '@jush-ai/web-ui/agent/SessionDock.vue'
-import SessionSurface from '@jush-ai/web-ui/agent/SessionSurface.vue'
-import Button from '@jush-ai/web-ui/ui/Button.vue'
+import { rootActivity } from '@jush-agent/web-ui/agent/agent-activity'
+import AgentMessageList from '@jush-agent/web-ui/agent/AgentMessageList.vue'
+import SessionDock from '@jush-agent/web-ui/agent/SessionDock.vue'
+import SessionSurface from '@jush-agent/web-ui/agent/SessionSurface.vue'
+import Button from '@jush-agent/web-ui/ui/Button.vue'
 import GallerySection from './GallerySection.vue'
 import { useTurnFlow } from '../turn-flow'
 

@@ -1,11 +1,11 @@
-import { createConversationClient as onConnection, type ConversationClient, type ConversationClientOptions } from '@jush-ai/conversation-client'
+import { createConversationClient as onConnection, type ConversationClient, type ConversationClientOptions } from '@jush-agent/conversation-client'
 import { pageConnection } from './page-connection'
 
-export { ConversationLaneError } from '@jush-ai/conversation-client'
+export { ConversationLaneError } from '@jush-agent/conversation-client'
 
 /**
  * The client of the conversation `conversation`, over its lane of the page
- * connection (`@jush-ai/conversation-client`'s `createConversationClient`).
+ * connection (`@jush-agent/conversation-client`'s `createConversationClient`).
  */
 export function createConversationClient(
   conversation: string,

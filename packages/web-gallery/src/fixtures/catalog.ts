@@ -1,5 +1,5 @@
-import type { ContextRow, ContextUsage } from '@jush-ai/protocol'
-import type { ModelInfo, ProviderInfo } from '@jush-ai/web-ui/transport/protocol'
+import type { ContextRow, ContextUsage } from '@jush-agent/protocol'
+import type { ModelInfo, ProviderInfo } from '@jush-agent/web-ui/transport/protocol'
 
 export const demoProviders: ProviderInfo[] = [
   { id: 'anthropic', label: 'Anthropic', isAvailable: true },

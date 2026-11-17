@@ -1,4 +1,4 @@
-import type { Language } from '@jush-ai/web-ui/i18n/languages'
+import type { Language } from '@jush-agent/web-ui/i18n/languages'
 import type { TextRule } from '../components/GalleryTextRules.vue'
 
 /**

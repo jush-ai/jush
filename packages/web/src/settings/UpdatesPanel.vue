@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { t } from './locales/text'
-import { appOverlayStore } from '@jush-ai/web-ui/overlay/appOverlay'
-import { reportError } from '@jush-ai/web-ui/infra/errors'
-import SettingsUpdates from '@jush-ai/web-ui/settings/SettingsUpdates.vue'
-import type { UpgradeChannel } from '@jush-ai/web-ui/settings/server-upgrade'
-import type { HeadlineText } from '@jush-ai/web-ui/ui/ui-text'
+import { appOverlayStore } from '@jush-agent/web-ui/overlay/appOverlay'
+import { reportError } from '@jush-agent/web-ui/infra/errors'
+import SettingsUpdates from '@jush-agent/web-ui/settings/SettingsUpdates.vue'
+import type { UpgradeChannel } from '@jush-agent/web-ui/settings/server-upgrade'
+import type { HeadlineText } from '@jush-agent/web-ui/ui/ui-text'
 import { apiRequest, jsonBody, readResponse } from '../api/client'
 import {
   serverUpgradeSchema,
@@ -12,7 +12,7 @@ import {
   type RunUpgrade,
   type SetPrepareAhead,
   type SetUpgradeChannel,
-} from '@jush-ai/protocol'
+} from '@jush-agent/protocol'
 import { useProduct } from '../state/product'
 
 /**

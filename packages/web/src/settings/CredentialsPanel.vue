@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { appOverlayStore } from '@jush-ai/web-ui/overlay/appOverlay'
-import SettingsCredentials from '@jush-ai/web-ui/settings/SettingsCredentials.vue'
-import AsyncRegion from '@jush-ai/web-ui/ui/AsyncRegion.vue'
+import { appOverlayStore } from '@jush-agent/web-ui/overlay/appOverlay'
+import SettingsCredentials from '@jush-agent/web-ui/settings/SettingsCredentials.vue'
+import AsyncRegion from '@jush-agent/web-ui/ui/AsyncRegion.vue'
 import { useProduct } from '../state/product'
 import { useCredentialSettings } from './credentials'
 

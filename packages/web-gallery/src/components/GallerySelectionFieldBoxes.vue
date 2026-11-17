@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { reactive } from 'vue'
-import { ATTACHMENT_MARK } from '@jush-ai/web-ui/markdown/user-markdown'
-import SelectionField from '@jush-ai/web-ui/agent/comments/SelectionField.vue'
-import { t } from '@jush-ai/web-ui/agent/locales/text'
+import { ATTACHMENT_MARK } from '@jush-agent/web-ui/markdown/user-markdown'
+import SelectionField from '@jush-agent/web-ui/agent/comments/SelectionField.vue'
+import { t } from '@jush-agent/web-ui/agent/locales/text'
 import { productWould } from '../product-would'
 import { galleryMessageFiles } from '../fixtures/written-files'
 

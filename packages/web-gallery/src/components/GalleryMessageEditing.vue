@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { wholeHistory, type HeldBlock } from '@jush-ai/web-ui/agent/history'
+import { wholeHistory, type HeldBlock } from '@jush-agent/web-ui/agent/history'
 import { computed, onBeforeUnmount, reactive, ref, shallowRef } from 'vue'
-import { deferred, type Deferred } from '@jush-ai/utils'
-import ChatSession from '@jush-ai/web-ui/agent/ChatSession.vue'
-import type { ChatSessionState } from '@jush-ai/web-ui/agent/types'
-import Button from '@jush-ai/web-ui/ui/Button.vue'
-import WaitingComments from '@jush-ai/web-ui/agent/comments/WaitingComments.vue'
-import { commentsReplaced, inReadingOrder, type CommentAnchor, type ReplyCommenting, type WaitingComment } from '@jush-ai/web-ui/agent/comments/comments'
+import { deferred, type Deferred } from '@jush-agent/utils'
+import ChatSession from '@jush-agent/web-ui/agent/ChatSession.vue'
+import type { ChatSessionState } from '@jush-agent/web-ui/agent/types'
+import Button from '@jush-agent/web-ui/ui/Button.vue'
+import WaitingComments from '@jush-agent/web-ui/agent/comments/WaitingComments.vue'
+import { commentsReplaced, inReadingOrder, type CommentAnchor, type ReplyCommenting, type WaitingComment } from '@jush-agent/web-ui/agent/comments/comments'
 import { galleryMessageFiles } from '../fixtures/written-files'
 import GalleryComposer from './GalleryComposer.vue'
 import { productWould } from '../product-would'
@@ -18,9 +18,9 @@ import {
   submitMessageEdit,
   type MessageEditHost,
   type MessageEditState,
-} from '@jush-ai/web-ui/agent/message-editing'
-import type { Block, MessageComment, UserContentBlock } from '@jush-ai/protocol'
-import type { TitleText } from '@jush-ai/web-ui/ui/ui-text'
+} from '@jush-agent/web-ui/agent/message-editing'
+import type { Block, MessageComment, UserContentBlock } from '@jush-agent/protocol'
+import type { TitleText } from '@jush-agent/web-ui/ui/ui-text'
 import { demoImageUrl, demoModel } from '../fixtures/blocks'
 import { galleryUploads } from '../fixtures/upload-sweep'
 import { PROJECT_ROOT } from '../fixtures/project'

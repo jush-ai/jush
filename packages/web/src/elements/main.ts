@@ -1,4 +1,4 @@
-// `@jush-ai/web-components`: the web app's conversation view, with its
+// `@jush-agent/web-components`: the web app's conversation view, with its
 // work's windows and taskbar, as a standard custom element, a second entry
 // of the web app's build, for a program's page in any framework, or none:
 //
@@ -9,7 +9,7 @@
 // ```
 //
 // It reaches one core through `api`, where the program's server forwards
-// the core's routes and page connection (`@jush-ai/sdk`'s `core.fetch`
+// the core's routes and page connection (`@jush-agent/sdk`'s `core.fetch`
 // and `core.accept`), and the elements of a page share its stores
 // (`page.ts`). It renders in the page's own tree, without a shadow root, so
 // its menus and dialogs, which go to the body, keep the styles the

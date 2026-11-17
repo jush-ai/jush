@@ -8,8 +8,8 @@
  * tabs are there.
  */
 import { ref, shallowRef, watch, type Ref } from 'vue'
-import { clientPlatform } from '@jush-ai/utils'
-import { pageVisibility, picturesSupported, type HeadlineText, type PluginCache } from '@jush-ai/plugin-sdk'
+import { clientPlatform } from '@jush-agent/utils'
+import { pageVisibility, picturesSupported, type HeadlineText, type PluginCache } from '@jush-agent/plugin-sdk'
 import { LIVE_NO_FOCUSED_FIELD, type FoldResult, type ControlReason, type Simulator } from '../generated/plugin'
 import { MobileError, type MobileApi } from '../devices'
 import { DeviceSession } from './session'

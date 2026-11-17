@@ -244,7 +244,7 @@ pub struct SetSourceEnabled {
 }
 
 fn page() -> Page {
-    Page::new("@jush-ai/plugin-skills")
+    Page::new("@jush-agent/plugin-skills")
         .user_state(jush_plugin_interface::State::new::<SkillsState>())
         .method(Method::new::<AddSource, AddedSource>(
             "add_source",

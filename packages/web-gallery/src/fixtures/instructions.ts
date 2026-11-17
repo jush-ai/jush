@@ -1,4 +1,4 @@
-import type { InstructionEntry } from '@jush-ai/protocol'
+import type { InstructionEntry } from '@jush-agent/protocol'
 
 /** What an instructions block holds for a conversation in `~/Projects/shop/packages/web`: personal instructions, the root's file and the package's. */
 export const demoInstructions: InstructionEntry[] = [

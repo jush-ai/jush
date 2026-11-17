@@ -1,10 +1,10 @@
-import { FileBrowserError } from '@jush-ai/web-ui/files/types'
-import type { FileBrowserSource } from '@jush-ai/web-ui/files/types'
-import type { UploadItem } from '@jush-ai/web-ui/files/file-uploads'
-import { DeviceFiles } from '@jush-ai/web-ui/files/file-cache'
-import { keptSource } from '@jush-ai/web-ui/files/kept-source'
-import { createMemoryFileSource, dir, file, link, memoryFileReads, textFile, type MemoryDirectory, type MemoryFileSource } from '@jush-ai/web-ui/files/memory-source'
-import { baseName } from '@jush-ai/utils'
+import { FileBrowserError } from '@jush-agent/web-ui/files/types'
+import type { FileBrowserSource } from '@jush-agent/web-ui/files/types'
+import type { UploadItem } from '@jush-agent/web-ui/files/file-uploads'
+import { DeviceFiles } from '@jush-agent/web-ui/files/file-cache'
+import { keptSource } from '@jush-agent/web-ui/files/kept-source'
+import { createMemoryFileSource, dir, file, link, memoryFileReads, textFile, type MemoryDirectory, type MemoryFileSource } from '@jush-agent/web-ui/files/memory-source'
+import { baseName } from '@jush-agent/utils'
 
 /**
  * Projects for the file tree specimens: one with every kind of row, and

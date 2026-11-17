@@ -1,6 +1,6 @@
 import { ref } from 'vue'
-import type { ReplyPicture } from '@jush-ai/protocol'
-import type { AttachmentLookup, AttachmentOrigin } from '@jush-ai/web-ui/markdown/types'
+import type { ReplyPicture } from '@jush-agent/protocol'
+import type { AttachmentLookup, AttachmentOrigin } from '@jush-agent/web-ui/markdown/types'
 import { galleryBlobSize, galleryBlobUrl, galleryBlobs } from './blobs'
 import { PROJECT_ROOT } from './project'
 import { GALLERY_DEVICE } from './devices'

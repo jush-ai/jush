@@ -1,5 +1,5 @@
 import { watch } from 'vue'
-import { treeLayout } from '@jush-ai/web-ui/files/tree-layout'
+import { treeLayout } from '@jush-agent/web-ui/files/tree-layout'
 import { usePreferences } from '../state/preferences'
 
 /**

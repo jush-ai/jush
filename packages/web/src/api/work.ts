@@ -1,6 +1,6 @@
-import type { WorkBackend, WorkChange } from '@jush-ai/web-ui/agent/work-changes'
+import type { WorkBackend, WorkChange } from '@jush-agent/web-ui/agent/work-changes'
 import { apiRequest, jsonBody, readResponse } from './client'
-import { workAnswerSchema, workChangesSchema } from '@jush-ai/protocol'
+import { workAnswerSchema, workChangesSchema } from '@jush-agent/protocol'
 
 /** A change as the work's route names it; the route's schema checks it before it leaves. */
 function changeBody(change: WorkChange) {

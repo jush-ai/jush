@@ -8,7 +8,7 @@ import { json } from '@codemirror/lang-json'
 import { markdown } from '@codemirror/lang-markdown'
 import { vue } from '@codemirror/lang-vue'
 import { reportSyntaxColorsUnavailable } from './load'
-import { baseName } from '@jush-ai/utils'
+import { baseName } from '@jush-agent/utils'
 
 /** Files whose name the language data does not match, by the language-data name they read as. */
 const nameOverrides: Record<string, string> = {

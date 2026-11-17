@@ -1,5 +1,5 @@
-# Builds everything a release publishes, and the SDK's npm packages, which no
-# release publishes; it publishes nothing: canary.yml publishes a push's build
+# Builds everything a release publishes, and the SDK's npm packages, which
+# sdk.yml publishes; it publishes nothing: canary.yml publishes a push's build
 # once its checks have passed too.
 #
 # Starting it:
@@ -16,6 +16,8 @@
 #   builds the branch's newest commit.
 # - release.yml calls it for a commit it finds no finished build of, with the
 #   commit.
+# - sdk.yml calls it for the commit a pushed tag names, whose SDK packages it
+#   publishes to npm.
 #
 # The version of a build is its series and the number of commits in the
 # commit's history (`.github/scripts/version.sh`). It is written into Cargo.toml and
@@ -341,8 +343,8 @@ jobs:
 
   # The npm packages a program runs Jush's agents with, packed: the SDK with
   # every command package's descriptor, one package for each target with its
-  # process, runner and command programs, the web components, and the
-  # packages they depend on (`crates/xtask/src/sdk_release.rs`).
+  # process, runner and command programs, and the web components
+  # (`crates/xtask/src/sdk_release.rs`).
   sdk:
     name: SDK
     needs: [version, programs, core, web]

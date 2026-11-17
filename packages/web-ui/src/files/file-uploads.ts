@@ -1,6 +1,6 @@
 import { reactive } from 'vue'
 import { shownError, type ShownError } from '../infra/errors'
-import { createId } from '@jush-ai/utils'
+import { createId } from '@jush-agent/utils'
 import { t } from './locales/text'
 import { joinPath, relativePath } from './paths'
 import { FileBrowserError, type FileBrowserSource } from './types'

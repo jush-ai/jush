@@ -1,12 +1,12 @@
 import { defineStore } from 'pinia'
 import { nextTick, ref, watch } from 'vue'
 import { z } from 'zod'
-import { errorFields, reportError } from '@jush-ai/web-ui/infra/errors'
-import { logStorageFailed, pageLog } from '@jush-ai/web-ui/infra/log'
-import { conversationTitle } from '@jush-ai/web-ui/agent/conversation-title'
-import { pageLanguage } from '@jush-ai/web-ui/i18n/text'
-import { requestTitleWords } from '@jush-ai/web-ui/permissions/types'
-import { FRAME_INPUT, USER_INPUT_EVENTS } from '@jush-ai/web-ui/ui/user-input'
+import { errorFields, reportError } from '@jush-agent/web-ui/infra/errors'
+import { logStorageFailed, pageLog } from '@jush-agent/web-ui/infra/log'
+import { conversationTitle } from '@jush-agent/web-ui/agent/conversation-title'
+import { pageLanguage } from '@jush-agent/web-ui/i18n/text'
+import { requestTitleWords } from '@jush-agent/web-ui/permissions/types'
+import { FRAME_INPUT, USER_INPUT_EVENTS } from '@jush-agent/web-ui/ui/user-input'
 import { t } from './locales/text'
 import { ApiError, apiRequest, jsonBody, readResponse } from '../api/client'
 import {
@@ -14,7 +14,7 @@ import {
   pushSubscriptionKeysSchema,
   type PushEvents,
   type PushSubscriptionBody,
-} from '@jush-ai/protocol'
+} from '@jush-agent/protocol'
 import { OPEN_CONVERSATION, WORDS_CACHE, WORDS_KEY, type NotificationWords } from '../offline/notifications'
 import { useProduct } from './product'
 

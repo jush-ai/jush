@@ -1,5 +1,5 @@
 import type { App } from 'vue'
-import { isAbortError } from '@jush-ai/utils'
+import { isAbortError } from '@jush-agent/utils'
 import { chunkLoadFailure, environmental, reportDefect, withoutQuoted } from './errors'
 
 /**

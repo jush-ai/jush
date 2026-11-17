@@ -1,6 +1,6 @@
 import type { JSONContent } from '@tiptap/core'
 import { z } from 'zod'
-import { jsonOrNull } from '@jush-ai/utils'
+import { jsonOrNull } from '@jush-agent/utils'
 import { pageLanguage } from '../../i18n/text'
 import { t } from '../locales/text'
 import { ATTACHMENT_FILE_ATTRIBUTE } from '../../markdown/render'

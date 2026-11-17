@@ -14,12 +14,12 @@ import {
   fileWatchMessageSchema,
   type ConversationWatchRequest,
   type FileWatchRequest,
-} from '@jush-ai/protocol'
-import type { DeviceFiles } from '@jush-ai/web-ui/files/file-cache'
-import { WatchChannel, type WatchLink, type WatchLinkHandlers, type WatchRequest } from '@jush-ai/web-ui/files/watch-channel'
-import { reportError } from '@jush-ai/web-ui/infra/errors'
+} from '@jush-agent/protocol'
+import type { DeviceFiles } from '@jush-agent/web-ui/files/file-cache'
+import { WatchChannel, type WatchLink, type WatchLinkHandlers, type WatchRequest } from '@jush-agent/web-ui/files/watch-channel'
+import { reportError } from '@jush-agent/web-ui/infra/errors'
 import { t } from './locales/text'
-import { openLane, type LaneTarget } from '@jush-ai/web-ui/transport/page-connection'
+import { openLane, type LaneTarget } from '@jush-agent/web-ui/transport/page-connection'
 
 /** Opens a connection of a conversation's watch. */
 export type OpenConversationWatchLink = (conversationId: string, handlers: WatchLinkHandlers) => WatchLink

@@ -2,7 +2,7 @@ import type {
   CredentialRequestView,
   PermissionCategoryView,
   PermissionRequestView,
-} from '@jush-ai/web-ui/permissions/types'
+} from '@jush-agent/web-ui/permissions/types'
 
 /** Manage Skills, as `plugin-skills` declares it. */
 export const manageSkills: PermissionCategoryView = {

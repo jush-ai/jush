@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { CommandReport } from '@jush-ai/protocol'
-import { ICON_PX } from '@jush-ai/web-ui/ui/icon-metrics'
+import type { CommandReport } from '@jush-agent/protocol'
+import { ICON_PX } from '@jush-agent/web-ui/ui/icon-metrics'
 import NoticeRow from './NoticeRow.vue'
 import CommandReportFace from './CommandReportFace.vue'
 import { NOTICE_ICON } from './tool-row-icon'

@@ -1,6 +1,6 @@
 import { ref } from 'vue'
-import type { HandoffCodeView, HandoffHost } from '@jush-ai/web-ui/auth/handoff'
-import type { VerificationHost } from '@jush-ai/web-ui/auth/verification'
+import type { HandoffCodeView, HandoffHost } from '@jush-agent/web-ui/auth/handoff'
+import type { VerificationHost } from '@jush-agent/web-ui/auth/verification'
 import { productWould } from '../product-would'
 
 /**

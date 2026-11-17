@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { FileView, parentPath, treeLayout, usePage, type TabUpdate } from '@jush-ai/plugin-sdk'
+import { FileView, parentPath, treeLayout, usePage, type TabUpdate } from '@jush-agent/plugin-sdk'
 import { fileView } from './data'
 import type { DeviceFileData } from './device-file'
 

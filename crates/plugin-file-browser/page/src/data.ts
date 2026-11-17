@@ -1,7 +1,7 @@
 import { ref } from 'vue'
 import { z } from 'zod'
 import { FolderOpen } from '@lucide/vue'
-import { definePlace, isAbsoluteDevicePath, joinPath, type IntentPayloads, type WindowKind } from '@jush-ai/plugin-sdk'
+import { definePlace, isAbsoluteDevicePath, joinPath, type IntentPayloads, type WindowKind } from '@jush-agent/plugin-sdk'
 import { t } from './locales/text'
 
 /** Files' window: the File view, with its tree, and the files of other devices beside it. */

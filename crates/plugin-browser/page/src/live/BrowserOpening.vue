@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { AddressBar, RegionStatus, downloadProgress } from '@jush-ai/plugin-sdk'
+import { AddressBar, RegionStatus, downloadProgress } from '@jush-agent/plugin-sdk'
 import { t } from '../locales/text'
 import { BLANK_URL, startingLabel, type BrowserTabsController } from './tabs'
 import { BLANK_PAGE, panelReport } from './view'

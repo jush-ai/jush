@@ -1,4 +1,4 @@
-import { fillText } from '@jush-ai/utils'
+import { fillText } from '@jush-agent/utils'
 
 /**
  * A request's card title worded from words given whole, with no catalogue

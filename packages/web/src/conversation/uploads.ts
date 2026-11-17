@@ -8,11 +8,11 @@ import {
   filePreviewUrl,
   isComposerFile,
   type UploadedFile,
-} from '@jush-ai/web-ui/agent/message-input/attachments'
-import type { CopiedStoredFile } from '@jush-ai/web-ui/agent/message-input/copied-message'
+} from '@jush-agent/web-ui/agent/message-input/attachments'
+import type { CopiedStoredFile } from '@jush-agent/web-ui/agent/message-input/copied-message'
 import { t } from './locales/text'
-import { coded, errorFields, errorMessage, reportError } from '@jush-ai/web-ui/infra/errors'
-import { pageLog } from '@jush-ai/web-ui/infra/log'
+import { coded, errorFields, errorMessage, reportError } from '@jush-agent/web-ui/infra/errors'
+import { pageLog } from '@jush-agent/web-ui/infra/log'
 import { blobUrl, claimStoredFile, uploadAttachment } from '../api/uploads'
 import type { Conversation, PendingSend, ProductAttachment } from '../state/types'
 

@@ -29,8 +29,8 @@ import {
   type ChannelHeader,
   type ReadAt,
   type VideoOpened,
-} from '@jush-ai/protocol'
-import type { DirectAddresses, DirectAttempt, DirectPermission, DirectStage } from '@jush-ai/web-ui/devices/direct'
+} from '@jush-agent/protocol'
+import type { DirectAddresses, DirectAttempt, DirectPermission, DirectStage } from '@jush-agent/web-ui/devices/direct'
 
 /**
  * The channel or the peer failed under an operation: the operation runs

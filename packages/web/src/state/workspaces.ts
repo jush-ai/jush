@@ -1,9 +1,9 @@
 import { computed, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
-import { SerialQueue } from '@jush-ai/utils'
-import { reportError } from '@jush-ai/web-ui/infra/errors'
-import { newWorkspaceName, type WorkspaceView } from '@jush-ai/web-ui/workspaces/workspaces'
-import { groupDot, type DotSource } from '@jush-ai/web-ui/sidebar/conversation-dot'
+import { SerialQueue } from '@jush-agent/utils'
+import { reportError } from '@jush-agent/web-ui/infra/errors'
+import { newWorkspaceName, type WorkspaceView } from '@jush-agent/web-ui/workspaces/workspaces'
+import { groupDot, type DotSource } from '@jush-agent/web-ui/sidebar/conversation-dot'
 import { apiRequest, jsonBody, readResponse } from '../api/client'
 import {
   workspaceAnswerSchema,
@@ -13,7 +13,7 @@ import {
   type CreateWorkspace,
   type WorkspaceMove,
   type WorkspaceOrder,
-} from '@jush-ai/protocol'
+} from '@jush-agent/protocol'
 import { useConversations } from '../conversation/store'
 import type { Conversation } from './types'
 import { t } from './locales/text'

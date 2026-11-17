@@ -21,11 +21,11 @@ import {
   type DirectMessage,
   type DirectPeer as PeerName,
   type DirectRequest,
-} from '@jush-ai/protocol'
-import { reportError } from '@jush-ai/web-ui/infra/errors'
+} from '@jush-agent/protocol'
+import { reportError } from '@jush-agent/web-ui/infra/errors'
 import { t } from './locales/text'
-import { waitToReconnect, type ReconnectWait } from '@jush-ai/web-ui/transport/liveness'
-import { Lane, openLane } from '@jush-ai/web-ui/transport/page-connection'
+import { waitToReconnect, type ReconnectWait } from '@jush-agent/web-ui/transport/liveness'
+import { Lane, openLane } from '@jush-agent/web-ui/transport/page-connection'
 import { ChannelFailed, type PeerSignaling } from './peer'
 
 /** An offer the runner did not answer. */

@@ -1,7 +1,7 @@
 import { t } from './locales/text'
 /** Presentation models for the settings surfaces. Pages map their own state onto these. */
 import type { ShownError } from '../infra/errors'
-import { VIDEO_FILE_EXTENSIONS, type QuotaWindowName } from '@jush-ai/protocol'
+import { VIDEO_FILE_EXTENSIONS, type QuotaWindowName } from '@jush-agent/protocol'
 import type { Component } from 'vue'
 import type { ModelSettings } from '../agent/model-selection'
 import type { TagTone } from '../ui/Tag.vue'

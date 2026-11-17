@@ -35,14 +35,14 @@
  *   awake for it, and shown again it watches at once on the same connection,
  *   over the tab's last picture.
  */
-import { clientPlatform } from '@jush-ai/utils'
+import { clientPlatform } from '@jush-agent/utils'
 import { useDocumentVisibility, useDebounceFn } from '@vueuse/core'
 import { computed, shallowReactive, shallowRef, watch, type ComputedRef, type Ref, type ShallowRef } from 'vue'
 import { z } from 'zod'
 import { controlReasonSchema, type DeviceTabs, type LiveDownload, type LiveTab, type ControlReason, type TabOpened } from '../generated/plugin'
 import { viewerClipboard } from './clipboard'
-import { picturesSupported } from '@jush-ai/plugin-sdk'
-import type { DeviceDownload, OpenUserStream, PageContext, SentenceText } from '@jush-ai/plugin-sdk'
+import { picturesSupported } from '@jush-agent/plugin-sdk'
+import type { DeviceDownload, OpenUserStream, PageContext, SentenceText } from '@jush-agent/plugin-sdk'
 import { LiveSession, stalled, type LiveStream, type PanelReport } from './session'
 import { t } from '../locales/text'
 

@@ -44,7 +44,7 @@ export interface ModelInfo {
 }
 
 // The session's events and the one transcript patch applier, which a host
-// reads through here: it reaches `@jush-ai/conversation-client` only through this
+// reads through here: it reaches `@jush-agent/conversation-client` only through this
 // package.
 export {
   EMPTY_TRANSCRIPT,
@@ -71,4 +71,4 @@ export {
   type HeldTranscript,
   type TranscriptRead,
   type TranscriptWindow,
-} from '@jush-ai/conversation-client'
+} from '@jush-agent/conversation-client'

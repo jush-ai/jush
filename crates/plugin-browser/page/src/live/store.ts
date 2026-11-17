@@ -10,7 +10,7 @@
  * limit, the least recently watched is released.
  */
 import { effectScope, onScopeDispose, watch } from 'vue'
-import { KeptSessions, definePluginStore, type KeptSession, type PageContext, type PluginStore } from '@jush-ai/plugin-sdk'
+import { KeptSessions, definePluginStore, type KeptSession, type PageContext, type PluginStore } from '@jush-agent/plugin-sdk'
 import { browserTabsApi } from '../tabs'
 import { BrowserTabsController, browserTabDataSchema, type BrowserTabsOptions } from './tabs'
 

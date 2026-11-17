@@ -1,10 +1,10 @@
 import { computed, getCurrentScope, onScopeDispose, ref } from 'vue'
 import { requestFailure } from './request-failures'
-import type { ShownError } from '@jush-ai/web-ui/infra/errors'
-import type { UsageLimits } from '@jush-ai/web-ui/agent/context-usage'
-import type { QuotaKind, QuotaWindowName } from '@jush-ai/protocol'
-import { hasReset } from '@jush-ai/web-ui/settings/quota-window'
-import type { SettingsQuotaWindow } from '@jush-ai/web-ui/settings/types'
+import type { ShownError } from '@jush-agent/web-ui/infra/errors'
+import type { UsageLimits } from '@jush-agent/web-ui/agent/context-usage'
+import type { QuotaKind, QuotaWindowName } from '@jush-agent/protocol'
+import { hasReset } from '@jush-agent/web-ui/settings/quota-window'
+import type { SettingsQuotaWindow } from '@jush-agent/web-ui/settings/types'
 import { DAY, HOUR, MINUTE, ago, ahead } from './time'
 
 /** Seconds in an hour, a day and a week, which a window's period counts. */

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, shallowRef } from 'vue'
-import { Menu, MenuGroup, MenuItem } from '@jush-ai/plugin-sdk'
+import { Menu, MenuGroup, MenuItem } from '@jush-agent/plugin-sdk'
 import type { ListResult, MobilePlatform, Simulator } from '../generated/plugin'
 import { MobileError } from '../devices'
 import type { MobileDevicesController } from './controller'

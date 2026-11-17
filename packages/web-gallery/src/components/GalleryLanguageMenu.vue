@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { Languages } from '@lucide/vue'
-import { LANGUAGES, LANGUAGE_NAMES, type LanguageChoice } from '@jush-ai/web-ui/i18n/languages'
-import { appOverlayStore } from '@jush-ai/web-ui/overlay/appOverlay'
-import Dropdown from '@jush-ai/web-ui/ui/Dropdown.vue'
-import IconButton from '@jush-ai/web-ui/ui/IconButton.vue'
-import Menu from '@jush-ai/web-ui/ui/Menu.vue'
-import MenuDivider from '@jush-ai/web-ui/ui/MenuDivider.vue'
-import MenuItem from '@jush-ai/web-ui/ui/MenuItem.vue'
-import { t as ui } from '@jush-ai/web-ui/locales/text'
+import { LANGUAGES, LANGUAGE_NAMES, type LanguageChoice } from '@jush-agent/web-ui/i18n/languages'
+import { appOverlayStore } from '@jush-agent/web-ui/overlay/appOverlay'
+import Dropdown from '@jush-agent/web-ui/ui/Dropdown.vue'
+import IconButton from '@jush-agent/web-ui/ui/IconButton.vue'
+import Menu from '@jush-agent/web-ui/ui/Menu.vue'
+import MenuDivider from '@jush-agent/web-ui/ui/MenuDivider.vue'
+import MenuItem from '@jush-agent/web-ui/ui/MenuItem.vue'
+import { t as ui } from '@jush-agent/web-ui/locales/text'
 import { galleryState } from '../gallery-state'
 
 /**

@@ -1,5 +1,5 @@
 import { apiRequest, jsonBody, readResponse } from './client'
-import { conversationSharesSchema, shareAnswerSchema, type ConversationShare, type ShareAnswer, type ShareTarget } from '@jush-ai/protocol'
+import { conversationSharesSchema, shareAnswerSchema, type ConversationShare, type ShareAnswer, type ShareTarget } from '@jush-agent/protocol'
 
 /** A conversation's owner routes for its shares. */
 function sharesPath(conversationId: string): string {

@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, onUnmounted, ref, useHost, watch } from 'vue'
-import SearchDialog from '@jush-ai/web-ui/search/SearchDialog.vue'
-import type { MessageRow, MessageSource, SearchRow } from '@jush-ai/web-ui/search/search'
-import { appOverlayStore } from '@jush-ai/web-ui/overlay/appOverlay'
+import SearchDialog from '@jush-agent/web-ui/search/SearchDialog.vue'
+import type { MessageRow, MessageSource, SearchRow } from '@jush-agent/web-ui/search/search'
+import { appOverlayStore } from '@jush-agent/web-ui/overlay/appOverlay'
 import ChatPage from '../conversation/ChatPage.vue'
 import { useConversationNavigation } from '../conversation/navigation'
 import { provideShownConversation } from '../conversation/shown'

@@ -8,7 +8,7 @@ import {
   type SideQuestion,
   type AskRequest,
   type SideQuestionAnswer,
-} from '@jush-ai/protocol'
+} from '@jush-agent/protocol'
 
 /** A side question as an answer names it, with its id. */
 export type AnsweredSide = SideQuestion & { id: string }

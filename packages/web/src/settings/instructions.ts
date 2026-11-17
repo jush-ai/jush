@@ -1,7 +1,7 @@
 import { computed } from 'vue'
 import { defineStore } from 'pinia'
 import { apiRequest, jsonBody } from '../api/client'
-import type { InstructionsBody } from '@jush-ai/protocol'
+import type { InstructionsBody } from '@jush-agent/protocol'
 import { useHeldList, useProduct } from '../state/product'
 
 /**

@@ -7,11 +7,11 @@
 // size as it does in the product.
 
 import { createApp } from 'vue'
-import { createPageI18n, setPageLanguage } from '@jush-ai/web-ui/i18n/text'
-import { applyProductAppearance, applyTranscriptTextSize, DEFAULT_TRANSCRIPT_TEXT_SIZE } from '@jush-ai/web-ui/theme/productAppearance'
-import { setTheme, applyThemeToDocument } from '@jush-ai/web-ui/theme/appTheme'
-import { installPhonePage } from '@jush-ai/web-ui/ui/phone-page'
-import { loadRegionRenderers } from '@jush-ai/web-ui/infra/region-load'
+import { createPageI18n, setPageLanguage } from '@jush-agent/web-ui/i18n/text'
+import { applyProductAppearance, applyTranscriptTextSize, DEFAULT_TRANSCRIPT_TEXT_SIZE } from '@jush-agent/web-ui/theme/productAppearance'
+import { setTheme, applyThemeToDocument } from '@jush-agent/web-ui/theme/appTheme'
+import { installPhonePage } from '@jush-agent/web-ui/ui/phone-page'
+import { loadRegionRenderers } from '@jush-agent/web-ui/infra/region-load'
 import DemoApp from './DemoApp.vue'
 import './style.css'
 

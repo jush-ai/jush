@@ -1,5 +1,5 @@
 /**
- * The page's connection to the backend (`@jush-ai/conversation-client`'s
+ * The page's connection to the backend (`@jush-agent/conversation-client`'s
  * `PageConnection`), as a web page runs it: a browser's WebSocket to
  * `/api/connect`, the page's liveness (`liveness.ts`): the backend's
  * heartbeat after 30 silent seconds, the 75-second silence and the ping at
@@ -7,11 +7,11 @@
  * page's log. Where the connection stands is two refs, which the page shows.
  */
 import { readonly, ref } from 'vue'
-import { PageConnection, type Lane, type LaneTarget } from '@jush-ai/conversation-client'
+import { PageConnection, type Lane, type LaneTarget } from '@jush-agent/conversation-client'
 import { pageLog } from '../infra/log'
 import { openSocket, reconnectNow, waitForConnection, watchSilence } from './liveness'
 
-export { Lane, type LaneEventMap, type LaneRefusal, type LaneTarget } from '@jush-ai/conversation-client'
+export { Lane, type LaneEventMap, type LaneRefusal, type LaneTarget } from '@jush-agent/conversation-client'
 
 /** What the page tells the connection once, as it starts. */
 export interface PageConnectionOptions {

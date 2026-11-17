@@ -16,7 +16,7 @@ import {
   LIVE_VIDEO_FRAME,
   LIVE_VIDEO_HEADER_BYTES,
   LIVE_VIDEO_SOURCE_BYTES,
-} from '@jush-ai/protocol'
+} from '@jush-agent/protocol'
 import type { StreamBytes } from '../plugins/streams'
 
 /** A picture of one source, such as a browser tab, in the generation its device announced. */

@@ -1,6 +1,6 @@
 import { shallowRef } from 'vue'
-import type { KeptAnswer, Showing, ShownEntry } from '@jush-ai/web-ui/files/file-cache'
-import type { BranchList, CommitDetails, CommitFile, CommitHistorySource, CommitLogPage, LoggedCommit } from '@jush-ai/web-ui/files/history'
+import type { KeptAnswer, Showing, ShownEntry } from '@jush-agent/web-ui/files/file-cache'
+import type { BranchList, CommitDetails, CommitFile, CommitHistorySource, CommitLogPage, LoggedCommit } from '@jush-agent/web-ui/files/history'
 
 /** A page of a log, as the runner pages it. */
 const PAGE = 50

@@ -1,4 +1,4 @@
-import type { Block, InstructionEntry } from '@jush-ai/protocol'
+import type { Block, InstructionEntry } from '@jush-agent/protocol'
 import { baseName, parentPath, relativePath } from '../files/paths'
 import { t } from './locales/text'
 

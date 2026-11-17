@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, ref, watch } from 'vue'
-import { Toolbar, downloadUrl, usePage, type ToolbarAction } from '@jush-ai/plugin-sdk'
+import { Toolbar, downloadUrl, usePage, type ToolbarAction } from '@jush-agent/plugin-sdk'
 import DeviceView from './DeviceView.vue'
 import { drawsWebgl } from './webgl'
 import type { MobileDevicesController } from './controller'

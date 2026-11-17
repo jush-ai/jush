@@ -1,8 +1,8 @@
-import { baseName, delay } from '@jush-ai/utils'
-import type { ChangeFile, ChangeSetSource, ChangeSides, WorkingTreeChange } from '@jush-ai/web-ui/files/changes'
+import { baseName, delay } from '@jush-agent/utils'
+import type { ChangeFile, ChangeSetSource, ChangeSides, WorkingTreeChange } from '@jush-agent/web-ui/files/changes'
 import { diffLineCounts } from './diff-counts'
-import { DeviceFiles } from '@jush-ai/web-ui/files/file-cache'
-import { keptChangeSet, type ContentReads } from '@jush-ai/web-ui/files/kept-source'
+import { DeviceFiles } from '@jush-agent/web-ui/files/file-cache'
+import { keptChangeSet, type ContentReads } from '@jush-agent/web-ui/files/kept-source'
 import {
   assetFile,
   createMemoryFileSource,
@@ -11,9 +11,9 @@ import {
   textFile,
   type MemoryDirectory,
   type MemoryFileSource,
-} from '@jush-ai/web-ui/files/memory-source'
-import { FileBrowserError } from '@jush-ai/web-ui/files/types'
-import { WatchChannel } from '@jush-ai/web-ui/files/watch-channel'
+} from '@jush-agent/web-ui/files/memory-source'
+import { FileBrowserError } from '@jush-agent/web-ui/files/types'
+import { WatchChannel } from '@jush-agent/web-ui/files/watch-channel'
 
 /**
  * The demo project behind the conversation's windows: the project the login-test

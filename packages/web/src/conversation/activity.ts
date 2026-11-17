@@ -1,19 +1,19 @@
-import { withAdded } from '@jush-ai/web-ui/infra/keep-same'
+import { withAdded } from '@jush-agent/web-ui/infra/keep-same'
 import { toRaw } from 'vue'
 import {
   EMPTY_TRANSCRIPT,
   applyTranscriptPatches,
   resetTranscript,
   type ClientSessionEvent,
-} from '@jush-ai/web-ui/transport/protocol'
-import type { AgentEntry, ConversationAttachment, ReplyBlockFacts, Version } from '@jush-ai/protocol'
-import { boundedHistory, latestBlocks } from '@jush-ai/web-ui/agent/history'
+} from '@jush-agent/web-ui/transport/protocol'
+import type { AgentEntry, ConversationAttachment, ReplyBlockFacts, Version } from '@jush-agent/protocol'
+import { boundedHistory, latestBlocks } from '@jush-agent/web-ui/agent/history'
 import type { Conversation, SideRecord } from '../state/types'
 import { settleSent, sideRecord } from './side-records'
-import { conversationRun } from '@jush-ai/web-ui/agent/conversation-status'
-import { isCompactionDivider } from '@jush-ai/web-ui/agent/visible-blocks'
-import { followFrame, isTerminalRunning } from '@jush-ai/web-ui/agent/terminals'
-import { subagentEntryFields } from '@jush-ai/web-ui/agent/subagents'
+import { conversationRun } from '@jush-agent/web-ui/agent/conversation-status'
+import { isCompactionDivider } from '@jush-agent/web-ui/agent/visible-blocks'
+import { followFrame, isTerminalRunning } from '@jush-agent/web-ui/agent/terminals'
+import { subagentEntryFields } from '@jush-agent/web-ui/agent/subagents'
 
 /** Map agent events to the product's child and terminal presentation records. */
 export function updateLiveStatus(conversation: Conversation): void {
