@@ -81,7 +81,7 @@ use super::cookies;
 use super::error::ApiError;
 use super::page_client::PageClient;
 use super::request_id;
-use super::{conversations, direct, file_watch, streams, sync};
+use super::{conversations, debug, direct, file_watch, streams, sync};
 
 /// The most bytes of one message the page sends on the connection: a piece
 /// and its header, or an open and its target, with room to spare.
@@ -485,6 +485,7 @@ impl Connection {
             }
             Ok(LaneTarget::Signaling { .. }) => LaneKind::Signaling,
             Ok(LaneTarget::UserStream { .. }) => LaneKind::UserStream,
+            Ok(LaneTarget::Debug { .. }) => LaneKind::Debug,
         };
         let request = request_id::generate();
         let span = request_id::lane_span(
@@ -516,9 +517,10 @@ impl Connection {
         let token = self.session.token.clone();
         let answers = self.answers.clone();
         let connection = self.client.request.clone();
+        let page = self.client.page.clone();
         let task = tokio::spawn(
             request_id::scope(request.clone(), async move {
-                let opened = check_open(&state, &token, target)
+                let opened = check_open(&state, &token, target, page)
                     .await
                     .map_err(|error| refusal(error, &request, &connection, lane, kind));
                 let span = tracing::Span::current();
@@ -734,8 +736,13 @@ impl Connection {
 }
 
 /// Checks the open of a lane of `target` as its route checked its upgrade,
-/// with the session `token` names as it is now.
-async fn check_open(state: &AppState, token: &TokenHash, target: LaneTarget) -> Result<Opened, ApiError> {
+/// with the session `token` names as it is now, for the page load `page`.
+async fn check_open(
+    state: &AppState,
+    token: &TokenHash,
+    target: LaneTarget,
+    page: Option<String>,
+) -> Result<Opened, ApiError> {
     let session = state
         .services
         .sessions
@@ -766,6 +773,7 @@ async fn check_open(state: &AppState, token: &TokenHash, target: LaneTarget) -> 
             conversation,
             stream,
         } => streams::open(state, &user.id, &conversation, stream).await,
+        LaneTarget::Debug { resume } => debug::open(state, &user.id, page, resume),
     }
 }
 

@@ -45,6 +45,10 @@ pub enum LaneTarget {
     Signaling { device: String },
     /// A plugin's user stream of a conversation.
     UserStream { conversation: String, stream: String },
+    /// The page's debugging (`crate::debug`): a new link, or the one the tab
+    /// kept, which the backend gives back while it is the same user's and
+    /// unexpired.
+    Debug { resume: Option<String> },
 }
 
 /// Why the backend refused a lane's open: the status and the error answer a

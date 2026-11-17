@@ -23,7 +23,20 @@
   "account": {
     "label": "Conta",
     "settings": "Configurações",
-    "signOut": "Sair"
+    "signOut": "Sair",
+    "debugPage": "Depurar esta página",
+    "debugging": "Um agente pode depurar esta página"
+  },
+  "debug": {
+    "title": "Depurar esta página",
+    "who": "Um agente a quem você der este link pode executar código nesta página, e ver e fazer o que você pode aqui, até você parar a depuração ou fechar a aba.",
+    "until": "O link para de funcionar em {time}.",
+    "field": "Link de depuração",
+    "copyLink": "Copiar link",
+    "creating": "Criando link…",
+    "tryAgain": "Tentar novamente",
+    "stop": "Parar depuração",
+    "unreadable": "Não foi possível ler uma mensagem de depuração"
   },
   "row": {
     "unpin": "Desafixar",

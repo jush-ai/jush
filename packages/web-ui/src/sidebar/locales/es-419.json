@@ -23,7 +23,20 @@
   "account": {
     "label": "Cuenta",
     "settings": "Configuración",
-    "signOut": "Cerrar sesión"
+    "signOut": "Cerrar sesión",
+    "debugPage": "Depurar esta página",
+    "debugging": "Un agente puede depurar esta página"
+  },
+  "debug": {
+    "title": "Depurar esta página",
+    "who": "Un agente al que le des este enlace puede ejecutar código en esta página, y ver y hacer lo que tú puedes aquí, hasta que detengas la depuración o cierres la pestaña.",
+    "until": "El enlace deja de funcionar el {time}.",
+    "field": "Enlace de depuración",
+    "copyLink": "Copiar enlace",
+    "creating": "Creando enlace…",
+    "tryAgain": "Reintentar",
+    "stop": "Detener depuración",
+    "unreadable": "No se pudo leer un mensaje de depuración"
   },
   "row": {
     "unpin": "Dejar de fijar",

@@ -32,6 +32,7 @@ import { provideKeepPicture } from '@jush-ai/web-ui/agent/comments/pictures'
 import { provideMediaViewer } from '@jush-ai/web-ui/files/media-viewer'
 import DevicePairingDialog from '@jush-ai/web-ui/devices/DevicePairingDialog.vue'
 import HandoffDialog from '@jush-ai/web-ui/auth/HandoffDialog.vue'
+import DebugPageDialog from '@jush-ai/web-ui/sidebar/DebugPageDialog.vue'
 import PasskeyOffer from '@jush-ai/web-ui/auth/PasskeyOffer.vue'
 import SearchDialog from '@jush-ai/web-ui/search/SearchDialog.vue'
 import type { MessageRow, MessageSource, SearchRow } from '@jush-ai/web-ui/search/search'
@@ -56,6 +57,7 @@ import { productPageHost } from './plugins/host'
 import { useProduct } from './state/product'
 import { usePasskeySignals } from './auth/passkeys'
 import { useSessions } from './auth/handoff'
+import { usePageDebugging } from './debug/page-debugging'
 import { usePasskeyOffer } from './auth/passkey-offer'
 import PasswordChoice from './auth/PasswordChoice.vue'
 import { attend, attended } from './state/attention'
@@ -157,6 +159,17 @@ const searchIn = computed<MessageSource | null>(() => {
 const handoffOpen = ref(false)
 const sessions = useSessions()
 const handoffHost = computed(() => sessions.handoffHost(() => pageRoute.value.fullPath))
+/**
+ * Debug This Page: the link the tab kept through a reload goes on once the
+ * page is signed in, and ends as it signs out.
+ */
+const pageDebugging = usePageDebugging()
+watch(() => session.signedIn, (signedIn) => {
+  if (signedIn)
+    pageDebugging.resume()
+  else
+    pageDebugging.forget()
+}, { immediate: true })
 /** The conversations of the tab's workspace the backend has, the most recently active first. */
 const activeConversations = computed<SearchRow[]>(() =>
   conversations.items
@@ -537,6 +550,8 @@ useAppShortcuts(
           @delete="conversations.remove"
           @open-settings="settingsAddress.open"
           @hand-off="handoffOpen = true"
+          :debugging="pageDebugging.debugging.value"
+          @debug-page="pageDebugging.open"
           @sign-out="signOut"
         />
       </template>
@@ -552,6 +567,16 @@ useAppShortcuts(
           :host="handoffHost"
           :email="resources.email"
           @close="handoffOpen = false"
+        />
+        <DebugPageDialog
+          :is-open="pageDebugging.isOpen.value"
+          :overlay-store="appOverlayStore"
+          :phase="pageDebugging.shown.value"
+          :copied="pageDebugging.copied.value"
+          :on-stop="pageDebugging.stop"
+          @copy="pageDebugging.copy"
+          @retry="pageDebugging.retry"
+          @close="pageDebugging.close"
         />
         <PasskeyOffer
           :is-open="passkeyOffer.open"

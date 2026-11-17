@@ -23,7 +23,20 @@
   "account": {
     "label": "Account",
     "settings": "Settings",
-    "signOut": "Sign Out"
+    "signOut": "Sign Out",
+    "debugPage": "Debug This Page",
+    "debugging": "An agent may debug this page"
+  },
+  "debug": {
+    "title": "Debug This Page",
+    "who": "An agent you give this link to can run code in this page, and see and do what you can here, until you stop debugging or close the tab.",
+    "until": "The link stops working at {time}.",
+    "field": "Debug link",
+    "copyLink": "Copy Link",
+    "creating": "Creating link…",
+    "tryAgain": "Try Again",
+    "stop": "Stop Debugging",
+    "unreadable": "Could Not Read a Debugging Message"
   },
   "row": {
     "unpin": "Unpin",

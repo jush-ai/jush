@@ -23,7 +23,20 @@
   "account": {
     "label": "Compte",
     "settings": "Paramètres",
-    "signOut": "Se déconnecter"
+    "signOut": "Se déconnecter",
+    "debugPage": "Déboguer cette page",
+    "debugging": "Un agent peut déboguer cette page"
+  },
+  "debug": {
+    "title": "Déboguer cette page",
+    "who": "Un agent à qui vous donnez ce lien peut exécuter du code dans cette page, et y voir et faire ce que vous pouvez, jusqu’à ce que vous arrêtiez le débogage ou fermiez l’onglet.",
+    "until": "Le lien cesse de fonctionner le {time}.",
+    "field": "Lien de débogage",
+    "copyLink": "Copier le lien",
+    "creating": "Création du lien…",
+    "tryAgain": "Réessayer",
+    "stop": "Arrêter le débogage",
+    "unreadable": "Impossible de lire un message de débogage"
   },
   "row": {
     "unpin": "Désépingler",

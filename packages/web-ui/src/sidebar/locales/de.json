@@ -23,7 +23,20 @@
   "account": {
     "label": "Konto",
     "settings": "Einstellungen",
-    "signOut": "Abmelden"
+    "signOut": "Abmelden",
+    "debugPage": "Diese Seite debuggen",
+    "debugging": "Ein Agent darf diese Seite debuggen"
+  },
+  "debug": {
+    "title": "Diese Seite debuggen",
+    "who": "Ein Agent, dem du diesen Link gibst, kann auf dieser Seite Code ausführen und hier sehen und tun, was du kannst, bis du das Debuggen beendest oder den Tab schließt.",
+    "until": "Der Link funktioniert bis {time}.",
+    "field": "Debug-Link",
+    "copyLink": "Link kopieren",
+    "creating": "Link wird erstellt …",
+    "tryAgain": "Erneut versuchen",
+    "stop": "Debuggen beenden",
+    "unreadable": "Nachricht zum Debuggen konnte nicht gelesen werden"
   },
   "row": {
     "unpin": "Lösen",

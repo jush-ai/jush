@@ -199,6 +199,14 @@ pub enum ErrorCode {
     /// block or blob: one answer for each, so it tells nothing of what
     /// exists.
     ShareNotFound,
+    /// No debug link answers the token: it never existed, it expired, the
+    /// user stopped it, or the backend restarted since.
+    DebugLinkNotFound,
+    /// No page holds the debug link: its tab closed, or it did not come back
+    /// in time from a reload or a lost connection.
+    PageNotConnected,
+    /// The code the page runs did not settle in the time the request gave it.
+    RunTimedOut,
     /// The conversation has no undecided permission request of that id:
     /// another page decided it, an Allow of its category did, or a newer
     /// request replaced it.

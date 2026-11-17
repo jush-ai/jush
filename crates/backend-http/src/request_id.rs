@@ -173,11 +173,11 @@ pub(crate) fn lane_span(
     )
 }
 
-/// The path as the log holds it: a token in a path, the key to a share's link
-/// or to an HTML view, is the segment after `shares` or `html` and never
-/// reaches a line.
+/// The path as the log holds it: a token in a path, the key to a share's link,
+/// to an HTML view or to a debug link, is the segment after `shares`, `html`
+/// or `debug` and never reaches a line.
 fn logged_path(path: &str) -> std::borrow::Cow<'_, str> {
-    let keyed = |segment: &str| segment == "shares" || segment == "html";
+    let keyed = |segment: &str| segment == "shares" || segment == "html" || segment == "debug";
     let mut segments = path.split('/');
     let mut after_key = false;
     if !segments.any(|segment| std::mem::replace(&mut after_key, keyed(segment))) {

@@ -270,6 +270,9 @@ pub fn web() -> Vec<Root> {
         receives::<files::FileText>(),
         receives::<files::FileWatchMessage>(),
         sends::<files::FileWatchRequest>(),
+        // The debug lane's messages (`packages/web/src/debug/page-debugging.ts`).
+        receives::<api::debug::DebugToPage>(),
+        sends::<api::debug::DebugFromPage>(),
         sends::<files::ConversationWatchRequest>(),
         receives::<files::WorkingTreeChanges>(),
         receives::<files::ChangeSides>(),

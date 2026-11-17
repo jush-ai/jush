@@ -40,6 +40,7 @@ mod content;
 mod conversations;
 mod cookies;
 mod cost;
+mod debug;
 mod credentials;
 mod devices;
 mod diagnostics;
@@ -75,6 +76,7 @@ mod manage;
 mod runner_socket;
 
 pub use blocks::BlockLinks;
+pub use debug::DebugLinks;
 pub use html_view::HtmlGrants;
 pub use manage::manage_socket;
 mod pipe_connection;
@@ -381,6 +383,8 @@ pub struct AppState {
     pub html: Arc<HtmlGrants>,
     /// The links of the reply blocks shared pages frame.
     pub blocks: Arc<BlockLinks>,
+    /// The links of the pages the user chose to debug.
+    pub debug: Arc<DebugLinks>,
     /// The update before this start, which `GET /api/update` says is over.
     pub update: Arc<jush_backend_database::update::Update>,
 }
@@ -414,7 +418,7 @@ impl FromRef<AppState> for Shards {
 ///
 /// - the entrances: setup, login, the passkey sign-in and spending a handoff
 ///   code;
-/// - the shares' public routes;
+/// - the shares' public routes, and the debug links';
 /// - the routes that authenticate with device credentials instead;
 /// - the page connection, which checks the session without renewing it, and
 ///   the synchronization channel of a page of an earlier build.
@@ -723,6 +727,7 @@ fn router(state: AppState, closing: CancellationToken, web_directory: Option<Pat
         )
         .route("/api/sync", get(sync::legacy))
         .merge(public_shares())
+        .merge(debug_links())
         .merge(html_views())
         .route("/api/plugins/{plugin}/files/{name}", get(plugins::file))
         .method_not_allowed_fallback(no_route)
@@ -766,6 +771,17 @@ fn public_shares() -> Router<AppState> {
             "/api/shares/{token}/attachments/{attachment}",
             get(shares::attachment),
         )
+        .layer(middleware::map_response(shares::public_headers))
+}
+
+/// The routes of the debug links (`debug.rs`): no session gate, the token their
+/// only key, each answer with the shares' headers, which keep the token out of
+/// referrers and caches.
+fn debug_links() -> Router<AppState> {
+    use jush_web_api_protocol::debug::DEBUG_ROUTE;
+    Router::new()
+        .route(&format!("/api{DEBUG_ROUTE}/{{token}}"), get(debug::describe))
+        .route(&format!("/api{DEBUG_ROUTE}/{{token}}/eval"), post(debug::eval))
         .layer(middleware::map_response(shares::public_headers))
 }
 

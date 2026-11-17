@@ -39,6 +39,7 @@ jush-device-interface = { path = "../device-interface" }
 jush-web-api-protocol = { path = "../web-api-protocol" }
 axum = { version = "0.8", features = ["ws"] }
 axum-extra = { version = "0.12", features = ["cookie", "typed-header"] }
+base64.workspace = true
 bytes.workspace = true
 cookie = "0.18"
 # Request IDs: 80 random bits in lowercase Crockford base-32.

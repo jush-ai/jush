@@ -608,6 +608,7 @@ impl Backend {
             update: update.clone(),
             html: Arc::default(),
             blocks: Arc::default(),
+            debug: Arc::default(),
         };
         let runner_socket = match config.runner_socket.as_deref().map(runner_socket).transpose() {
             Ok(socket) => socket.flatten(),

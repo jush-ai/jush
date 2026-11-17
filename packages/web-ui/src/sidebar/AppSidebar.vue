@@ -89,6 +89,8 @@ const props = defineProps<{
   onSwitchSavedScope?: Action<[id: string, scope: SavedScope, to: string | null]>
   /** Signs this browser out; the account's row works until the page goes. */
   onSignOut?: Action
+  /** An agent may run code in this page, which the account's row marks. */
+  debugging?: boolean
   /** The server's update an administrator sees at the foot; none hides it. */
   update?: SidebarUpdate | null
   /** The account's workspaces, which the switcher lists; none hides the switcher. */
@@ -117,6 +119,8 @@ const emit = defineEmits<{
   openSettings: [section?: string]
   /** The device mark at the foot: hand off to another device by a code. */
   handOff: []
+  /** Debug This Page, from the account's menu. */
+  debugPage: []
   retryList: []
   /** The switcher's choice of another workspace. */
   switchWorkspace: [id: string]
@@ -863,7 +867,9 @@ function selectProjectConversations(project: SidebarProject): void {
         :account="account"
         :on-sign-out="onSignOut"
         :settings-shortcut="settingsShortcut"
+        :debugging="debugging"
         @open-settings="emit('openSettings')"
+        @debug-page="emit('debugPage')"
       />
       <!-- A computer hands off; a page on a phone has no button for it. -->
       <Tooltip v-if="!phone" :content="t('foot.handOff')" placement="top">
