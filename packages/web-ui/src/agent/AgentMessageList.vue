@@ -15,7 +15,6 @@ import type { PendingAction } from './activity-slot'
 import { useMessageRows } from './message-rows'
 import { useHistoryReading } from './history-reading'
 import type { AgentActivity } from './agent-activity'
-import { useLiveCalls } from './live-calls'
 import { useChromeEntrance } from './useChromeEntrance'
 import type { PendingSteerMessage, PendingSubmissionState } from './types'
 import AgentMessageVirtualBlock from './blocks/AgentMessageVirtualBlock.vue'
@@ -40,7 +39,6 @@ import { distanceFromBottom } from '../composables/scroll-bottom'
 import { highlightFound } from '../ui/found-highlight'
 import { provideTranscript } from './edit-selection'
 import { useOpenRuns } from './open-runs'
-import { followedBlockId } from './work-groups'
 import { storedRequests } from '../files/request-changes'
 import { blockDirectories, blockMessageFiles } from './working-directory'
 import { provideMessageFiles, useMessageFiles } from '../markdown/message-files'
@@ -304,7 +302,7 @@ const {
   footerIds,
   slot,
   waiting,
-} = useMessageRows(() => props, useLiveCalls(), () => historyReading(props.node ?? null))
+} = useMessageRows(() => props, () => historyReading(props.node ?? null))
 const editableUserId = computed(() => props.readOnly || !props.latest ? null : offeredEditId(props))
 /**
  * The answer whose footer offers Regenerate. It is the last answer after the
@@ -433,11 +431,10 @@ const transcriptIndexById = keptComputed(
     new Map(visibleTranscriptBlocks.value.map((block, index) => [block.id, index]))
 )
 
-// A row's streaming and end follow its transcript block: a joined thinking
-// step's last part.
+// A row's streaming and end follow its transcript block.
 function transcriptIndexAt(index: number): number {
   const block = renderBlocks.value[index]
-  return block ? transcriptIndexById.value.get(followedBlockId(block)) ?? -1 : -1
+  return block ? transcriptIndexById.value.get(block.id) ?? -1 : -1
 }
 
 function isStreamingThinkingAt(index: number): boolean {

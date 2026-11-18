@@ -1895,11 +1895,11 @@ export function steppedRunCall(stage: number): (typeof STEPPED_RUN_CALLS)[number
  * shows it while the run goes:
  *
  * 1. One step runs, its own row.
- * 2. It returned and a second runs under it.
- * 3. The second returned failed and joined the run, Requesting under it while
- *    the model is waited for.
- * 4. A third runs under the run.
- * 5. The answer, after the third joined.
+ * 2. It returned and a second runs: the row rolls to the second.
+ * 3. The second returned failed: the row says Requesting while the model is
+ *    waited for.
+ * 4. A third runs: the row rolls to it.
+ * 5. The answer: the row says what the run did.
  *
  * Its newest running call is `steppedRunCall`'s.
  */
@@ -1934,10 +1934,9 @@ export const LEFT_RUNNING_CALL = 'left-running-suite'
 
 /**
  * A turn that ended while a command it started runs on: the agent thought,
- * started the suite, and replied without waiting. The suite's call is a row
- * of its own under the run, wearing the time the command has run, until the
- * command ends and the call joins the run. The gallery's `leftRunningCommand`
- * is it.
+ * started the suite, and replied without waiting. The suite's call stays in
+ * its run, which says that one command still runs and wears the time it has
+ * run, until the command ends. The gallery's `leftRunningCommand` is it.
  */
 export function leftRunningBlocks(): Block[] {
   return inRequests([

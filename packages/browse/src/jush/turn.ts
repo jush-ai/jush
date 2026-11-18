@@ -105,13 +105,15 @@ export async function conversationAddress(page: Page): Promise<void> {
  *
  * - the composer's Stop, which stays from the send of the message that starts
  *   the turn to its end;
- * - the transcript's Requesting row, which also stands for a
- *   recovery the backend has not taken up yet.
+ * - the transcript's Requesting row, or the run's row that says Requesting in
+ *   its place, which also stands for a recovery the backend has not taken up
+ *   yet.
  */
 export async function pageActivity(page: Page): Promise<string | null> {
   // The composer's own Stop, not the one of the agent's browser address bar,
-  // and the row by the hooks `SessionComposer` and `ActivitySlot` give them,
-  // so the page is read in any language; the row's words name it in a report.
+  // and the row by the hooks `SessionComposer`, `ActivitySlot` and
+  // `WorkGroupBlock` give them, so the page is read in any language; the row's
+  // words name it in a report.
   const stop = page.getByRole('button').and(page.locator('[data-composer-stop]'))
   if (await stop.filter({ visible: true }).count() > 0) {
     return 'Stop'

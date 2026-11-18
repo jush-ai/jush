@@ -173,6 +173,8 @@
       "used": "{tool} usado",
       "joined": "{first}, {next}",
       "took": "{what} en {span}",
+      "stillRunning": "{count} sigue en ejecución | {count} siguen en ejecución",
+      "stillStopping": "{count} deteniéndose",
       "command": {
         "finished": "{count} comando terminado | {count} comandos terminados",
         "failed": "{count} comando falló | {count} comandos fallaron",

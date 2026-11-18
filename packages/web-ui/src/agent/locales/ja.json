@@ -173,6 +173,8 @@
       "used": "{tool} を使用",
       "joined": "{first}、{next}",
       "took": "{what}、所要時間 {span}",
+      "stillRunning": "{count} 件が実行中",
+      "stillStopping": "{count} 件を停止中",
       "command": {
         "finished": "{count} 件のコマンドが完了",
         "failed": "{count} 件のコマンドが失敗",

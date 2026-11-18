@@ -14,8 +14,6 @@ import { useActivitySlot, type ActivitySlotState } from './useActivitySlot'
 import { getVisibleBlocks } from './visible-blocks'
 import { workGrouping } from './work-groups'
 import type { HistoryReading } from './history-reading'
-import type { LiveCallLookup } from './live-calls'
-import { shellRowRunning } from './terminals'
 
 /**
  * What a transcript list shows its rows from, as `AgentMessageList` takes it.
@@ -99,15 +97,14 @@ interface Recovery {
  *
  * A row is named by `rowKey`, which it keeps as it changes form: the message
  * being sent and the message confirmed, a run from its first step to its end.
- * Whatever replaces a row of another name takes its key (`keyOf`): the step
- * that ends a wait, the Requesting row of a Continue, the answer that follows
- * thinking without text.
+ * Whatever replaces a row of another name takes its key (`keyOf`): the run
+ * whose first step ends a wait, the Requesting row of a Continue, the answer
+ * that follows thinking without text.
  *
- * A run's row holds the steps that ended. A step that still runs is a row of
- * its own under it, in the tail row's place, and once it ended the turn waits
- * for the model in a Requesting row under the run. A call whose command runs
- * on after it returned still runs, as the command's live frames in
- * `liveCalls` say, until the command ends.
+ * A run's row holds all its steps, those that still run with those that ended.
+ * At the end of a running turn it says what the turn does now: the step that
+ * runs, or the wait for the model, which it says in place of the tail row, so
+ * the list holds one row for the work whether a step runs or the turn waits.
  *
  * The messages that wait, the steers and the queue, stay below the turn: the
  * tail row stands above them. Whether it waits is the server's word or this
@@ -122,7 +119,6 @@ interface Recovery {
  */
 export function useMessageRows(
   source: () => MessageRowsSource,
-  liveCalls: LiveCallLookup = () => undefined,
   /**
    * Which edges of the window the page is reading a page for, each of which
    * shows a loading row while the read lasts and none otherwise.
@@ -216,8 +212,8 @@ export function useMessageRows(
     activity: () => source().activity ?? AT_REST,
     scope: () => ({ conversation: source().node ? source().conversation : source().conversationId, node: source().node ?? null }),
   })
-  // The calls the model is writing are the newest steps of the work: each is a
-  // row of its own after its run.
+  // The calls the model is writing are the newest steps of the work, in the
+  // run they follow.
   const pendingCallRows = computed(() => tail.value.turn.filter((block) => block.type === 'pending_call'))
   const otherTurnBlocks = computed(() => tail.value.turn.filter((block) => block.type !== 'pending_call'))
   // Until the turn shows something it did not show at the press, the
@@ -236,29 +232,14 @@ export function useMessageRows(
   })
   const hiddenId = computed(() => atCut.value ? recovery.value?.record ?? null : null)
   const transcriptRows = computed(() => visibleBlocks.value.filter((block) => block.id !== hiddenId.value))
-  // The calls that returned while their command runs on. A command's output
-  // changes its record many times a second, so the set stays the same object
-  // until a command starts or stops running, and only then regroups.
-  const runningOn = computed<ReadonlySet<string>>((previous) => {
-    const calls = new Set(visibleBlocks.value.flatMap((block) =>
-      block.type === 'tool_call' && block.status !== 'executing' && shellRowRunning(block.status, liveCalls(block.toolUseId))
-        ? [block.toolUseId]
-        : []))
-    return previous !== undefined && previous.size === calls.size && [...calls].every((call) => previous.has(call))
-      ? previous
-      : calls
-  })
   // Each run keeps its rows while it stays as it was, so a turn that
   // streams regroups only its own last run.
   const groupWork = workGrouping()
-  const turnRows = computed(() => {
-    const commandRuns = runningOn.value
-    return groupWork(
-      [...visibleBlocks.value, ...pendingCallRows.value],
-      source().phase === 'running' && !atCut.value,
-      (toolUseId) => commandRuns.has(toolUseId),
-    )
-  })
+  // Only the latest window holds the running turn's end.
+  const turnRows = computed(() => groupWork(
+    [...visibleBlocks.value, ...pendingCallRows.value],
+    source().phase === 'running' && source().latest && !atCut.value,
+  ))
 
   // Each wait the tail row shows is counted, so a new one is a row of its own.
   const waits = ref(0)
@@ -267,13 +248,24 @@ export function useMessageRows(
       waits.value += 1
     }
   }, { immediate: true, flush: 'sync' })
-  // Only the latest window shows the turn's tail rows.
-  const slotRow = computed<ActivitySlotRow[]>(() => slot.value && source().latest
+  // Only the latest window shows the turn's tail rows. A run at the end of the
+  // running turn says the wait itself, in place of the tail row.
+  const waitingRun = computed(() => {
+    const last = turnRows.value.at(-1)
+    return slot.value && source().latest && otherTurnBlocks.value.length === 0 && (source().stepsNotShared ?? []).length === 0
+      && last?.type === 'work_group' && last.live
+      ? last
+      : null
+  })
+  const slotRow = computed<ActivitySlotRow[]>(() => slot.value && source().latest && !waitingRun.value
     ? [{ type: 'activity_slot', id: `tail-row:${waits.value}`, slot: slot.value }]
     : [])
   // A share's runs of steps not shared, each after the row it follows.
   const sharedRows = computed<MessageListBlock[]>(() => {
-    const rows = turnRows.value.filter((row) => row.id !== hiddenId.value)
+    const waiting = waitingRun.value
+    const rows = turnRows.value.flatMap((row) => row.id === hiddenId.value
+      ? []
+      : row === waiting && slot.value ? [{ ...waiting, wait: slot.value }] : [row])
     const steps = source().stepsNotShared ?? []
     if (steps.length === 0) {
       return rows
