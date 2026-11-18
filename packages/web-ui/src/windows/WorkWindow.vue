@@ -255,12 +255,13 @@ function doubleClick(event: MouseEvent): void {
 </template>
 
 <style scoped>
+/* `--window-shadow`: the shadow its stage gives a window that floats. */
 .work-window {
-  box-shadow: 0 0 0 1px var(--color-line);
+  box-shadow: 0 0 0 1px var(--color-line), var(--window-shadow, 0 0 #0000);
 }
 
 .work-window-focused {
-  box-shadow: 0 0 0 1px var(--color-line-strong);
+  box-shadow: 0 0 0 1px var(--color-line-strong), var(--window-shadow, 0 0 #0000);
 }
 
 .work-window-actions:not(:has(button, [role="button"])) {
