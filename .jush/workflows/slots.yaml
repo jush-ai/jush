@@ -12,6 +12,7 @@ instructions: |
 
   Branches
   - A branch starts from `origin/main` after a `git fetch`. A new decision record takes the next number that neither `origin/main`, nor a branch on origin, nor the board has taken.
+  - An investigation or a reproduction of a problem starts after a `git fetch`, in your slot checked out at the version the user runs, usually `origin/main`: older code shows another product.
   - A series of work packages the user asks for as one piece of work, such as a feature and the follow-ups it needs, lives on one branch, one commit for each package, and is merged as a whole once the last package is done: the user approves the series, not each package of it.
   - Merge on `origin/main` only when the user approves, then delete the branch on origin, fast-forward the main checkout to `origin/main` (`git merge --ff-only`), whose `.jush/workflows` every slot's conversation reads, and run `bun xtask sweep` in your slot. A main checkout that cannot fast-forward is shown to the user, never reset.
 
