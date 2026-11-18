@@ -936,12 +936,12 @@ function maximizePressed(window: StageWindow): void {
   opacity: 1;
 }
 
-/* A shadow the window casts (`WorkWindow`), never a filter here: a filtered
+/* The drop the window casts (`WorkWindow`), never a filter here: a filtered
    ancestor makes Chrome hit-test a clipping box inside a scroller past the
    scroller's edge, so a transcript scrolled down took the clicks meant for
    the window's tabs. */
 .window-floating {
-  --window-shadow: 0 10px 24px rgb(0 0 0 / 0.22);
+  --window-shadow: var(--shadow-window-drop);
 }
 
 .window-drop {
