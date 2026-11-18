@@ -16,12 +16,13 @@ use jush_shared_types::{ScheduleMark, CodeFile, MessageComment, PictureCopy, Rep
     Timestamp, TokenUsage, ToolCallBlock, ToolCallStatus, ToolResultContentBlock, ToolView, TurnId,
     UserBlock, UserContentBlock, WakeupBlock, WakeupPlacement, CommandReport,
 };
+use jush_agent_store::Kind;
 use jush_agent_store::changes::{request_of, run_of};
 use serde_json::Value;
 
 use super::{
     PatchBatch, is_interruption, reply_markdown::named_pictures,
-    cut::{ended_turn_answer, ends_turn, from_another_conversation, turn_of},
+    cut::{ended_turn_answer, from_another_conversation, turn_of},
     earlier::Earlier,
     journal::{DirtyRows, Journal, patch_index},
 };
@@ -365,12 +366,12 @@ impl TranscriptLog {
         }));
     }
 
-    /// Marks the latest stopped marker as continued.
-    pub fn mark_latest_abort_resumed(&mut self) {
+    /// Marks the stopped marker `stop` as continued.
+    pub fn mark_abort_resumed(&mut self, stop: &BlockId) {
         let Some(at) = self
             .blocks
             .iter()
-            .rposition(|block| matches!(block, Block::Abort(_)))
+            .rposition(|block| matches!(block, Block::Abort(abort) if &abort.id == stop))
         else {
             return;
         };
@@ -1116,7 +1117,7 @@ impl TranscriptLog {
         };
         let failed = match end {
             Block::Response(_) => false,
-            Block::Error(_) if ends_turn(end) => true,
+            Block::Error(_) if Kind::TurnEnd.holds(end) => true,
             _ => return,
         };
         // A log restored within a turn decides by what it holds.

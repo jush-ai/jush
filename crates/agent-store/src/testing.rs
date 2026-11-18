@@ -112,15 +112,6 @@ impl StoredNode {
         self.path[range].iter().map(|row| Block::clone(&self.row(*row).block)).collect()
     }
 
-    /// The position of the path's first block of `kind` from `from` on.
-    fn next_of(&self, kind: Kind, from: usize) -> Option<usize> {
-        let from = from.min(self.path.len());
-        self.path[from..]
-            .iter()
-            .position(|row| kind.holds(&self.row(*row).block))
-            .map(|at| from + at)
-    }
-
     /// What [`SessionStore::earlier`] reads before `end`.
     fn earlier(&self, end: usize) -> EarlierRows {
         let end = end.min(self.path.len());
@@ -424,10 +415,6 @@ impl SessionStore for MemorySessionStore {
 
     fn last_of(&self, kind: Kind, end: usize) -> LocalBoxFuture<'_, Result<Option<usize>, StoreError>> {
         Box::pin(async move { Ok(node(&self.stored.borrow(), &self.id)?.last_of(kind, end)) })
-    }
-
-    fn next_of(&self, kind: Kind, from: usize) -> LocalBoxFuture<'_, Result<Option<usize>, StoreError>> {
-        Box::pin(async move { Ok(node(&self.stored.borrow(), &self.id)?.next_of(kind, from)) })
     }
 
     fn blocks_of(

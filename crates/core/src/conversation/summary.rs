@@ -254,11 +254,17 @@ fn settings(selection: &ModelSelection) -> Result<ModelSettings, StorageError> {
 fn last_turn(turn: &EndedTurn) -> LastTurn {
     LastTurn {
         id: turn.id.clone(),
-        outcome: match turn.outcome {
-            Terminal::Response => TurnOutcome::Finished,
-            Terminal::Error => TurnOutcome::Failed,
-            Terminal::Abort => TurnOutcome::Stopped,
-        },
+        turn_id: turn.turn.clone(),
+        outcome: outcome(turn.outcome),
+    }
+}
+
+/// How a turn ended, by the terminal block that ended it.
+pub(crate) fn outcome(terminal: Terminal) -> TurnOutcome {
+    match terminal {
+        Terminal::Response => TurnOutcome::Finished,
+        Terminal::Error => TurnOutcome::Failed,
+        Terminal::Abort => TurnOutcome::Stopped,
     }
 }
 
