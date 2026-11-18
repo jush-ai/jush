@@ -19,6 +19,7 @@ import AgentReceiptBlock from './AgentReceiptBlock.vue'
 import CommandReportBlock from './CommandReportBlock.vue'
 import AssistantTextBlock from './AssistantTextBlock.vue'
 import ToolCallBlock from './ToolCallBlock.vue'
+import PendingCallBlock from './PendingCallBlock.vue'
 import OpaqueStepBlock from './OpaqueStepBlock.vue'
 import WorkGroupBlock from './WorkGroupBlock.vue'
 import StepsNotSharedBlock from './StepsNotSharedBlock.vue'
@@ -74,8 +75,11 @@ const props = defineProps<{
 }>()
 
 /**
- * Whether a run's row is open. The list keeps it by the name of the block the
- * row shows (`useOpenRuns`). Other rows ignore it.
+ * Whether a run's row, or the row of a step that runs under it, is open. The
+ * list keeps it by the name of the block the row shows (`useOpenRuns`), so a
+ * step opened while it runs is still open as the run it starts in its place;
+ * a thinking's row, which goes once it is written, leaves the run folded.
+ * Other rows ignore it.
  */
 const runOpen = defineModel<boolean>('open', { default: false })
 
@@ -313,6 +317,12 @@ function shownComments(comments: readonly MessageComment[] | undefined): ShownCo
         class="overflow-hidden px-[var(--agent-pad-x,2rem)]"
       >
         <OpaqueStepBlock v-model:open="runOpen" :block="block" />
+      </div>
+      <div
+        v-else-if="block.type === 'pending_call'"
+        class="overflow-hidden px-[var(--agent-pad-x,2rem)]"
+      >
+        <PendingCallBlock :step="block" />
       </div>
       <div
         v-else-if="block.type === 'work_group'"

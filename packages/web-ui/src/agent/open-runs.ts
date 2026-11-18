@@ -1,6 +1,6 @@
 import { reactive, watch } from 'vue'
 import type { MessageListBlock } from './pending-steers'
-import { loneStep, stepHolds } from './work-groups'
+import { isWorkStep, runRowId, stepHolds, workRowId } from './work-groups'
 
 /**
  * Where a block brought into view shows: `row`, the list's row that holds
@@ -30,8 +30,15 @@ export interface OpenRuns {
  * The runs of a transcript list that are open, by the names of the blocks their
  * rows show (`rowKey`), never by the keys the list draws the rows under: a row
  * that takes the place of another takes its key (`succeedKeys`), and must not
- * take its open state with it. A run keeps its name from its first written
- * step to its end.
+ * take its open state with it. A step that runs alone is named as a step of its
+ * own (`workRowId`) and, once it ended, as the run it started, so a run is open
+ * when its first step was opened while it ran: it stays open as the run it
+ * starts in its place. A step's row that goes while its run still shows takes
+ * its open state with it, as a thinking's does once it is written and waits,
+ * unshown, for the step that joins it: the run that later shows it above the
+ * next step stays folded, rather than open with the thinking the reader opened
+ * folded inside. A run the list does not show at all, as from a window of
+ * history far from it, keeps its steps' state.
  *
  * The list owns them rather than each run's row, so a reveal opens a run
  * whatever the row's state, and a run stays as the reader left it when its row
@@ -44,17 +51,45 @@ export function useOpenRuns(
   keyOf: (row: MessageListBlock) => string,
 ): OpenRuns {
   const open = reactive(new Set<string>())
-  watch(scope, () => open.clear())
+  /** The run of each step's own row the reader opened, by the row's name. */
+  const stepRuns = new Map<string, string>()
+  watch(scope, () => {
+    open.clear()
+    stepRuns.clear()
+  })
+  // A step's row that went while its run shows lets go of its open state.
+  watch(rows, (shown) => {
+    const named = new Set(shown.flatMap(names))
+    const runs = new Set(shown.flatMap((row) => row.type === 'work_group' ? [row.id] : isWorkStep(row) && row.type !== 'pending_call' && row.run ? [runRowId(row.run)] : []))
+    for (const [name, run] of stepRuns) {
+      if (!open.has(name)) {
+        stepRuns.delete(name)
+      } else if (!named.has(name) && runs.has(run)) {
+        open.delete(name)
+        stepRuns.delete(name)
+      }
+    }
+  })
+
+  /** The names a row's open state is kept under: its own, and its first step's own row's. */
+  function names(row: MessageListBlock): string[] {
+    return row.type === 'work_group' ? [keyOf(row), workRowId(row.steps[0]!)] : [keyOf(row)]
+  }
 
   function isOpen(row: MessageListBlock): boolean {
-    return open.has(keyOf(row))
+    return names(row).some((name) => open.has(name))
   }
 
   function setOpen(row: MessageListBlock, value: boolean): void {
-    if (value)
+    if (value) {
       open.add(keyOf(row))
-    else
-      open.delete(keyOf(row))
+      if (isWorkStep(row) && row.type !== 'pending_call' && row.run)
+        stepRuns.set(keyOf(row), runRowId(row.run))
+    } else {
+      for (const name of names(row)) {
+        open.delete(name)
+      }
+    }
   }
 
   function reveal(id: string): RevealTarget | null {
@@ -64,9 +99,8 @@ export function useOpenRuns(
         if (!step) {
           continue
         }
-        // A run of one step is that step's own row, unless it says the wait
-        // after the step: it is marked as it is.
-        if (loneStep(row)) {
+        // A run of one step is that step's own row: it is marked as it is.
+        if (row.steps.length === 1) {
           return { row: row.id, step: null }
         }
         open.add(keyOf(row))

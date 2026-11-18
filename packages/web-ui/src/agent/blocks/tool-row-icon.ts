@@ -4,7 +4,6 @@ import type { OpaqueView } from '@jush-ai/protocol'
 import { AtSign, Bell, Bot, Brain, Cloud, Clapperboard, Globe, Image, MoveRight, ShieldCheck, SquareTerminal, Zap } from '@lucide/vue'
 import { searchKind } from '../opaque-steps'
 import { toolRenderKind } from '../tool-rendering'
-import type { WorkStep } from '../work-groups'
 
 export const THINKING_ICON: Component = Brain
 
@@ -56,29 +55,5 @@ export function receiptIcon(message: AgentMessage): Component {
       return MoveRight
     default:
       return Bot
-  }
-}
-
-/**
- * The icon of a step's own row, which a row that stands for the step, such as
- * the run's row while the step is its newest or the tail row it rolls through,
- * shows too. `key` stays put while the icon does, so it does not roll with the
- * label.
- */
-export function stepIcon(step: WorkStep): { icon: Component, key: string } {
-  switch (step.type) {
-    case 'thinking':
-      return { icon: THINKING_ICON, key: 'thinking' }
-    case 'tool_call':
-    case 'pending_call': {
-      const tool = step.type === 'tool_call' ? step.toolName : step.call.toolName
-      return { icon: toolRowIcon(tool), key: toolRenderKind(tool) }
-    }
-    case 'opaque':
-      return { icon: opaqueIcon(step.view), key: step.view.kind }
-    case 'wakeup':
-      return { icon: NOTICE_ICON, key: 'notice' }
-    case 'agent_message':
-      return { icon: receiptIcon(step.message), key: 'receipt' }
   }
 }

@@ -5,12 +5,13 @@ import type { WorkGroupBlock as Group, WorkStep } from '@jush-ai/web-ui/agent/wo
 
 /**
  * One step in each place the transcript shows it: alone, as the row of a
- * run of that step only; and inside a run the reader opened, after the step
- * `before`. Each row opens and folds as the product's does.
+ * run of that step only, which is also the row a step that runs has under
+ * its run; and inside a run the reader opened, after the step `before`.
+ * Each row opens and folds as the product's does.
  */
 const props = defineProps<{ step: WorkStep; before: WorkStep }>()
 
-const group = (id: string, steps: WorkStep[]): Group => ({ type: 'work_group', id, steps, live: false })
+const group = (id: string, steps: WorkStep[]): Group => ({ type: 'work_group', id, steps })
 const alone = computed(() => group(`alone:${props.step.id}`, [props.step]))
 const inside = computed(() => group(`inside:${props.step.id}`, [props.before, props.step]))
 const aloneOpen = ref(false)

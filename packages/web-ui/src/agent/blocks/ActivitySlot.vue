@@ -1,16 +1,17 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import ActivityMark from '@jush-ai/web-ui/ui/ActivityMark.vue'
 import type { ActivityKind } from '../activity-slot'
-import ActivityLabel from './ActivityLabel.vue'
+import { useElapsedTime } from '../../composables/useElapsedTime'
+import { activityLabel } from '../thinking-label'
 import FunctionalBlock from './FunctionalBlock.vue'
 
 /**
  * The transcript's tail row while it waits: a FunctionalBlock face with the
  * wait mark and why. A step or a Stop that follows the wait takes the row's
  * place and rolls over it (`RowRoll`); the answer or a failure appears in it.
- * After a run, the run's row says the wait instead (`useMessageRows`).
  */
-defineProps<{
+const props = defineProps<{
   kind: ActivityKind
   /**
    * When the server began the wait, as `Date.now()`; Requesting shows how
@@ -19,6 +20,13 @@ defineProps<{
    */
   since?: number | null
 }>()
+
+const requestingElapsed = useElapsedTime(
+  () => props.since ?? Number.NaN,
+  () => props.kind === 'requesting' && props.since != null,
+)
+
+const label = computed(() => activityLabel(props.kind, requestingElapsed.value ?? 0))
 </script>
 
 <template>
@@ -36,7 +44,7 @@ defineProps<{
       <template #icon>
         <ActivityMark />
       </template>
-      <ActivityLabel :kind="kind" :since="since" />
+      <span class="min-w-0 truncate">{{ label }}</span>
     </FunctionalBlock>
   </div>
 </template>

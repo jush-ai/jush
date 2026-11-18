@@ -1,6 +1,6 @@
 import { DEMO_BUN_TEST, DEMO_GIT_DIFF, DEMO_RG } from './terminal-output'
 import { endedTerminal, type EndedCommandEntry, type EndedOutputText, type TerminalRecord } from '@jush-ai/web-ui/agent/terminals'
-import { BASH_SCRIPT, steppedRunCall, LEFT_RUNNING_CALL, RUNNING_RUN_CALL, RUNNING_SHELL_DESCRIPTION, RUNNING_SHELL_SCRIPT, returnedShellTool, runningShellTool } from './blocks'
+import { BASH_SCRIPT, steppedRunCall, LEFT_RUNNING_CALL, PASSED_RUN_CALL, RUNNING_RUN_CALL, RUNNING_SHELL_DESCRIPTION, RUNNING_SHELL_SCRIPT, returnedShellTool, runningShellTool } from './blocks'
 import { ago } from './time'
 import { parseToolCallInput } from '@jush-ai/web-ui/agent/block-helpers'
 import { shellDevice } from '@jush-ai/web-ui/agent/tool-rendering'
@@ -31,6 +31,14 @@ export function steppedRunCommands(stage: number): TerminalRecord[] {
   return call
     ? [{ id: `term-${call.id}`, title: call.description, script: call.script, phase: 'running', startedAt: ago(14_000), output: '', toolUseId: `${call.id}-use` }]
     : []
+}
+
+/** The suite the running turn no longer waits for, started 1m 17s ago, and the docs' build it waits for (`passedRunBlocks`). */
+export function passedRunCommands(): TerminalRecord[] {
+  return [
+    { id: 'term-passed-suite', title: 'Run the end-to-end suite', script: 'bun run e2e', phase: 'running', startedAt: ago(77_000), output: 'Running 140 specs\n', toolUseId: `${PASSED_RUN_CALL}-use` },
+    { id: 'term-passed-docs', title: 'Build the docs', script: 'bun run docs', phase: 'running', startedAt: ago(58_000), output: 'Building 42 pages\n', toolUseId: 'passed-run-docs-use' },
+  ]
 }
 
 /** The command the ended turn left running, started 2m 16s ago (`leftRunningBlocks`). */

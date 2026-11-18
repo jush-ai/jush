@@ -1841,10 +1841,10 @@ export const RUNNING_RUN_CALL = 'running-run-merge'
 
 /**
  * A turn whose run still goes: it thought, checked the branch, and its
- * newest call has merged and run the tests for a minute and a half. Folded,
- * the run's row is that call and wears the time its command has run, as the
- * call's own row does; open, it says what runs and for how long. The
- * gallery's `runningRunCommand` is that command.
+ * newest call has merged and run the tests for a minute and a half. The run's
+ * row says what ended, and the call is a row of its own under it, wearing the
+ * time its command has run. The gallery's `runningRunCommand` is that
+ * command.
  */
 export function runningRunBlocks(): Block[] {
   const shell = (id: string, at: number, script: string, description: string, done: boolean): Block => toolCall({
@@ -1895,11 +1895,11 @@ export function steppedRunCall(stage: number): (typeof STEPPED_RUN_CALLS)[number
  * shows it while the run goes:
  *
  * 1. One step runs, its own row.
- * 2. It returned and a second runs: the row rolls to the second.
- * 3. The second returned failed: the row says Requesting while the model is
- *    waited for.
- * 4. A third runs: the row rolls to it.
- * 5. The answer: the row says what the run did.
+ * 2. It returned and a second runs under it.
+ * 3. The second returned failed and joined the run, Requesting under it while
+ *    the model is waited for.
+ * 4. A third runs under the run.
+ * 5. The answer, after the third joined.
  *
  * Its newest running call is `steppedRunCall`'s.
  */
@@ -1929,14 +1929,47 @@ export function steppedRunBlocks(stage: number): Block[] {
   return inRequests(blocks)
 }
 
+/** The call whose command the running turn no longer waits for (`passedRunBlocks`). */
+export const PASSED_RUN_CALL = 'passed-run-suite'
+
+/**
+ * A running turn that went on past a command: the agent started the suite,
+ * stopped waiting for it, read the config and builds the docs. The suite's
+ * call is in the run, which says that one command still runs and wears its
+ * time; the docs' call, which the agent waits for, is a row of its own under
+ * it. The gallery's `passedRunCommand` is the suite's command.
+ */
+export function passedRunBlocks(): Block[] {
+  const shell = (id: string, at: number, script: string, description: string, view: ReturnType<typeof shellView> | null): Block => toolCall({
+    id,
+    createdAt: iso(at),
+    toolName: 'shell',
+    status: view ? 'completed' : 'executing',
+    input: JSON.stringify({ script, description }),
+    view,
+  })
+  return inRequests([
+    {
+      type: 'user', id: 'passed-run-ask', turnId: 'passed-run-turn', createdAt: iso(80_000), model: demoModel,
+      content: [{ type: 'text', text: 'Build the docs while the suite runs.' }], preamble: null,
+    },
+    ...inRun(
+      { type: 'thinking', id: 'passed-run-think', createdAt: iso(78_000), endedAt: iso(77_000), model: demoModel, text: 'Start the suite and go on with the docs.', signature: null },
+      shell(PASSED_RUN_CALL, 77_000, 'bun run e2e', 'Run the end-to-end suite', shellView({ commandId: '91', status: 'running', runningMs: 15_000, chunks: [{ stream: 'stdout', text: 'Running 140 specs\n' }] })),
+      shell('passed-run-config', 60_000, 'cat docs/config.ts', 'Read the docs config', shellView({ commandId: '92', runningMs: 300, chunks: [{ stream: 'stdout', text: 'export default { out: \'site\' }\n' }] })),
+      shell('passed-run-docs', 58_000, 'bun run docs', 'Build the docs', null),
+    ),
+  ])
+}
+
 /** The call whose command runs on after its turn ended (`leftRunningBlocks`). */
 export const LEFT_RUNNING_CALL = 'left-running-suite'
 
 /**
  * A turn that ended while a command it started runs on: the agent thought,
- * started the suite, and replied without waiting. The suite's call stays in
- * its run, which says that one command still runs and wears the time it has
- * run, until the command ends. The gallery's `leftRunningCommand` is it.
+ * started the suite, and replied without waiting. The suite's call is in its
+ * run, which says that one command still runs and wears the time it has run,
+ * until the command ends. The gallery's `leftRunningCommand` is it.
  */
 export function leftRunningBlocks(): Block[] {
   return inRequests([
