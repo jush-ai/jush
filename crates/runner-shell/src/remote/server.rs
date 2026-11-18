@@ -150,6 +150,9 @@ struct Server {
     held: VecDeque<Held>,
     held_bytes: usize,
     drains: FuturesUnordered<BoxFuture<'static, u64>>,
+    /// Another job's signals to this process's tasks, each the request it
+    /// answers and whether a task here took it, once sent.
+    task_signals: FuturesUnordered<BoxFuture<'static, (u64, bool)>>,
     waiting_lines: VecDeque<String>,
     /// The `kill`s that wait for the runner's answer, by request.
     asks: std::collections::HashMap<u64, oneshot::Sender<bool>>,
@@ -185,6 +188,7 @@ impl Server {
             held: VecDeque::new(),
             held_bytes: 0,
             drains: FuturesUnordered::new(),
+            task_signals: FuturesUnordered::new(),
             waiting_lines: VecDeque::new(),
             asks: std::collections::HashMap::new(),
             next_ask: 0,
@@ -222,6 +226,9 @@ impl Server {
                 },
                 Some(event) = self.received.recv() => self.event(event).await,
                 Some(id) = self.drains.next(), if !self.drains.is_empty() => self.drained(id),
+                Some((request, found)) = self.task_signals.next(), if !self.task_signals.is_empty() => {
+                    self.send(&FromShell::TaskSignalled { request, found });
+                }
                 chunk = recv(&mut self.output), if self.output.is_some() && self.held_bytes < HELD_BYTES => match chunk {
                     Some(chunk) => self.hold(chunk),
                     None => self.output_ended(),
@@ -439,15 +446,25 @@ impl Server {
                 std::process::exit(0);
             }
             ToShell::SignalTask { request, task, signal } => {
-                let found = match crate::work::Work::signal_task(task, signal) {
-                    Some(Ok(())) => true,
-                    Some(Err(error)) => {
-                        tracing::warn!(event = "shell.task_signal_failed", %error, "another job's signal to a task failed");
-                        true
-                    }
-                    None => false,
-                };
-                self.send(&FromShell::TaskSignalled { request, found });
+                // Off this thread: the signal waits for a process that is
+                // starting (`Work::signal`), and this loop takes the job's
+                // `Cancel` and carries its output meanwhile.
+                let signalled = tokio::task::spawn_blocking(move || crate::work::Work::signal_task(task, signal));
+                self.task_signals.push(Box::pin(async move {
+                    let found = match signalled.await {
+                        Ok(Some(Ok(()))) => true,
+                        Ok(Some(Err(error))) => {
+                            tracing::warn!(event = "shell.task_signal_failed", %error, "another job's signal to a task failed");
+                            true
+                        }
+                        Ok(None) => false,
+                        Err(error) => {
+                            tracing::warn!(event = "shell.task_signal_failed", %error, "another job's signal to a task failed");
+                            false
+                        }
+                    };
+                    (request, found)
+                }));
             }
             ToShell::TaskSignalled { request, found } => {
                 if let Some(answer) = self.asks.remove(&request) {

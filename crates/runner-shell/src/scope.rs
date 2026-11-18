@@ -337,7 +337,7 @@ impl Scope {
         let interrupt = Arc::new(Interrupt::new(
             &self.runtime,
             &self.cancellation,
-            self.descriptors(std::io::pipe)?,
+            self.descriptors(process::pipe)?,
         ));
         *slot = Some(interrupt.clone());
         Ok(interrupt)
@@ -765,7 +765,7 @@ impl ExecutionHost for Scope {
     }
 
     fn pipe(&self) -> io::Result<(std::io::PipeReader, std::io::PipeWriter)> {
-        self.descriptors(std::io::pipe)
+        self.descriptors(process::pipe)
     }
 
     fn temporary_file(&self) -> io::Result<File> {
@@ -943,6 +943,9 @@ impl uucore::context::Control for UtilityControl {
     }
     fn duplicate(&self, file: &File) -> io::Result<File> {
         self.scope.duplicate(file)
+    }
+    fn pipe(&self) -> io::Result<(std::io::PipeReader, std::io::PipeWriter)> {
+        self.scope.descriptors(process::pipe)
     }
     fn read(&self, file: &File, bytes: &mut [u8]) -> io::Result<usize> {
         self.scope.read(file, bytes)

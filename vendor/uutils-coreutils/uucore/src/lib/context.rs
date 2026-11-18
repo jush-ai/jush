@@ -55,6 +55,11 @@ pub trait Control: Send + Sync {
     fn duplicate(&self, file: &File) -> std::io::Result<File> {
         file.try_clone()
     }
+    /// Makes a pipe. The embedding owner may keep the programs it starts
+    /// meanwhile from inheriting it.
+    fn pipe(&self) -> std::io::Result<(std::io::PipeReader, std::io::PipeWriter)> {
+        std::io::pipe()
+    }
     /// Starts a child program. The embedding owner may wait out what keeps
     /// it from starting for a while, such as a lack of open files.
     fn spawn(
@@ -327,6 +332,15 @@ pub fn descriptor(path: &Path) -> Option<Arc<File>> {
 pub mod io {
     pub use std::io::*;
     use std::{fs::File, sync::Arc};
+
+    /// A pipe, made by the embedding owner when there is one
+    /// ([`Control::pipe`](super::Control::pipe)).
+    pub fn pipe() -> Result<(PipeReader, PipeWriter)> {
+        match super::control() {
+            Some(control) => control.pipe(),
+            None => std::io::pipe(),
+        }
+    }
 
     #[derive(Clone)]
     pub struct Stdio<const N: u8>(Arc<File>);

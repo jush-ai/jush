@@ -302,7 +302,7 @@ fn inherit(
             .ok()
             .filter(|fd| *fd > 2)
             .ok_or_else(|| failed(format!("descriptor {fd} is not one a process inherits")))?;
-        let (reader, writer) = std::io::pipe()
+        let (reader, writer) = pipe()
             .map_err(|error| failed(format!("the pipe of descriptor {fd}: {error}")))?;
         mappings.push(FdMapping {
             parent_fd: reader.into(),
@@ -533,14 +533,48 @@ fn wrapped(
     command
 }
 
+/// Held to write while a process starts, and to read while [`pipe`] makes a
+/// pipe, so that no process starts with a pipe it was not given, as Go's
+/// `syscall.ForkLock` keeps. A start holds it until the child's program runs,
+/// longer than Go's, since `std`'s `spawn` reads the child's status in it:
+/// a program that is slow to run, such as one macOS asks the user about,
+/// holds up the process's other starts and pipes meanwhile.
+///
+/// macOS makes a pipe and marks its ends close-on-exec in two steps. A process
+/// another thread starts between them inherits both ends and keeps them open
+/// once its program runs: the pipe's reader then never sees its end. Two
+/// stages of a pipeline start at once, so one stage of `f | head | tail` could
+/// hold the status pipe the start of `head` reads until `head` runs, while the
+/// start held the write end of the pipe `tail` reads: neither ever ended.
+/// Linux makes a pipe close-on-exec at once, and takes the lock all the same,
+/// so every system keeps one rule.
+///
+/// An attempt to start a process makes no pipe through [`pipe`], which would
+/// wait for itself.
+static STARTS: std::sync::RwLock<()> = std::sync::RwLock::new(());
+
+/// A pipe whose ends no process that starts meanwhile inherits ([`STARTS`]).
+/// Every pipe of a process that starts others is made this way.
+pub fn pipe() -> io::Result<(std::io::PipeReader, std::io::PipeWriter)> {
+    let _making = STARTS.read().unwrap_or_else(std::sync::PoisonError::into_inner);
+    std::io::pipe()
+}
+
+/// One attempt to start a process, while no pipe is being made ([`STARTS`]).
+fn alone<T>(attempt: &mut impl FnMut() -> io::Result<T>) -> io::Result<T> {
+    let _starting = STARTS.write().unwrap_or_else(std::sync::PoisonError::into_inner);
+    attempt()
+}
+
 /// Starts a process with `attempt`, which tries to spawn it once. Every process
 /// the runner starts, a resident, a raw process, a job's external command or a
 /// utility's child program, starts this way, so none fails for a condition
-/// that passes (`crates/command-sdk/src/descriptors.rs`; `StartRetry` says which).
+/// that passes (`crates/command-sdk/src/descriptors.rs`; `StartRetry` says which)
+/// and none inherits a pipe another thread is making ([`STARTS`]).
 pub async fn start<T>(mut attempt: impl FnMut() -> io::Result<T>) -> io::Result<T> {
     let mut retry = StartRetry::default();
     loop {
-        let error = match attempt() {
+        let error = match alone(&mut attempt) {
             Ok(started) => return Ok(started),
             Err(error) => error,
         };
@@ -555,7 +589,7 @@ pub async fn start<T>(mut attempt: impl FnMut() -> io::Result<T>) -> io::Result<
 pub fn start_blocking<T>(mut attempt: impl FnMut() -> io::Result<T>) -> io::Result<T> {
     let mut retry = StartRetry::default();
     loop {
-        let error = match attempt() {
+        let error = match alone(&mut attempt) {
             Ok(started) => return Ok(started),
             Err(error) => error,
         };

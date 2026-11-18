@@ -519,7 +519,24 @@ async fn stop_strays(
                     break;
                 };
                 let strays = find(known).await;
-                if let Err(failure) = scope.signal(signal, false) {
+                // Off the runtime's threads too: the signal waits for a
+                // process that is starting (`Work::signal`), and the runtime's
+                // one worker must stay free meanwhile to reap the job's
+                // children and to take the `KILL`. A `KILL` ends the wait,
+                // since a start that does not return holds the signal for
+                // ever, and kills what was found.
+                let signalling = scope.clone();
+                let signalled = tokio::select! {
+                    biased;
+                    () = killed.cancelled() => {
+                        known = strays;
+                        break;
+                    }
+                    signalled = tokio::task::spawn_blocking(move || signalling.signal(signal, false)) => {
+                        signalled.unwrap_or_else(|failure| Err(io::Error::other(failure)))
+                    }
+                };
+                if let Err(failure) = signalled {
                     tracing::warn!(event = "job_strays.stop_failed", job_id = job, step = "signal_groups", error = %failure, "a job's process groups were not signalled");
                 }
                 known = reach(&job, strays, signal);
@@ -754,7 +771,7 @@ fn null_device() -> io::Result<File> {
 }
 
 pub(crate) fn pipe() -> io::Result<(File, File)> {
-    let (reader, writer) = std::io::pipe()?;
+    let (reader, writer) = jush_runner_process::process::pipe()?;
     #[cfg(unix)]
     {
         use std::os::fd::OwnedFd;
