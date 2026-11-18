@@ -123,6 +123,11 @@
   --color-series-6: var(--series-6);
   --color-series-7: var(--series-7);
   --color-series-reserved: var(--series-reserved);
+  /* Only the themes' shadows: Tailwind's own scale, which no theme sets, is
+     dropped, and so are its filter drop shadows. A box casts a box shadow; a
+     filter also changes where its content is positioned and hit-tested. */
+  --shadow-*: initial;
+  --drop-shadow-*: initial;
   --shadow-sm: var(--th-shadow-sm);
   --shadow-md: var(--th-shadow-md);
   --shadow-lg: var(--th-shadow-lg);
@@ -168,6 +173,11 @@
   /* A Settings row's label, and its description or an inset row's label. */
   --text-setting: var(--agent-chrome);
   --text-setting-small: 12px;
+}
+
+/* Shadows the themes below set under these names, as utilities. */
+@theme inline reference {
+  --shadow-float: var(--shadow-float);
 }
 
 /* The phone's metrics: every control is drawn at a finger's size, read from
@@ -324,9 +334,12 @@
     rgba(0, 0, 0, 0.25) 0 8px 16px -6px;
   /* The part of a floating layer's edge drawn above its content (floating layers, below). */
   --shadow-overlay-ring: none;
+  /* A window's drop, under its edge: --shadow-window, or a work window's
+     own focus edge (WorkWindow). */
+  --shadow-window-drop: 0 10px 28px rgba(0, 0, 0, 0.32);
   --shadow-window:
     0 0 0 1px var(--line-overlay),
-    0 10px 28px rgba(0, 0, 0, 0.32);
+    var(--shadow-window-drop);
   --shadow-btn:
     inset 0 0.5px 0 rgba(255, 255, 255, 0.16),
     inset 0 -0.5px 0 rgba(255, 255, 255, 0.04),
@@ -420,9 +433,10 @@
     0 0 0 0.5px var(--line-overlay),
     rgba(0, 0, 0, 0.06) 0 2px 4px -1px,
     rgba(0, 0, 0, 0.08) 0 8px 16px -6px;
+  --shadow-window-drop: 0 10px 28px rgba(0, 0, 0, 0.12);
   --shadow-window:
     0 0 0 1px var(--line-overlay),
-    0 10px 28px rgba(0, 0, 0, 0.12);
+    var(--shadow-window-drop);
   --shadow-btn:
     inset 0 0.5px 0 rgba(255, 255, 255, 0.9),
     0 0 0 0.5px rgba(0, 0, 0, 0.1);

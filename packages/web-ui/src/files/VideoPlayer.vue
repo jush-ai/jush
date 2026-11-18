@@ -547,7 +547,7 @@ onBeforeUnmount(() => {
   margin: 0 0 -6px -6px;
   border-radius: 9999px;
   background: #fff;
-  box-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.2), 0 1px 3px rgb(0 0 0 / 0.3);
+  box-shadow: 0 0 0 1px var(--color-line), var(--shadow-sm);
 }
 
 /* Unseen over the track, wider than it so a press beside it takes, bottom to top. */
@@ -636,7 +636,7 @@ onBeforeUnmount(() => {
   margin: -6px 0 0 -6px;
   border-radius: 9999px;
   background: #fff;
-  box-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.2), 0 1px 3px rgb(0 0 0 / 0.3);
+  box-shadow: 0 0 0 1px var(--color-line), var(--shadow-sm);
   opacity: 0;
 }
 

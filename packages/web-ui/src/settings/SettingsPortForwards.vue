@@ -363,7 +363,7 @@ const CELL = 'flex h-7 min-w-0 cursor-text items-center rounded-md px-2 transiti
                     </span>
                   </template>
                   <template #content="{ close }">
-                    <div class="flex w-64 flex-col gap-2 rounded-xl border border-line bg-surface-float p-3 shadow-lg">
+                    <div class="overlay-shell flex w-64 flex-col gap-2 rounded-lg p-3">
                       <span class="text-[13px] font-medium text-fg-emphasis tabular-nums">{{ forwardRoute(forward, devices) }}</span>
                       <span class="text-[13px] leading-5 text-fg-muted">{{ forwardState(forward, devices) }}</span>
                       <Button v-if="portInUse(forward)" size="sm" class="self-start" @click="onTryAgain?.(forward.id); close()">

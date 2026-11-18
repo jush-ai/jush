@@ -34,7 +34,7 @@ const src = computed(() => `${props.path ?? '/phone-frame'}?scene=${encodeURICom
 <template>
   <figure class="flex flex-col items-center gap-3">
     <div
-      class="relative border-[#0c0c0e] bg-[#0c0c0e] shadow-xl ring-1 ring-line"
+      class="relative border-[#0c0c0e] bg-[#0c0c0e] shadow-2xl ring-1 ring-line"
       :class="se ? 'rounded-[2.4rem] border-x-[0.75rem] border-y-[4.5rem]' : 'rounded-[3.6rem] border-[0.75rem]'"
     >
       <div

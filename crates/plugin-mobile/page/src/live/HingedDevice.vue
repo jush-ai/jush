@@ -385,7 +385,7 @@ defineExpose({ posture: hinge })
         @contextmenu.prevent
       />
       <div v-if="screenOff" class="absolute inset-x-0 bottom-3 flex justify-center">
-        <span class="flex items-center gap-2 rounded-md bg-surface px-2 py-1 text-[12px] text-fg-subtle shadow">
+        <span class="flex items-center gap-2 rounded-md bg-surface px-2 py-1 text-[12px] text-fg-subtle shadow-float">
           {{ t('screenOff.title') }}
           <Button size="sm" @click="session.wake()">{{ t('screenOff.wake') }}</Button>
         </span>

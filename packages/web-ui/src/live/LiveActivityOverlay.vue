@@ -28,7 +28,7 @@ defineProps<{
     >
       <div
         v-if="active"
-        class="absolute left-1/2 top-2 flex max-w-[calc(100%-16px)] -translate-x-1/2 items-center gap-1.5 truncate rounded-full bg-surface-float px-2.5 py-1 text-[12px] leading-4 text-fg shadow"
+        class="absolute left-1/2 top-2 flex max-w-[calc(100%-16px)] -translate-x-1/2 items-center gap-1.5 truncate rounded-full bg-surface-float px-2.5 py-1 text-[12px] leading-4 text-fg shadow-float"
         role="status"
       >
         <span class="size-1.5 flex-none rounded-full bg-accent-fill" aria-hidden="true" />

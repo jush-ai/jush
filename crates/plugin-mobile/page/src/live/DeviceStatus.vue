@@ -43,6 +43,6 @@ const { progress, progressText, waitingLabel, stalled, reconnecting } = deviceSt
     :progress="progress"
   />
   <div v-if="stalled || reconnecting" role="status" class="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center p-2">
-    <span class="rounded-md bg-surface px-2 py-1 text-[12px] text-fg-subtle shadow">{{ reconnecting ? (progress ? `${t('region.downloading')} ${progressText}` : t('region.reconnecting')) : t('region.waiting') }}</span>
+    <span class="rounded-md bg-surface px-2 py-1 text-[12px] text-fg-subtle shadow-float">{{ reconnecting ? (progress ? `${t('region.downloading')} ${progressText}` : t('region.reconnecting')) : t('region.waiting') }}</span>
   </div>
 </template>
