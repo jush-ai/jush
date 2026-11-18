@@ -1092,6 +1092,21 @@ impl AgentSession {
         })
     }
 
+    /// Where the turn `turn` stands while the session alone tells it: its
+    /// message queued, or its action running until its closing save has
+    /// committed. None otherwise: the store then holds the turn as it stands.
+    pub fn live_turn(&self, turn: &TurnId) -> Option<LiveTurn> {
+        self.shared.read(|core| {
+            if core.queued_messages().iter().any(|message| message.id == *turn) {
+                Some(LiveTurn::Queued)
+            } else if core.runs_turn(turn) {
+                Some(LiveTurn::Running)
+            } else {
+                None
+            }
+        })
+    }
+
     /// Takes the latest turn the user asked for that ended with an answer
     /// or an error since the last take, as it ended; none when none did.
     ///
@@ -1390,58 +1405,6 @@ impl AgentSession {
     /// Whether the tool call `id` is on the transcript's current path.
     pub fn holds_call(&self, id: &BlockId) -> bool {
         self.shared.read(|core| core.transcript.holds_call(id))
-    }
-
-    /// The blocks that tell how `turn` ended.
-    ///
-    /// These are the `text`, `error`, `response` and `user` blocks after the
-    /// message that opened `turn`, through the next message, which tells the
-    /// turn ended, or to the transcript's end. A turn whose message is before
-    /// the window, as when a compaction ran inside it or later turns went on
-    /// and compacted, is read from the store up to the window, through the
-    /// index of block types. None when the path holds no message of `turn`.
-    pub async fn turn_blocks(&self, turn: &TurnId) -> Result<Option<Vec<Block>>, StoreError> {
-        let kinds = [Kind::Text, Kind::Error, Kind::Response, Kind::User];
-        let of_kinds = |block: &Block| kinds.iter().any(|kind| kind.holds(block));
-        let opens = |block: &Block| matches!(block, Block::User(user) if &user.turn_id == turn);
-        let (start, held, known) = self.shared.read(|core| {
-            let transcript = &core.transcript;
-            (transcript.start(), transcript.blocks().iter().position(opens), transcript.has_user_turn(turn))
-        });
-        let window_from = |from: usize| {
-            self.shared.read(|core| {
-                let blocks = core.transcript.blocks();
-                let end = blocks[from..]
-                    .iter()
-                    .position(|block| matches!(block, Block::User(_)))
-                    .map_or(blocks.len(), |next| from + next + 1);
-                blocks[from..end].iter().filter(|block| of_kinds(block)).cloned().collect::<Vec<_>>()
-            })
-        };
-        if let Some(at) = held {
-            return Ok(Some(window_from(at + 1)));
-        }
-        if !known {
-            return Ok(None);
-        }
-        let store = &self.shared.store;
-        let Some(at) = store.turn_position(turn).await? else {
-            return Ok(None);
-        };
-        let next = store.next_of(Kind::User, at + 1).await?;
-        let end = next.map_or(start, |next| (next + 1).min(start));
-        let read = store.blocks_of(kinds.to_vec(), at + 1..end).await?;
-        let mut blocks: Vec<Block> = read.into_iter().map(|(_, block)| block).collect();
-        // The turn goes on into the window when no message of the store
-        // follows it there; the window may have let go of more meanwhile,
-        // and starts where it does now.
-        if next.is_none_or(|next| next >= start) {
-            let now = self.shared.read(|core| core.transcript.start());
-            if now == start {
-                blocks.extend(window_from(0));
-            }
-        }
-        Ok(Some(blocks))
     }
 
     /// The position of the block `id` on the current path, held or before
@@ -1793,6 +1756,16 @@ pub enum TurnOutcome {
     Failed,
     /// The user stopped it.
     Stopped,
+}
+
+/// Where a turn stands while a session alone tells it
+/// ([`AgentSession::live_turn`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LiveTurn {
+    /// Its message waits in the queue.
+    Queued,
+    /// Its action runs, or ended and its closing save has not committed.
+    Running,
 }
 
 /// A turn that ended, as [`Session::ended_turn_result`] reads it.

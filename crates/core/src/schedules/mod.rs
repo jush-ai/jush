@@ -31,7 +31,7 @@ use jush_agent_session::EndedTurn;
 use jush_core_store::schedules::{RunCause, StoredRun, StoredSchedule};
 use jush_core_sync::Part;
 use jush_core_store::seal::Row;
-use jush_shared_types::{ScheduleId, Timestamp};
+use jush_shared_types::{ScheduleId, ScheduleRunId, Timestamp};
 use jush_web_api_protocol::ids::ConversationId;
 use jush_web_api_protocol::schedules::{
     ConversationSchedule, IfBusy, LastRun, MonthDay, NEW_NAME, RUNS_SHOWN, Repeat, RepeatUnit, ScheduleDto,
@@ -56,6 +56,34 @@ pub(crate) struct Schedules {
     /// When each change watch last tried its command, recorded or not, as
     /// for an offline device, from which its next check counts.
     tried: RefCell<HashMap<ScheduleId, Timestamp>>,
+    /// The runs whose message is on its way to their conversation: their
+    /// turn is recorded, but no turn of theirs is there to read yet.
+    carrying: RefCell<HashSet<ScheduleRunId>>,
+}
+
+/// A run whose message is on its way to its conversation, until it drops.
+pub(crate) struct Carrying<'a> {
+    schedules: &'a Schedules,
+    run: ScheduleRunId,
+}
+
+impl Drop for Carrying<'_> {
+    fn drop(&mut self) {
+        self.schedules.carrying.borrow_mut().remove(&self.run);
+    }
+}
+
+impl Schedules {
+    /// Marks the run `run` as carrying its message until the guard drops.
+    pub(crate) fn carrying(&self, run: &ScheduleRunId) -> Carrying<'_> {
+        self.carrying.borrow_mut().insert(run.clone());
+        Carrying { schedules: self, run: run.clone() }
+    }
+
+    /// Whether the run `run`'s message is on its way to its conversation.
+    pub(crate) fn carries(&self, run: &ScheduleRunId) -> bool {
+        self.carrying.borrow().contains(run)
+    }
 }
 
 /// What a schedule has under way in the core: a URL's burst waiting out its

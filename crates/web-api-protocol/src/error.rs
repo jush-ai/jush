@@ -180,6 +180,9 @@ pub enum ErrorCode {
     ConversationNotFound,
     /// The transcript does not hold the block a page read names.
     BlockNotFound,
+    /// The conversation holds no turn of the message: it left the queue
+    /// without running, a Stop gave it back, or it was never sent.
+    TurnNotFound,
     /// The block a page read extends from is no longer at its index: the
     /// transcript was rewritten since the page read it.
     TranscriptChanged,
