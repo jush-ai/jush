@@ -21,8 +21,10 @@ use jush_core_store::StorageError;
 use jush_core_store::{tree::{self, BlockRead, Entry, PageQuery, PageRead, Transcript}};
 use jush_core::conversation::{attachment_facts, failure_facts, named_blocks, replies, reply_block_facts};
 use jush_conversation_lane_protocol::{PAGE_BLOCKS, STORED_EPOCH, Version, index_u32, light};
-use jush_shared_types::{Block, BlockId, CommandId, NodeId};
-use jush_web_api_protocol::conversations::{CommandCall, EndedOutput, TranscriptPage, TranscriptQuery, WholeBlock};
+use jush_shared_types::{Block, BlockId, CommandId, NodeId, TurnId};
+use jush_web_api_protocol::conversations::{
+    CommandCall, EndedOutput, TranscriptPage, TranscriptQuery, TurnState, WholeBlock,
+};
 use jush_web_api_protocol::error::ErrorCode;
 
 use crate::api::Api;
@@ -282,6 +284,28 @@ pub(crate) async fn block(
     }))
 }
 
+/// `GET /conversations/:id/turns/:turnId`: where the root's turn stands, by
+/// the id of the message that started it.
+pub(crate) async fn turn(
+    State(state): State<Api>,
+    Principal(user): Principal,
+    Path((id, turn)): Path<(String, String)>,
+) -> Result<Json<TurnState>, ApiError> {
+    let record = owned(&state.services, &user, &id).await?;
+    let turn = TurnId::try_from(turn).map_err(|_| no_turn())?;
+    let conversation = record.id.clone();
+    let found = state
+        .shards
+        .of(&user)
+        .call(move |core, _| async move {
+            core.turn_state(&conversation, &turn)
+                .await
+                .map_err(ApiError::conversation_unreadable)
+        })
+        .await??;
+    found.map(Json).ok_or_else(no_turn)
+}
+
 /// A block read as its route answers it: a conversation without a database
 /// yet holds no block.
 pub fn block_answer(
@@ -371,5 +395,13 @@ fn no_block() -> ApiError {
         StatusCode::NOT_FOUND,
         ErrorCode::BlockNotFound,
         "The transcript holds no such block",
+    )
+}
+
+fn no_turn() -> ApiError {
+    ApiError::new(
+        StatusCode::NOT_FOUND,
+        ErrorCode::TurnNotFound,
+        "The conversation holds no turn of this message",
     )
 }

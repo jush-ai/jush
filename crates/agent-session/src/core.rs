@@ -98,6 +98,10 @@ pub(crate) struct SessionCore {
     /// ends.
     pub(super) editing: Option<EditInFlight>,
     pub(super) activity: Activity,
+    /// The turn the process died in, from the restore that recorded its
+    /// interruption until a save stores the record: until then the store
+    /// holds an earlier `response` of the turn as its last block.
+    unstored_interruption: Option<TurnId>,
     /// Waiting input opens no continuation and stays waiting until the node's
     /// next action.
     ///
@@ -275,9 +279,10 @@ pub(super) enum Activity {
     Running(ActionRun),
     /// The action ended and its closing save is in progress. The save
     /// records the session idle, while clients see it running until that
-    /// save has committed; `idle_compaction` is the action's.
+    /// save has committed; `idle_compaction` and `turn` are the action's.
     Finishing {
         idle_compaction: bool,
+        turn: TurnId,
     },
     /// Dispose is complete but for the final save; `interrupted` when it
     /// stopped a running turn, whose final checkpoint says `running`.
@@ -287,8 +292,8 @@ pub(super) enum Activity {
 }
 
 pub(super) struct ActionRun {
-    /// The turn the action's blocks belong to; a retry takes over the turn it
-    /// reruns.
+    /// The turn the action's blocks belong to; a retry or a resume writes the
+    /// turn it reruns or continues.
     pub(super) turn: TurnId,
     pub(super) cancel: Rc<TurnCancel>,
     pub(super) stage: TurnStage,
@@ -695,6 +700,7 @@ impl SessionCore {
             account: parts.account,
             editing: None,
             activity: Activity::Idle,
+            unstored_interruption: None,
             held: false,
             passed_failure: None,
             one_request: parts.one_request,
@@ -1148,8 +1154,14 @@ impl SessionCore {
         self.start_action(kind, turn, reply, queued_ms);
     }
 
-    /// Runs `kind` as the session's action, writing `turn`.
+    /// Runs `kind` as the session's action, writing `turn`; a retry and a
+    /// resume write the last turn, which they rerun or continue, from their
+    /// start.
     fn start_action(&mut self, kind: ActionKind, turn: TurnId, reply: Option<ActionReply>, queued_ms: u64) {
+        let turn = match &kind {
+            ActionKind::Retry | ActionKind::Resume { .. } => self.transcript.last_turn().cloned().unwrap_or(turn),
+            _ => turn,
+        };
         let cancel = TurnCancel::new();
         self.held = false;
         let unwritten = match &kind {
@@ -1445,6 +1457,24 @@ impl SessionCore {
         matches!(&self.activity, Activity::Running(run) if run.contexts.contains(id))
     }
 
+    /// Whether the turn `turn` runs as clients see it: its action runs, or
+    /// the action ended and its closing or final save has not committed, or
+    /// a restore recorded its interruption and no save has stored it, so the
+    /// store may not hold the turn's end yet.
+    pub(super) fn runs_turn(&self, turn: &TurnId) -> bool {
+        if self.unstored_interruption.as_ref() == Some(turn) {
+            return true;
+        }
+        match &self.activity {
+            Activity::Running(run) => &run.turn == turn,
+            // The action's own turn: a compaction writes no input, so the
+            // last input is still the turn before it, which has ended.
+            Activity::Finishing { turn: finishing, .. } => finishing == turn,
+            Activity::Closed { interrupted: true } => self.transcript.last_turn() == Some(turn),
+            Activity::Idle | Activity::Closed { interrupted: false } => false,
+        }
+    }
+
     /// The running action takes over `turn`, as a retry does the turn it
     /// reruns.
     pub(super) fn take_over_turn(&mut self, turn: TurnId) {
@@ -1456,8 +1486,13 @@ impl SessionCore {
     /// The action ended; its checkpoint is saved next. The human steers
     /// still pending open the next turn (`start_next`).
     pub(super) fn end_action(&mut self) {
-        let idle_compaction = matches!(&self.activity, Activity::Running(run) if run.idle_compaction);
-        self.activity = Activity::Finishing { idle_compaction };
+        let Activity::Running(run) = &self.activity else {
+            unreachable!("only the worker of a running action ends it");
+        };
+        self.activity = Activity::Finishing {
+            idle_compaction: run.idle_compaction,
+            turn: run.turn.clone(),
+        };
         self.state_cause = "action_ended";
         // The closing save records the session idle, also after an action
         // whose last save recorded it running and that changed nothing
@@ -1782,7 +1817,10 @@ impl SessionCore {
     /// Records that the turn the process died in is unfinished, unless the
     /// transcript already says so.
     pub(super) fn record_interruption(&mut self) {
-        self.append_interruption();
+        if !self.transcript.ends_with_interruption() {
+            self.append_interruption();
+            self.unstored_interruption = self.transcript.last_turn().cloned();
+        }
         self.commit();
     }
 
@@ -2615,8 +2653,9 @@ impl SessionCore {
         self.push_resume(Some(super::turn::FILTERED_REASON.to_owned()));
     }
 
-    pub(super) fn mark_abort_resumed(&mut self) {
-        self.transcript.mark_latest_abort_resumed();
+    /// The stop `stop`, at a resume's resume point, no longer ends its turn.
+    pub(super) fn mark_abort_resumed(&mut self, stop: &BlockId) {
+        self.transcript.mark_abort_resumed(stop);
         self.commit();
     }
 
@@ -3471,11 +3510,13 @@ impl SessionCore {
 
     /// Lets go of the blocks before the last `compaction_boundary` or `clear`
     /// once every row up to it is saved: after a save commits, and when
-    /// nothing was left to save.
+    /// nothing was left to save. A restore's record of an interruption is
+    /// stored by then too.
     ///
     /// Blocks a rewrite or an edit read from before the window go the same way.
     pub(super) fn release_settled(&mut self) {
         self.commit();
+        self.unstored_interruption = None;
         let boundary = self.transcript.replay_start();
         if self.persist.rows.lowest().is_some_and(|lowest| lowest < boundary) {
             return;
@@ -3522,7 +3563,7 @@ impl SessionCore {
     pub(super) fn phase(&self) -> SessionPhase {
         match &self.activity {
             Activity::Running(ActionRun { idle_compaction: true, .. })
-            | Activity::Finishing { idle_compaction: true } => SessionPhase::CompactingIdle,
+            | Activity::Finishing { idle_compaction: true, .. } => SessionPhase::CompactingIdle,
             Activity::Running(run) if run.stage == TurnStage::Compacting => {
                 SessionPhase::Compacting
             }

@@ -1137,10 +1137,6 @@ impl SessionStore for NoStore {
         Box::pin(async { Ok(None) })
     }
 
-    fn next_of(&self, _kind: Kind, _from: usize) -> LocalBoxFuture<'_, Result<Option<usize>, StoreError>> {
-        Box::pin(async { Ok(None) })
-    }
-
     fn blocks_of(
         &self,
         _kinds: Vec<Kind>,

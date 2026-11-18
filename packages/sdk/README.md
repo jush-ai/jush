@@ -52,6 +52,10 @@ await jush.close()
 
 `turn.outcome` is `finished`, `failed` or `stopped`; `turn.text` is the text
 the agent wrote after your message, and `turn.blocks` everything it did.
+Blocks read back as a page, as after a dropped connection, come in the light
+form the app's list holds: a tool call without its output's text, and with
+only the description of a long input, and thinking without its text. The
+answer's text is whole.
 
 ## Cores
 
@@ -288,9 +292,11 @@ await desk.update({ plugins: ['tickets-next'] })
 ```
 
 `conversation.run(input)` sends a message and resolves once the turn it
-starts ended. It fails when the message leaves the queue without running, as
-an abort that clears the queue makes it, or when the conversation closes
-first. The other actions are the ones the app has:
+starts ended, with that turn's blocks and outcome, also when your program's
+connection to the process dropped while the turn ended. It fails when the
+message leaves the queue without running, as an abort that clears the queue
+or gives the message back makes it, or when the conversation closes first.
+The other actions are the ones the app has:
 
 | Method | What it does |
 | --- | --- |

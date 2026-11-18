@@ -101,10 +101,6 @@ pub trait SessionStore {
     /// `end`; none when there is none.
     fn last_of(&self, kind: Kind, end: usize) -> LocalBoxFuture<'_, Result<Option<usize>, StoreError>>;
 
-    /// The position of the current path's first block of `kind` at or
-    /// after `from`; none when there is none.
-    fn next_of(&self, kind: Kind, from: usize) -> LocalBoxFuture<'_, Result<Option<usize>, StoreError>>;
-
     /// The blocks of the current path in `range` that are of one of
     /// `kinds`, each with its position, in order, found through the index
     /// of block types: no other block of the range is read.
@@ -793,10 +789,10 @@ pub enum Kind {
     Text,
     /// A completed `text`, one a Fork may end at.
     CompletedText,
-    /// An `error` block.
-    Error,
-    /// A `response` block.
-    Response,
+    /// A block that ended a turn: a `response`, an `error` inside one, or an
+    /// `abort` no Resume continued. A failed `compact` ends no turn, and a
+    /// stop that a Resume continued ended the turn only until the Resume.
+    TurnEnd,
     /// A block that can be the record that ended a turn: any but a
     /// compaction's boundary and marker, an error that ended no turn, and
     /// the agent messages and command reports a turn takes after it ended.
@@ -815,8 +811,7 @@ impl Kind {
             Self::User => &["user"],
             Self::ToolCall | Self::ExecutingCall => &["tool_call"],
             Self::Text | Self::CompletedText => &["text"],
-            Self::Error => &["error"],
-            Self::Response => &["response"],
+            Self::TurnEnd => &["response", "error", "abort"],
             Self::Record => &[
                 "user", "context", "wakeup", "steer", "resume", "abort", "thinking", "opaque", "text",
                 "tool_call", "response", "error", "account_switch", "clear",
@@ -847,8 +842,12 @@ impl Kind {
             }
             Self::Text => matches!(block, Block::Text(_)),
             Self::CompletedText => matches!(block, Block::Text(text) if text.forkable),
-            Self::Error => matches!(block, Block::Error(_)),
-            Self::Response => matches!(block, Block::Response(_)),
+            Self::TurnEnd => match block {
+                Block::Response(_) => true,
+                Block::Error(error) => !error.outside_turn,
+                Block::Abort(abort) => !abort.is_resumed,
+                _ => false,
+            },
             Self::Record => match block {
                 Block::CompactionBoundary(_) | Block::CompactionMarker(_) | Block::AgentMessage(_) => false,
                 Block::Error(error) => !error.outside_turn,

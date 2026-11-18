@@ -7,17 +7,53 @@
 //! keep: the entries of the newest instructions block and the summary size of
 //! each compaction marker.
 
+use jush_agent_session::LiveTurn;
 use jush_core_store::StorageError;
-use jush_core_store::{tree::{self, Transcript}};
+use jush_core_store::{tree::{self, RootTurn, Terminal, Transcript}};
 use jush_conversation_lane_protocol::{CacheChart, ShellStatus, index_u32};
-use jush_shared_types::NodeId;
-use jush_web_api_protocol::conversations::TranscriptPage;
+use jush_shared_types::{NodeId, TurnId};
+use jush_web_api_protocol::conversations::{TranscriptPage, TurnState};
 use jush_web_api_protocol::ids::ConversationId;
+
+use super::summary::outcome;
 
 use crate::Core;
 use jush_core_device_access::root_of;
 
 impl Core {
+    /// Where the root's turn `turn` of the conversation `id` stands, by the
+    /// id of the message that started it: queued or running as the root's
+    /// session tells while a tree runs, and otherwise as the store holds it,
+    /// the turn's end and answer included; none when the conversation holds
+    /// no turn of it.
+    pub(crate) async fn root_turn(&self, id: &ConversationId, turn: &TurnId) -> Result<Option<RootTurn>, StorageError> {
+        let tree = self.agent().tree(&root_of(id));
+        let live = tree.is_some();
+        match tree.and_then(|tree| tree.root().session().live_turn(turn)) {
+            Some(LiveTurn::Queued) => return Ok(Some(RootTurn::Queued)),
+            Some(LiveTurn::Running) => return Ok(Some(RootTurn::Running)),
+            None => {}
+        }
+        let turn = turn.clone();
+        Ok(self.store().databases()
+            .read(id, move |connection| tree::turn(connection, &turn, live))
+            .await?
+            .flatten())
+    }
+
+    /// [`Core::root_turn`] as `GET /conversations/{id}/turns/{turnId}`
+    /// answers it.
+    pub async fn turn_state(&self, id: &ConversationId, turn: &TurnId) -> Result<Option<TurnState>, StorageError> {
+        Ok(self.root_turn(id, turn).await?.map(|found| match found {
+            RootTurn::Queued => TurnState::Queued,
+            RootTurn::Running => TurnState::Running,
+            RootTurn::Ended { end, .. } => TurnState::Ended {
+                outcome: outcome(Terminal::of(&end)),
+                end: end.id().clone(),
+            },
+        }))
+    }
+
     /// The latest `count` blocks, a page at most, of the live node `node` of
     /// the conversation `id`, read from its window now, with the transcript's version and the view of each
     /// live command of the node and its cache chart, without the failure facts
