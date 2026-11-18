@@ -300,18 +300,7 @@ pub fn turn_record(blocks: &[Block]) -> Option<&Block> {
 /// It is the last `response`, `error` or `abort` but an error that ended no
 /// turn and a stop a Resume continued.
 pub fn ended_turn(blocks: &[Block]) -> Option<&Block> {
-    blocks.iter().rev().find(|block| ends_turn(block))
-}
-
-/// Whether `block` ends a turn: a response, an error inside one, or a stop
-/// no resume picked up.
-pub fn ends_turn(block: &Block) -> bool {
-    match block {
-        Block::Response(_) => true,
-        Block::Error(error) => !error.outside_turn,
-        Block::Abort(abort) => !abort.is_resumed,
-        _ => false,
-    }
+    blocks.iter().rev().find(|block| Kind::TurnEnd.holds(block))
 }
 
 /// The latest ended turn: the block that ended it, as [`ended_turn`] finds it,

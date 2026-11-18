@@ -7,22 +7,23 @@
 //!
 //! - its conversation's device is offline, after the restart hold for one the
 //!   backend's own restart disconnected;
-//! - its conversation is gone or archived.
+//! - its conversation is gone or archived;
+//! - its message left the queue without running, as when the user took it
+//!   out.
 //!
 //! Otherwise its message wakes the conversation: queued behind a turn that
 //! runs, or, when the schedule steers, sent into it as the composer's Steer
-//! sends a queued message. The run ends with the turn its message started, and
-//! a once schedule is deleted with it, unless it was skipped.
+//! sends a queued message. The run ends with the turn its message started, as
+//! the conversation answers where that turn stands (`Core::root_turn`), and a
+//! once schedule is deleted with it once its message reached the
+//! conversation.
 
-use std::rc::Rc;
-
-use jush_agent_server::AgentServer;
-use jush_agent_store::StoreError;
 use jush_core_store::schedules::{RunCause, StoredRun, StoredSchedule};
+use jush_core_store::tree::RootTurn;
 use jush_core_device_access::root_of;
 use jush_core_sync::Part;
 use jush_shared_types::{
-    Block, QueuedMessage, ScheduleId, ScheduleMark, ScheduleRunId, SessionPhase, Timestamp, TurnId, UserContentBlock,
+    Block, QueuedMessage, ScheduleId, ScheduleMark, ScheduleRunId, Timestamp, TurnId, UserContentBlock,
 };
 use jush_web_api_protocol::devices::DeviceKind;
 use jush_web_api_protocol::ids::{ConversationId, DeviceId};
@@ -238,6 +239,9 @@ impl Core {
                 core.end_run(run, &schedule.conversation).await;
                 return;
             }
+            // Held until a failed carry is recorded too, which a settle
+            // would otherwise take for a message that left the queue.
+            let _carrying = core.schedules().carrying(&run.id);
             if let Err(message) = core.carry(&schedule, &mut run, fired).await {
                 run.state = RunState::Failed;
                 run.note = Some(RunNote::TurnFailed { message, code: None });
@@ -354,7 +358,7 @@ impl Core {
 
     /// The conversation's tree started or stopped working, or closed: each
     /// running run whose message went there ends once the turn it started
-    /// has ended.
+    /// has ended, or once the message left the queue without running.
     pub(crate) fn follow_runs(&self, conversation: &ConversationId) {
         let core = self.this();
         let conversation = conversation.clone();
@@ -375,25 +379,32 @@ impl Core {
             let Some(turn) = run.turn.clone() else {
                 continue;
             };
-            let end = match turn_end(self.agent(), conversation, &turn).await {
-                Ok(Some(end)) => end,
-                Ok(None) => continue,
+            // A run whose message is on its way has no turn to read yet,
+            // which would read as a message that left the queue.
+            if self.schedules().carries(&run.id) {
+                continue;
+            }
+            match self.root_turn(conversation, &turn).await {
+                Ok(Some(RootTurn::Queued | RootTurn::Running)) => continue,
+                // Its message left the queue without running.
+                Ok(None) => run.state = RunState::Skipped,
+                Ok(Some(RootTurn::Ended { end: Block::Error(error), .. })) => {
+                    run.state = RunState::Failed;
+                    run.note = Some(RunNote::TurnFailed { message: error.message, code: error.code });
+                }
+                // A run whose agent ran `jush notify send` is Notified; a
+                // stopped one tells what it wrote before the Stop.
+                Ok(Some(RootTurn::Ended { answer, .. })) => {
+                    run.state = if run.notified { RunState::Notified } else { RunState::Done };
+                    run.line = answer.map(|answer| {
+                        answer.chars().take(jush_web_api_protocol::push::ANSWER_START_CHARS).collect()
+                    });
+                }
                 Err(error) => {
                     // The run stays running; the next settle of the
                     // conversation reads it again.
                     tracing::warn!(event = "schedule_run.turn_read_failed", %conversation, run = %run.id, %error, "a run's turn was not read");
                     continue;
-                }
-            };
-            match end {
-                // A run whose agent ran `jush notify send` is Notified.
-                TurnEnd::Answered(line) => {
-                    run.state = if run.notified { RunState::Notified } else { RunState::Done };
-                    run.line = line;
-                }
-                TurnEnd::Failed { message, code } => {
-                    run.state = RunState::Failed;
-                    run.note = Some(RunNote::TurnFailed { message, code });
                 }
             }
             self.end_run(run, conversation).await;
@@ -414,8 +425,8 @@ impl Core {
         let conversations: std::collections::BTreeSet<ConversationId> =
             runs.into_iter().map(|(_, conversation)| conversation).collect();
         for conversation in conversations {
-            // A turn the shutdown interrupted resumes, which ends it; one
-            // that lost its message failed to start.
+            // A turn the shutdown interrupted resumes, which ends it; a run
+            // whose message the stop lost is skipped.
             if let Err(error) = self.restore_tree(&conversation).await {
                 tracing::warn!(event = "schedule_run.conversation_open_failed", %conversation, %error, "a run's conversation did not open");
                 continue;
@@ -442,63 +453,4 @@ fn note_name(note: &RunNote) -> &'static str {
         RunNote::Offline { .. } => "offline",
         _ => "other",
     }
-}
-
-/// How a run's turn ended.
-enum TurnEnd {
-    /// With the start of its last answer, none when it gave none, or when
-    /// the user stopped it before one.
-    Answered(Option<String>),
-    /// With its error block's message and code.
-    Failed { message: String, code: Option<String> },
-}
-
-/// How the turn `turn` of the conversation's root ended, from its blocks
-/// through the next message wherever they are (`AgentSession::turn_blocks`);
-/// none while its message waits or it runs.
-async fn turn_end<H: jush_agent_tools::DeviceResolver>(
-    agent: &Rc<AgentServer<H>>,
-    conversation: &ConversationId,
-    turn: &TurnId,
-) -> Result<Option<TurnEnd>, StoreError> {
-    let Some(tree) = agent.tree(&root_of(conversation)) else {
-        return Ok(None);
-    };
-    let session = tree.root().session();
-    let resting = session.phase() == SessionPhase::Idle;
-    Ok(session.turn_blocks(turn).await?.and_then(|blocks| turn_end_in(&blocks, resting)))
-}
-
-/// How a turn ended from `blocks`, the blocks after its message; none while
-/// it runs: it is not `resting` and no other message follows it.
-fn turn_end_in(blocks: &[Block], resting: bool) -> Option<TurnEnd> {
-    let later = blocks.iter().position(|block| matches!(block, Block::User(_)));
-    // A turn followed by another's message has ended; the last one ends
-    // when the root rests.
-    if later.is_none() && !resting {
-        return None;
-    }
-    let end = later.unwrap_or(blocks.len());
-    let mut answer = None;
-    let mut failure = None;
-    for block in &blocks[..end] {
-        match block {
-            Block::Text(text) if !jush_shared_types::is_blank(&text.text) => {
-                answer = Some(text.text.clone());
-                failure = None;
-            }
-            Block::Error(error) if !error.outside_turn => failure = Some((error.message.clone(), error.code.clone())),
-            Block::Response(_) => failure = None,
-            _ => {}
-        }
-    }
-    Some(match failure {
-        Some((message, code)) => TurnEnd::Failed { message, code },
-        None => TurnEnd::Answered(answer.map(|answer| {
-            answer
-                .chars()
-                .take(jush_web_api_protocol::push::ANSWER_START_CHARS)
-                .collect()
-        })),
-    })
 }

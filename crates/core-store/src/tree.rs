@@ -886,19 +886,6 @@ impl SessionStore for SqliteSessionStore {
         })
     }
 
-    fn next_of(&self, kind: Kind, from: usize) -> LocalBoxFuture<'_, Result<Option<usize>, StoreError>> {
-        let node = self.node.clone();
-        Box::pin(async move {
-            self.db
-                .call(move |connection| {
-                    let path = Path::read(connection, node.as_str())?;
-                    next_of(connection, &node, &path, kind, count(from))
-                })
-                .await
-                .map_err(store_error)
-        })
-    }
-
     fn blocks_of(&self, kinds: Vec<Kind>, range: Range<usize>) -> LocalBoxFuture<'_, Result<Vec<(usize, Block)>, StoreError>> {
         let node = self.node.clone();
         Box::pin(async move {
@@ -1243,6 +1230,7 @@ fn condition(kind: Kind) -> &'static str {
         Kind::ExecutingCall => "status = 'executing'",
         Kind::CompletedText => "forkable = 1",
         Kind::Record => "outside_turn = 0 AND (type != 'wakeup' OR placement != 'steer')",
+        Kind::TurnEnd => "outside_turn = 0 AND resumed = 0",
         _ => "1",
     }
 }
@@ -1762,32 +1750,59 @@ pub enum Terminal {
     Abort,
 }
 
+impl Terminal {
+    /// How the block `end`, of [`Kind::TurnEnd`], ended its turn.
+    pub fn of(end: &Block) -> Self {
+        match end {
+            Block::Response(_) => Self::Response,
+            Block::Error(_) => Self::Error,
+            Block::Abort(_) => Self::Abort,
+            _ => unreachable!("only a response, an error or a stop ends a turn"),
+        }
+    }
+}
+
 /// The root's latest ended turn.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EndedTurn {
     /// The terminal block that ended it: a turn that a Resume continues
     /// ends anew, with another block.
     pub id: BlockId,
+    /// The turn, which its input blocks name.
+    pub turn: TurnId,
     pub outcome: Terminal,
     /// The Markdown of its last text that is not blank; none when it gave
     /// none.
     pub answer: Option<String>,
 }
 
-/// One block row as the summary walks the transcript back: its kind, its
-/// turn when it is a block of a turn's input, whether it is a terminal block
-/// that ends a turn, and its text when it is a text block.
+/// Where a turn of the root stands ([`turn`]).
+#[derive(Debug, Clone, PartialEq)]
+pub enum RootTurn {
+    /// Its message waits in the root's queue.
+    Queued,
+    /// The root runs it.
+    Running,
+    /// It ended at the block `end`, of [`Kind::TurnEnd`], and its last text
+    /// that is not blank is `answer`; none when it wrote none.
+    Ended { end: Block, answer: Option<String> },
+}
+
+/// One block row as the summary walks the transcript back: its position on
+/// the path, its kind, its turn when it is a block of a turn's input,
+/// whether it is a terminal block that ends a turn, and its text when it is
+/// a text block.
 struct WalkRow {
-    index: i64,
+    position: i64,
     kind: String,
     turn: Option<String>,
     ends_turn: bool,
     text: Option<String>,
 }
 
-/// What the walk found: the kind of the latest terminal block, and the row
-/// of the block that ended the latest ended turn with that turn's last text
-/// that is not blank.
+/// What the walk found: the kind of the latest terminal block, and the
+/// position of the block that ended the latest ended turn with that turn's
+/// last text that is not blank.
 struct Walk {
     last: Option<Terminal>,
     end: Option<i64>,
@@ -1811,7 +1826,7 @@ impl EndSearch {
     fn step(&mut self, row: WalkRow) -> bool {
         if self.end.is_none() {
             if row.ends_turn {
-                self.end = Some(row.index);
+                self.end = Some(row.position);
             }
             return false;
         }
@@ -1873,13 +1888,11 @@ pub fn summary(connection: &Connection) -> Result<SummaryFacts, StorageError> {
         });
     };
     let state: CheckpointState = json("nodes", "state", &state)?;
-    // A failed `compact` ends no turn, and a stop that a Resume continued
-    // ended the turn only until the Resume.
     let mut rows = connection.prepare_cached(&format!(
-        "SELECT blocks.idx, blocks.type, blocks.turn_id,
-                blocks.type IN ('response', 'error', 'abort') AND blocks.outside_turn = 0 AND blocks.resumed = 0,
+        "SELECT {POSITION}, blocks.type, blocks.turn_id, {},
                 blocks.format, blocks.dictionary, CASE blocks.type WHEN 'text' THEN blocks.body END
-           FROM {PATH_ROWS} WHERE run.node_id = ?1 ORDER BY run.start DESC, blocks.idx DESC"
+           FROM {PATH_ROWS} WHERE run.node_id = ?1 ORDER BY run.start DESC, blocks.idx DESC",
+        holds(Kind::TurnEnd)
     ))?;
     let codec = Codec::new(connection);
     // A text is joined only when the walk reaches it.
@@ -1887,7 +1900,7 @@ pub fn summary(connection: &Connection) -> Result<SummaryFacts, StorageError> {
         let body: Option<Vec<u8>> = row.get(6)?;
         Ok((
             WalkRow {
-                index: row.get(0)?,
+                position: row.get(0)?,
                 kind: row.get(1)?,
                 turn: row.get(2)?,
                 ends_turn: row.get(3)?,
@@ -1915,7 +1928,11 @@ pub fn summary(connection: &Connection) -> Result<SummaryFacts, StorageError> {
     });
     let walk = walk(rows, state.phase)?;
     let last_turn = match walk.end {
-        Some(end) => Some(ended_turn(connection, &id, end, walk.answer)?),
+        Some(end) => {
+            let node = decode("nodes", "id", NodeId::try_from(id.clone()))?;
+            let path = Path::read(connection, &id)?;
+            ended_turn(connection, &node, &path, end, walk.answer)?
+        }
         None => None,
     };
     Ok(SummaryFacts {
@@ -1986,29 +2003,114 @@ fn walk(
     })
 }
 
-/// The turn the terminal block at `end` ended, whose last text is `answer`.
+/// The turn the terminal block at the position `end` of `node`'s `path`
+/// ended, whose last text is `answer`: the turn of the last input block
+/// before it, found through the index of block types. None when no input
+/// block comes before it.
 fn ended_turn(
     connection: &Connection,
-    node: &str,
+    node: &NodeId,
+    path: &Path,
     end: i64,
     answer: Option<String>,
-) -> Result<EndedTurn, StorageError> {
-    let stored = connection.query_row(
-        "SELECT format, dictionary, body FROM blocks WHERE node_id = ?1 AND idx = ?2",
-        params![node, end],
-        |row| Stored::of(row, 0),
-    )?;
-    let (id, outcome) = match Codec::new(connection).block("blocks", &stored)? {
-        Block::Response(block) => (block.id, Terminal::Response),
-        Block::Error(block) => (block.id, Terminal::Error),
-        Block::Abort(block) => (block.id, Terminal::Abort),
-        _ => unreachable!("the walk ends a turn only at a terminal block"),
+) -> Result<Option<EndedTurn>, StorageError> {
+    let Some(input) = last_of(connection, node, path, Kind::Input, end)? else {
+        return Ok(None);
     };
-    Ok(EndedTurn {
-        id,
-        outcome,
+    let turn = turn_at(connection, node, path, count(input))?;
+    let block = block_at(connection, node, path, end)?;
+    Ok(Some(EndedTurn {
+        id: block.id().clone(),
+        turn,
+        outcome: Terminal::of(&block),
         answer,
-    })
+    }))
+}
+
+/// Where the root's turn `turn` stands as the store holds it: from the
+/// `user` block that opened it on the root's current path until an input
+/// block of another turn, it ended at its last block of [`Kind::TurnEnd`].
+/// Each block is found through the index of block types.
+///
+/// A message no `user` block holds yet is queued while the checkpoint's
+/// queue holds it, as a restored session's is until the session takes it
+/// back. `live` when a session holds the root, which tells a running turn:
+/// otherwise a turn no input of another turn follows runs while the
+/// checkpoint's phase is not idle, as the summary's walk takes it.
+///
+/// None when the root holds no turn of it: no `user` block opened it, as for
+/// a message taken out of the queue, or it never ended, as a message stopped
+/// before its turn wrote anything.
+pub fn turn(connection: &Connection, turn: &TurnId, live: bool) -> Result<Option<RootTurn>, StorageError> {
+    let root: Option<(String, String)> = connection
+        .query_row("SELECT id, state FROM nodes WHERE parent_id IS NULL", [], |row| {
+            Ok((row.get(0)?, row.get(1)?))
+        })
+        .optional()?;
+    let Some((root, state)) = root else {
+        return Ok(None);
+    };
+    let state: CheckpointState = json("nodes", "state", &state)?;
+    let node = decode("nodes", "id", NodeId::try_from(root.clone()))?;
+    let Some(start) = turn_position(connection, &node, turn)? else {
+        let queued = state.queue.iter().any(|message| message.id == *turn);
+        return Ok(queued.then_some(RootTurn::Queued));
+    };
+    let path = Path::read(connection, &root)?;
+    let mut from = count(start) + 1;
+    let next = loop {
+        match next_of(connection, &node, &path, Kind::Input, from)? {
+            Some(at) if turn_at(connection, &node, &path, count(at))? == *turn => from = count(at) + 1,
+            found => break found,
+        }
+    };
+    if !live && next.is_none() && state.phase != SessionPhase::Idle {
+        return Ok(Some(RootTurn::Running));
+    }
+    let until = next.map_or(path.len(), count);
+    let Some(end) = last_of(connection, &node, &path, Kind::TurnEnd, until)?.filter(|end| *end > start) else {
+        return Ok(None);
+    };
+    // The last text before the end that is not blank, read back one at a
+    // time through the index: a blank one is rare.
+    let mut answer = None;
+    let mut before = count(end);
+    while let Some(at) = last_of(connection, &node, &path, Kind::Text, before)?.filter(|at| *at > start) {
+        if let Block::Text(text) = block_at(connection, &node, &path, count(at))?
+            && !is_blank(&text.text)
+        {
+            answer = Some(text.text);
+            break;
+        }
+        before = count(at);
+    }
+    Ok(Some(RootTurn::Ended {
+        end: block_at(connection, &node, &path, count(end))?,
+        answer,
+    }))
+}
+
+/// The turn of the input block at the position `at` of `node`'s `path`.
+fn turn_at(connection: &Connection, node: &NodeId, path: &Path, at: i64) -> Result<TurnId, StorageError> {
+    let mut statement = connection.prepare_cached("SELECT turn_id FROM blocks WHERE node_id = ?1 AND idx = ?2")?;
+    let Some(Segment { node: holder, rows, .. }) = path.segments(node.as_str(), at..at + 1).into_iter().next() else {
+        unreachable!("a position found on the path is on it");
+    };
+    let turn: Option<String> = statement.query_row(params![holder, rows.start], |row| row.get(0))?;
+    decode("blocks", "turn_id", TurnId::try_from(turn.unwrap_or_default()))
+}
+
+/// The block at the position `at` of `node`'s `path`.
+fn block_at(connection: &Connection, node: &NodeId, path: &Path, at: i64) -> Result<Block, StorageError> {
+    let block = path_blocks(connection, node, path, at..at + 1)?.pop();
+    Ok(block.unwrap_or_else(|| unreachable!("a position found on the path is on it")))
+}
+
+/// The SQL that tells whether a row of `blocks` is of `kind`, as
+/// [`Kind::holds`] tells a block.
+fn holds(kind: Kind) -> String {
+    let types: Vec<String> = kind.types().iter().map(|tag| format!("'{tag}'")).collect();
+    format!("(blocks.type IN ({}) AND {})", types.join(", "), condition(kind))
 }
 
 /// Which saved state of the root's transcript a reader saw: its output revision

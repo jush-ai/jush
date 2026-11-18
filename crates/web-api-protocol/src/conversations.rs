@@ -4,7 +4,9 @@ use jush_conversation_lane_protocol::{
     AgentCost, AgentEntry, BlockVersions, CacheChart, ConversationAttachment, Failures, Refusal, ReplyBlockFacts,
     RequestOutput, SendMessage, ShellStatus, TurnSpeed, Version,
 };
-use jush_shared_types::{Block, BlockId, CommandId, InstructionEntry, MAX_SAFE_INTEGER, NodeId, Nullable, Timestamp, WorkflowChoice};
+use jush_shared_types::{
+    Block, BlockId, CommandId, InstructionEntry, MAX_SAFE_INTEGER, NodeId, Nullable, Timestamp, TurnId, WorkflowChoice,
+};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_with::rust::{double_option, unwrap_or_skip};
@@ -568,7 +570,27 @@ pub struct LastTurn {
     /// The block that ended the turn, so a turn that a Resume continues
     /// ends anew.
     pub id: BlockId,
+    /// The turn it ended, which the turn's input blocks name: for a turn a
+    /// message started, the message's id, which a Resume of the turn keeps;
+    /// a turn Jush started for a command's report or an agent's message has
+    /// an id of its own.
+    pub turn_id: TurnId,
     pub outcome: TurnOutcome,
+}
+
+/// Where a turn of a conversation's root stands, by the id of the message
+/// that started it (`GET /conversations/{id}/turns/{turnId}`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "state", rename_all = "snake_case", deny_unknown_fields)]
+pub enum TurnState {
+    /// The message waits in the root's queue.
+    Queued,
+    /// Its turn runs: from taking the message to its end, and again while a
+    /// Resume continues it.
+    Running,
+    /// It ended, at the block `end`, which ends it by the rule that
+    /// [`LastTurn`] follows.
+    Ended { end: BlockId, outcome: TurnOutcome },
 }
 
 /// How a turn ended: with an answer, with an error, or stopped by the user.

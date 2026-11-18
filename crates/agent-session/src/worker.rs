@@ -325,16 +325,16 @@ async fn rerun(s: &Rc<SessionShared>, cancel: &TurnCancel, turn: TurnId) -> Resu
 /// Finishes an unfinished turn.
 ///
 /// It unwinds the turn to its resume point, keeping the compactions after it,
-/// marks the stop it continues as resumed, appends a `resume` block and infers
-/// again. A turn that left nothing but leftovers runs again from its input, as
-/// a retry does. A turn a filtered reply ended tells the model so, as one
-/// that goes on after a filtered reply does.
+/// marks the stop at the resume point as resumed, appends a `resume` block and
+/// infers again. A turn that left nothing but leftovers runs again from its
+/// input, as a retry does. A turn a filtered reply ended tells the model so,
+/// as one that goes on after a filtered reply does.
 async fn resume(
     s: &Rc<SessionShared>,
     cancel: &TurnCancel,
     mut reason: Option<String>,
 ) -> Result<(), TurnError> {
-    let point = {
+    let (point, stop) = {
         let _turn = s.persist_gate.acquire().await;
         // The scan may pass the whole window, as one that holds a
         // compaction and leftovers: it goes on before it.
@@ -350,18 +350,24 @@ async fn resume(
         };
         // The unwind comes before a pending switch lands: a switch that
         // compacts would move the cut.
-        let (kept, filtered) = s.read(|core| {
+        let (kept, filtered, stop) = s.read(|core| {
             let blocks = core.transcript.blocks();
             let filtered = blocks[point.cut..].iter().any(|block| {
                 matches!(block, Block::Error(error) if error.code.as_deref() == Some(ErrorCode::Filtered.as_str()))
             });
-            (unwind(blocks, point.cut), filtered)
+            // The scan stops at a stop the turn ended with; an older one is
+            // another turn's, or one a Resume continued already.
+            let stop = match point.cut.checked_sub(1).map(|at| &blocks[at]) {
+                Some(Block::Abort(abort)) => Some(abort.id.clone()),
+                _ => None,
+            };
+            (unwind(blocks, point.cut), filtered, stop)
         });
         persist::commit_rewrite_held(s, kept).await?;
         if filtered {
             reason.get_or_insert_with(|| turn::FILTERED_REASON.to_owned());
         }
-        point
+        (point, stop)
     };
     if let Some(turn) = point.rerun {
         return rerun(s, cancel, turn).await;
@@ -369,7 +375,9 @@ async fn resume(
     // A stop that came during the save is recorded after the published
     // rewrite, and no `resume` block without a turn is left.
     cancel.check()?;
-    s.update(|core| core.mark_abort_resumed());
+    if let Some(stop) = &stop {
+        s.update(|core| core.mark_abort_resumed(stop));
+    }
     turn::apply_switch(s, cancel).await?;
     s.update(|core| core.push_resume(reason));
     compaction::preflight(s, cancel).await?;

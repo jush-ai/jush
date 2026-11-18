@@ -8,13 +8,14 @@
 //! ```
 //!
 //! A turn is the blocks of one turn id, from its first block's start to the
-//! latest time any of them keeps. Each part is a set of spans: the model
-//! waited for (a request's first output), thinking, text and calls being
-//! written, calls running once their response ended, a compaction, and the
-//! time before a request left, Jush's own after what ended last, or a failed
-//! request and the wait after it. Time two parts share counts once, for the
-//! one that ranks first in [`Part`]; what no part covers is other, so the
-//! parts add up to the turn.
+//! latest time any of them keeps, but for the time it stood stopped or failed
+//! until a Resume continued it, when it ran nothing. Each part is a set of
+//! spans: the model waited for (a request's first output), thinking, text and
+//! calls being written, calls running once their response ended, a
+//! compaction, and the time before a request left, Jush's own after what
+//! ended last, or a failed request and the wait after it. Time two parts
+//! share counts once, for the one that ranks first in [`Part`]; what no part
+//! covers is other, so the parts add up to the turn.
 //!
 //! What happened outside the turn is not its time: a compaction's boundary,
 //! written where the kept history begins, a pass that ran while the
@@ -47,7 +48,8 @@ pub(super) struct TurnTiming {
     pub index: usize,
     pub started_at: Timestamp,
     /// From the turn's first block's start to the latest time its blocks
-    /// keep.
+    /// keep, less the time it stood stopped or failed until a Resume
+    /// continued it.
     pub ms: u64,
     /// The provider requests that ended with a response.
     pub requests: u64,
@@ -93,6 +95,9 @@ pub(super) struct Turn {
     calls: Vec<(i64, Option<i64>)>,
     requests: u64,
     spans: Vec<(Part, i64, i64)>,
+    /// The time from what the turn wrote last to each Resume that
+    /// continued it.
+    stopped: i64,
     untimed: bool,
 }
 
@@ -111,6 +116,7 @@ impl Turn {
             calls: Vec::new(),
             requests: 0,
             spans: Vec::new(),
+            stopped: 0,
             untimed: false,
         }
     }
@@ -227,6 +233,13 @@ impl Turn {
                 Some(start) => self.span(Part::Compacting, start, created),
                 None => self.untimed = true,
             },
+            Block::Resume(_) => {
+                // The request a stop or a failure cut is over, and the turn
+                // ran nothing until the Resume.
+                self.calls_ran(None);
+                self.request_from = None;
+                self.stopped += (created.as_millisecond() - self.end).max(0);
+            }
             _ => {}
         }
         self.ended(created.as_millisecond(), false);
@@ -267,7 +280,7 @@ impl Turn {
                 parts[part as usize] += u64::try_from(to - from).unwrap_or(0);
             }
         }
-        let ms = u64::try_from(self.end - self.start).unwrap_or(0);
+        let ms = u64::try_from(self.end - self.start - self.stopped).unwrap_or(0);
         let covered: u64 = parts.iter().sum();
         TurnTiming {
             index: self.index,

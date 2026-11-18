@@ -241,6 +241,7 @@ pub fn web() -> Vec<Root> {
         sends::<conversations::ReadRequest>(),
         receives::<conversations::TranscriptPage>(),
         receives::<conversations::WholeBlock>(),
+        receives::<conversations::TurnState>(),
         receives::<conversations::ConversationDetail>(),
         sends::<conversations::CostWindow>(),
         receives::<conversations::RecentCost>(),

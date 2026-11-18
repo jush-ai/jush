@@ -10,6 +10,7 @@
  * request the conversation's metadata adds.
  */
 import {
+  addPage,
   applyTranscriptPatches,
   ConversationClient,
   createConversationClient,
@@ -17,8 +18,10 @@ import {
   heldBlocks,
   reconnectWait,
   resetTranscript,
+  windowOf,
   type ClientSessionEvent,
   type HeldTranscript,
+  type TranscriptWindow,
 } from '@jush-agent/conversation-client'
 import {
   conversationDetailSchema,
@@ -26,6 +29,7 @@ import {
   conversationUpdateSchema,
   subagentMessageAnswerSchema,
   transcriptPageSchema,
+  turnStateSchema,
   type AbortResult,
   type AgentEntry,
   type Block,
@@ -36,12 +40,19 @@ import {
   type PermissionRequest,
   type RequestedValues,
   type TurnOutcome,
+  type TurnState,
 } from '@jush-agent/protocol'
 import { randomUUID } from 'node:crypto'
-import type { CoreRoutes } from './routes'
+import { JushError, type CoreRoutes } from './routes'
 
 /** What a program sends: text, or the content blocks a page sends. */
 export type Input = string | ClientContent[]
+
+/** The block that ended a turn, and how. */
+interface TurnEnd {
+  end: string
+  outcome: TurnOutcome
+}
 
 /** A turn that ended: how, the blocks it wrote after its message, and their text. */
 export interface Turn {
@@ -312,25 +323,103 @@ export class Conversation {
 
   /**
    * Sends `input`, and answers the turn it starts once the turn ended: once
-   * the conversation's last ended turn is one whose ending block follows
-   * the message, as a turn the root resumes ends anew. It fails when the
-   * message leaves the queue without running, as an abort's clearing of
-   * the queue removes it.
+   * the conversation's last ended turn is its own, as a turn the root
+   * resumes ends anew. When the lane's view cannot tell, as after its
+   * connection dropped while the turn ended, it asks the conversation where
+   * the turn stands, again at each view that cannot tell. It reads the
+   * transcript back to the message when the turn ended past what the lane
+   * holds. It fails when the message left the queue without running, as an
+   * abort's clearing of the queue removes it.
    */
   async run(input: Input): Promise<Turn> {
     const messageId = randomUUID()
     let sent = false
+    // How the turn ended, as the conversation last answered when asked.
+    let answered: TurnEnd | null = null
+    // The view the conversation was asked about last: each view asks once.
+    let asked: string | null = null
+    // Whether a page before the turn's end is being read.
+    let reading = false
+    // The reads in a row that failed, whose backoff the next one waits.
+    let failures = 0
     let change = { changed: () => {}, closed: () => {} }
     const ended = new Promise<Turn>((resolve, reject) => {
+      // What a read brings is taken while the run still waits.
+      const again = () => {
+        if (this.changes.has(change)) {
+          change.changed()
+        }
+      }
+      // A read that failed, as across a drop, is made again after the
+      // backoff, since an idle conversation may change no more.
+      const later = () => {
+        failures += 1
+        setTimeout(again, reconnectWait(failures))
+      }
+      const ask = (view: string) => {
+        asked = view
+        this.turnState(messageId).then(
+          (state) => {
+            // A later view asked again, and its answer counts.
+            if (asked !== view) {
+              return
+            }
+            if (state === null) {
+              this.changes.delete(change)
+              reject(new Error('The message left the queue without running'))
+            } else if (state.state === 'ended') {
+              failures = 0
+              answered = { end: state.end, outcome: state.outcome }
+              again()
+            } else {
+              // The view, idle without the message, and the answer disagree
+              // for a moment, as while a restored root takes its queue back:
+              // the same view asks again after the backoff.
+              asked = null
+              later()
+            }
+          },
+          () => {
+            if (asked === view) {
+              asked = null
+              later()
+            }
+          },
+        )
+      }
+      const readBefore = (window: TranscriptWindow) => {
+        reading = true
+        this.readBefore(window).then(
+          () => {
+            reading = false
+            failures = 0
+            again()
+          },
+          () => {
+            reading = false
+            later()
+          },
+        )
+      }
       change = {
         changed: () => {
-          const turn = this.turnOf(messageId)
-          if (turn !== null) {
-            this.changes.delete(change)
-            resolve(turn)
-          } else if (sent && this.leftUnrun(messageId)) {
-            this.changes.delete(change)
-            reject(new Error('The message left the queue without running'))
+          const last = this.metadata?.lastTurn
+          const end = last?.turnId === messageId ? { end: last.id, outcome: last.outcome } : answered
+          if (end) {
+            const turn = this.turnOf(messageId, end)
+            if (turn) {
+              this.changes.delete(change)
+              resolve(turn)
+              return
+            }
+            const short = this.shortOf(messageId, end)
+            if (short && !reading) {
+              readBefore(short)
+            }
+          }
+          const view = sent ? this.unaccounted(messageId) : null
+          if (view !== null && view !== asked) {
+            ask(view)
           }
         },
         closed: () => reject(new Error('The conversation was closed before its turn ended')),
@@ -353,41 +442,74 @@ export class Conversation {
   }
 
   /**
-   * Whether the message `messageId`, which was sent, will not run: the root
-   * is idle, and the message is neither in the queue, nor starting a turn,
-   * nor in the transcript. Nothing tells while the lane opens again, nor
-   * until it holds both the agents and the root's transcript current: after
-   * a drop, the agents can show the queue run before the transcript shows
-   * the message.
+   * The lane's view of the conversation when it leaves the turn of the sent
+   * message `messageId` unaccounted for: the root idle, and the message
+   * neither queued, nor starting, nor the last ended turn's, as when the
+   * turn ended unseen or the message left the queue. Null when the view
+   * accounts for it, or cannot tell yet: while the lane opens again, or
+   * before it holds both the agents and the root's transcript current, as
+   * after a drop.
    */
-  private leftUnrun(messageId: string): boolean {
+  private unaccounted(messageId: string): string | null {
     const client = this.client
-    if (this.reopening || !client?.heldAgents() || !client.holdsCurrent(this.id)) {
-      return false
+    const agents = client?.heldAgents()
+    if (this.reopening || !client || !agents || !client.holdsCurrent(this.id)) {
+      return null
     }
     const root = this.agents.find((agent) => agent.role.kind === 'root')
     const phase = root?.phase ?? 'idle'
-    return (phase === 'idle' || phase === 'compacting_idle')
-      && !root?.queue.some((message) => message.id === messageId)
-      && root?.starting?.id !== messageId
-      && !this.blocks.some((block) => block.type === 'user' && block.turnId === messageId)
+    const last = this.metadata?.lastTurn ?? null
+    const accounted = (phase !== 'idle' && phase !== 'compacting_idle')
+      || root?.queue.some((message) => message.id === messageId)
+      || root?.starting?.id === messageId
+      || last?.turnId === messageId
+    return accounted ? null : JSON.stringify([agents, client.transcriptVersion(this.id), last?.id ?? null])
   }
 
-  /** The turn `messageId` started, once it ended; null before. */
-  private turnOf(messageId: string): Turn | null {
-    const last = this.metadata?.lastTurn
-    if (!last) {
-      return null
+  /** Where the turn `messageId` stands, as the conversation answers; null when it holds no turn of it. */
+  private async turnState(messageId: string): Promise<TurnState | null> {
+    const path = `/conversations/${encodeURIComponent(this.id)}/turns/${encodeURIComponent(messageId)}`
+    try {
+      return await this.routes.json('GET', path, turnStateSchema)
+    } catch (error) {
+      if (error instanceof JushError && error.code === 'turn_not_found') {
+        return null
+      }
+      throw error
     }
-    const blocks = this.blocks
+  }
+
+  /** The turn `messageId` started, which ended at `ending`; null until one window of the transcript holds both ends. */
+  private turnOf(messageId: string, ending: TurnEnd): Turn | null {
+    const blocks = windowOf(this.transcript, ending.end)?.blocks ?? []
     const at = blocks.findIndex((block) => block.type === 'user' && block.turnId === messageId)
-    const end = blocks.findIndex((block) => block.id === last.id)
+    const end = blocks.findIndex((block) => block.id === ending.end)
     if (at < 0 || end <= at) {
       return null
     }
     const after = blocks.slice(at + 1, end + 1)
     const text = after.flatMap((block) => (block.type === 'text' ? [block.text] : [])).join('\n\n')
-    return { outcome: last.outcome, blocks: after, text }
+    return { outcome: ending.outcome, blocks: after, text }
+  }
+
+  /**
+   * The window of the root's transcript that holds the turn's end `ending`
+   * but not the message `messageId` that started it, when the transcript
+   * goes on before it; null otherwise.
+   */
+  private shortOf(messageId: string, ending: TurnEnd): TranscriptWindow | null {
+    const window = windowOf(this.transcript, ending.end)
+    const started = window?.blocks.some((block) => block.type === 'user' && block.turnId === messageId)
+    return window && window.start > 0 && !started ? window : null
+  }
+
+  /** Reads the page of the root's transcript before `window` into what the conversation holds. */
+  private async readBefore(window: TranscriptWindow): Promise<void> {
+    const root = encodeURIComponent(this.id)
+    const edge = encodeURIComponent(window.blocks[0]!.id)
+    const path = `/conversations/${root}/agents/${root}/transcript?before=${window.start}&edge=${edge}`
+    const page = await this.routes.json('GET', path, transcriptPageSchema)
+    this.transcript = addPage(this.transcript, page, true)
   }
 
   /**
