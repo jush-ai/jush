@@ -167,9 +167,11 @@ impl Command {
         name: &'static str,
     ) -> std::io::Result<Child> {
         let invocation = super::snapshot();
-        let (stdin, parent_stdin) = utility_stream(self.stdin.take(), &invocation.stdin, true)?;
-        let (stdout, parent_stdout) = utility_stream(self.stdout.take(), &invocation.stdout, false)?;
-        let (stderr, parent_stderr) = utility_stream(self.stderr.take(), &invocation.stderr, false)?;
+        let (stdin, parent_stdin) = utility_stream(control, self.stdin.take(), &invocation.stdin, true)?;
+        let (stdout, parent_stdout) =
+            utility_stream(control, self.stdout.take(), &invocation.stdout, false)?;
+        let (stderr, parent_stderr) =
+            utility_stream(control, self.stderr.take(), &invocation.stderr, false)?;
         let command = self.inner.command();
         // `new` cleared the environment and set the invocation's, so what
         // the command sets is all the child has.
@@ -321,6 +323,7 @@ fn process_stream(
 /// when the caller chose a pipe. Inheriting is the invocation's own stream:
 /// the utility shares the invocation's process.
 fn utility_stream(
+    control: &dyn super::Control,
     chosen: Option<Stdio>,
     own: &Arc<std::fs::File>,
     input: bool,
@@ -340,7 +343,7 @@ fn utility_stream(
             (Arc::new(file), None)
         }
         Some(Stream::Piped) => {
-            let (reader, writer) = std::io::pipe()?;
+            let (reader, writer) = control.pipe()?;
             let (reader, writer) = (pipe_file(reader), pipe_file(writer));
             if input {
                 (Arc::new(reader), Some(writer.into()))

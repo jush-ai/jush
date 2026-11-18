@@ -358,7 +358,13 @@ impl RemoteJob {
             lease,
         } = job;
         let job_id = env.get(JOB_ID_ENV).cloned().unwrap_or_default();
-        let endpoint = start_process(program, &job_id).await?;
+        // A start that waits (`jush_runner_process::process::start`) ends
+        // with the job.
+        let endpoint = tokio::select! {
+            biased;
+            () = cancellation.cancelled() => return Err(io::Error::other(crate::scope::Cancelled)),
+            endpoint = start_process(program, &job_id) => endpoint?,
+        };
         // A runner that starts next finds the shell by its record, which
         // goes before the job starts; a job the record misses would end with
         // this runner.
@@ -697,7 +703,7 @@ async fn start_process(program: &Path, job_id: &str) -> io::Result<String> {
     // The process forks the shell into a session of its own and ends
     // (`server::serve`).
     #[cfg(unix)]
-    let mut child = command.spawn()?;
+    let mut child = jush_runner_process::process::start(|| command.spawn()).await?;
     #[cfg(windows)]
     let mut child = jush_runner_process::detached::start(|flags| command.creation_flags(flags).spawn())?;
     let stdout = child
