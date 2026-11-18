@@ -1,7 +1,6 @@
 import type { MessageListBlock } from './pending-steers'
 import { sentMessage } from './message-delivery'
 import { receivedAsBubble } from './agent-receipts'
-import { isWorkStep, workRowId } from './work-groups'
 
 /**
  * What names a row of the list across the forms it takes.
@@ -10,9 +9,8 @@ import { isWorkStep, workRowId } from './work-groups'
  *   the id it was sent with, which the message written keeps as its turn's id:
  *   on its way, waiting as a steer or in the queue, starting its turn, and
  *   written.
- * - A run is named after the run the backend stored, and a step that runs after
- *   itself. The row a lone step ran in becomes its run's row by taking its
- *   place (`succeedKeys`).
+ * - A run is named after the run the backend stored (`runRowId`), its row's
+ *   id.
  *
  * The list keeps a row it names the same, with the height it measured, and
  * changes it in place, rather than building a new one that it lays out at a
@@ -20,9 +18,6 @@ import { isWorkStep, workRowId } from './work-groups'
  * name takes the key the list draws it under (`succeedKeys`).
  */
 export function rowKey(block: MessageListBlock): string {
-  if (isWorkStep(block)) {
-    return workRowId(block)
-  }
   const message = sentMessage(block)
   return message ? `message:${message.id}` : block.id
 }
@@ -62,15 +57,15 @@ export function drawnAsFunctionalBlock(row: MessageListBlock): boolean {
  *
  * A row whose face changes from one `FunctionalBlock` face to another under
  * the key it keeps rolls the new face over the old one (`RowRoll`), as the
- * Stopped row rolls into Requesting and Requesting into the step it waited
- * for. A run is one face from its first step, while it runs, on: a step that
- * ends becomes its run's row without a roll.
+ * Stopped row rolls into Requesting and Requesting into the run whose first
+ * step it waited for. A run is one face from its first step to its end: what
+ * it says rolls inside the face (`WorkGroupBlock`).
  */
 export function rowFace(row: MessageListBlock): string | null {
   if (!drawnAsFunctionalBlock(row)) {
     return null
   }
-  return isWorkStep(row) || row.type === 'work_group' ? 'work' : row.type
+  return row.type === 'work_group' ? 'work' : row.type
 }
 
 /**

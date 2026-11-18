@@ -173,6 +173,8 @@
       "used": "{tool} 사용",
       "joined": "{first}, {next}",
       "took": "{what}, {span} 소요",
+      "stillRunning": "{count}개 실행 중",
+      "stillStopping": "{count}개 중지 중",
       "command": {
         "finished": "명령 {count}개 완료됨",
         "failed": "명령 {count}개 실패함",

@@ -6,8 +6,8 @@ import { ago } from './time'
 
 /**
  * One step of each kind a run holds, for the specimen that shows each in
- * every place it stands: alone, inside an opened run, and as a running
- * run's folded face. `before` is the step the run holds before it.
+ * the places it stands: alone, and inside an opened run. `before` is the step
+ * the run holds before it.
  */
 export interface StepPlace {
   variant: string

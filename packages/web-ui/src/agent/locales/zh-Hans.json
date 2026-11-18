@@ -173,6 +173,8 @@
       "used": "使用了 {tool}",
       "joined": "{first}，{next}",
       "took": "{what}，用时 {span}",
+      "stillRunning": "{count} 条仍在运行",
+      "stillStopping": "{count} 条正在停止",
       "command": {
         "finished": "{count} 条命令已完成",
         "failed": "{count} 条命令失败",
