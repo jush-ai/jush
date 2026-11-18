@@ -39,6 +39,7 @@ import { distanceFromBottom } from '../composables/scroll-bottom'
 import { highlightFound } from '../ui/found-highlight'
 import { provideTranscript } from './edit-selection'
 import { useOpenRuns } from './open-runs'
+import { followedBlockId } from './work-groups'
 import { storedRequests } from '../files/request-changes'
 import { blockDirectories, blockMessageFiles } from './working-directory'
 import { provideMessageFiles, useMessageFiles } from '../markdown/message-files'
@@ -431,10 +432,11 @@ const transcriptIndexById = keptComputed(
     new Map(visibleTranscriptBlocks.value.map((block, index) => [block.id, index]))
 )
 
-// A row's streaming and end follow its transcript block.
+// A row's streaming and end follow its transcript block: a joined thinking
+// step's last part.
 function transcriptIndexAt(index: number): number {
   const block = renderBlocks.value[index]
-  return block ? transcriptIndexById.value.get(block.id) ?? -1 : -1
+  return block ? transcriptIndexById.value.get(followedBlockId(block)) ?? -1 : -1
 }
 
 function isStreamingThinkingAt(index: number): boolean {

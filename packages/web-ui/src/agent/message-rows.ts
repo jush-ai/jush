@@ -97,14 +97,14 @@ interface Recovery {
  *
  * A row is named by `rowKey`, which it keeps as it changes form: the message
  * being sent and the message confirmed, a run from its first step to its end.
- * Whatever replaces a row of another name takes its key (`keyOf`): the run
- * whose first step ends a wait, the Requesting row of a Continue, the answer
- * that follows thinking without text.
+ * Whatever replaces a row of another name takes its key (`keyOf`): the step
+ * that ends a wait, the Requesting row of a Continue, the answer that follows
+ * thinking without text.
  *
- * A run's row holds all its steps, those that still run with those that ended.
- * At the end of a running turn it says what the turn does now: the step that
- * runs, or the wait for the model, which it says in place of the tail row, so
- * the list holds one row for the work whether a step runs or the turn waits.
+ * A run's row holds the steps the agent no longer waits for, a call whose
+ * command runs on after it returned among them. A step it waits for is a row
+ * of its own under it, in the tail row's place, and once it ended the turn
+ * waits for the model in a Requesting row under the run.
  *
  * The messages that wait, the steers and the queue, stay below the turn: the
  * tail row stands above them. Whether it waits is the server's word or this
@@ -212,8 +212,8 @@ export function useMessageRows(
     activity: () => source().activity ?? AT_REST,
     scope: () => ({ conversation: source().node ? source().conversation : source().conversationId, node: source().node ?? null }),
   })
-  // The calls the model is writing are the newest steps of the work, in the
-  // run they follow.
+  // The calls the model is writing are the newest steps of the work: each is a
+  // row of its own after its run.
   const pendingCallRows = computed(() => tail.value.turn.filter((block) => block.type === 'pending_call'))
   const otherTurnBlocks = computed(() => tail.value.turn.filter((block) => block.type !== 'pending_call'))
   // Until the turn shows something it did not show at the press, the
@@ -234,8 +234,8 @@ export function useMessageRows(
   const transcriptRows = computed(() => visibleBlocks.value.filter((block) => block.id !== hiddenId.value))
   // Each run keeps its rows while it stays as it was, so a turn that
   // streams regroups only its own last run.
-  const groupWork = workGrouping()
   // Only the latest window holds the running turn's end.
+  const groupWork = workGrouping()
   const turnRows = computed(() => groupWork(
     [...visibleBlocks.value, ...pendingCallRows.value],
     source().phase === 'running' && source().latest && !atCut.value,
@@ -248,24 +248,13 @@ export function useMessageRows(
       waits.value += 1
     }
   }, { immediate: true, flush: 'sync' })
-  // Only the latest window shows the turn's tail rows. A run at the end of the
-  // running turn says the wait itself, in place of the tail row.
-  const waitingRun = computed(() => {
-    const last = turnRows.value.at(-1)
-    return slot.value && source().latest && otherTurnBlocks.value.length === 0 && (source().stepsNotShared ?? []).length === 0
-      && last?.type === 'work_group' && last.live
-      ? last
-      : null
-  })
-  const slotRow = computed<ActivitySlotRow[]>(() => slot.value && source().latest && !waitingRun.value
+  // Only the latest window shows the turn's tail rows.
+  const slotRow = computed<ActivitySlotRow[]>(() => slot.value && source().latest
     ? [{ type: 'activity_slot', id: `tail-row:${waits.value}`, slot: slot.value }]
     : [])
   // A share's runs of steps not shared, each after the row it follows.
   const sharedRows = computed<MessageListBlock[]>(() => {
-    const waiting = waitingRun.value
-    const rows = turnRows.value.flatMap((row) => row.id === hiddenId.value
-      ? []
-      : row === waiting && slot.value ? [{ ...waiting, wait: slot.value }] : [row])
+    const rows = turnRows.value.filter((row) => row.id !== hiddenId.value)
     const steps = source().stepsNotShared ?? []
     if (steps.length === 0) {
       return rows

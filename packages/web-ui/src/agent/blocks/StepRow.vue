@@ -15,8 +15,6 @@ import type { WorkStep } from '../work-groups'
  */
 defineProps<{
   step: WorkStep
-  /** The step is what its run does now: thinking then streams. */
-  streaming?: boolean
 }>()
 const isOpen = defineModel<boolean>('open', { default: false })
 </script>
@@ -26,7 +24,7 @@ const isOpen = defineModel<boolean>('open', { default: false })
     <ThinkingBlock
       v-model:open="isOpen"
       :thinking="step.text"
-      :is-streaming="streaming ?? false"
+      :is-streaming="false"
       :created-at="step.createdAt"
       :ended-at="step.endedAt"
     />

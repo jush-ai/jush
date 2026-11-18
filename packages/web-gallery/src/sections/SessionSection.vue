@@ -213,6 +213,7 @@ import {
   steppedRunBlocks,
   STEPPED_RUN_STAGES,
   leftRunningBlocks,
+  passedRunBlocks,
   shellView,
   unsizedRecordingTool,
   wideImageTool,
@@ -231,7 +232,7 @@ import GalleryAgentDirectory from '../components/GalleryAgentDirectory.vue'
 import GalleryAgentLoading from '../components/GalleryAgentLoading.vue'
 import GalleryAgentBubbles from '../components/GalleryAgentBubbles.vue'
 import GalleryReceipts from '../components/GalleryReceipts.vue'
-import { galleryEndedTerminals, galleryTerminals, leftRunningCommand, readGalleryOutput, runningRunCommand, steppedRunCommands } from '../fixtures/terminals'
+import { galleryEndedTerminals, galleryTerminals, leftRunningCommand, passedRunCommands, readGalleryOutput, runningRunCommand, steppedRunCommands } from '../fixtures/terminals'
 import { demoDeviceStart } from '../fixtures/device-installation'
 import { useLiveGalleryCommand } from '../live-command'
 import { useTurnFlow, type TurnFlowKind } from '../turn-flow'
@@ -1165,6 +1166,43 @@ function nextStep(): void {
   steppedWaitingSince.value = STEPPED_RUN_STAGES[steppedStage.value] === 'the step ended, the model is waited for' ? Date.now() : null
 }
 /**
+ * A running turn past a command it no longer waits for: End Suite ends the
+ * suite, and the run says its time again; End Build ends the docs' build as
+ * its call's result would, the call joins the run, and the turn asks the model
+ * again; Start Over starts both anew.
+ */
+const passedRun = reactive({ blocks: passedRunBlocks(), commands: passedRunCommands(), waitingSince: null as number | null })
+function endPassedSuite(): void {
+  Object.assign(passedRun.commands[0]!, { phase: 'exited', exitCode: 0, endedAt: new Date().toISOString() })
+}
+function endPassedBuild(): void {
+  const index = passedRun.blocks.length - 1
+  const call = passedRun.blocks[index]
+  if (call?.type !== 'tool_call')
+    return
+  const endedAt = new Date().toISOString()
+  Object.assign(passedRun.commands[1]!, { phase: 'exited', exitCode: 0, endedAt })
+  // The list is replaced, as the page's store replaces it, never changed in place.
+  passedRun.blocks = passedRun.blocks.with(index, {
+    ...call,
+    status: 'completed',
+    endedAt,
+    view: shellView({ commandId: '93', runningMs: 4_000, chunks: [{ stream: 'stdout', text: 'Building 42 pages\n' }] }),
+  })
+  // The call returned: the turn asks the model again, as the server tells.
+  passedRun.waitingSince = Date.now()
+}
+function restartPassedRun(): void {
+  passedRun.waitingSince = null
+  passedRun.blocks = passedRunBlocks()
+  const fresh = passedRunCommands()
+  passedRun.commands.forEach((command, index) => {
+    Object.assign(command, fresh[index])
+    delete command.exitCode
+    delete command.endedAt
+  })
+}
+/**
  * An ended turn that left its command running, which its run says: End
  * Command ends it as its last frame would, exited with 0, and the run says its
  * time again; Stop Command has the run say it is stopping until its runner,
@@ -1184,7 +1222,7 @@ function toggleLeftRunning(): void {
 // The specimens' calls show their commands' output while they run: the live
 // call's and the Turn's, whose flow runs its own command.
 const commandOf = useCallTerminals(() =>
-  [...terminals, ...turnFlow.state.terminals, ...workFlow.state.terminals, returnedFailingCommand, runningRun.command, leftRunning.command, ...steppedRunCommands(steppedStage.value)])
+  [...terminals, ...turnFlow.state.terminals, ...workFlow.state.terminals, returnedFailingCommand, runningRun.command, leftRunning.command, ...passedRun.commands, ...steppedRunCommands(steppedStage.value)])
 provideLiveCalls((toolUseId) => commandOf(undefined, toolUseId))
 /** The devices an offline primary device's card offers, as Run On lists them: it shows the online ones. */
 const offlineMenuDevices: DeviceOption[] = shownAmong([
@@ -2760,7 +2798,7 @@ onBeforeUnmount(() => {
 
       <GallerySection
         title="One Row per Step"
-        note="A step looks the same wherever it stands: alone, as the row of a run of that step only, inside a run the reader opened, and as the face of its run while it is what a running turn does now. The same components draw each kind in every place: the same icon, title, tags and shimmer, and each step's row opens to the step alone; only the indent of an opened run differs. Each row opens and folds."
+        note="A step looks the same wherever it stands: alone, as the row of a run of that step only, which is also the row a step that still runs has under its run, and inside a run the reader opened. One component draws each kind in every place: the same icon, title, tags, pictures, chevron and shimmer, and each opens to the step alone; only the indent of an opened run differs. Each row opens and folds."
       >
         <div class="gallery-frame gallery-block-frame bg-surface">
           <div class="specimen-stack">
@@ -2943,7 +2981,7 @@ onBeforeUnmount(() => {
     <template v-if="view === 'changes'">
       <GallerySection
         title="Work Groups"
-        note="Consecutive steps show as one row, each step in it from the moment it appears, also while it still runs: thinking being written, a call being written or waiting for its result, a call whose command goes on in the background after it returned. A run of one step is that step's own row, also while it runs. At the end of a running turn a run of more steps, or of one step the turn waits for the model after, says what the turn does now, as the step's own row would say it: the newest step that runs, by its icon, title and tag, or Requesting while the turn waits for the model, rolling from one to the next and shimmering, so no row comes and goes under it; the Requesting row that starts a turn rolls into the run's row as its first step comes, and the run opens to every step. A run of one step the reader opened while it listed the step folds back into the step's own row when the answer ends the wait. Otherwise a run of one step reads and opens as that step; more read what they did, each kind of call once, in the order the run first made it, such as Ran 2 commands, checked 1 command, never a count of steps, and open to every step. A run says its total time in that sentence, running or ended, Ran 3 commands for 1m 32s: its steps' times, time that passed once counted once, a call until it returned, or the time its own row shows for the command it started, also when that went on in the background after the call returned, and a thinking until the next block, never the model's wait between steps; a run under a second names none. A step that joins never changes whether the run is open: one that joins an open run slides in as a row joining the transcript does. Thinking without text is covered by the step after it. A command's notice and an agent's receipt between the steps are steps of the run too: the replay's background build reports its end and a child sends an update between two calls, and the run stays one row; the agent's text, the user's messages and steers, and the receipts of the user's decisions end a run. A run without a call reads what its notices and receipts told, such as 2 commands finished, heard from 1 agent. A failure shows on its own call inside. Opened, the notice and the receipt are rows of their own among the calls: the notice's title brings the build's call into view and marks the call's own row, or the run's row while it is folded, which stays folded; and the agent's name opens the Agents window at the call that sent the update. A command that has run more than 3 seconds wears the time on its own row, 1m32s, counting up, as in the run whose newest command runs, where End Command ends it and the tag goes, and Run Again starts it anew (Next Step walks a run from one step to its answer). A command the agent left running stays in its run: the run says how many still run, Ran 2 commands, 1 still running, or how many are stopping, in place of its time, shimmers and wears the time of the one that has run longest, and says its time again once they end. Folded, the pictures the calls and notices returned stand in the run's own line, in order, as a call's do, and the files the steps changed under it, each once; open, each call shows its own."
+        note="Consecutive steps show as one row. A step joins its run once the agent no longer waits for it: a call once it returns, and thinking once it is written. What the agent waits for, thinking being written or a call being written or waiting for its result, is a row of its own under the run, in the tail row's place: Requesting rolls into thinking, a call being written from its description, the call. When it ends it joins the run, and the next step, or Requesting while the turn waits for the model, takes the row. Only that row shimmers; the run is done, unless a command it no longer waits for still runs, which the run says. A run of one step reads and opens as that step; more read what they did, each kind of call once, in the order the run first made it, such as Ran 2 commands, checked 1 command, never a count of steps, and open to every step. A run says its total time in that sentence, running or ended, Ran 3 commands for 1m 32s: its steps' times, time that passed once counted once, a call until it returned, or the time its own row shows for the command it started, also when that went on in the background after the call returned, and a thinking until the next block, never the model's wait between steps; a run under a second names none. A step that joins never changes whether the run is open: one that joins an open run slides in as a row joining the transcript does, and a step the reader opened while it ran is still open as the run it starts in its place, while a thinking the reader opened, whose row goes once it is written, leaves the run that later shows it folded. Thinking without text is covered by the step after it, and a run of thinking alone shows once a step that says something joins it. A command's notice and an agent's receipt between the steps are steps of the run too: the replay's background build reports its end and a child sends an update between two calls, and the run stays one row; the agent's text, the user's messages and steers, and the receipts of the user's decisions end a run. A run without a call reads what its notices and receipts told, such as 2 commands finished, heard from 1 agent. A failure shows on its own call inside. Opened, the notice and the receipt are rows of their own among the calls: the notice's title brings the build's call into view and marks the call's own row, or the run's row while it is folded, which stays folded; and the agent's name opens the Agents window at the call that sent the update. A command that has run more than 3 seconds wears the time on its own row, 1m32s, counting up, as in the run whose newest command runs, where End Command ends it and the tag goes, and Run Again starts it anew (Next Step walks a run from one step to its answer). A call whose command runs on after it returned, as one the agent left running or stopped waiting for, is no longer waited for and joins its run at once: the run says how many of its commands still run, Ran 2 commands, 1 still running, or how many are stopping, in place of its time, shimmers and wears the time of the one that has run longest, until they end. Folded, the pictures the calls and notices returned stand in the run's own line, in order, as a call's do, and the files the steps changed under it, each once; open, each call shows its own."
       >
         <div class="mb-3 flex flex-wrap gap-2">
           <Button variant="ghost" size="sm" @click="workFlow.play('work')">Replay</Button>
@@ -3017,6 +3055,31 @@ onBeforeUnmount(() => {
           </div>
           <Button size="sm" variant="ghost" class="mt-1" @click="nextStep">
             {{ steppedLast ? 'Start Over' : 'Next Step' }}
+          </Button>
+        </GallerySpecimen>
+        <GallerySpecimen variant="a running turn past a command it no longer waits for" wide>
+          <div class="gallery-frame h-[16rem] bg-surface">
+            <AgentMessageList
+              class="h-full"
+              conversation-id="gallery-work-passed"
+              :blocks="passedRun.blocks"
+              :activity="{ ...AT_REST, waitingSince: passedRun.waitingSince }"
+              :pending-steers="[]"
+              :queue="[]"
+              phase="running"
+              :bottom-offset="0"
+              :persisted-scroll-state="undefined"
+              read-only
+            />
+          </div>
+          <Button size="sm" variant="ghost" class="mt-1" :disabled="passedRun.commands[0]!.phase !== 'running'" @click="endPassedSuite">
+            End Suite
+          </Button>
+          <Button size="sm" variant="ghost" class="mt-1" :disabled="passedRun.commands[1]!.phase !== 'running'" @click="endPassedBuild">
+            End Build
+          </Button>
+          <Button size="sm" variant="ghost" class="mt-1" @click="restartPassedRun">
+            Start Over
           </Button>
         </GallerySpecimen>
         <GallerySpecimen variant="a call whose command still runs after its turn ended" wide>
@@ -3325,7 +3388,7 @@ onBeforeUnmount(() => {
       <GalleryCommandWakeup />
       <GallerySection
         title="Turn"
-        note="Requesting from the send, then the run's row rolls into the tail row and says each step and each wait for the model in turn, and the answer appears under it. The message shows at once as it will stay, and its delivery is part of the same wait: when the server confirms it, the row keeps its word and its clock. Not Delivered fails the delivery instead: a red alert stands left of the message and Not Delivered with the reason under it; the message’s hover actions offer Edit and Delete, a message sent next comes below it with its turn, and the alert sends it again with the same ID, as a new message at the end, and shows Requesting from then. Offline sends while the lane is lost: the message shows as it will stay and the tail row says Requesting; once the lane has been lost for half a second, the spinner over the transcript’s end turns, and the message goes with its ID once the lane is back within ten seconds, or shows Not Delivered with its alert after that, at once when the browser says it is offline. First Message sends a new conversation’s first message, which goes with the conversation’s creation: the tail row says Requesting from the send, through the opening of its lane. Steer and Queue send a message while the command runs: it shows as the steer or the queued message it will be from the send, its line and Steer, Recall and Delete in view, in the row and at the height it keeps once the server holds it, below the turn with nothing under it. Recall takes it back at once: into the composer when that is empty, the caret at its end; when the composer holds a draft, the draft stays and a Message Recalled toast offers Undo, which sends it again the same way. Delete takes it away at once and gives nothing back. Steer, Recall or Delete pressed before the server holds it is carried out once it does. While messages wait, the empty composer says “Press ⏎ to send the next message now”, and Return there sends the first of them now, as its Send does, one for each press. Resume, Retry and Connect wait for the server first."
+        note="Requesting from the send, then each step rolls into the tail row, and the answer takes its place without a roll. The message shows at once as it will stay, and its delivery is part of the same wait: when the server confirms it, the row keeps its word and its clock. Not Delivered fails the delivery instead: a red alert stands left of the message and Not Delivered with the reason under it; the message’s hover actions offer Edit and Delete, a message sent next comes below it with its turn, and the alert sends it again with the same ID, as a new message at the end, and shows Requesting from then. Offline sends while the lane is lost: the message shows as it will stay and the tail row says Requesting; once the lane has been lost for half a second, the spinner over the transcript’s end turns, and the message goes with its ID once the lane is back within ten seconds, or shows Not Delivered with its alert after that, at once when the browser says it is offline. First Message sends a new conversation’s first message, which goes with the conversation’s creation: the tail row says Requesting from the send, through the opening of its lane. Steer and Queue send a message while the command runs: it shows as the steer or the queued message it will be from the send, its line and Steer, Recall and Delete in view, in the row and at the height it keeps once the server holds it, below the turn with nothing under it. Recall takes it back at once: into the composer when that is empty, the caret at its end; when the composer holds a draft, the draft stays and a Message Recalled toast offers Undo, which sends it again the same way. Delete takes it away at once and gives nothing back. Steer, Recall or Delete pressed before the server holds it is carried out once it does. While messages wait, the empty composer says “Press ⏎ to send the next message now”, and Return there sends the first of them now, as its Send does, one for each press. Resume, Retry and Connect wait for the server first."
       >
         <div class="mb-3 flex flex-wrap gap-2">
           <Button
