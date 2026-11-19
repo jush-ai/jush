@@ -194,8 +194,8 @@ export const PLANTED: Planted[] = [
     play: async (lab) => {
       await seeded(lab)
       // A short answer after the command, so the opened row stands in view at the end.
-      await lab.demi.model.answers([[{ run: 'seq 1 200' }], [{ say: lab.text.sentence() }]])
-      await lab.demi.message(lab.text.sentence())
+      await lab.jush.model.answers([[{ run: 'seq 1 200' }], [{ say: lab.text.sentence() }]])
+      await lab.jush.message(lab.text.sentence())
       await lab.page.locator('[data-transcript] [data-row-key] button[aria-expanded]').last().click()
       const output = lab.page.locator('[data-transcript] [data-row-key] pre').last()
       // The list goes to its end once the row has opened, before the reader's wheel.
