@@ -221,7 +221,6 @@
     "forbidden_origin": "Esta página no tiene permiso para hacer esa solicitud.",
     "unknown_stream": "No se encontró el flujo.",
     "upgrade_required": "Esta conexión necesita un WebSocket.",
-    "too_many_lanes": "Hay demasiadas conexiones abiertas en esta página. Vuelve a cargarla.",
     "stream_failed": "No se pudo abrir el flujo.",
     "id_unavailable": "Este ID ya está en uso.",
     "invalid_revision": "El chat aún no llegó a ese punto.",

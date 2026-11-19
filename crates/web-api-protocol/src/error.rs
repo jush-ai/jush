@@ -306,9 +306,6 @@ pub enum ErrorCode {
     UnknownStream,
     /// The page connection is a WebSocket, and the request is not an upgrade.
     UpgradeRequired,
-    /// The page connection holds as many lanes as it may, and refused
-    /// another (`crates/web-api-protocol/src/connection.rs`).
-    TooManyLanes,
     /// The device could not open the stream: its resident failed to start or
     /// refused it.
     StreamFailed,

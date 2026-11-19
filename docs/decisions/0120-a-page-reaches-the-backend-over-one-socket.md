@@ -1,5 +1,5 @@
 ---
-status: proposed, superseded in part by 0126
+status: proposed, superseded in part by 0126 and 0349
 ---
 
 # A page reaches the backend over one socket

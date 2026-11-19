@@ -24,10 +24,6 @@ pub const CONNECT_ROUTE: &str = "/connect";
 /// a few while one is handled, such as a steer behind an upload.
 pub const LANE_CREDIT: u16 = 8;
 
-/// The most lanes open on one connection, so that what a page's lanes hold
-/// is bounded: a page keeps about twenty.
-pub const MAX_LANES: usize = 64;
-
 /// What a lane carries, as the page names it in the lane's open.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
