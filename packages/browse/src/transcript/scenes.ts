@@ -409,8 +409,8 @@ export const SCENES: Scene[] = [
         await answered(lab, 1)
       }
       for (let turn = 0; turn < 4; turn++) {
-        await lab.demi.model.answers(work(lab, 2 + lab.text.pick(4), 6 + lab.text.pick(8), 0))
-        await lab.demi.message(lab.text.sentence())
+        await lab.jush.model.answers(work(lab, 2 + lab.text.pick(4), 6 + lab.text.pick(8), 0))
+        await lab.jush.message(lab.text.sentence())
       }
       // The page opens it as one it holds nothing of, and reads its latest
       // blocks first: few enough here that the earlier ones arrive as a page
