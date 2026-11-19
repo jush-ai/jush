@@ -221,7 +221,6 @@
     "forbidden_origin": "Diese Seite darf diese Anfrage nicht stellen.",
     "unknown_stream": "Der Stream wurde nicht gefunden.",
     "upgrade_required": "Diese Verbindung braucht einen WebSocket.",
-    "too_many_lanes": "Auf dieser Seite sind zu viele Verbindungen offen. Lade die Seite neu.",
     "stream_failed": "Der Stream konnte nicht geöffnet werden.",
     "id_unavailable": "Diese ID wird bereits verwendet.",
     "invalid_revision": "Der Chat ist noch nicht an diesem Punkt.",

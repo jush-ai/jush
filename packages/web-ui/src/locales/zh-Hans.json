@@ -221,7 +221,6 @@
     "forbidden_origin": "此页面不允许发出该请求。",
     "unknown_stream": "未找到该流。",
     "upgrade_required": "此连接需要 WebSocket。",
-    "too_many_lanes": "此页面打开的连接太多。请重新载入页面。",
     "stream_failed": "无法打开该流。",
     "id_unavailable": "此 ID 已被使用。",
     "invalid_revision": "对话尚未到达该位置。",
