@@ -26,8 +26,10 @@
 //!
 //! Beside the agents' frames, the lane sends what the backend keeps of the
 //! conversation itself (`ConversationFrame`) as it changes, never as the
-//! answer to an `open`: its metadata, whole; its saved messages, its workflows
-//! and its shares, each whole, with the entity tag of its route's answer; its
+//! answer to an `open`: its metadata, whole, or, to a page that holds it and
+//! understands `metadata_changed`, as the fields that changed
+//! (`metadata_changes`); its saved messages, its workflows and its shares,
+//! each whole, with the entity tag of its route's answer; its
 //! draft when newer than the revision the page last held; and the description
 //! of an attachment an agent uploaded since the page's `open`, as a reply may
 //! name it before it exists. The page reads each by its route, then follows it
@@ -79,7 +81,7 @@ use jush_backend_database::conversation_attachments::uploaded_after;
 use jush_conversation_lane_protocol::{
     SteerOutcome, Follow, Followed,
     ClientContent, ClientFrame, ClientFrameKind, EditOutcome, FrameError, Refusal,
-    RemoveOutcome, SavedDelivery, SendMessage, ServerFrame, TranscriptPatch, Version, decode_client_frame,
+    RemoveOutcome, SavedDelivery, SendMessage, ServerFrame, TranscriptPatch, Understood, Version, decode_client_frame,
 };
 use jush_shared_gates::Purpose;
 use jush_shared_types::{Block, BlockId, NodeId, TurnId, UserContentBlock};
@@ -92,6 +94,7 @@ use jush_web_api_protocol::permissions::PermissionRequestId;
 use futures_util::future::LocalBoxFuture;
 
 use super::attachment_facts::StreamedText;
+use super::metadata_changes;
 use super::failure_facts;
 use crate::sync::etag_of;
 use crate::shard::{Lane, LaneClose, LaneEnd, LaneMessage, LaneReader, Shard};
@@ -157,6 +160,9 @@ enum Handled {
 struct OwnFollows {
     /// The revision of the draft the page holds, when the frame is its `open`.
     opening: Option<u64>,
+    /// Whether the page understands `metadata_changed`, when the frame is its
+    /// `open`.
+    changes: Option<bool>,
     follow: Vec<Follow>,
     unfollow: Vec<Followed>,
 }
@@ -177,11 +183,18 @@ fn is_own(value: &Followed) -> bool {
 
 /// What a lane follows of the conversation itself, each value with the
 /// entity tag the page holds of it, which is what a value is told against: a
-/// value whose tag differs is sent whole, with its tag. A value none is not
-/// followed.
+/// value whose tag differs is sent whole, with its tag, or the metadata as
+/// its changed fields. A value none is not followed.
 #[derive(Default)]
 struct Shown {
     metadata: Option<String>,
+    /// The digests of the metadata at the tag `metadata`, once the lane knows
+    /// it: it sent it, or the page's tag was the metadata's now. None for a
+    /// page that takes only the whole metadata.
+    metadata_digests: Option<metadata_changes::Digests>,
+    /// Whether the page understands `metadata_changed`, which carries only the
+    /// fields of the metadata that changed.
+    understands_changes: bool,
     saved: Option<String>,
     workflows: Option<String>,
     shares: Option<String>,
@@ -215,17 +228,26 @@ impl Shown {
         if let Some(draft) = own.opening {
             self.draft = Some(draft);
         }
+        if let Some(changes) = own.changes {
+            self.understands_changes = changes;
+        }
         for Follow { value, holds } in own.follow {
             let tag = match holds {
                 jush_conversation_lane_protocol::Held::Tag { tag } => tag,
                 // A version names no whole value: the page holds none of it.
                 jush_conversation_lane_protocol::Held::Version { .. } => String::new(),
             };
+            if value == Followed::Metadata {
+                self.metadata_digests = None;
+            }
             if let Some(slot) = self.slot(&value) {
                 *slot = Some(tag);
             }
         }
         for value in own.unfollow {
+            if value == Followed::Metadata {
+                self.metadata_digests = None;
+            }
             if let Some(slot) = self.slot(&value) {
                 *slot = None;
             }
@@ -531,6 +553,7 @@ impl Shard {
                 Handled::Following {
                     own: OwnFollows {
                         opening: Some(draft.unwrap_or(0)),
+                        changes: Some(understands.contains(&Understood::MetadataChanged)),
                         follow: own,
                         unfollow: Vec::new(),
                     },
@@ -540,6 +563,7 @@ impl Shard {
             Ok(ClientFrame::Follow(follow)) if is_own(&follow.value) => Handled::Following {
                 own: OwnFollows {
                     opening: None,
+                    changes: None,
                     follow: vec![follow],
                     unfollow: Vec::new(),
                 },
@@ -548,6 +572,7 @@ impl Shard {
             Ok(ClientFrame::Unfollow { value }) if is_own(&value) => Handled::Following {
                 own: OwnFollows {
                     opening: None,
+                    changes: None,
                     follow: Vec::new(),
                     unfollow: vec![value],
                 },
@@ -1048,12 +1073,34 @@ impl Shard {
         shown.attached_through = Some(metadata.last_attachment);
         if let Some(held) = &mut shown.metadata {
             let etag = etag_of(&metadata);
+            // The digests of a metadata the page holds already are kept; a
+            // page that takes only the whole metadata needs none.
+            let unknown = *held != etag || shown.metadata_digests.is_none();
+            let now = (shown.understands_changes && unknown).then(|| {
+                let serde_json::Value::Object(fields) =
+                    serde_json::to_value(&metadata).expect("the metadata serializes to JSON")
+                else {
+                    unreachable!("the metadata serializes to a JSON object");
+                };
+                let digests = metadata_changes::Digests::of(&fields);
+                (fields, digests)
+            });
             if *held != etag {
-                held.clone_from(&etag);
-                frames.push(ConversationFrame::Conversation {
-                    metadata: Box::new(metadata),
-                    etag,
+                let changes = match (&shown.metadata_digests, &now) {
+                    (Some(before), Some((fields, digests))) => before.changes(digests, fields),
+                    _ => None,
+                };
+                let base = std::mem::replace(held, etag.clone());
+                frames.push(match changes {
+                    Some(fields) => ConversationFrame::MetadataChanged { base, etag, fields },
+                    None => ConversationFrame::Conversation {
+                        metadata: Box::new(metadata),
+                        etag,
+                    },
                 });
+            }
+            if let Some((_, digests)) = now {
+                shown.metadata_digests = Some(digests);
             }
         }
         if let (Some(held), Some(saved)) = (&mut shown.saved, saved) {

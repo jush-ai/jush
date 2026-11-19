@@ -19,6 +19,7 @@ import {
   type SavedDelivery,
   type ServerFrame,
   type SessionPhase,
+  type Understood,
   type Version,
   schemaRefusal,
 } from '@jush-ai/protocol'
@@ -223,6 +224,12 @@ export interface ConversationReader {
 export interface ConversationFrameTake {
   apply: () => void
   tagged?: { value: keyof ConversationTags; tag: string }
+  /**
+   * The value the frame changes, which the page does not hold as the
+   * frame's change starts from (`base`), or holds but could not change as it
+   * says (`unapplied`): the client follows it again, which sends it whole.
+   */
+  refollow?: { value: keyof ConversationTags; reason: 'base' | 'unapplied' }
 }
 
 /** Opens the connection the client's frames go on; called after the reads, once per connection. */
@@ -237,6 +244,8 @@ export interface ConversationClientOptions {
    * it. A frame neither the protocol nor it takes drops the connection.
    */
   conversationFrame?: (frame: unknown) => ConversationFrameTake | null
+  /** The frames `conversationFrame` takes that a page takes only when its `open` names them. */
+  understands?: readonly Understood[]
   /** Reads what the client follows; required to `open`. */
   reader?: ConversationReader
   /**
@@ -340,6 +349,12 @@ export class ConversationClient {
    * the answer to its own follow.
    */
   private readonly unanswered = new Map<string, number>()
+  /**
+   * The values the client follows again with no tag, until the backend sends
+   * one whole: a change of it meanwhile is dropped, as the whole one holds it.
+   */
+  private readonly refollowing = new Set<keyof ConversationTags>()
+  private readonly understands: readonly Understood[]
   /** Ends the reads when the client is disposed. */
   private readonly detached = new AbortController()
   private readonly reader: ConversationReader | null
@@ -357,6 +372,7 @@ export class ConversationClient {
   constructor(connect: ConversationConnect, options: ConversationClientOptions = {}) {
     this.connect = connect
     this.conversationFrame = options.conversationFrame ?? (() => null)
+    this.understands = options.understands ?? []
     this.reader = options.reader ?? null
     this.unapplied = options.unapplied ?? (() => {})
     this.logged = options.logged ?? (() => {})
@@ -460,7 +476,7 @@ export class ConversationClient {
         type: 'open' as const,
         ...(draft === undefined ? {} : { draft }),
         ...this.followsOf(),
-        understands: ['followed' as const],
+        understands: ['followed' as const, ...this.understands],
       }
       this.logged('lane.followed', { values: opening.follows?.length ?? 0, nodes: this.subscriptions.size })
       // The transport may come before its lane opened: an attempt that ends
@@ -1007,6 +1023,7 @@ export class ConversationClient {
       this.answered(subscription)
     }
     this.unanswered.clear()
+    this.refollowing.clear()
     this.rejectWaiters(error)
     this.emit({ type: 'disconnected', error })
   }
@@ -1229,8 +1246,19 @@ export class ConversationClient {
     if (!parsed.success) {
       const take = this.conversationFrame(frame)
       if (take) {
+        if (take.refollow) {
+          const { value, reason } = take.refollow
+          if (!this.refollowing.has(value)) {
+            this.logged('read.again', { value, reason })
+            this.tags[value] = ''
+            this.refollowing.add(value)
+            this.sendFrame({ type: 'follow', value: { kind: value }, holds: { kind: 'tag', tag: '' } })
+          }
+          return
+        }
         if (take.tagged) {
           this.tags[take.tagged.value] = take.tagged.tag
+          this.refollowing.delete(take.tagged.value)
         }
         take.apply()
         return

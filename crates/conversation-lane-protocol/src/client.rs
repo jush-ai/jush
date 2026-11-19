@@ -14,6 +14,9 @@ use crate::{Follow, Followed, Version};
 pub enum Understood {
     /// `followed`, which ends the answer to each `follow`.
     Followed,
+    /// `metadata_changed`, which sends the fields of the metadata that
+    /// changed rather than the whole of it.
+    MetadataChanged,
 }
 
 /// A frame the web app sends. The connection belongs to one conversation, so

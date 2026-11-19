@@ -86,6 +86,7 @@ import {
   createdConversationSchema,
   conversationDetailSchema,
   conversationFrameSchema,
+  conversationMetadataSchema,
   conversationWorkflowListSchema,
   savedListingSchema,
   conversationUpdateSchema,
@@ -98,6 +99,7 @@ import {
   type SavedListing,
   type ConversationMetadata,
   type ConversationPatch,
+  type FieldChange,
   type ConversationStatus,
   type ConversationSummary,
   type CreateConversation,
@@ -471,6 +473,36 @@ export const useConversations = defineStore('conversations', () => {
   function takeMetadata(conversation: Conversation, metadata: ConversationMetadata, run = product.snapshot?.run ?? null): void {
     conversation.metadataRun = run
     conversation.metadata.replace(metadata)
+  }
+
+  /**
+   * The entity tag of each metadata the lane or a read brought, by the
+   * object the slot holds: a change the lane sends of its fields applies to
+   * the metadata of its base tag alone, never to one a copy on disk or an
+   * action's answer left.
+   */
+  const metadataTags = new WeakMap<ConversationMetadata, string>()
+
+  /** `held` with the lane's `fields` changed, checked as the whole metadata is; null when the result is no metadata. */
+  function changedMetadata(held: ConversationMetadata, fields: Record<string, FieldChange>): ConversationMetadata | null {
+    const next: Record<string, unknown> = { ...held }
+    for (const [name, change] of Object.entries(fields)) {
+      // A field of a backend newer than the page, which its check drops.
+      if (!(name in held)) {
+        continue
+      }
+      if (change.kind === 'set') {
+        next[name] = change.value
+        continue
+      }
+      const list = next[name]
+      if (!Array.isArray(list) || change.at + change.remove > list.length) {
+        return null
+      }
+      next[name] = list.toSpliced(change.at, change.remove, ...change.insert)
+    }
+    const parsed = conversationMetadataSchema.safeParse(next)
+    return parsed.success ? parsed.data : null
   }
 
   // Each conversation follows its metadata as the page shows it, in the same
@@ -1484,6 +1516,7 @@ export const useConversations = defineStore('conversations', () => {
           { site: node === null ? 'failures.readAgents' : 'failures.readMessages', conversation: id },
         )
       },
+      understands: ['metadata_changed'],
       conversationFrame: (frame: unknown) => {
         const parsed = conversationFrameSchema.safeParse(frame)
         if (!parsed.success) {
@@ -1496,7 +1529,35 @@ export const useConversations = defineStore('conversations', () => {
         }
         switch (data.type) {
           case 'conversation':
-            return { apply: () => takeMetadata(conversation, data.metadata), tagged: { value: 'metadata', tag: data.etag } }
+            return {
+              apply: () => {
+                takeMetadata(conversation, data.metadata)
+                metadataTags.set(data.metadata, data.etag)
+              },
+              tagged: { value: 'metadata', tag: data.etag },
+            }
+          case 'metadata_changed': {
+            const held = conversation.metadata.read.value
+            const tag = held ? metadataTags.get(held) : undefined
+            // A read during the connection brought the metadata already.
+            if (tag === data.etag) {
+              return { apply: () => {}, tagged: { value: 'metadata', tag: data.etag } }
+            }
+            if (!held || tag !== data.base) {
+              return { apply: () => {}, refollow: { value: 'metadata', reason: 'base' } }
+            }
+            const next = changedMetadata(held, data.fields)
+            if (!next) {
+              return { apply: () => {}, refollow: { value: 'metadata', reason: 'unapplied' } }
+            }
+            return {
+              apply: () => {
+                takeMetadata(conversation, next)
+                metadataTags.set(next, data.etag)
+              },
+              tagged: { value: 'metadata', tag: data.etag },
+            }
+          }
           case 'saved':
             return { apply: () => recordSync.receiveSaved(conversation, data.saved), tagged: { value: 'saved', tag: data.etag } }
           case 'workflows':
@@ -1571,6 +1632,7 @@ export const useConversations = defineStore('conversations', () => {
     const conversation = items.value.find((item) => item.id === id)
     if (conversation && fetched.whole) {
       takeMetadata(conversation, fetched.detail.metadata)
+      metadataTags.set(fetched.detail.metadata, fetched.detail.metadataTag)
       recordSync.receiveSaved(conversation, fetched.whole.saved)
       conversation.workflows = fetched.whole.workflows
       recordSync.receiveDraft(conversation, fetched.whole.draft)

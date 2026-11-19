@@ -1,5 +1,7 @@
 //! Conversations as the web app creates, lists and follows them.
 
+use std::collections::BTreeMap;
+
 use jush_conversation_lane_protocol::{
     AgentCost, AgentEntry, BlockVersions, CacheChart, ConversationAttachment, Failures, Refusal, ReplyBlockFacts,
     RequestOutput, SendMessage, ShellStatus, TurnSpeed, Version,
@@ -486,8 +488,19 @@ pub struct ConversationDetail {
 #[serde(tag = "type", rename_all = "snake_case", rename_all_fields = "camelCase")]
 pub enum ConversationFrame {
     /// The conversation's metadata, whole, with its entity tag, at each
-    /// change of it a page follows.
+    /// change of it a page follows, unless the page takes it as
+    /// `metadata_changed`.
     Conversation { metadata: Box<ConversationMetadata>, etag: String },
+    /// A change of the metadata the page holds at the tag `base`: the
+    /// top-level fields that changed, which make it the metadata at `etag`.
+    /// A page that holds another tag follows the metadata again, which
+    /// sends it whole. Sent only on a lane whose `open` understands
+    /// `metadata_changed`; the whole metadata otherwise.
+    MetadataChanged {
+        base: String,
+        etag: String,
+        fields: BTreeMap<String, FieldChange>,
+    },
     /// The conversation's draft at a revision newer than the one the page
     /// named at its open, and at each change of it; the page that wrote a
     /// change knows its revision from its save's answer.
@@ -506,6 +519,22 @@ pub enum ConversationFrame {
     /// The conversation's shares, whole, with their entity tag, at each change
     /// a page follows.
     Shares { shares: ConversationShares, etag: String },
+}
+
+/// How one top-level field of a value changed.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case", rename_all_fields = "camelCase")]
+pub enum FieldChange {
+    /// The field's new value, whole.
+    Set { value: serde_json::Value },
+    /// The field, a list, with `remove` items from `at` on replaced by
+    /// `insert`, as a command that ends is put first in the list of ended
+    /// commands.
+    Splice {
+        at: u32,
+        remove: u32,
+        insert: Vec<serde_json::Value>,
+    },
 }
 
 /// `GET /conversations/:id/shares`: the conversation's shares, its own and

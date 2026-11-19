@@ -42,6 +42,7 @@ pub mod search;
 pub mod settings;
 pub mod shares;
 mod lane;
+mod metadata_changes;
 mod summary;
 mod turn_timing;
 mod wakes;
