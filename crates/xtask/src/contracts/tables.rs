@@ -170,11 +170,6 @@ pub fn module(header: &str) -> String {
             u64::from(jush_web_api_protocol::connection::LANE_CREDIT),
         ),
         (
-            "MAX_LANES",
-            "The most lanes open on one page connection.",
-            count(jush_web_api_protocol::connection::MAX_LANES),
-        ),
-        (
             "PAGE_BLOCKS",
             "How many blocks a page of a transcript holds, the one size the page's window and its local copy's reads take (`crates/conversation-lane-protocol/src/transcript.rs`).",
             count(jush_conversation_lane_protocol::PAGE_BLOCKS),

@@ -60,7 +60,7 @@ use jush_shared_types::RequestId;
 use jush_web_api_protocol::{MAX_PAGE_MESSAGE_BYTES, MAX_PLUGIN_MESSAGE_BYTES};
 use jush_shared_lanes::{Assembly, AssemblyError, Frame};
 use jush_web_api_protocol::connection::{
-    BackendConnectionMessage, LANE_CREDIT, LaneRefusal, LaneTarget, MAX_LANES, PageConnectionMessage,
+    BackendConnectionMessage, LANE_CREDIT, LaneRefusal, LaneTarget, PageConnectionMessage,
 };
 use jush_web_api_protocol::error::ErrorCode;
 use jush_web_api_protocol::ids::{ConversationId, DeviceId};
@@ -508,17 +508,9 @@ impl Connection {
             self.caller.principal(),
         );
         let target = match target {
-            _ if self.lanes.len() >= MAX_LANES => Err(ApiError::new(
-                StatusCode::TOO_MANY_REQUESTS,
-                ErrorCode::TooManyLanes,
-                "The connection holds as many lanes as it may",
-            )),
-            Err(error) => Err(ApiError::invalid_body(format!("The lane's target: {error}"))),
-            Ok(target) => Ok(target),
-        };
-        let target = match target {
             Ok(target) => target,
             Err(error) => {
+                let error = ApiError::invalid_body(format!("The lane's target: {error}"));
                 let refusal = span.in_scope(|| refusal(error, &request, &self.client.request, lane, kind));
                 self.refused += 1;
                 self.write(Write::Control(refused_frame(lane, &refusal)));

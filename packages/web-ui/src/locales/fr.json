@@ -221,7 +221,6 @@
     "forbidden_origin": "Cette page n’est pas autorisée à faire cette requête.",
     "unknown_stream": "Le flux est introuvable.",
     "upgrade_required": "Cette connexion nécessite un WebSocket.",
-    "too_many_lanes": "Trop de connexions sont ouvertes dans cette page. Rechargez la page.",
     "stream_failed": "Le flux n’a pas pu être ouvert.",
     "id_unavailable": "Cet ID est déjà utilisé.",
     "invalid_revision": "La conversation n’en est pas encore là.",
