@@ -79,6 +79,12 @@ pub trait Dependencies {
     /// the answer comes from the real terminal even when stdin is redirected;
     /// BSD find reads from stdin unconditionally.
     fn confirm(&self, prompt: &str) -> bool;
+    /// Why the walk must not start at `path`, which it would walk to any
+    /// depth, when the host refuses it: the message `find` prints before it
+    /// exits with status 1, having walked nothing.
+    fn refuse_start(&self, _path: &OsStr) -> Option<String> {
+        None
+    }
 }
 
 /// Struct that holds the dependencies we use when run as the real executable.
@@ -89,6 +95,8 @@ pub struct StandardDependencies {
     /// is not a terminal (pipe/file) or we are on Windows.  Opened once at
     /// construction so we don't re-open it for every matched file.
     tty: Option<RefCell<BufReader<uucore::context::fs::File>>>,
+    /// The host's refusal of a starting point (`Dependencies::refuse_start`).
+    refuse_start: Option<fn(&OsStr) -> Option<String>>,
 }
 
 impl StandardDependencies {
@@ -109,7 +117,16 @@ impl StandardDependencies {
             output: Rc::new(RefCell::new(stdout())),
             now: SystemTime::now(),
             tty,
+            refuse_start: None,
         }
+    }
+
+    /// These dependencies, with `refuse` deciding which starting points the
+    /// walk must not start at to any depth.
+    #[must_use]
+    pub fn refusing(mut self, refuse: fn(&OsStr) -> Option<String>) -> Self {
+        self.refuse_start = Some(refuse);
+        self
     }
 }
 
@@ -126,6 +143,10 @@ impl Dependencies for StandardDependencies {
 
     fn now(&self) -> SystemTime {
         self.now
+    }
+
+    fn refuse_start(&self, path: &OsStr) -> Option<String> {
+        self.refuse_start.and_then(|refuse| refuse(path))
     }
 
     fn confirm(&self, prompt: &str) -> bool {
@@ -407,6 +428,14 @@ fn do_find(args: &[&str], raw: &[&OsStr], deps: &dyn Dependencies) -> Result<i32
     if paths_and_matcher.config.version_requested {
         print_version(deps)?;
         return Ok(0);
+    }
+    // Starting points read from -files0-from are the list's own choice, read
+    // as the walk goes; those on the command line are checked before any.
+    if paths_and_matcher.config.max_depth == usize::MAX && paths_and_matcher.files0_paths.is_none() {
+        if let Some(refusal) = paths_and_matcher.paths.iter().find_map(|path| deps.refuse_start(path)) {
+            writeln!(&mut stderr(), "{refusal}")?;
+            return Ok(1);
+        }
     }
 
     let paths: Box<dyn Iterator<Item = Result<OsString, Box<dyn Error>>>> =

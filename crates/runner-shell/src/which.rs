@@ -74,7 +74,7 @@ pub fn uumain(args: Vec<OsString>) -> i32 {
 /// What a command `name` runs from: the executable files of the `PATH`, all
 /// of them or the first, or the file a path names; for a name the runner runs
 /// itself, its own name where there is no file.
-fn locate(name: &OsStr, all: bool) -> Vec<OsString> {
+pub(crate) fn locate(name: &OsStr, all: bool) -> Vec<OsString> {
     let mut found = Vec::new();
     let text = name.to_string_lossy();
     if text.contains('/') || (cfg!(windows) && text.contains('\\')) {
