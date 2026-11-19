@@ -12,7 +12,12 @@
 //!    reaches is answered `stale`.
 //! 3. Waits for marks, and sends each marked part of a followed value as it
 //!    is when the channel takes it, then `synced` with the version the state
-//!    is current as of.
+//!    is current as of. The model catalog is not sent again when it reads as
+//!    the channel last sent it: every change of the providers marks it, and
+//!    an account's usage changes them every few seconds. Any other part goes
+//!    as it reads, since the page changes its own copy of it too, by what it
+//!    writes and by what one part's message removes of another, and only the
+//!    part's next message brings that copy back in step.
 //!
 //! It keeps what the page says it shows, which holds back the session's
 //! notifications of that conversation, and when the user last acted on it,
@@ -28,6 +33,7 @@
 use std::cell::RefCell;
 use std::collections::{BTreeSet, HashMap};
 use std::convert::Infallible;
+use std::hash::{Hash, Hasher};
 use std::rc::Rc;
 
 use axum::extract::ws::close_code;
@@ -128,6 +134,10 @@ struct Follows {
     opened: std::cell::Cell<bool>,
     /// The follows that ended as stale, for the channel to tell the page.
     stale: RefCell<Vec<SyncFollowed>>,
+    /// A hash of the model catalog as the channel last sent it, since the
+    /// page last followed the state: what the page holds of it, as the page
+    /// changes its copy of the catalog in no other way.
+    sent_models: std::cell::Cell<Option<u64>>,
     wake: tokio::sync::Notify,
 }
 
@@ -153,6 +163,9 @@ impl Follows {
             (SyncFollowed::State, Held::Version { version: Version { epoch, revision }, .. }) => {
                 let held = StateVersion { epoch: epoch.clone(), revision };
                 *self.state.borrow_mut() = Some(epoch);
+                // The page holds what it read since, which may not be what
+                // the channel sent before.
+                self.sent_models.set(None);
                 let stale = registration.follow_since(&held).is_err();
                 tracing::info!(
                     event = "follow.answered",
@@ -299,7 +312,7 @@ impl Channel<'_> {
                             pending.insert(part);
                             continue;
                         }
-                        self.send_read(event, choosing).await?;
+                        self.send_read(&part, event, choosing).await?;
                         if choosing && !self.session.user.chooses_password {
                             // The choice landed: the page reads the rest.
                             choosing = false;
@@ -319,7 +332,7 @@ impl Channel<'_> {
     /// Reads `part` now and sends it.
     async fn send_part(&mut self, part: &Part) -> Result<(), End> {
         match self.read_part(part).await? {
-            Some(event) => self.send_read(event, false).await,
+            Some(event) => self.send_read(part, event, false).await,
             None => Ok(()),
         }
     }
@@ -345,15 +358,25 @@ impl Channel<'_> {
             })
     }
 
-    /// Sends `event`, a part just read, to the followers of the value it is
-    /// of: a list only when what the page holds of it differs.
-    async fn send_read(&mut self, event: SyncEvent, choosing: bool) -> Result<(), End> {
+    /// Sends `event`, the part `part` just read, to the followers of the
+    /// value it is of: a list only when what the page holds of it differs,
+    /// and the model catalog only when it differs from what was sent.
+    async fn send_read(&mut self, part: &Part, event: SyncEvent, choosing: bool) -> Result<(), End> {
         // An account still to choose its password follows nothing, and is sent
         // its account.
         let event = match self.followed(event, choosing) {
             Some(event) => event,
             None => return Ok(()),
         };
+        let text = text_of(&event);
+        if *part == Part::Models {
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            text.hash(&mut hasher);
+            let hash = hasher.finish();
+            if self.follows.sent_models.replace(Some(hash)) == Some(hash) {
+                return Ok(());
+            }
+        }
         let mut promoted = false;
         if let SyncEvent::User { user } = &event {
             // An account made an admin starts to see the accounts and the
@@ -361,7 +384,7 @@ impl Channel<'_> {
             promoted = self.session.user.role == Role::User && user.role != Role::User;
             self.session.user = user.clone();
         }
-        self.send(&event).await?;
+        self.send_text(text).await?;
         if promoted {
             Box::pin(self.send_part(&Part::Users)).await?;
             Box::pin(self.send_part(&Part::ServerUpgrade)).await?;
@@ -396,13 +419,19 @@ impl Channel<'_> {
     }
 
     async fn send(&mut self, event: &SyncEvent) -> Result<(), End> {
-        // The messages' types serialize their fields as JSON strings,
-        // numbers, arrays and objects with string keys, which serde_json
-        // never refuses.
-        let text =
-            serde_json::to_string(event).expect("a synchronization message serializes to JSON");
+        self.send_text(text_of(event)).await
+    }
+
+    async fn send_text(&mut self, text: String) -> Result<(), End> {
         self.page.send(text).await.map_err(|LaneGone| End::PageGone)
     }
+}
+
+/// A synchronization message as the page receives it.
+fn text_of(event: &SyncEvent) -> String {
+    // The messages' types serialize their fields as JSON strings, numbers,
+    // arrays and objects with string keys, which serde_json never refuses.
+    serde_json::to_string(event).expect("a synchronization message serializes to JSON")
 }
 
 /// Reads the page's side of the lane until it ends: what it follows, which
