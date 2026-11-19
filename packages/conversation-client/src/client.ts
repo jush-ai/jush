@@ -154,6 +154,8 @@ type TranscriptState =
       /** Whether the client holds the node's request output and chart, as its read or a push brought them; not for a node shown from a copy on disk. */
       readings: boolean
     }
+  /** Held at `version`, which the lane does not follow while the client is paused. */
+  | { status: 'paused'; version: Version }
 
 /** A frame about a node that arrives while the node's page is read. */
 type ReadingFrame = ServerFrameOf<'shell_output'> | ServerFrameOf<'request_output'> | ServerFrameOf<'cache_chart'>
@@ -167,6 +169,11 @@ interface Subscription {
   attempted: Promise<void>
   /** Stops its read when the page stops following the node, so that nothing is downloaded for a node nobody shows. */
   stop: AbortController
+  /**
+   * The answer to the follow that resumed the node, while it comes: the ids
+   * of the commands of the node it says run.
+   */
+  answer?: { commands: Set<string>; resolve: () => void }
 }
 
 /** The entity tags the page holds of the conversation's own values, which it follows them by. */
@@ -323,6 +330,16 @@ export class ConversationClient {
   private reopenReads: Promise<void>[] = []
   /** The revision of the draft the page holds, which the open names. */
   private draft: number | undefined
+  /** Whether the lane follows the transcripts the client holds, rather than only the conversation's status (`pauseTranscripts`). */
+  private live = true
+  /** Whether the lane told a change of the root's agent while the client was paused, since it last held the root's transcript current. */
+  private rootBehind = false
+  /**
+   * The `follow` frames of each node the connection has not answered yet: a
+   * `followed` ends the answer of the oldest, so a resume's wait ends with
+   * the answer to its own follow.
+   */
+  private readonly unanswered = new Map<string, number>()
   /** Ends the reads when the client is disposed. */
   private readonly detached = new AbortController()
   private readonly reader: ConversationReader | null
@@ -391,7 +408,8 @@ export class ConversationClient {
       reads.push(this.readConversation(false))
     }
     for (const node of nodes) {
-      if (this.subscriptions.get(node)?.state.status !== 'current') {
+      const status = this.subscriptions.get(node)?.state.status
+      if (status !== 'current' && status !== 'paused') {
         this.subscriptions.get(node)?.stop.abort()
         this.subscriptions.delete(node)
         reads.push(this.follow(node, false).ready)
@@ -411,7 +429,10 @@ export class ConversationClient {
       this.emitWaiting({ queue: true, pending: true, starting: true })
     }
     for (const [node, version] of Object.entries(holding.nodes)) {
-      this.subscriptions.set(node, { state: { status: 'current', version: { ...version }, readings: false }, ready: Promise.resolve(), attempted: Promise.resolve(), stop: new AbortController() })
+      const state: TranscriptState = this.live
+        ? { status: 'current', version: { ...version }, readings: false }
+        : { status: 'paused', version: { ...version } }
+      this.subscriptions.set(node, { state, ready: Promise.resolve(), attempted: Promise.resolve(), stop: new AbortController() })
     }
   }
 
@@ -435,7 +456,12 @@ export class ConversationClient {
         stopClose()
       }
       const draft = this.draft
-      const opening = { type: 'open' as const, ...(draft === undefined ? {} : { draft }), ...this.followsOf() }
+      const opening = {
+        type: 'open' as const,
+        ...(draft === undefined ? {} : { draft }),
+        ...this.followsOf(),
+        understands: ['followed' as const],
+      }
       this.logged('lane.followed', { values: opening.follows?.length ?? 0, nodes: this.subscriptions.size })
       // The transport may come before its lane opened: an attempt that ends
       // while the open waits ends the connection, which rejects the wait.
@@ -478,7 +504,10 @@ export class ConversationClient {
 
   /** Follows `value` from `version` on the open connection; a client with none follows it at its next open. */
   private sendFollow(value: Followed, version: Version, readings = false): void {
-    this.sendFrame({ type: 'follow', value, holds: { kind: 'version', version: { ...version }, ...(readings ? { readings } : {}) } })
+    const sent = this.sendFrame({ type: 'follow', value, holds: { kind: 'version', version: { ...version }, ...(readings ? { readings } : {}) } })
+    if (sent && value.kind === 'transcript') {
+      this.unanswered.set(value.node, (this.unanswered.get(value.node) ?? 0) + 1)
+    }
   }
 
   /** Sends a message; resolves when the action it starts ends, or once it leaves the queue without running. */
@@ -790,11 +819,132 @@ export class ConversationClient {
 
   /**
    * Whether the client holds the node `node`'s transcript current with the
-   * backend's: read or brought current by the lane, and not being read
-   * again.
+   * backend's: read or brought current by the lane, not being read again,
+   * and not waiting for the answer to the follow that resumed it.
    */
   holdsCurrent(node: string): boolean {
-    return this.subscriptions.get(node)?.state.status === 'current'
+    const subscription = this.subscriptions.get(node)
+    return subscription?.state.status === 'current' && !subscription.answer
+  }
+
+  /** Whether the client holds the transcripts at their versions and the lane sends none of their changes. */
+  get transcriptsPaused(): boolean {
+    return !this.live
+  }
+
+  /**
+   * Whether the root's agent changed while the client was paused, since the
+   * client last held the root's transcript current: its turn ran, so the
+   * transcript held is behind the session's.
+   */
+  get transcriptsBehind(): boolean {
+    return this.rootBehind
+  }
+
+  /**
+   * Stops following every transcript the client holds, and each it reads
+   * from now on once its read ends, keeping the version it holds; the lane
+   * goes on sending the agents and the conversation's own values. A frame of
+   * a transcript still on its way is dropped: `resumeTranscripts` brings
+   * what it said.
+   */
+  pauseTranscripts(): void {
+    if (!this.live) {
+      return
+    }
+    this.live = false
+    for (const [node, subscription] of this.subscriptions) {
+      const state = subscription.state
+      if (state.status !== 'current') {
+        continue
+      }
+      this.answered(subscription)
+      subscription.state = { status: 'paused', version: { ...state.version } }
+      this.sendFrame({ type: 'unfollow', value: { kind: 'transcript', node } })
+    }
+    this.logged('follow.paused', { nodes: this.subscriptions.size })
+  }
+
+  /**
+   * Follows again every transcript `pauseTranscripts` stopped, from the version held:
+   * the backend sends the patches since, the request output, the chart and
+   * the commands that run, or says the version is stale, which reads the
+   * node again. Resolves once the client holds each current, or the
+   * connection ended; a client with no connection follows them at its next
+   * open.
+   */
+  async resumeTranscripts(): Promise<void> {
+    if (this.live) {
+      return
+    }
+    this.live = true
+    const waits: Promise<void>[] = []
+    for (const [node, subscription] of this.subscriptions) {
+      const state = subscription.state
+      if (state.status !== 'paused') {
+        continue
+      }
+      // The request output and the chart went on without the page, so the
+      // follow holds none of them, and the answer brings them as they stand.
+      subscription.state = { status: 'current', version: { ...state.version }, readings: false }
+      if (!this.transport) {
+        continue
+      }
+      const answered = Promise.withResolvers<void>()
+      subscription.answer = { commands: new Set(), resolve: answered.resolve }
+      this.sendFollow({ kind: 'transcript', node }, state.version)
+      waits.push(answered.promise)
+    }
+    this.logged('follow.resumed', { nodes: waits.length })
+    await Promise.all(waits)
+  }
+
+  /** Ends the wait for the answer to the follow that resumed the node, if it waits. */
+  private answered(subscription: Subscription): void {
+    subscription.answer?.resolve()
+    subscription.answer = undefined
+  }
+
+  /**
+   * The answer to the oldest follow of `value` not answered yet has all come.
+   * Once it is the answer to the follow that resumed the node, which brought
+   * it current, the page learns which of its commands run, so one that ended
+   * while it was paused shows so. A node the answer said was stale ends its
+   * resume with its read (`adoptTranscript`).
+   */
+  private followed(value: Followed): void {
+    if (value.kind !== 'transcript') {
+      return
+    }
+    const left = (this.unanswered.get(value.node) ?? 1) - 1
+    if (left > 0) {
+      this.unanswered.set(value.node, left)
+    } else {
+      this.unanswered.delete(value.node)
+    }
+    const subscription = this.subscriptions.get(value.node)
+    const answer = subscription?.answer
+    if (!subscription || !answer) {
+      return
+    }
+    if (left > 0) {
+      // An earlier follow's answer: what it said runs is not the resume's.
+      answer.commands.clear()
+      return
+    }
+    if (subscription.state.status !== 'current') {
+      return
+    }
+    this.resumed(value.node, subscription, [...answer.commands])
+  }
+
+  /** Ends the resume of the node, whose transcript the client holds current, and tells the commands of it that run. */
+  private resumed(node: string, subscription: Subscription, commands: string[]): void {
+    this.answered(subscription)
+    if (node === this.root) {
+      this.rootBehind = false
+    }
+    this.emit({ type: 'transcript_resumed', node, commands })
   }
 
   /** Stops following the node `node`'s messages; a frame of it still on its way is dropped. */
@@ -805,6 +955,7 @@ export class ConversationClient {
     }
     this.subscriptions.delete(node)
     subscription.stop.abort()
+    this.answered(subscription)
     this.sendFrame({ type: 'unfollow', value: { kind: 'transcript', node } })
   }
 
@@ -850,6 +1001,12 @@ export class ConversationClient {
     this.transport = null
     this.detachTransport()
     transport.close()
+    // The next open follows the resumed nodes, and its answers are the
+    // open's.
+    for (const subscription of this.subscriptions.values()) {
+      this.answered(subscription)
+    }
+    this.unanswered.clear()
     this.rejectWaiters(error)
     this.emit({ type: 'disconnected', error })
   }
@@ -872,7 +1029,7 @@ export class ConversationClient {
   /** The version of the node `node`'s transcript the client holds, the root's by default, or null while it holds none it can vouch for. */
   transcriptVersion(node: string | null = this.root): Version | null {
     const state = node === null ? undefined : this.subscriptions.get(node)?.state
-    if (!this.transport || state?.status !== 'current') {
+    if (!this.transport || node === null || state?.status !== 'current' || !this.holdsCurrent(node)) {
       return null
     }
     return { ...state.version }
@@ -1087,6 +1244,10 @@ export class ConversationClient {
   private handle(frame: ServerFrame): void {
     switch (frame.type) {
       case 'opened':
+        // The open brought every node it follows current.
+        if (this.live && this.root !== null && this.holdsCurrent(this.root)) {
+          this.rootBehind = false
+        }
         this.emit(frame)
         return
       case 'transcript_patch':
@@ -1100,6 +1261,9 @@ export class ConversationClient {
         return
       case 'stale':
         this.stale(frame.value)
+        return
+      case 'followed':
+        this.followed(frame.value)
         return
       case 'rebased':
         this.rebase(frame.value, frame.version)
@@ -1173,10 +1337,14 @@ export class ConversationClient {
       case 'shell_output': {
         // A command's view pushed while its node's page is read goes after
         // the page's own commands, whichever of the two is older.
-        const state = this.subscriptions.get(frame.node)?.state
+        const subscription = this.subscriptions.get(frame.node)
+        const state = subscription?.state
         if (state?.status === 'reading') {
           state.frames.push(frame)
         } else {
+          if (frame.status.status === 'running') {
+            subscription?.answer?.commands.add(frame.status.commandId)
+          }
           this.emit(frame)
         }
         return
@@ -1204,7 +1372,9 @@ export class ConversationClient {
         return
       case 'transcript': {
         const subscription = this.subscriptions.get(value.node)
-        if (subscription) {
+        // A paused node is followed again from the version it holds when
+        // the client resumes, which is told the same.
+        if (subscription && subscription.state.status !== 'paused') {
           this.readAgain(value.node, subscription, null)
           if (value.node === this.root || this.shows(value.node)) {
             this.reopenReads.push(subscription.attempted)
@@ -1235,7 +1405,7 @@ export class ConversationClient {
         return
       case 'transcript': {
         const state = this.subscriptions.get(value.node)?.state
-        if (state?.status === 'current') {
+        if (state?.status === 'current' || state?.status === 'paused') {
           state.version = { ...version }
         }
         return
@@ -1275,6 +1445,7 @@ export class ConversationClient {
 
   private applyAgent(frame: ServerFrameOf<'agent'>): void {
     this.agentsVersion = { ...frame.version }
+    this.noteRootChanged([frame.agent])
     const changed = this.takeAgent(frame.agent)
     this.emit({ ...frame, receivedAt: Date.now() })
     this.emitWaiting(changed)
@@ -1301,6 +1472,7 @@ export class ConversationClient {
       return
     }
     this.agentsVersion = { ...frame.version }
+    this.noteRootChanged(frame.agents)
     const changed = { queue: false, pending: false, starting: false }
     const receivedAt = Date.now()
     for (const agent of frame.agents) {
@@ -1311,6 +1483,13 @@ export class ConversationClient {
       this.emit({ type: 'agent', version: { ...frame.version }, agent, receivedAt })
     }
     this.emitWaiting(changed)
+  }
+
+  /** Notes that the root's transcript the client holds is behind when the lane tells a change of the root's agent while paused. */
+  private noteRootChanged(agents: readonly AgentEntry[]): void {
+    if (!this.live && agents.some((agent) => agent.role.kind === 'root')) {
+      this.rootBehind = true
+    }
   }
 
   /** Reads the conversation again: `reason` says what the page could not apply, or null when the backend said the version was stale. */
@@ -1488,6 +1667,15 @@ export class ConversationClient {
       return
     }
     const state = subscription.state
+    if (state.status === 'paused') {
+      // What the lane sent before it took the unfollow, in order: the page
+      // takes each that comes next, with what the lane tells only once, such
+      // as the attachments a patch names.
+      if (frame.version.epoch === state.version.epoch && frame.version.revision === state.version.revision + 1) {
+        this.applyPatch(frame.node, subscription, frame)
+      }
+      return
+    }
     if (state.status !== 'current') {
       return
     }
@@ -1508,8 +1696,10 @@ export class ConversationClient {
 
   /** Takes `frame`, the next patch of the node's transcript, as the page's. */
   private applyPatch(node: string, subscription: Subscription, frame: ServerFrameOf<'transcript_patch'>): void {
-    const readings = subscription.state.status === 'current' && subscription.state.readings
-    subscription.state = { status: 'current', version: { ...frame.version }, readings }
+    const state = subscription.state
+    subscription.state = state.status === 'paused'
+      ? { status: 'paused', version: { ...frame.version } }
+      : { status: 'current', version: { ...frame.version }, readings: state.status === 'current' && state.readings }
     const root = node === this.root
     if (root) {
       this.noteWritten(frame.patches.flatMap((patch) => (patch.op === 'add' || patch.op === 'replace_block' ? [patch.value] : [])))
@@ -1623,7 +1813,9 @@ export class ConversationClient {
   /** Holds `read` as the node's transcript and follows the node from its version. */
   private adoptTranscript(node: string, subscription: Subscription, read: TranscriptRead): void {
     const buffered = subscription.state.status === 'reading' ? subscription.state.frames : []
-    subscription.state = { status: 'current', version: { ...read.version }, readings: true }
+    subscription.state = this.live
+      ? { status: 'current', version: { ...read.version }, readings: true }
+      : { status: 'paused', version: { ...read.version } }
     const root = node === this.root
     if (root) {
       this.writtenTurns.clear()
@@ -1681,8 +1873,17 @@ export class ConversationClient {
     }
     if (root) {
       this.followSends()
+      this.rootBehind = false
     }
-    this.sendFollow({ kind: 'transcript', node }, read.version, true)
+    // A resume the backend answered stale ends with this read, which tells
+    // the commands that run.
+    if (subscription.answer) {
+      const running = (read.commands ?? []).filter((status) => status.status === 'running').map((status) => status.commandId)
+      this.resumed(node, subscription, running)
+    }
+    if (this.live) {
+      this.sendFollow({ kind: 'transcript', node }, read.version, true)
+    }
   }
 
   private noteWritten(blocks: readonly Block[]): void {

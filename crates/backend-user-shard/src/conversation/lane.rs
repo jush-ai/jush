@@ -419,7 +419,7 @@ impl Shard {
         match self
             .prepare_frame(
                 conversation,
-                &ClientFrame::Open { draft: None, follows: Vec::new() },
+                &ClientFrame::Open { draft: None, follows: Vec::new(), understands: Vec::new() },
             )
             .await
         {
@@ -466,7 +466,7 @@ impl Shard {
         });
         let (connection, mut frames) = self.agent().connect(root_of(conversation), resolver);
         let message_id = message.message_id.clone();
-        let steps = [ClientFrame::Open { draft: None, follows: Vec::new() }, ClientFrame::Send(message)];
+        let steps = [ClientFrame::Open { draft: None, follows: Vec::new(), understands: Vec::new() }, ClientFrame::Send(message)];
         for frame in steps {
             let sending = matches!(frame, ClientFrame::Send(_));
             let replies = match self.handle_frame(conversation, &connection, frame).await {
@@ -526,7 +526,7 @@ impl Shard {
         text: &str,
     ) -> Handled {
         match decode_client_frame(text) {
-            Ok(ClientFrame::Open { draft, follows }) => {
+            Ok(ClientFrame::Open { draft, follows, understands }) => {
                 let (own, rest) = OwnFollows::split(follows);
                 Handled::Following {
                     own: OwnFollows {
@@ -534,7 +534,7 @@ impl Shard {
                         follow: own,
                         unfollow: Vec::new(),
                     },
-                    frame: Some(ClientFrame::Open { draft, follows: rest }),
+                    frame: Some(ClientFrame::Open { draft, follows: rest, understands }),
                 }
             }
             Ok(ClientFrame::Follow(follow)) if is_own(&follow.value) => Handled::Following {
@@ -649,6 +649,12 @@ impl Shard {
             ClientFrame::Open { follows, .. } => follows.clone(),
             _ => Vec::new(),
         };
+        // A refused follow is answered as one the tree took: the page waits
+        // for the end of each answer.
+        let answered = match &frame {
+            ClientFrame::Follow(Follow { value, .. }) => connection.followed(value),
+            _ => None,
+        };
         let handled = match self.prepare_frame(conversation, &frame).await {
             Ok(Prepared::Deliver) => {
                 if opening {
@@ -693,7 +699,7 @@ impl Shard {
                 Handled::Replies(Vec::new())
             }
             Ok(Prepared::Refused(code, message)) => {
-                let replies = vec![refused_frame(frame, command, code, message)];
+                let replies = std::iter::once(refused_frame(frame, command, code, message)).chain(answered).collect();
                 // A conversation whose tree cannot open, as one with no model
                 // yet, is still shown, and follows its changes.
                 if opening {
@@ -717,7 +723,7 @@ impl Shard {
                     ClientFrameKind::Send | ClientFrameKind::SendSaved => ErrorCode::SendFailed,
                     _ => ErrorCode::FrameDeliveryFailed,
                 };
-                Handled::Replies(vec![refused_frame(frame, command, code, error.to_string())])
+                Handled::Replies(std::iter::once(refused_frame(frame, command, code, error.to_string())).chain(answered).collect())
             }
         };
         handled

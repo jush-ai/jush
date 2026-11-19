@@ -142,7 +142,7 @@ impl<H: DeviceResolver> TestClient<H> {
     ///
     /// The client takes the root's phase from the agents a page reads next.
     pub async fn open(&self) {
-        self.send(ClientFrame::Open { draft: None, follows: Vec::new() }).await;
+        self.send(ClientFrame::Open { draft: None, follows: Vec::new(), understands: Vec::new() }).await;
         self.connection.follows().follow_agents();
         self.connection.follows().follow_node(self.root.clone());
         if let Some(entry) = self.read_agents().iter().find_map(|frame| entry_in(frame, &self.root)) {

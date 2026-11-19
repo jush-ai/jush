@@ -6,6 +6,16 @@ use serde::{Deserialize, Serialize};
 
 use crate::{Follow, Followed, Version};
 
+/// A server frame that a page understands only when its `open` says so: a
+/// page checks every frame against its schemas and ends the connection at one
+/// it does not know, as a page loaded before the server's upgrade does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum Understood {
+    /// `followed`, which ends the answer to each `follow`.
+    Followed,
+}
+
 /// A frame the web app sends. The connection belongs to one conversation, so
 /// no frame names a session or a working directory.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, garde::Validate)]
@@ -33,6 +43,11 @@ pub enum ClientFrame {
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         #[garde(dive)]
         follows: Vec<Follow>,
+        /// The frames the page understands beyond those every page does,
+        /// which the server sends it only when they are named here.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        #[garde(skip)]
+        understands: Vec<Understood>,
     },
     /// Follows a value the page read after it opened the socket, such as the
     /// transcript of a subagent it chose, with the version it holds.
