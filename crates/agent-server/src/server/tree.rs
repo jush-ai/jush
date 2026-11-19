@@ -175,8 +175,8 @@ pub(crate) struct FrameSink {
     /// How deep the steps being delivered nest: a listener of one session may
     /// change another, whose step joins the one under way.
     depth: Cell<usize>,
-    /// The latest patches of each node that runs, by node, for a page that
-    /// follows a transcript it holds at an older version
+    /// The latest patches of the root and of each node that runs, by node,
+    /// for a page that follows a transcript it holds at an older version
     /// ([`following::RecentPatches`]).
     recent: RefCell<HashMap<NodeId, following::RecentPatches>>,
 }
@@ -248,9 +248,9 @@ impl FrameSink {
 
     /// Sends the patches of the node `node`'s transcript, at `version`, to
     /// the connections that follow it, and keeps them with the node's recent
-    /// patches while it `running`; a node that does not run keeps none.
-    pub(crate) fn patched(&self, node: &NodeId, patches: &[TranscriptPatch], version: &Version, running: bool) {
-        if running {
+    /// patches when it `keeps` them; one that does not keeps none.
+    pub(crate) fn patched(&self, node: &NodeId, patches: &[TranscriptPatch], version: &Version, keeps: bool) {
+        if keeps {
             self.recent
                 .borrow_mut()
                 .entry(node.clone())
@@ -534,18 +534,18 @@ impl<H: DeviceResolver> Tree<H> {
             let idle_compaction_due = deps.idle_compaction_due.clone();
             let root = root.clone();
             let paths = paths.clone();
-            // Whether the root runs, which its recent patches follow.
-            let running = Cell::new(session.phase() != SessionPhase::Idle);
             // A step's frames go to each page as one change.
             move |step: &[SessionEvent]| agents.step(|| for event in step {
                 cut_path(&paths, event);
                 note_agent(&agents, &root, event);
-                note_running(&sink, &root, &running, event);
                 if let SessionEvent::OutputChanged { output } = event {
                     readings.changed(&root, output);
                 }
                 if let SessionEvent::TranscriptChanged { patches, version } = event {
-                    sink.patched(&root, patches, version, running.get());
+                    // The root keeps its recent patches after its turn ends:
+                    // a page that followed only the conversation's status
+                    // meanwhile comes back by them, not by a read.
+                    sink.patched(&root, patches, version, true);
                 } else if let Some(frame) = frame_of(event) {
                     sink.emit(frame);
                 }
@@ -1150,8 +1150,8 @@ pub(super) fn note_agent(agents: &Agents, id: &NodeId, event: &SessionEvent) {
     }
 }
 
-/// Follows whether the node `node` runs by its phase events: a node that
-/// stops running frees its recent patches
+/// Follows whether the subagent or side question `node` runs by its phase
+/// events: one that stops running frees its recent patches
 /// (`following::RecentPatches`).
 pub(super) fn note_running(sink: &FrameSink, node: &NodeId, running: &Cell<bool>, event: &SessionEvent) {
     if let SessionEvent::PhaseChanged { phase } = event {

@@ -129,6 +129,16 @@ export type ClientSessionEvent =
       output: RequestOutputReading | null
     }
   | {
+      /**
+       * The node's transcript is current again after the client was paused,
+       * and `commands` are the ids of its commands that run: one the page
+       * shows running that is not among them ended meanwhile.
+       */
+      type: 'transcript_resumed'
+      node: string
+      commands: string[]
+    }
+  | {
       /** The connection ended; the client does nothing more. */
       type: 'disconnected'
       error: Error

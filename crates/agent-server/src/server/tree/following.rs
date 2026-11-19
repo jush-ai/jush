@@ -20,17 +20,19 @@
 //!
 //! # Recent patches
 //!
-//! A node that runs keeps its latest patches in memory, as Kubernetes' watch
-//! cache keeps a window of recent events: the patches of the last
-//! [`RECENT_PATCHES`] operations at most and [`RECENT_BYTES`] bytes at most,
-//! the oldest dropped first. They belong to the node's transcript and are
-//! shared by every page that follows it, none for a page that left. The
-//! buffer is made by the first patch a running node sends, and freed when
-//! the node stops running or its tree is dropped. A node that does not run
-//! changes by no patch, so it keeps none.
+//! The root, and a node that runs, keeps its latest patches in memory, as
+//! Kubernetes' watch cache keeps a window of recent events: the patches of
+//! the last [`RECENT_PATCHES`] operations at most and [`RECENT_BYTES`] bytes
+//! at most, the oldest dropped first. They belong to the node's transcript
+//! and are shared by every page that follows it, none for a page that left.
+//! The buffer is made by the node's first patch. A subagent's or a side
+//! question's is freed when it stops running, and the root's when its tree
+//! is dropped: a page that follows only the conversation's status while its
+//! turn ends comes back to the root by its patches, and to another node,
+//! which it shows rarely, by a read.
 //!
-//! The bound holds in the worst case: one buffer per running node, so a tree
-//! holds at most as many mebibytes of recent patches as it has running nodes.
+//! The bound holds in the worst case: a tree holds at most a mebibyte of
+//! recent patches for its root and one for each other node that runs.
 
 use std::collections::VecDeque;
 
@@ -46,8 +48,8 @@ use crate::server::connection::Follows;
 
 /// How many patch operations a node's recent patches hold at most.
 ///
-/// A cache kept in memory for each running node: a page that falls behind it
-/// reads again, so the bound loses nothing.
+/// A cache kept in memory for the root and each running node: a page that
+/// falls behind it reads again, so the bound loses nothing.
 pub(crate) const RECENT_PATCHES: usize = 1000;
 /// How many bytes, of the patches' JSON, a node's recent patches hold at most.
 ///
@@ -62,7 +64,7 @@ struct Batch {
     bytes: usize,
 }
 
-/// A running node's latest patches, oldest first.
+/// The latest patches of the root or of a running node, oldest first.
 #[derive(Default)]
 pub(crate) struct RecentPatches {
     batches: VecDeque<Batch>,

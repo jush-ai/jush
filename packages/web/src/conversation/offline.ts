@@ -177,14 +177,16 @@ export function createConversationCopies(items: () => Conversation[], userId: ()
   }
 
   /**
-   * Forgets conversation `id`, which the page lets go, once what is due of it
-   * is written: what it wrote stays on disk.
+   * Forgets conversation `id`, which the page lets go, once what it holds is
+   * written: what it wrote stays on disk. What changed in the same moment the
+   * page let it go, such as the end of a turn it caught up with, has not
+   * reached the watch yet, so the conversation is written whether due or not;
+   * only what changed since the last write goes.
    */
   function released(id: string): void {
-    if (due.has(id)) {
-      // Each write reports its own failure: the copy is a convenience.
-      void keep()
-    }
+    due.add(id)
+    // Each write reports its own failure: the copy is a convenience.
+    void keep()
     watches.get(id)?.()
     watches.delete(id)
     for (const node of written.get(id)?.keys() ?? []) {

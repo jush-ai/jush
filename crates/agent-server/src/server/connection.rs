@@ -38,7 +38,7 @@ use jush_agent_session::{
 use jush_agent_tools::DeviceResolver;
 use jush_conversation_lane_protocol::{
     AgentCode, ClientFrame, ClientFrameKind, EditOutcome, EditRequest, Follow, Followed, Held, RegenerateRequest,
-    Refusal, RemoveOutcome, STORED_EPOCH, SendMessage, ServerFrame, SteerOutcome, Version,
+    Refusal, RemoveOutcome, STORED_EPOCH, SendMessage, ServerFrame, SteerOutcome, Understood, Version,
 };
 use jush_provider_common::Ahead;
 use jush_shared_types::{BlockId, NodeId, QueuedMessage, SessionPhase, TurnId};
@@ -218,6 +218,9 @@ pub struct Connection<H: DeviceResolver> {
     /// What the page follows, as its `open` and its `follow` and `unfollow`
     /// frames registered it, attached or not.
     follows: Rc<Follows>,
+    /// Whether the page's `open` understands `followed`, which ends the
+    /// answer to each of its `follow` frames.
+    answers_follows: Cell<bool>,
 }
 
 impl<H: DeviceResolver> Connection<H> {
@@ -235,6 +238,7 @@ impl<H: DeviceResolver> Connection<H> {
             resolver,
             outbox,
             follows: Rc::default(),
+            answers_follows: Cell::new(false),
         };
         (connection, frames)
     }
@@ -256,6 +260,13 @@ impl<H: DeviceResolver> Connection<H> {
         self.handle_as(frame, command).await
     }
 
+    /// The frame that ends the answer to the page's `follow` of `value`, for
+    /// a follow the backend refused before the connection saw it; none for a
+    /// page whose `open` does not understand it.
+    pub fn followed(&self, value: &Followed) -> Option<ServerFrame> {
+        self.answers_follows.get().then(|| ServerFrame::Followed { value: value.clone() })
+    }
+
     /// Handles `frame` as [`handle`](Self::handle) does, refusing it as the
     /// page's `command`.
     ///
@@ -263,7 +274,8 @@ impl<H: DeviceResolver> Connection<H> {
     /// becomes, and the page waits for the answer of the `send_saved` it sent.
     pub async fn handle_as(&self, frame: ClientFrame, command: ClientFrameKind) -> bool {
         match frame {
-            ClientFrame::Open { follows, .. } => {
+            ClientFrame::Open { follows, understands, .. } => {
+                self.answers_follows.set(understands.contains(&Understood::Followed));
                 self.open(follows).await;
                 false
             }
@@ -272,7 +284,12 @@ impl<H: DeviceResolver> Connection<H> {
                 false
             }
             ClientFrame::Follow(Follow { value, holds }) => {
-                self.follow(value, &holds).await;
+                self.follow(value.clone(), &holds).await;
+                // After what the follow sent, in the outbox's order: the page
+                // knows its answer has all come.
+                if self.answers_follows.get() {
+                    let _ = self.outbox.push(ServerFrame::Followed { value });
+                }
                 false
             }
             ClientFrame::Unfollow { value } => {

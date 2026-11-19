@@ -190,6 +190,12 @@ export function applyConversationEvent(
     // or went while the page was away shows so, and one that still runs
     // comes back with its next frame.
     conversation.terminals = conversation.terminals.filter((terminal) => !isTerminalRunning(terminal.phase))
+  } else if (event.type === 'transcript_resumed') {
+    // The same for one node the page followed again after a pause: a
+    // command of it that ended meanwhile shows so with its record.
+    const subagentId = event.node === conversation.id ? undefined : event.node
+    conversation.terminals = conversation.terminals.filter((terminal) =>
+      terminal.subagentId !== subagentId || !isTerminalRunning(terminal.phase) || event.commands.includes(terminal.id))
   } else if (event.type === 'shell_output') {
     // A command's live view, the same for every page that shows its node
     // (`crates/agent-server/src/server/tree/live.rs`): what it adds to the

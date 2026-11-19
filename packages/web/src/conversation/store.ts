@@ -1,5 +1,6 @@
 import { computed, markRaw, reactive, type Raw, ref, toRaw, watch } from 'vue'
 import { defineStore } from 'pinia'
+import { pageVisibility } from '@jush-ai/web-ui/transport/liveness'
 import { SerialQueue, deferred, delay, isAbortError, moveBefore } from '@jush-ai/utils'
 import type { HeadlineText, TitleText } from '@jush-ai/web-ui/ui/ui-text'
 import { FIRST_BLOCKS, type ClientComment, type ClientContent, type MessageComment } from '@jush-ai/protocol'
@@ -85,6 +86,7 @@ import {
   createdConversationSchema,
   conversationDetailSchema,
   conversationFrameSchema,
+  conversationMetadataSchema,
   conversationWorkflowListSchema,
   savedListingSchema,
   conversationUpdateSchema,
@@ -97,6 +99,7 @@ import {
   type SavedListing,
   type ConversationMetadata,
   type ConversationPatch,
+  type FieldChange,
   type ConversationStatus,
   type ConversationSummary,
   type CreateConversation,
@@ -472,6 +475,36 @@ export const useConversations = defineStore('conversations', () => {
     conversation.metadata.replace(metadata)
   }
 
+  /**
+   * The entity tag of each metadata the lane or a read brought, by the
+   * object the slot holds: a change the lane sends of its fields applies to
+   * the metadata of its base tag alone, never to one a copy on disk or an
+   * action's answer left.
+   */
+  const metadataTags = new WeakMap<ConversationMetadata, string>()
+
+  /** `held` with the lane's `fields` changed, checked as the whole metadata is; null when the result is no metadata. */
+  function changedMetadata(held: ConversationMetadata, fields: Record<string, FieldChange>): ConversationMetadata | null {
+    const next: Record<string, unknown> = { ...held }
+    for (const [name, change] of Object.entries(fields)) {
+      // A field of a backend newer than the page, which its check drops.
+      if (!(name in held)) {
+        continue
+      }
+      if (change.kind === 'set') {
+        next[name] = change.value
+        continue
+      }
+      const list = next[name]
+      if (!Array.isArray(list) || change.at + change.remove > list.length) {
+        return null
+      }
+      next[name] = list.toSpliced(change.at, change.remove, ...change.insert)
+    }
+    const parsed = conversationMetadataSchema.safeParse(next)
+    return parsed.success ? parsed.data : null
+  }
+
   // Each conversation follows its metadata as the page shows it, in the same
   // step, whatever changed it: a read, the page's own change, or one left.
   watch(
@@ -655,7 +688,7 @@ export const useConversations = defineStore('conversations', () => {
         const archiveChanged = current.archived !== record.archived
         Object.assign(current, listEntry(record))
         const cached = cache.get(current.id)
-        if (!cached?.runtime?.connected) {
+        if (!cached?.runtime?.connected || cached.runtime.transcriptsPaused) {
           current.status = summaryStatus(record.status)
         }
         if (archiveChanged) {
@@ -1483,6 +1516,7 @@ export const useConversations = defineStore('conversations', () => {
           { site: node === null ? 'failures.readAgents' : 'failures.readMessages', conversation: id },
         )
       },
+      understands: ['metadata_changed'],
       conversationFrame: (frame: unknown) => {
         const parsed = conversationFrameSchema.safeParse(frame)
         if (!parsed.success) {
@@ -1495,7 +1529,35 @@ export const useConversations = defineStore('conversations', () => {
         }
         switch (data.type) {
           case 'conversation':
-            return { apply: () => takeMetadata(conversation, data.metadata), tagged: { value: 'metadata', tag: data.etag } }
+            return {
+              apply: () => {
+                takeMetadata(conversation, data.metadata)
+                metadataTags.set(data.metadata, data.etag)
+              },
+              tagged: { value: 'metadata', tag: data.etag },
+            }
+          case 'metadata_changed': {
+            const held = conversation.metadata.read.value
+            const tag = held ? metadataTags.get(held) : undefined
+            // A read during the connection brought the metadata already.
+            if (tag === data.etag) {
+              return { apply: () => {}, tagged: { value: 'metadata', tag: data.etag } }
+            }
+            if (!held || tag !== data.base) {
+              return { apply: () => {}, refollow: { value: 'metadata', reason: 'base' } }
+            }
+            const next = changedMetadata(held, data.fields)
+            if (!next) {
+              return { apply: () => {}, refollow: { value: 'metadata', reason: 'unapplied' } }
+            }
+            return {
+              apply: () => {
+                takeMetadata(conversation, next)
+                metadataTags.set(next, data.etag)
+              },
+              tagged: { value: 'metadata', tag: data.etag },
+            }
+          }
           case 'saved':
             return { apply: () => recordSync.receiveSaved(conversation, data.saved), tagged: { value: 'saved', tag: data.etag } }
           case 'workflows':
@@ -1570,6 +1632,7 @@ export const useConversations = defineStore('conversations', () => {
     const conversation = items.value.find((item) => item.id === id)
     if (conversation && fetched.whole) {
       takeMetadata(conversation, fetched.detail.metadata)
+      metadataTags.set(fetched.detail.metadata, fetched.detail.metadataTag)
       recordSync.receiveSaved(conversation, fetched.whole.saved)
       conversation.workflows = fetched.whole.workflows
       recordSync.receiveDraft(conversation, fetched.whole.draft)
@@ -1939,6 +2002,11 @@ export const useConversations = defineStore('conversations', () => {
       shown: () => shownBefore || conversation.history.windows.length > 0,
       onEvent: (next) => {
         applyConversationEvent(conversation, next)
+        // What the page derives of the status needs the transcripts, which
+        // it does not follow now: the list's is the backend's own.
+        if (runtime.transcriptsPaused) {
+          takeListedStatus(conversation)
+        }
         reconcileSubmission(conversation)
         settleDelivered(conversation)
       },
@@ -1958,11 +2026,22 @@ export const useConversations = defineStore('conversations', () => {
     const stopFollowing = watch(() => followedNodes(conversation), following.changed)
     // A subagent chosen before its turn is read next.
     const stopPreferring = watch(() => conversation.shownSubagent, following.prefer)
+    // The lane follows the conversation's transcripts while the page needs
+    // them live, and its status alone otherwise.
+    const stopLiving = watch(() => followsLive(conversation, runtime), (live) => {
+      if (live) {
+        void runtime.resumeTranscripts()
+      } else {
+        runtime.pauseTranscripts()
+        takeListedStatus(conversation)
+      }
+    }, { immediate: true })
     signal.addEventListener('abort', () => {
       stopListing()
       stopNoting()
       stopFollowing()
       stopPreferring()
+      stopLiving()
     }, { once: true })
     try {
       await runtime.connect()
@@ -2205,6 +2284,37 @@ export const useConversations = defineStore('conversations', () => {
   /** The conversations shown, most recent first, at most `KEPT_CONVERSATIONS`. */
   const shownRecently: string[] = []
 
+  /**
+   * Whether the conversation's lane follows its transcripts, rather than
+   * only its status:
+   *
+   * - the page shows it, in front, as a hidden tab and a phone's locked
+   *   screen are not;
+   * - a turn of it ended while the page followed its status alone, which it
+   *   catches up with once the page is in front, so that what it shows and
+   *   its copy on disk hold the end of the turn;
+   * - or a message on its way waits for the root's transcript to hold it.
+   */
+  function followsLive(conversation: Conversation, runtime: ConversationRuntime): boolean {
+    const front = pageVisibility.value !== 'hidden'
+    return (front && (product.activeConversationId === conversation.id || turnEndedUnfollowed(conversation, runtime)))
+      || conversation.pendingSends.some((send) => send.error === null)
+      || conversation.delivered.length > 0
+  }
+
+  /** Whether the conversation's root ran and stopped while the page followed its status alone. */
+  function turnEndedUnfollowed(conversation: Conversation, runtime: ConversationRuntime): boolean {
+    return runtime.transcriptsBehind && conversation.phase === 'idle'
+  }
+
+  /** Shows the status the list says of the conversation, the backend's, which the page cannot derive without the transcripts. */
+  function takeListedStatus(conversation: Conversation): void {
+    const record = product.snapshot?.conversations?.find((item) => item.id === conversation.id)
+    if (record) {
+      conversation.status = summaryStatus(record.status)
+    }
+  }
+
   /** The conversations whose turn runs, as the list says it. */
   const listedRunning = computed(() => new Set(
     (product.snapshot?.conversations ?? [])
@@ -2225,14 +2335,21 @@ export const useConversations = defineStore('conversations', () => {
    * Whether the page holds the conversation but not yet what its session
    * says now: its opening goes on, or its session is not connected or still
    * reads the root's transcript again. Until then neither its status nor its
-   * copy tells whether its turn ended.
+   * copy tells whether its turn ended. A connected conversation whose
+   * transcripts the page does not follow is current in what it follows,
+   * unless its root ran meanwhile, which the page catches up with once the
+   * turn ends.
    */
   function catchingUp(conversation: Conversation): boolean {
     const entry = cache.get(conversation.id)
     if (!entry || conversation.archived) {
       return false
     }
-    return entry.runtime ? !entry.runtime.caughtUp : !entry.settled
+    const runtime = entry.runtime
+    if (!runtime) {
+      return !entry.settled
+    }
+    return runtime.connected && runtime.transcriptsPaused ? runtime.transcriptsBehind : !runtime.caughtUp
   }
 
   /**
