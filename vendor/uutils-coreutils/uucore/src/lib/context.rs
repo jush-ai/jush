@@ -9,11 +9,21 @@ use std::{
     sync::Arc,
 };
 
+/// What a host keeps of a file a utility opened, for as long as the file or a
+/// copy of it is open: the host learns the file has closed when the last
+/// copy of it drops.
+pub type Share = Arc<dyn Send + Sync>;
+
 /// Execution ownership injected by an embedding host.
 pub trait Control: Send + Sync {
-    fn open(&self, path: &Path, options: &std::fs::OpenOptions, writing: bool) -> std::io::Result<File> {
+    fn open(
+        &self,
+        path: &Path,
+        options: &std::fs::OpenOptions,
+        writing: bool,
+    ) -> std::io::Result<(File, Option<Share>)> {
         let _ = writing;
-        options.open(path)
+        Ok((options.open(path)?, None))
     }
     /// The path a path stands for where the host reads it otherwise than the
     /// system does, such as a `/tmp` that is the user's temporary folder;

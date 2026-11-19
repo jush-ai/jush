@@ -1,5 +1,5 @@
 ---
-status: proposed, superseded in part by 0066
+status: proposed, superseded in part by 0066 and 0348
 ---
 
 # A foreground program writes its redirected file itself, and its edit is read when it exits

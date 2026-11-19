@@ -66,6 +66,7 @@
 
 mod declared;
 mod git_paths;
+mod holds;
 mod interpreter;
 mod job;
 mod nested;

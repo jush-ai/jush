@@ -1,22 +1,22 @@
 //! One shell job owns interpreter work, utilities, IO and external children.
 //!
-//! Every in-process write of the job, in its subshells, functions, background
-//! tasks and process substitutions alike, passes through the job's edit
-//! recorder:
+//! What the job writes, in its subshells, functions, background tasks and
+//! process substitutions alike, is recorded as the job's edits:
 //!
-//! - Opened regular files are registered with their identity, so that cloned
-//!   descriptors, a utility's stdout and shell descriptor duplication keep
-//!   their association with the path. A write to an old descriptor after its
-//!   path was replaced is not attributed to the file now there.
-//! - An external program's stdout or stderr redirected into a registered file
-//!   is handed the file itself, as bash does. The recorder reads the file's
-//!   before side then and its after side once, when the program has exited;
-//!   the command completes after that (`external_output`). A background
-//!   task's program writes the file itself and unrecorded, as it may outlive
-//!   the job and the runner. On Windows a program redirected to a file opened
-//!   for appending gets it opened for writing at its end instead (`at_end`),
-//!   since MSYS2 programs refuse an appending handle; the shell and the
-//!   utilities keep the one opened for appending.
+//! - A regular file the job opens to write, by a redirection or a utility's
+//!   own open, is held from its first open to its last close
+//!   (`crate::holds`): one edit, whatever writes it meanwhile, the job's
+//!   shell, its utilities and the programs it hands the file to alike.
+//! - Opened regular files are also registered with their identity, so that a
+//!   write to a file no hold covers, such as one whose before side could not
+//!   be read, is recorded on its own against the path. A write to an old
+//!   descriptor after its path was replaced is not attributed to the file now
+//!   there.
+//! - An external program's stdout or stderr redirected into a file is handed
+//!   the file itself, as bash does (`external_output`). On Windows a program
+//!   redirected to a file opened for appending gets it opened for writing at
+//!   its end instead (`at_end`), since MSYS2 programs refuse an appending
+//!   handle; the shell and the utilities keep the one opened for appending.
 //! - What an external program writes through its other inherited descriptors
 //!   stays outside tracking.
 //!
@@ -173,10 +173,8 @@ pub struct Scope {
     /// The job's edit recorder; the scope records into it only until the job
     /// detaches (`Scope::recorder`).
     pub edits: Option<jush_command_sdk::edits::Recorder>,
-    /// Whether the scope's work is a background task's, whose programs write
-    /// the files they are redirected to themselves, unrecorded
-    /// (`external_output`).
-    background: bool,
+    /// The files the job holds open to write, each one edit.
+    pub(crate) holds: crate::holds::Holds,
     /// The number `$$` gives in the shell the scope owns, when the shell is
     /// an `sh` or `bash` the job started (`crates/runner-shell/src/nested.rs`).
     shell_id: Option<i32>,
@@ -208,7 +206,7 @@ impl Scope {
             runtime: tokio::runtime::Handle::current(),
             commands,
             edits: None,
-            background: false,
+            holds: crate::holds::Holds::default(),
             shell_id: None,
             files: Arc::new(Mutex::new(HashMap::new())),
             timings: crate::timing::Timings::default(),
@@ -295,7 +293,6 @@ impl Scope {
     fn task(&self) -> Self {
         Self {
             tasks: TaskTracker::new(),
-            background: true,
             ..self.part()
         }
     }
@@ -364,8 +361,13 @@ impl Scope {
         self.ready(file, true)?;
         #[cfg(windows)]
         let _operation = self.interruptible_io()?;
-        if tracking && let (Some(edits), Some(path)) = (self.recorder(), self.file_path(file)) {
-            return edits.record(&path, || (&*file).write(buffer));
+        if tracking && let Some(edits) = self.recorder() {
+            if self.held(file) {
+                return (&*file).write(buffer);
+            }
+            if let Some(path) = self.file_path(file) {
+                return edits.record(&path, || (&*file).write(buffer));
+            }
         }
         // A pipe that polls writable takes this much without blocking, so
         // cancellation stays observable under backpressure; on Windows the
@@ -375,32 +377,65 @@ impl Scope {
         (&*file).write(buffer)
     }
 
+    /// Opens `path`; a regular file opened to write comes with its share of
+    /// the job's hold on it (`crate::holds`).
     fn open_file(
         &self,
         path: &Path,
         options: &std::fs::OpenOptions,
         writing: bool,
-    ) -> io::Result<File> {
+    ) -> io::Result<(File, Option<Arc<crate::holds::Share>>)> {
         self.check()?;
         let open = || {
             self.descriptors(|| {
                 options.open(path)
             })
         };
-        let file = match (self.recorder(), writing) {
-            (Some(edits), true) => edits.record(path, open)?,
-            _ => open()?,
+        let Some(edits) = self.recorder().filter(|_| writing) else {
+            return Ok((open()?, None));
         };
-        if writing
-            && self.recorder().is_some()
-            && file.metadata().is_ok_and(|metadata| metadata.is_file())
+        let (file, share) = self.holds.open(self, edits, path, open)?;
+        if file.metadata().is_ok_and(|metadata| metadata.is_file())
             && let Ok(identity) = file_identity(&file)
         {
             let mut files = self.files.lock().unwrap();
             files.retain(|_, previous| previous != path);
             files.insert(identity, path.to_owned());
         }
-        Ok(file)
+        Ok((file, share))
+    }
+
+    /// Whether `file` is one the job holds, whose writes are its hold's edit.
+    fn held(&self, file: &File) -> bool {
+        self.holds.covers(file)
+    }
+
+    /// Records `held`'s edit, the file it holds having closed, unless the job
+    /// has ended. A failure is logged; it never fails the command.
+    pub(crate) fn settle(&self, held: jush_command_sdk::edits::Held) {
+        if self.recorder().is_some() {
+            let _ = held.settle();
+        }
+    }
+
+    /// Records the edit of every file the job still holds open, as the job
+    /// ends: what the job's background tasks write later is not its edit.
+    pub(crate) fn settle_holds(&self) {
+        self.holds.drain(self);
+    }
+
+    /// Records the holds on `path` up to another change of it by one of the
+    /// job's utilities, which `resume` starts again after it
+    /// (`crate::holds`).
+    fn pause(&self, path: &Path) -> Option<crate::holds::Paused> {
+        self.recorder()?;
+        Some(self.holds.pause(self, path))
+    }
+
+    fn resume(&self, paused: Option<crate::holds::Paused>, path: &Path) {
+        if let (Some(paused), Some(edits)) = (paused, self.recorder()) {
+            paused.resume(edits, path);
+        }
     }
 
     fn file_path(&self, file: &File) -> Option<PathBuf> {
@@ -409,44 +444,6 @@ impl Scope {
         // A rename can replace the path while the old descriptor remains open.
         let current = File::open(&path).ok()?;
         (file_identity(&current).ok()? == identity).then_some(path)
-    }
-
-    /// Hands `file` to a program as its output. The program writes it itself.
-    /// A foreground program's edit is the file as it is now against the file
-    /// as it is once the program has exited; a background task's program is
-    /// not recorded.
-    fn recorded_output(
-        &self,
-        file: File,
-    ) -> io::Result<(File, Option<brush_core::execution_host::OutputCompletion>)> {
-        // A background task's program may outlive the job and the runner. Its
-        // writes are not recorded as edits, as those of a job that has ended
-        // are not.
-        if self.background {
-            return Ok((file, None));
-        }
-        let Some(path) = self.file_path(&file) else {
-            return Ok((file, None));
-        };
-        let Some(held) = self.recorder().and_then(|edits| edits.hold(&path).ok()) else {
-            return Ok((file, None));
-        };
-        let scope = self.clone();
-        let tasks = self.tasks.clone();
-        Ok((
-            file,
-            Some(Box::pin(async move {
-                tasks
-                    .spawn_blocking(move || {
-                        if scope.recorder().is_some() {
-                            // A failure is logged; it never fails the command.
-                            let _ = held.settle();
-                        }
-                    })
-                    .await
-                    .map_err(io::Error::other)
-            })),
-        ))
     }
 
     fn edit(&self, path: &Path) -> Option<Box<dyn Send>> {
@@ -695,17 +692,38 @@ impl ExecutionHost for Scope {
         path: &Path,
         options: &std::fs::OpenOptions,
         writing: bool,
-    ) -> io::Result<File> {
-        self.open_file(path, options, writing)
+    ) -> io::Result<(File, Arc<dyn FileControl>)> {
+        let (file, share) = self.open_file(path, options, writing)?;
+        let control: Arc<dyn FileControl> = Arc::new(self.clone());
+        Ok((
+            file,
+            match share {
+                Some(share) => Arc::new(crate::holds::HeldFile { control, share }),
+                None => control,
+            },
+        ))
     }
 
+    /// The program writes `file` itself. A file the job holds stays held
+    /// until the program has exited, since the shell lets go of its own
+    /// copy once the program has started; the command completes after that.
     fn external_output(
         &self,
         file: File,
     ) -> io::Result<(File, Option<brush_core::execution_host::OutputCompletion>)> {
         #[cfg(windows)]
         let file = at_end(&file).unwrap_or(file);
-        self.recorded_output(file)
+        let Some(share) = self.holds.share(self, &file) else {
+            return Ok((file, None));
+        };
+        let tasks = self.tasks.clone();
+        Ok((
+            file,
+            Some(Box::pin(async move {
+                // Its drop may read the file to record its edit.
+                tasks.spawn_blocking(move || drop(share)).await.map_err(io::Error::other)
+            })),
+        ))
     }
 
     #[cfg(windows)]
@@ -902,6 +920,22 @@ pub(crate) fn child_attributes(
     }
 }
 
+/// A utility's record of another change of a file, which starts the job's
+/// holds on the file again once it drops, after the change is recorded.
+struct Resumes {
+    edit: Option<Box<dyn Send>>,
+    paused: Option<crate::holds::Paused>,
+    scope: Scope,
+    at: PathBuf,
+}
+
+impl Drop for Resumes {
+    fn drop(&mut self) {
+        drop(self.edit.take());
+        self.scope.resume(self.paused.take(), &self.at);
+    }
+}
+
 /// What a standard utility runs with: its job's scope, and the attributes of
 /// the shell that ran it for the programs it starts.
 pub(crate) struct UtilityControl {
@@ -913,26 +947,60 @@ impl uucore::context::Control for UtilityControl {
     fn map_path(&self, path: &Path, env: &dyn Fn(&str) -> Option<String>) -> Option<PathBuf> {
         crate::git_paths::map(path, env)
     }
-    fn open(&self, path: &Path, options: &std::fs::OpenOptions, writing: bool) -> io::Result<File> {
-        self.scope
-            .open_file(path, options, writing && recorded_by_use())
+    fn open(
+        &self,
+        path: &Path,
+        options: &std::fs::OpenOptions,
+        writing: bool,
+    ) -> io::Result<(File, Option<uucore::context::Share>)> {
+        let (file, share) = self
+            .scope
+            .open_file(path, options, writing && recorded_by_use())?;
+        Ok((file, share.map(|share| share as uucore::context::Share)))
     }
+    /// A whole-file write of a file the job holds records the hold up to it
+    /// first, and starts it again after it.
     fn edit(&self, path: &Path) -> Option<Box<dyn Send>> {
-        tracked_utility().then(|| self.scope.edit(path)).flatten()
+        if !tracked_utility() {
+            return None;
+        }
+        let paused = self.scope.pause(path);
+        let edit = self.scope.edit(path);
+        Some(Box::new(Resumes {
+            edit,
+            paused,
+            scope: self.scope.clone(),
+            at: path.to_owned(),
+        }))
     }
+    /// A file the job holds needs no record of its own: its hold's edit
+    /// takes in the change.
     fn edit_file(&self, file: &File) -> Option<Box<dyn Send>> {
-        if !recorded_by_use() {
+        if !recorded_by_use() || self.scope.held(file) {
             return None;
         }
         self.scope.edit(&self.scope.file_path(file)?)
     }
     /// `mv`'s own writes are untracked, its copying fallback being no
     /// edit; its rename is recorded as the rename it is.
+    /// A held file it moves stays held under its new name; one it replaces
+    /// is no longer recorded.
     fn edit_rename(&self, from: &Path, to: &Path) -> Option<Box<dyn Send>> {
-        Some(Box::new(self.scope.recorder()?.rename(from, to)))
+        let replaced = self.scope.pause(to);
+        let paused = self.scope.pause(from);
+        let renaming = self.scope.recorder()?.rename(from, to);
+        drop(replaced);
+        Some(Box::new(Resumes {
+            edit: Some(Box::new(renaming)),
+            paused,
+            scope: self.scope.clone(),
+            at: to.to_owned(),
+        }))
     }
-    /// `rm`'s removal is listed, for a request's earlier edits there.
+    /// `rm`'s removal is listed, for a request's earlier edits there. A held
+    /// file it removes is no longer recorded.
     fn edit_remove(&self, path: &Path) -> Option<Box<dyn Send>> {
+        drop(self.scope.pause(path));
         Some(Box::new(self.scope.recorder()?.remove(path)))
     }
     fn check(&self) -> io::Result<()> {
@@ -1035,18 +1103,18 @@ fn recorded_by_use() -> bool {
     tracked_utility() && uucore::context::utility_name() != Some("cp")
 }
 
-#[derive(Eq, Hash, PartialEq)]
-struct FileIdentity(u64, u64);
+#[derive(Clone, Copy, Eq, Hash, PartialEq)]
+pub(crate) struct FileIdentity(u64, u64);
 
 #[cfg(unix)]
-fn file_identity(file: &File) -> io::Result<FileIdentity> {
+pub(crate) fn file_identity(file: &File) -> io::Result<FileIdentity> {
     use std::os::unix::fs::MetadataExt;
     let metadata = file.metadata()?;
     Ok(FileIdentity(metadata.dev(), metadata.ino()))
 }
 
 #[cfg(windows)]
-fn file_identity(file: &File) -> io::Result<FileIdentity> {
+pub(crate) fn file_identity(file: &File) -> io::Result<FileIdentity> {
     use std::os::windows::io::AsRawHandle;
     use windows_sys::Win32::Storage::FileSystem::{
         BY_HANDLE_FILE_INFORMATION, GetFileInformationByHandle,
