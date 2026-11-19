@@ -93,10 +93,17 @@ pub trait ExecutionHost: Any + Send + Sync {
     fn background_task(&self) -> io::Result<Option<BackgroundTask>> {
         Ok(None)
     }
-    /// Open a path through the embedding owner's file-operation boundary.
-    fn open_file(&self, path: &std::path::Path, options: &std::fs::OpenOptions, writing: bool) -> io::Result<File> {
+    /// Open a path through the embedding owner's file-operation boundary, with the control its
+    /// reads and writes go through: the owner's own, or one of this open's that its duplicates
+    /// share, so that the owner learns when the last of them closes.
+    fn open_file(
+        &self,
+        path: &std::path::Path,
+        options: &std::fs::OpenOptions,
+        writing: bool,
+    ) -> io::Result<(File, Arc<dyn FileControl>)> {
         let _ = writing;
-        options.open(path)
+        Ok((options.open(path)?, self.file_control()))
     }
     /// Keep redirected external output on the owner's controlled write path.
     fn external_output(&self, file: File) -> io::Result<(File, Option<OutputCompletion>)> {

@@ -236,8 +236,8 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
             if writing && let Some(umask) = self.child_attributes().umask {
                 std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o666 & !umask);
             }
-            let file = host.open_file(&path_to_open, &options, writing)?;
-            return openfiles::OpenFile::from(file).controlled(host.file_control());
+            let (file, control) = host.open_file(&path_to_open, &options, writing)?;
+            return openfiles::OpenFile::from(file).controlled(control);
         }
         Ok(options.open(path_to_open)?.into())
     }

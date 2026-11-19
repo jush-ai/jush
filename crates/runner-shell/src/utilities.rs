@@ -37,6 +37,7 @@
 //! open files. Making every utility wait would change most of them, and the
 //! raised limit makes running out rare.
 
+mod find_scope;
 #[cfg(windows)]
 mod windows;
 
@@ -75,13 +76,20 @@ pub const UTILITIES: &[(&str, Entry)] = &[
     #[cfg(unix)]
     ("mknod", |args| uu_mknod::uumain(args.into_iter())),
     ("sed", |args| sed::sed::uumain(args.into_iter())),
-    ("find", |args| findutils::find::find_main(&args, &findutils::find::StandardDependencies::new())),
+    ("find", find),
     ("xargs", |args| findutils::xargs::xargs_main(&args)),
     // Finding a command: a name the runner runs prints bare.
     ("which", crate::which::uumain),
     #[cfg(windows)]
     ("where", crate::which::where_main),
 ];
+
+/// `find`, which refuses to walk a whole disk or home folder unbounded
+/// ([`find_scope`]).
+fn find(args: Vec<std::ffi::OsString>) -> i32 {
+    let dependencies = findutils::find::StandardDependencies::new().refusing(find_scope::refusal);
+    findutils::find::find_main(&args, &dependencies)
+}
 
 #[cfg(unix)]
 fn chmod(args: Vec<std::ffi::OsString>) -> i32 {

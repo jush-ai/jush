@@ -272,8 +272,8 @@ impl<SE: extensions::ShellExtensions> Shell<SE> {
         };
         let mut options = std::fs::OpenOptions::new();
         options.read(true).write(true);
-        let file = host.open_file(Path::new(crate::sys::fs::NULL_DEVICE), &options, false)?;
-        openfiles::OpenFile::from(file).controlled(host.file_control())
+        let (file, control) = host.open_file(Path::new(crate::sys::fs::NULL_DEVICE), &options, false)?;
+        openfiles::OpenFile::from(file).controlled(control)
     }
 
     /// Keeps an asynchronous interpreter task owned until it returns.

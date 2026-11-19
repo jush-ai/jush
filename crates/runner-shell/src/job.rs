@@ -304,6 +304,11 @@ impl Job {
                     _ => {}
                 }
             }
+            // A file still open, by a background task or by work left to end
+            // at its next check, is one edit up to now: the job's edits end
+            // with it.
+            let settling = owner_scope.clone();
+            let _ = tokio::task::spawn_blocking(move || settling.settle_holds()).await;
             // A job that ended by itself leaves what it started running, and no
             // cancellation reaches that again. A job that was stopped ends
             // once what it started has ended, or has been killed: a signal

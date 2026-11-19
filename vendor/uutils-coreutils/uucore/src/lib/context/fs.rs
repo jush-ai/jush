@@ -7,11 +7,16 @@ use std::{
     path::{Path, PathBuf},
 };
 
-/// A file, and whether it reads zeros: Windows has no `/dev/zero`, so the
-/// file opened for it is the null device, whose reads this one answers
-/// with zeros, as Git Bash's does.
-#[derive(Debug)]
-pub struct File(std::fs::File, bool);
+/// A file, whether it reads zeros, and what the host keeps while it is open
+/// (`super::Share`). Windows has no `/dev/zero`, so the file opened for it is
+/// the null device, whose reads this one answers with zeros, as Git Bash's
+/// does.
+pub struct File(std::fs::File, bool, Option<super::Share>);
+impl std::fmt::Debug for File {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.debug_tuple("File").field(&self.0).field(&self.1).finish()
+    }
+}
 impl File {
     pub fn open(path: impl AsRef<Path>) -> io::Result<Self> {
         OpenOptions::new().read(true).open(path)
@@ -26,7 +31,7 @@ impl File {
         OpenOptions::new()
     }
     pub fn try_clone(&self) -> io::Result<Self> {
-        super::duplicate(&self.0).map(|file| Self(file, self.1))
+        super::duplicate(&self.0).map(|file| Self(file, self.1, self.2.clone()))
     }
     pub fn set_len(&self, size: u64) -> io::Result<()> {
         super::check_cancelled();
@@ -47,7 +52,7 @@ impl DerefMut for File {
 }
 impl From<std::fs::File> for File {
     fn from(file: std::fs::File) -> Self {
-        Self(file, false)
+        Self(file, false, None)
     }
 }
 impl From<File> for std::fs::File {
@@ -165,9 +170,9 @@ impl OpenOptions {
         }
         match super::control() {
             Some(control) => control.open(&path, &options, self.1 != 0),
-            None => options.open(path),
+            None => options.open(path).map(|file| (file, None)),
         }
-        .map(|file| File(file, zeros))
+        .map(|(file, share)| File(file, zeros, share))
     }
 }
 
