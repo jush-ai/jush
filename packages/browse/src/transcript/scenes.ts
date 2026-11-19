@@ -490,6 +490,41 @@ export const SCENES: Scene[] = [
     },
   },
   {
+    name: 'phone-taller-than-view-while-following',
+    about: 'On a phone, a reply that streams brings paragraphs taller than the view at once, and streams on.',
+    play: async (lab) => {
+      await lab.jush.emulate({ device: 'iPhone 15' })
+      await lab.page.reload()
+      await answered(lab, 6)
+      const seen = await lab.watch()
+      await ask(lab, [[
+        { say: `${lab.text.paragraph()}\n\n`, ms: 600 },
+        { say: `${lab.text.prose(14)}\n\n` },
+        { say: lab.text.prose(8), ms: 4000 },
+      ]])
+      await lab.jush.turn()
+      await seen.still()
+      return seen.stop()
+    },
+  },
+  {
+    name: 'phone-hidden-while-following',
+    about: 'On a phone, the page goes to the background while the answer streams, and comes back after it ended.',
+    play: async (lab) => {
+      await lab.jush.emulate({ device: 'iPhone 15' })
+      await lab.page.reload()
+      await answered(lab, 6)
+      const seen = await lab.watch()
+      await ask(lab, [[{ say: lab.text.answer(16), ms: 5000 }]])
+      await seen.grown(300)
+      await lab.jush.hide()
+      await lab.jush.turn()
+      await lab.jush.show()
+      await seen.still()
+      return seen.stop()
+    },
+  },
+  {
     name: 'phone-touch-streaming-text',
     about: 'On a phone, the reader puts a finger on the text that streams, holds it while more text comes, and lifts it.',
     play: async (lab) => {
