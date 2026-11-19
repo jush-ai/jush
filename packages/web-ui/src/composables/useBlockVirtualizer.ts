@@ -1082,15 +1082,20 @@ export function useBlockVirtualizer<Block extends VirtualizedBlock>(
   let gliding = false
   function glideToEnd(jump = false): void {
     furthestDistanceSinceDisengage = 0
-    if (glideFrame !== 0)
-      return
     // An end further than a view away is jumped to, as nobody follows a
-    // glide that long (`moveRows` moves no row that far either).
+    // glide that long (`moveRows` moves no row that far either), even while
+    // a glide waits for its frame: a hidden page's frames do not come, and
+    // the glide would run the whole way once it shows again.
     const el = scrollContainer.value
     if (!el || jump || !shownPlaced || prefersReducedMotion() || document.hidden || distanceFromBottom(el) > el.clientHeight) {
+      cancelAnimationFrame(glideFrame)
+      glideFrame = 0
+      gliding = false
       scrollToBottom()
       return
     }
+    if (glideFrame !== 0)
+      return
     glideAt = performance.now()
     gliding = true
     glideFrame = requestAnimationFrame(glide)
