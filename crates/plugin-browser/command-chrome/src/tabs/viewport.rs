@@ -31,7 +31,10 @@
 use chromiumoxide::{
     Page,
     cdp::browser_protocol::{
-        browser::{GetWindowForTargetParams, SetContentsSizeParams},
+        browser::{
+            Bounds, GetWindowForTargetParams, SetContentsSizeParams, SetWindowBoundsParams,
+            WindowState,
+        },
         emulation::{
             GetScreenInfosParams, ScreenId, SetDeviceMetricsOverrideParams,
             SetTouchEmulationEnabledParams, SetUserAgentOverrideParams, UserAgentMetadata,
@@ -338,17 +341,30 @@ impl BrowserTab {
     /// has a location bar alone and a tab's a tab strip and a toolbar too, so
     /// a window sized by one chrome height held a popup's page taller than its
     /// viewport, which the capture shrank between black bands.
+    ///
+    /// A window that is maximized, full screen or minimized is restored
+    /// first, as WebDriver's Set Window Rect does: Chrome sizes only a normal
+    /// window, and a profile brought from another browser opens its windows
+    /// in the state its last one was left in.
     async fn fit_window(&self, viewport: BrowserViewport) -> Result<()> {
         let browser = self.browser.call()?;
-        let window = browser
+        let found = browser
             .execute(
                 GetWindowForTargetParams::builder()
                     .target_id(self.page.target_id().clone())
                     .build(),
             )
             .await?
-            .result
-            .window_id;
+            .result;
+        let window = found.window_id;
+        if found.bounds.window_state.is_some_and(|state| state != WindowState::Normal) {
+            browser
+                .execute(SetWindowBoundsParams::new(
+                    window.clone(),
+                    Bounds::builder().window_state(WindowState::Normal).build(),
+                ))
+                .await?;
+        }
         browser
             .execute(
                 SetContentsSizeParams::builder()
