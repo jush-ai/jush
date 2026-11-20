@@ -12,12 +12,18 @@
 //!   (`placement.rs`).
 //! - [`IdleProcesses`] holds the idle processes of the machine, of every CLI
 //!   (`idle.rs`).
+//! - [`CliKit`] signs an account in through its CLI's own login, the same
+//!   for every CLI but in what [`CliLogin`] says (`login.rs`), and
+//!   [`HeldProcess`] holds a process a provider started (`process.rs`).
 //!
-//! The crate knows no CLI and no vendor, and runs nothing itself: the backend
-//! implements the placement and each CLI's provider builds what it starts.
+//! The crate knows no CLI and no vendor. The backend implements the
+//! placement, and each CLI's provider builds what it starts; the crate runs
+//! only a sign-in's process, which a [`CliLogin`] describes.
 
 mod idle;
+mod login;
 mod placement;
+mod process;
 
 use futures_util::future::{BoxFuture, LocalBoxFuture, Shared};
 use jush_command_package_subscription_cli_protocol::Release;
@@ -25,6 +31,8 @@ use jush_device_interface::{ProcessControl, ProcessEnd, Signal};
 use std::time::Duration;
 
 pub use idle::{Closing, IDLE_FOR, Idle, IdleProcesses, Seat};
+pub use login::{CliKit, CliLogin};
+pub use process::{HeldProcess, Tail, exit_message};
 pub use placement::{
     AccountMachine, AccountWork, CliSite, CliStart, CliStarter, CliSystem, CliWork, ConfigDir,
     Handover, Placed, Placement, StartError, StartStage, StartSteps, WorkLease,

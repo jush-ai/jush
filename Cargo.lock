@@ -6275,11 +6275,13 @@ dependencies = [
  "futures-util",
  "jush-command-package-subscription-cli-protocol",
  "jush-device-interface",
+ "jush-provider-common",
  "jush-shared-types",
  "thiserror 2.0.20",
  "tokio",
  "tokio-util",
  "tracing",
+ "url",
 ]
 
 [[package]]

@@ -72,7 +72,7 @@ use jush_provider_common::quota::{ProbeAsk, ProviderQuota, QuotaError, QuotaSnap
 use jush_provider_common::{
     CatalogError, Provider, ProviderRuntime, RuntimeEnv, RuntimeError, Searches,
 };
-use jush_provider_subscription_cli::{AccountMachine, Cli, Placement};
+use jush_provider_subscription_cli::{AccountMachine, Cli, CliKit, Placement};
 use jush_shared_types::{
     AuthState, Clock, ProviderErrorDiagnostics, ProviderFailureFacts, ProviderModelList,
     RuntimeState, Timestamp,
@@ -81,7 +81,7 @@ use futures_util::future::BoxFuture;
 
 use crate::account::ClaudeAuth;
 use crate::mcp::ClientProtocol;
-use crate::login::ClaudeKit;
+use crate::login::ClaudeLogin;
 use crate::quota::{ClaudeQuota, FlagRefreshes};
 use crate::run::ClaudeCodeRuntime;
 
@@ -176,7 +176,7 @@ struct Shared {
     quota: ProviderQuota,
     /// The accounts as inference and settings see them; signing in needs a
     /// machine ([`ClaudeCodeProvider::login_accounts`]).
-    accounts: Accounts<ClaudeKit>,
+    accounts: Accounts<CliKit>,
     models_dev: ModelsDevClient,
     /// The Subscriptions machine; none for a provider that cannot reach it,
     /// which cannot probe.
@@ -237,9 +237,11 @@ impl ClaudeCodeProvider {
             state: config.state.clone(),
             entry: config.id.clone(),
         };
-        let kit = ClaudeKit {
+        let kit = CliKit {
+            login: Arc::new(ClaudeLogin {
+                state: config.state.clone(),
+            }),
             machine: None,
-            state: config.state.clone(),
             entry: config.id.clone(),
             pool: pool.clone(),
         };
@@ -269,9 +271,11 @@ impl ClaudeCodeProvider {
     /// The entry's account operations with a sign-in that runs the CLI's own
     /// login on `machine` (`crates/provider-claude-code/src/account.rs`).
     pub fn login_accounts(&self, machine: Arc<dyn AccountMachine>) -> Box<dyn SubscriptionAccounts> {
-        let kit = ClaudeKit {
+        let kit = CliKit {
+            login: Arc::new(ClaudeLogin {
+                state: self.shared.state.clone(),
+            }),
             machine: Some(machine),
-            state: self.shared.state.clone(),
             entry: self.shared.id.clone(),
             pool: self.shared.pool.clone(),
         };

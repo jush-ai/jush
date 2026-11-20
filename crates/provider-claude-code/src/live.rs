@@ -19,7 +19,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use bytes::Bytes;
-use jush_device_interface::{Process, ProcessControl, ProcessEnd, ProcessOutput};
+use jush_device_interface::{Process, ProcessEnd, ProcessOutput};
 use jush_provider_common::quota::Observation;
 use jush_provider_common::wire::Tagged;
 use jush_provider_common::{
@@ -45,17 +45,15 @@ use crate::input::{self, ControlRequest, ControlResponse, Input, MCP_SERVER, Man
 use crate::mcp::{self, Mcp, McpEvent};
 use crate::mirror::Mirror;
 use crate::output::{ControlRequestLine, LastCall, Line, Replaced, Streaming};
-use jush_provider_subscription_cli::{CliSite, CliWork, ConfigDir, Placed, Placement, close_process};
+use jush_provider_subscription_cli::{
+    CliSite, CliWork, HeldProcess, Placed, Placement, Tail, exit_message,
+};
 use crate::session::{self, SessionFile};
 use crate::timing::{StartTiming, Took};
-use crate::{FAMILY, Shared, cli};
+use crate::{CLI, FAMILY, Shared, cli};
 
 /// The `tracing` target of the raw stream-json exchange, at trace level.
 pub(crate) const WIRE: &str = "jush::provider::claude_code::wire";
-
-/// How much of the process's standard error is kept: a process may print
-/// without end, and the tail is where it says why it failed.
-const STDERR_TAIL_BYTES: usize = 64 * 1024;
 
 /// The longest line Jush reads; a longer one fails the run like a line that
 /// cannot be read: a line is held whole in memory, and a process may print one
@@ -258,7 +256,7 @@ pub(crate) struct LiveCli {
     shared: Arc<Shared>,
     key: ProcessKey,
     /// The process's control and its own directory, which go with it.
-    handle: Handle,
+    handle: HeldProcess,
     /// How the process ended, awaited as often as needed.
     exit: SharedFuture<LocalBoxFuture<'static, ProcessEnd>>,
     lines: Lines,
@@ -425,11 +423,7 @@ impl LiveCli {
         Ok(Self {
             shared: shared.clone(),
             key: ProcessKey::of(request),
-            handle: Handle(Some(Parts {
-                control,
-                exit: exit.clone(),
-                config: Some(config),
-            })),
+            handle: HeldProcess::of(control, exit.clone(), Some(config)),
             exit,
             lines: FramedRead::new(
                 StreamReader::new(lines),
@@ -1044,12 +1038,12 @@ impl LiveCli {
         self.log.finish(&exit, "ended");
         self.handle.ended().await;
         if matches!(exit, ProcessEnd::Lost(_)) {
-            return Some(ended(&exit, exit_message(&exit)));
+            return Some(ended(&exit, exit_message(&CLI, &exit)));
         }
         if self.cut.get() {
             return Some(failure(format!(
                 "Claude Code's output ended in the middle of a line: {}",
-                exit_message(&exit)
+                exit_message(&CLI, &exit)
             )));
         }
         if !unasked.is_empty() {
@@ -1062,7 +1056,7 @@ impl LiveCli {
             return None;
         }
         Some(failure(if stderr.is_empty() {
-            exit_message(&exit)
+            exit_message(&CLI, &exit)
         } else {
             stderr
         }))
@@ -1075,7 +1069,7 @@ impl LiveCli {
         if !stderr.is_empty() {
             return stderr;
         }
-        exit_message(&self.exit.clone().await)
+        exit_message(&CLI, &self.exit.clone().await)
     }
 
     /// Ends the process: its MCP server stops, SIGTERM asks it to end, and
@@ -1103,87 +1097,6 @@ impl LiveCli {
             duration_ms = compaction.duration_ms,
             "the Claude Code CLI compacted the conversation by itself"
         );
-    }
-}
-
-/// A process's control, its end and its own directory: closed, SIGTERM first,
-/// however the process goes, its directory removed once it ended.
-///
-/// Every CLI process the provider holds is held this way, so none is dropped
-/// raw, which would kill it outright.
-pub(crate) struct Handle(Option<Parts>);
-
-struct Parts {
-    control: Box<dyn ProcessControl>,
-    exit: SharedFuture<LocalBoxFuture<'static, ProcessEnd>>,
-    config: Option<Box<dyn ConfigDir>>,
-}
-
-impl Handle {
-    /// Holds the process `control` drives, whose end is `exit`, with its
-    /// own directory `config`, when it has one.
-    pub(crate) fn of(
-        control: Box<dyn ProcessControl>,
-        exit: SharedFuture<LocalBoxFuture<'static, ProcessEnd>>,
-        config: Option<Box<dyn ConfigDir>>,
-    ) -> Self {
-        Self(Some(Parts {
-            control,
-            exit,
-            config,
-        }))
-    }
-
-    pub(crate) fn control(&self) -> &dyn ProcessControl {
-        // The parts go only with the handle's end, after which nothing
-        // writes to the process.
-        &*self.0.as_ref().expect("the process is not closed").control
-    }
-
-    /// Closes the process and waits for its end.
-    pub(crate) async fn close(&mut self) {
-        if let Some(parts) = self.0.take() {
-            close(parts).await;
-        }
-    }
-
-    /// Waits for the process to end by itself, then removes its
-    /// directory. Dropping the future while it waits leaves the process
-    /// held, to be closed.
-    pub(crate) async fn ended(&mut self) {
-        let Some(parts) = &self.0 else {
-            return;
-        };
-        parts.exit.clone().await;
-        if let Some(Parts { config, .. }) = self.0.take()
-            && let Some(config) = config
-        {
-            config.remove().await;
-        }
-    }
-}
-
-impl Drop for Handle {
-    /// A process nobody closed, as when the turn drops its run's stream, is
-    /// closed by a task of its own, SIGTERM first.
-    fn drop(&mut self) {
-        if let Some(parts) = self.0.take() {
-            tokio::task::spawn_local(close(parts));
-        }
-    }
-}
-
-/// Closes a process: SIGTERM asks it to end, and SIGKILL follows after five
-/// seconds; its end is awaited, then its directory removed.
-async fn close(parts: Parts) {
-    let Parts {
-        control,
-        exit,
-        config,
-    } = parts;
-    close_process(control, exit).await;
-    if let Some(config) = config {
-        config.remove().await;
     }
 }
 
@@ -1231,33 +1144,6 @@ async fn drain(
     }
 }
 
-/// The last bytes of a stream.
-#[derive(Default)]
-pub(crate) struct Tail(Vec<u8>);
-
-impl Tail {
-    pub(crate) fn push(&mut self, bytes: &[u8]) {
-        self.0.extend_from_slice(bytes);
-        let excess = self.0.len().saturating_sub(STDERR_TAIL_BYTES);
-        self.0.drain(..excess);
-    }
-
-    /// The tail as text, trimmed; a character the cut split is left out.
-    /// How many bytes the tail holds.
-    pub(crate) fn len(&self) -> usize {
-        self.0.len()
-    }
-
-    pub(crate) fn text(&self) -> String {
-        let start = self
-            .0
-            .iter()
-            .position(|byte| byte & 0b1100_0000 != 0b1000_0000)
-            .unwrap_or(self.0.len());
-        String::from_utf8_lossy(&self.0[start..]).trim().to_owned()
-    }
-}
-
 /// A failure Jush composes, which is never retried by itself.
 fn failure(message: String) -> ProviderFailure {
     ProviderFailure {
@@ -1286,14 +1172,3 @@ fn undecodable(error: &dyn std::fmt::Display, text: String) -> ProviderFailure {
     )
 }
 
-pub(crate) fn exit_message(end: &ProcessEnd) -> String {
-    match end {
-        ProcessEnd::Exited(code) => format!("Claude Code exited with code {code}"),
-        ProcessEnd::Signalled(signal) => format!("Claude Code was ended by {signal}"),
-        ProcessEnd::NotStarted(error) => match &error.detail {
-            Some(detail) => format!("Claude Code did not start ({}): {detail}", error.kind),
-            None => format!("Claude Code did not start ({})", error.kind),
-        },
-        ProcessEnd::Lost(reason) => format!("The Subscriptions machine went away: {reason}"),
-    }
-}
