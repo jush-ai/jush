@@ -97,6 +97,10 @@ pub struct CliStart {
     /// Each file's path relative to the process's own directory, and its
     /// bytes.
     pub files: Vec<(String, Bytes)>,
+    /// Each symbolic link's path relative to the process's own directory,
+    /// and the absolute path on the machine it links to, such as a file of
+    /// the account's directory.
+    pub links: Vec<(String, String)>,
 }
 
 /// What a start is for: a process of an account, in the account's
@@ -183,8 +187,8 @@ pub trait Placement {
     ///    configuration directory (the account's, with its handover, or a
     ///    sign-in's new one) and the process's own directory under it.
     /// 2. `start` says what to start at the site it found.
-    /// 3. The placement writes its files into the process's directory and
-    ///    starts its request on the machine's device.
+    /// 3. The placement writes its files and links into the process's
+    ///    directory and starts its request on the machine's device.
     ///
     /// It reports each stage it reaches to `stages`. Dropping the future gives
     /// the start up, and removes what it made.
@@ -210,6 +214,8 @@ pub struct Placed {
     pub process: Process,
     pub config: Box<dyn ConfigDir>,
     pub steps: StartSteps,
+    /// Where it was started.
+    pub site: CliSite,
 }
 
 /// How long each step of a start took on the placement's machine, which a
@@ -241,6 +247,17 @@ pub struct StartSteps {
 pub trait ConfigDir {
     /// The file `name` the process wrote into its configuration directory.
     fn read<'a>(&'a self, name: &'a str) -> LocalBoxFuture<'a, Result<Bytes, DeviceError>>;
+
+    /// The standard output of `command` with `args`, run in the directory to
+    /// its end; why it failed otherwise, such as its standard error. It is
+    /// for a short command whose output is small, such as one that takes a
+    /// field out of a file the process wrote, so that only the field leaves
+    /// the machine.
+    fn output<'a>(
+        &'a self,
+        command: &'a str,
+        args: &'a [&'a str],
+    ) -> LocalBoxFuture<'a, Result<Bytes, String>>;
 
     /// Removes what the process made once it has ended. One whose handle is
     /// dropped instead is removed the same way, by the placement, without

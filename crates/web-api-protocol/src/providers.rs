@@ -540,6 +540,9 @@ pub struct ProviderDto {
     /// Whether its family lets it connect through a device, which Settings
     /// offers as Connect Through.
     pub connects_through: bool,
+    /// Whether its vendor's terms forbid its subscription through
+    /// third-party software, which Settings says before an account is added.
+    pub forbids_third_party: bool,
     /// The headers every request of the entry carries: a compatible entry's
     /// in the user's order, and for a vendor entry each one its vendor
     /// documents, with an empty value when it sends none. Empty for a
@@ -780,6 +783,9 @@ pub struct SubscriptionFamily {
     /// Whether its entry may connect through one of its owner's devices,
     /// which Settings offers as Connect Through.
     pub connects_through: bool,
+    /// Whether its vendor's terms forbid it through third-party software,
+    /// which Settings says before an account is added.
+    pub forbids_third_party: bool,
 }
 
 /// The shapes a compatible entry may choose for each kind of media it can

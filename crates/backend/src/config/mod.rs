@@ -72,6 +72,7 @@ use jush_backend_accounts::email_change::AccountMail;
 use jush_backend_blobs::store::{S3Config, Storage};
 use jush_backend_cloud::tuning::CloudTuning;
 use jush_backend_user_shard::conversation::subscription_cli::MachineSlot;
+use jush_provider_antigravity::releases::DEFAULT_RELEASES_URL as DEFAULT_ANTIGRAVITY_RELEASES_URL;
 use jush_provider_claude_code::releases::DEFAULT_RELEASES_URL;
 use jush_provider_registry::families::FamilyRegistry;
 use jush_backend_providers::vault::entries::SeededAccount;
@@ -247,6 +248,15 @@ pub struct Config {
         default_value = DEFAULT_RELEASES_URL
     )]
     pub claude_releases_url: Url,
+    /// The Antigravity distribution whose newest release the CLI on the
+    /// Subscriptions machine follows
+    #[arg(
+        long,
+        env = "JUSH_ANTIGRAVITY_RELEASES_URL",
+        value_name = "JUSH_ANTIGRAVITY_RELEASES_URL",
+        default_value = DEFAULT_ANTIGRAVITY_RELEASES_URL
+    )]
+    pub antigravity_releases_url: Url,
     /// The STUN servers pages and runners ask for their public address, so
     /// that a direct channel crosses networks, comma-separated `stun:` URLs;
     /// empty keeps direct channels to one network
@@ -399,6 +409,7 @@ impl Config {
             .map_err(|_| ConfigError::PublicUrl)?;
         config.public_url = Some(public_url);
         config.claude_releases = self.claude_releases_url.clone();
+        config.antigravity_releases = self.antigravity_releases_url.clone();
         config.stun = self.stun_urls.0.clone();
         Ok(config)
     }
@@ -492,6 +503,9 @@ pub struct BackendConfig {
     /// The Claude Code distribution whose newest release the CLI on the
     /// Subscriptions machine follows (`crates/provider-claude-code/src/releases.rs`).
     pub claude_releases: Url,
+    /// The Antigravity distribution whose newest release the CLI on the
+    /// Subscriptions machine follows (`crates/provider-antigravity/src/releases.rs`).
+    pub antigravity_releases: Url,
     /// Where the Subscriptions machine is, which the backend's shards put
     /// there as they start and the CLI families of `families` read.
     pub subscriptions_machine: MachineSlot,
@@ -567,6 +581,9 @@ impl BackendConfig {
             claude_releases: DEFAULT_RELEASES_URL
                 .parse()
                 .expect("the Claude Code distribution's address parses"),
+            antigravity_releases: DEFAULT_ANTIGRAVITY_RELEASES_URL
+                .parse()
+                .expect("the Antigravity distribution's address parses"),
             logins: LoginTiming::default(),
             runners: RunnerTuning::default(),
             conversations: ConversationTuning::default(),

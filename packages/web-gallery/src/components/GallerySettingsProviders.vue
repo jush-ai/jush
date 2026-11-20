@@ -517,9 +517,9 @@ const loginOpen = ref(false)
 let loginTimer = 0
 
 /**
- * Claude Code signs in on Claude's page, whose code the user pastes back; Codex
- * and Grok Build confirm a device code in a web browser. The mock walks each to
- * done.
+ * Claude Code and Antigravity sign in on their vendor's page, whose code the
+ * user pastes back; Codex and Grok Build confirm a device code in a web
+ * browser. The mock walks each to done.
  */
 function beginLogin(p: SettingsProviderEntry) {
   window.clearTimeout(loginTimer)
@@ -529,8 +529,9 @@ function beginLogin(p: SettingsProviderEntry) {
     provider: p,
     phase: { kind: 'starting', stage: 'preparing' },
   }
-  // As the product's: a Claude sign-in waits for the Subscriptions machine and the command-line tool's start first.
-  const stages: ProviderLoginStage[] = mock.family === 'claude-code' ? ['waiting_for_machine', 'starting'] : []
+  // As the product's: a sign-in on the Subscriptions machine waits for it and the command-line tool's start first.
+  const onMachine = mock.family === 'claude-code' || mock.family === 'antigravity'
+  const stages: ProviderLoginStage[] = onMachine ? ['waiting_for_machine', 'starting'] : []
   const next = () => {
     if (!login.value) {
       return
@@ -541,10 +542,13 @@ function beginLogin(p: SettingsProviderEntry) {
       loginTimer = window.setTimeout(next, 1200)
       return
     }
-    if (mock.family === 'claude-code') {
+    if (onMachine) {
       login.value.phase = {
         kind: 'code',
-        url: 'https://claude.com/cai/oauth/authorize?code=true',
+        url:
+          mock.family === 'antigravity'
+            ? 'https://accounts.google.com/o/oauth2/auth?access_type=offline'
+            : 'https://claude.com/cai/oauth/authorize?code=true',
         expiresAt: Date.now() + 15 * 60_000,
         submitted: false,
       }
@@ -574,8 +578,9 @@ function beginLogin(p: SettingsProviderEntry) {
 
 /**
  * As the product's sign-in does once it has the code: it signs in, then the account is there.
- * A code without the `#` the vendor's page shows is refused in Claude Code's words, and the
- * sign-in waits for another.
+ * A code without the `#` Claude's page shows is refused in Claude Code's words, and the
+ * sign-in waits for another. Antigravity takes Google's code, which starts with `4/`, or the
+ * URL of the page the user lands on, and ends its sign-in on anything else, in its own words.
  */
 function submitCode(code: string) {
   const phase = login.value?.phase
@@ -594,7 +599,15 @@ function submitCode(code: string) {
     if (login.value?.phase.kind !== 'code') {
       return
     }
-    if (!code.includes('#')) {
+    const family = (login.value.provider as MockProvider).family
+    if (family === 'antigravity' && !code.startsWith('4/') && !code.startsWith('https://')) {
+      login.value.phase = {
+        kind: 'failed',
+        ...requestFailure('couldn’t log in: token exchange failed: oauth2: "invalid_grant" "Malformed auth code."'),
+      }
+      return
+    }
+    if (family === 'claude-code' && !code.includes('#')) {
       login.value.phase = {
         ...login.value.phase,
         submitted: false,
@@ -605,7 +618,8 @@ function submitCode(code: string) {
     // The user signs in to the account the vendor signed out, when there is one, as after
     // Sign In Again.
     const signedOut = login.value.provider.accounts.find((a) => a.signedOut)
-    finishLogin(signedOut ? `${signedOut.label} · ${signedOut.plan}` : 'alex@example.com · max')
+    const plan = family === 'antigravity' ? 'Google AI Pro' : 'max'
+    finishLogin(signedOut ? `${signedOut.label} · ${signedOut.plan}` : `alex@example.com · ${plan}`)
   }, 1500)
 }
 

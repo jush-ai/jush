@@ -41,6 +41,7 @@ jush-machine-manager-protocol = { path = "../machine-manager-protocol" }
 jush-provider-common = { path = "../provider-common" }
 jush-provider-registry = { path = "../provider-registry" }
 jush-provider-relay = { path = "../provider-relay" }
+jush-provider-antigravity = { path = "../provider-antigravity" }
 jush-provider-claude-code = { path = "../provider-claude-code" }
 jush-provider-subscription-cli = { path = "../provider-subscription-cli" }
 jush-runner-protocol = { path = "../runner-protocol" }

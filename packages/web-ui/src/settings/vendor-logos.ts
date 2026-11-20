@@ -16,10 +16,12 @@ const MARKS = import.meta.glob<string>('./logos/*.svg', {
 })
 
 /**
- * The vendor whose mark another wears: each subscription its vendor's,
- * Claude Code Claude's own, and each speech vendor its company's.
+ * The vendor whose mark another wears: each subscription its vendor's, such
+ * as Antigravity Google's, Claude Code Claude's own, and each speech vendor
+ * its company's.
  */
 const WORN: Record<string, string> = {
+  antigravity: 'google',
   'claude-code': 'claude',
   codex: 'openai',
   'grok-build': 'xai',

@@ -467,12 +467,15 @@ fn account_room(snapshot: Option<&QuotaSnapshot>, model: &Model, metered: Metere
 }
 
 /// Whether `window` applies to `model`: every window but one scoped to
-/// another model, which the scope names by the model's family name, such
-/// as `Sonnet`.
+/// other models, which the scope names by their ids, or by the model's
+/// family name, such as `Sonnet`.
 fn applies(window: &QuotaWindow, model: &Model) -> bool {
     let Some(scope) = &window.scope else {
         return true;
     };
+    if !scope.model_ids.is_empty() {
+        return scope.model_ids.iter().any(|id| id.eq_ignore_ascii_case(&model.id));
+    }
     let Some(name) = scope.label.as_deref().filter(|_| scope.kind == "model") else {
         return true;
     };

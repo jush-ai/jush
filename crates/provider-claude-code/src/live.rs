@@ -380,6 +380,7 @@ impl LiveCli {
             process,
             config,
             steps,
+            ..
         } = placement
             .start(account.work, start, &|_| {})
             .await

@@ -1019,6 +1019,10 @@
       "body": "Using more than one subscription account, or rotating between accounts, may violate the provider’s Terms of Service. You do so at your own risk.",
       "once": "Jush won’t ask again."
     },
+    "thirdParty": {
+      "title": "Add an account to {name}?",
+      "body": "{name}’s Terms of Service prohibit using it through third-party software such as Jush, and an account used this way may be suspended. You do so at your own risk."
+    },
     "connected": "{account} Connected",
     "testFailed": "{account} Test Failed",
     "addModelFailed": "Could Not Add the Model",

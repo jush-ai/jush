@@ -71,6 +71,13 @@ pub trait ProviderFamily: Send + Sync + 'static {
         true
     }
 
+    /// Whether the vendor's terms forbid using the family's subscription
+    /// through third-party software, which Settings says before an account
+    /// is added.
+    fn forbids_third_party(&self) -> bool {
+        false
+    }
+
     /// The subscription's CLI the family's requests run as a process on the
     /// Subscriptions machine; none for a family whose requests are HTTP.
     fn cli(&self) -> Option<&'static Cli> {
@@ -270,6 +277,7 @@ pub fn family_name(family: &str) -> &str {
         "codex" => "Codex",
         "claude-code" => "Claude Code",
         "grok-build" => "Grok Build",
+        "antigravity" => "Antigravity",
         other => other,
     }
 }
@@ -313,6 +321,13 @@ impl FamilyRegistry {
     /// registered.
     pub fn connects_through(&self, name: &str) -> bool {
         self.get(name).is_some_and(|family| family.connects_through())
+    }
+
+    /// Whether the vendor of the family `name` forbids its subscription
+    /// through third-party software ([`ProviderFamily::forbids_third_party`]);
+    /// false for a family not registered.
+    pub fn forbids_third_party(&self, name: &str) -> bool {
+        self.get(name).is_some_and(|family| family.forbids_third_party())
     }
 
     /// The registry with `audio` making a compatible entry's speech.

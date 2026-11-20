@@ -168,6 +168,7 @@ impl QuotaWindow {
         self.scope = Some(QuotaScope {
             kind: IMAGES_SCOPE.to_owned(),
             label: None,
+            model_ids: Vec::new(),
         });
         self
     }
@@ -245,7 +246,8 @@ pub enum QuotaSeverity {
 serde_plain::derive_display_from_serialize!(QuotaSeverity);
 serde_plain::derive_fromstr_from_deserialize!(QuotaSeverity);
 
-/// The part of an account a window meters, such as one model.
+/// The part of an account a window meters, such as one model or a group of
+/// models.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct QuotaScope {
@@ -253,4 +255,10 @@ pub struct QuotaScope {
     #[serde(deserialize_with = "Option::deserialize")]
     #[schemars(with = "Nullable<String>")]
     pub label: Option<String>,
+    /// The models a model scope counts for, by their catalog ids, when the
+    /// vendor names them, as for a group of models with a name of its own
+    /// (`Claude and GPT`); empty when the label names the model, as `Sonnet`
+    /// does.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub model_ids: Vec<String>,
 }

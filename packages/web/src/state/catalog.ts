@@ -172,7 +172,9 @@ export function providerView(
     makesText: entry.providerType !== 'media',
     baseUrl: entry.baseUrl ?? '',
     throughDevice: entry.throughDevice,
-    ...(entry.kind === 'subscription' ? { connectsThrough: entry.connectsThrough } : {}),
+    ...(entry.kind === 'subscription'
+      ? { connectsThrough: entry.connectsThrough, forbidsThirdParty: entry.forbidsThirdParty }
+      : {}),
     // Another Jush's provider, by the host its share key names.
     ...(entry.providerType === RELAY ? { lender: entry.baseUrl ? new URL(entry.baseUrl).host : null } : {}),
     ...(entry.kind === 'api_key' ? { headers: entry.headers.map((header) => ({ ...header })) } : {}),

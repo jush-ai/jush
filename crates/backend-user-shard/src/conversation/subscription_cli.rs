@@ -60,17 +60,17 @@ use jush_command_package_subscription_cli_protocol::{
 use jush_command_protocol::{CommandCaller, CommandContext};
 use jush_device_interface::{
     FileContents, Device as _, DeviceError, DeviceErrorKind, MkdirOptions, Process, ProcessControl,
-    ProcessEnd, ProcessOutput, RmOptions, Signal, SpawnError, SpawnErrorKind, WhenExists,
-    WriteOptions,
+    ProcessEnd, ProcessOutput, RmOptions, Signal, SpawnEnv, SpawnError, SpawnErrorKind,
+    SpawnRequest, WhenExists, WriteOptions,
 };
 use jush_provider_subscription_cli::{
     AccountMachine, AccountWork, Cli, CliReleases, CliSite, CliStart, CliStarter, CliSystem, CliWork,
     ConfigDir, IdleProcesses, Placed, Placement, ReleaseError, StartError, StartStage, StartSteps,
-    WorkLease, close_process,
+    Tail, WorkLease, close_process,
 };
 use jush_web_api_protocol::ids::{ConversationId, DeviceId, ProviderId, UserId};
 use jush_runner_protocol::wire::DeviceDownload;
-use jush_shared_types::DownloadProgress;
+use jush_shared_types::{DownloadProgress, StreamKind};
 use jush_web_api_protocol::providers::CliInstall;
 use futures_util::future::{BoxFuture, LocalBoxFuture, Shared};
 use futures_util::{FutureExt as _, StreamExt as _};
@@ -246,6 +246,12 @@ impl MachineSlot {
     pub fn get(&self) -> Option<SubscriptionsMachine> {
         self.0.get().cloned()
     }
+
+    /// The machine as account work reaches it, which a CLI's family gives
+    /// its providers; none before the master's shard has started.
+    pub fn account_machine(&self) -> Option<Arc<dyn AccountMachine>> {
+        self.get().map(|machine| Arc::new(machine) as Arc<dyn AccountMachine>)
+    }
 }
 
 impl AccountMachine for SubscriptionsMachine {
@@ -390,11 +396,12 @@ impl Placement for CrossPlacement {
             while let Ok(stage) = reached.try_recv() {
                 stages(stage);
             }
-            let Relayed { pipes, steps } = relayed??;
+            let Relayed { pipes, steps, site } = relayed??;
             Ok(Placed {
                 process: pipes.process(),
                 config: Box::new(RelayedDir),
                 steps,
+                site,
             })
         })
     }
@@ -457,6 +464,7 @@ impl Placement for Unplaced {
 struct Relayed {
     pipes: Pipes,
     steps: StartSteps,
+    site: CliSite,
 }
 
 /// What the relay's other end holds of a process: its output, its control
@@ -539,6 +547,14 @@ impl ConfigDir for RelayedDir {
         })
     }
 
+    fn output<'a>(
+        &'a self,
+        command: &'a str,
+        _: &'a [&'a str],
+    ) -> LocalBoxFuture<'a, Result<Bytes, String>> {
+        Box::pin(async move { Err(format!("{command} is not run for a relayed process")) })
+    }
+
     fn remove(self: Box<Self>) -> LocalBoxFuture<'static, ()> {
         Box::pin(async {})
     }
@@ -569,6 +585,7 @@ fn relay(shard: &Shard, placed: Placed, hold: Option<AccountHold>) -> Relayed {
         process,
         config,
         steps,
+        site,
     } = placed;
     let Process {
         mut output,
@@ -624,6 +641,7 @@ fn relay(shard: &Shard, placed: Placed, hold: Option<AccountHold>) -> Relayed {
             exit: exited,
         },
         steps,
+        site,
     }
 }
 
@@ -909,11 +927,20 @@ impl MachinePlacement {
             };
             // The session's bytes are made here, for the machine's system,
             // and written next: one step.
-            let CliStart { spawn, files } = start(&site);
+            let CliStart {
+                spawn,
+                files,
+                links,
+            } = start(&site);
             steps.file_bytes = files.iter().map(|(_, bytes)| bytes.len() as u64).sum();
             dir.write(files).await.map_err(|error| {
                 StartError(format!(
                     "{cli}'s files could not be written on its machine: {error}"
+                ))
+            })?;
+            dir.link(links).await.map_err(|error| {
+                StartError(format!(
+                    "{cli}'s links could not be made on its machine: {error}"
                 ))
             })?;
             lap(&mut steps.files);
@@ -960,6 +987,7 @@ impl MachinePlacement {
                 },
                 config: Box::new(dir),
                 steps,
+                site,
             };
             Ok((placed, hold))
         }
@@ -986,11 +1014,12 @@ impl Placement for MachinePlacement {
                 .shard
                 .upgrade()
                 .ok_or_else(|| StartError("The backend is shutting down".into()))?;
-            let Relayed { pipes, steps } = relay(&shard, placed, Some(hold));
+            let Relayed { pipes, steps, site } = relay(&shard, placed, Some(hold));
             Ok(Placed {
                 process: pipes.process(),
                 config: Box::new(RelayedDir),
                 steps,
+                site,
             })
         })
     }
@@ -1126,6 +1155,21 @@ impl MachineDir {
         Ok(())
     }
 
+    /// Makes `links` in the directory, each a symbolic link at its path
+    /// there, written with `/`, to its target.
+    async fn link(&self, links: Vec<(String, String)>) -> Result<(), DeviceError> {
+        let fs = self.device.fs();
+        let paths = self.device.identity().paths;
+        for (name, target) in links {
+            if let Some((parent, _)) = name.rsplit_once('/') {
+                fs.mkdir(&paths.join(&self.path, parent), MkdirOptions { recursive: true })
+                    .await?;
+            }
+            fs.symlink(&target, &paths.join(&self.path, &name)).await?;
+        }
+        Ok(())
+    }
+
     /// Removes the directory once its process ended.
     fn removal(&mut self) -> LocalBoxFuture<'static, ()> {
         self.removed = true;
@@ -1152,6 +1196,55 @@ impl MachineDir {
 impl ConfigDir for MachineDir {
     fn read<'a>(&'a self, name: &'a str) -> LocalBoxFuture<'a, Result<Bytes, DeviceError>> {
         Box::pin(async move { self.device.fs().read_file(&format!("{}/{name}", self.path)).await })
+    }
+
+    fn output<'a>(
+        &'a self,
+        command: &'a str,
+        args: &'a [&'a str],
+    ) -> LocalBoxFuture<'a, Result<Bytes, String>> {
+        Box::pin(async move {
+            let request = SpawnRequest {
+                command: command.to_owned(),
+                args: args.iter().map(|arg| (*arg).to_owned()).collect(),
+                cwd: Some(self.path.clone()),
+                env: SpawnEnv::Overlay(Default::default()),
+                descriptors: Vec::new(),
+                retained: false,
+                process_group: false,
+            };
+            // Dropping a process's control kills it, so it is held until the
+            // process ends; the command reads no input.
+            let Process {
+                mut output,
+                exit,
+                control,
+            } = self
+                .device
+                .process()
+                .spawn(request)
+                .await
+                .map_err(|error| format!("{command} could not be started: {error}"))?;
+            let _ = control.close_stdin().await;
+            let mut stdout = Vec::new();
+            let mut stderr = Tail::default();
+            while let Some(chunk) = output.next().await {
+                match chunk.stream {
+                    StreamKind::Stdout => stdout.extend_from_slice(&chunk.bytes),
+                    StreamKind::Stderr => stderr.push(&chunk.bytes),
+                }
+            }
+            let end = exit.await;
+            drop(control);
+            match end {
+                ProcessEnd::Exited(0) => Ok(Bytes::from(stdout)),
+                _ if stderr.len() > 0 => Err(stderr.text()),
+                ProcessEnd::Exited(code) => Err(format!("{command} exited with code {code}")),
+                ProcessEnd::Signalled(signal) => Err(format!("{command} was ended by {signal}")),
+                ProcessEnd::NotStarted(error) => Err(format!("{command} did not start ({})", error.kind)),
+                ProcessEnd::Lost(reason) => Err(format!("The machine went away: {reason}")),
+            }
+        })
     }
 
     fn remove(mut self: Box<Self>) -> LocalBoxFuture<'static, ()> {

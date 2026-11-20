@@ -53,6 +53,7 @@ pub(crate) fn start(site: &CliSite, args: Vec<String>, session: &SessionFile) ->
     CliStart {
         spawn,
         files: vec![(session.path(), session.bytes(&site.system))],
+        links: Vec::new(),
     }
 }
 
@@ -92,6 +93,7 @@ pub(crate) fn probe(site: &CliSite) -> CliStart {
     CliStart {
         spawn,
         files: Vec::new(),
+        links: Vec::new(),
     }
 }
 
@@ -121,6 +123,7 @@ pub(crate) fn login_request(site: &CliSite) -> CliStart {
     CliStart {
         spawn,
         files: Vec::new(),
+        links: Vec::new(),
     }
 }
 
