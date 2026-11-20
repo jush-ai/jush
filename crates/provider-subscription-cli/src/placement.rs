@@ -94,6 +94,12 @@ pub struct CliSystem {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CliStart {
     pub spawn: SpawnRequest,
+    /// A process started beside the CLI's, just before it, such as one that
+    /// joins a channel the CLI opens through files of its directory to its own
+    /// standard streams, which the provider then reads and writes. It lives
+    /// only as long as the CLI's process: an account's is closed, SIGTERM
+    /// first, once the CLI's process ended or was closed.
+    pub companion: Option<SpawnRequest>,
     /// Each file's path relative to the process's own directory, and its
     /// bytes.
     pub files: Vec<(String, Bytes)>,
@@ -212,6 +218,8 @@ pub trait Placement {
 /// its start took.
 pub struct Placed {
     pub process: Process,
+    /// The companion the start asked for ([`CliStart::companion`]).
+    pub companion: Option<Process>,
     pub config: Box<dyn ConfigDir>,
     pub steps: StartSteps,
     /// Where it was started.
@@ -244,6 +252,9 @@ pub struct StartSteps {
 /// What a process made of its own on its machine: an account's process,
 /// its own directory under the account's; a sign-in, its new configuration
 /// directory.
+///
+/// The directory stays while its handle is held, after its process ended
+/// too, so that what the process left there can be read.
 pub trait ConfigDir {
     /// The file `name` the process wrote into its configuration directory.
     fn read<'a>(&'a self, name: &'a str) -> LocalBoxFuture<'a, Result<Bytes, DeviceError>>;

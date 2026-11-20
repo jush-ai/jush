@@ -44,6 +44,12 @@ impl HeldProcess {
         &*self.0.as_ref().expect("the process is not closed").control
     }
 
+    /// The process's own directory, which stays while it is held, after the
+    /// process ended too; none for a process held without one.
+    pub fn dir(&self) -> Option<&dyn ConfigDir> {
+        self.0.as_ref()?.config.as_deref()
+    }
+
     /// Closes the process and waits for its end.
     pub async fn close(&mut self) {
         if let Some(parts) = self.0.take() {

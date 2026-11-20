@@ -396,13 +396,7 @@ impl Placement for CrossPlacement {
             while let Ok(stage) = reached.try_recv() {
                 stages(stage);
             }
-            let Relayed { pipes, steps, site } = relayed??;
-            Ok(Placed {
-                process: pipes.process(),
-                config: Box::new(RelayedDir),
-                steps,
-                site,
-            })
+            Ok(relayed??.placed())
         })
     }
 
@@ -459,12 +453,34 @@ impl Placement for Unplaced {
 }
 
 /// A process the master's shard started and relays: its standard streams
-/// and its end as `Send` pipe ends, and how long each step of its start
-/// took.
+/// and its end as `Send` pipe ends, its companion's alike, its directory, and
+/// how long each step of its start took.
 struct Relayed {
     pipes: Pipes,
+    companion: Option<Pipes>,
+    dir: RelayedDir,
     steps: StartSteps,
     site: CliSite,
+}
+
+impl Relayed {
+    /// The process as the user's side holds it.
+    fn placed(self) -> Placed {
+        let Self {
+            pipes,
+            companion,
+            dir,
+            steps,
+            site,
+        } = self;
+        Placed {
+            process: pipes.process(),
+            companion: companion.map(Pipes::process),
+            config: Box::new(dir),
+            steps,
+            site,
+        }
+    }
 }
 
 /// What the relay's other end holds of a process: its output, its control
@@ -533,28 +549,45 @@ impl ProcessControl for RelayedControl {
     }
 }
 
-/// A relayed process's own directory, which the relay removes once the
-/// process ended.
-struct RelayedDir;
+/// What the user's side asks of a relayed process's directory.
+enum DirOrder {
+    Read(String, oneshot::Sender<Result<Bytes, DeviceError>>),
+    Output(String, Vec<String>, oneshot::Sender<Result<Bytes, String>>),
+}
+
+/// The user's side of a relayed process's own directory, which the relay
+/// removes once the process and its companion ended and this lets go.
+struct RelayedDir(mpsc::UnboundedSender<DirOrder>);
 
 impl ConfigDir for RelayedDir {
     fn read<'a>(&'a self, name: &'a str) -> LocalBoxFuture<'a, Result<Bytes, DeviceError>> {
         Box::pin(async move {
-            Err(DeviceError::new(
-                DeviceErrorKind::Protocol,
-                format!("{name} of a relayed process is not read"),
-            ))
+            let (answer, answered) = oneshot::channel();
+            let gone = || DeviceError::new(DeviceErrorKind::Unavailable, "the directory's relay ended");
+            self.0
+                .send(DirOrder::Read(name.to_owned(), answer))
+                .map_err(|_| gone())?;
+            answered.await.unwrap_or_else(|_| Err(gone()))
         })
     }
 
     fn output<'a>(
         &'a self,
         command: &'a str,
-        _: &'a [&'a str],
+        args: &'a [&'a str],
     ) -> LocalBoxFuture<'a, Result<Bytes, String>> {
-        Box::pin(async move { Err(format!("{command} is not run for a relayed process")) })
+        Box::pin(async move {
+            let (answer, answered) = oneshot::channel();
+            let gone = || "the directory's relay ended".to_owned();
+            let args = args.iter().map(|arg| (*arg).to_owned()).collect();
+            self.0
+                .send(DirOrder::Output(command.to_owned(), args, answer))
+                .map_err(|_| gone())?;
+            answered.await.unwrap_or_else(|_| Err(gone()))
+        })
     }
 
+    /// Lets go of the directory, which the relay then removes.
     fn remove(self: Box<Self>) -> LocalBoxFuture<'static, ()> {
         Box::pin(async {})
     }
@@ -572,34 +605,127 @@ impl ConfigDir for RelayedDir {
 /// Starts relaying `placed`, a process the master's shard started, holding its
 /// account's gate (`hold`), as a task of that shard.
 ///
-/// - Its output goes to the pipe.
-/// - The user's side's orders reach its control.
-/// - Its end goes back once its directory is removed, after which the gate is
-///   let go.
+/// - Its output goes to the pipe, and the user's side's orders reach its
+///   control; the same for its companion.
+/// - Its end goes back as soon as it ended.
+/// - Its directory answers the user's side until that lets go of it.
 ///
 /// When the user's side lets go of the control, or a change of the account
-/// begins, the process is closed, SIGTERM first. The task owns the process's
-/// control, so no path drops it raw.
+/// begins, the process is closed, SIGTERM first; its companion is closed once
+/// the process ended. Once both ended and the user's side let go of the
+/// directory, or a change of the account began, the directory is removed and
+/// the gate let go. The task owns every control, so no path drops one raw.
 fn relay(shard: &Shard, placed: Placed, hold: Option<AccountHold>) -> Relayed {
     let Placed {
         process,
+        companion,
         config,
         steps,
         site,
     } = placed;
+    let closing = hold
+        .as_ref()
+        .map_or_else(CancellationToken::new, |hold| hold.closing.clone());
+    let (pipes, ends) = relay_ends(process);
+    let (companion_pipes, companion_ends) = companion.map(relay_ends).unzip();
+    let (dir_orders, mut ordered) = mpsc::unbounded_channel::<DirOrder>();
+    shard.tasks().spawn_local(async move {
+        let companion_closing = closing.child_token();
+        let processes = async {
+            let relayed = async {
+                ends.relay(closing.clone()).await;
+                companion_closing.cancel();
+            };
+            let companion = async {
+                if let Some(ends) = companion_ends {
+                    ends.relay(companion_closing.clone()).await;
+                }
+            };
+            tokio::join!(relayed, companion);
+        };
+        let answering = async {
+            let answers = async {
+                while let Some(order) = ordered.recv().await {
+                    // An order whose asker gave up wants no answer.
+                    match order {
+                        DirOrder::Read(name, answer) => {
+                            let _ = answer.send(config.read(&name).await);
+                        }
+                        DirOrder::Output(command, args, answer) => {
+                            let args: Vec<&str> = args.iter().map(String::as_str).collect();
+                            let _ = answer.send(config.output(&command, &args).await);
+                        }
+                    }
+                }
+            };
+            tokio::select! {
+                () = answers => {}
+                () = closing.cancelled() => {}
+            }
+        };
+        tokio::join!(processes, answering);
+        config.remove().await;
+        drop(hold);
+    });
+    Relayed {
+        pipes,
+        companion: companion_pipes,
+        dir: RelayedDir(dir_orders),
+        steps,
+        site,
+    }
+}
+
+/// The relay's end of one relayed process.
+struct RelayEnds {
+    output: futures_util::stream::LocalBoxStream<'static, ProcessOutput>,
+    control: Box<dyn ProcessControl>,
+    exit: Shared<LocalBoxFuture<'static, ProcessEnd>>,
+    sent: mpsc::UnboundedSender<ProcessOutput>,
+    ordered: mpsc::UnboundedReceiver<Order>,
+    ended: oneshot::Sender<ProcessEnd>,
+}
+
+/// The two ends of a relay of `process`: the user's side's pipes, and the
+/// relay's.
+fn relay_ends(process: Process) -> (Pipes, RelayEnds) {
     let Process {
-        mut output,
+        output,
         control,
         exit,
     } = process;
     let (sent, received) = mpsc::unbounded_channel();
-    let (orders, mut ordered) = mpsc::unbounded_channel::<Order>();
+    let (orders, ordered) = mpsc::unbounded_channel::<Order>();
     let (ended, exited) = oneshot::channel();
-    let exit = exit.shared();
-    let closing = hold
-        .as_ref()
-        .map_or_else(CancellationToken::new, |hold| hold.closing.clone());
-    shard.tasks().spawn_local(async move {
+    let pipes = Pipes {
+        output: received,
+        control: orders,
+        exit: exited,
+    };
+    let ends = RelayEnds {
+        output,
+        control,
+        exit: exit.shared(),
+        sent,
+        ordered,
+        ended,
+    };
+    (pipes, ends)
+}
+
+impl RelayEnds {
+    /// Relays the process until it ended, closing it first, SIGTERM first,
+    /// when the user's side lets go of its control or `closing` fires, and
+    /// sends its end back.
+    async fn relay(self, closing: CancellationToken) {
+        let Self {
+            mut output,
+            control,
+            exit,
+            sent,
+            mut ordered,
+            ended,
+        } = self;
         let forwarding = async {
             while let Some(chunk) = output.next().await {
                 // The user's side reads the output while it holds the
@@ -619,7 +745,7 @@ fn relay(shard: &Shard, placed: Placed, hold: Option<AccountHold>) -> Relayed {
             }
         };
         // Whether the process is to be closed: the user's side let go, or
-        // a change of the account began; otherwise it ended.
+        // `closing` fired; otherwise it ended.
         let close = tokio::select! {
             () = forwarding => false,
             () = obeying => true,
@@ -628,20 +754,8 @@ fn relay(shard: &Shard, placed: Placed, hold: Option<AccountHold>) -> Relayed {
         if close {
             close_process(control, exit.clone()).await;
         }
-        let end = exit.await;
-        config.remove().await;
-        drop(hold);
         // A user's side that let go learns nothing more.
-        let _ = ended.send(end);
-    });
-    Relayed {
-        pipes: Pipes {
-            output: received,
-            control: orders,
-            exit: exited,
-        },
-        steps,
-        site,
+        let _ = ended.send(exit.await);
     }
 }
 
@@ -929,6 +1043,7 @@ impl MachinePlacement {
             // and written next: one step.
             let CliStart {
                 spawn,
+                companion,
                 files,
                 links,
             } = start(&site);
@@ -944,16 +1059,29 @@ impl MachinePlacement {
                 ))
             })?;
             lap(&mut steps.files);
+            let started = |error: DeviceError| {
+                StartError(format!("{cli} could not be started on its machine: {error}"))
+            };
+            // The companion starts first, so a CLI that started always has
+            // it; one whose CLI then fails to start is dropped, which kills
+            // it.
+            let companion = match companion {
+                Some(companion) => Some(
+                    access
+                        .remote
+                        .process()
+                        .spawn(companion)
+                        .await
+                        .map_err(started)?,
+                ),
+                None => None,
+            };
             let process = access
                 .remote
                 .process()
                 .spawn(spawn)
                 .await
-                .map_err(|error| {
-                    StartError(format!(
-                        "{cli} could not be started on its machine: {error}"
-                    ))
-                })?;
+                .map_err(started)?;
             lap(&mut steps.spawn);
             // A start that finds the executable it was given gone, as after
             // another runner sharing the cache removed it, drops what is
@@ -985,6 +1113,7 @@ impl MachinePlacement {
                     exit: exit.boxed_local(),
                     ..process
                 },
+                companion,
                 config: Box::new(dir),
                 steps,
                 site,
@@ -1014,13 +1143,7 @@ impl Placement for MachinePlacement {
                 .shard
                 .upgrade()
                 .ok_or_else(|| StartError("The backend is shutting down".into()))?;
-            let Relayed { pipes, steps, site } = relay(&shard, placed, Some(hold));
-            Ok(Placed {
-                process: pipes.process(),
-                config: Box::new(RelayedDir),
-                steps,
-                site,
-            })
+            Ok(relay(&shard, placed, Some(hold)).placed())
         })
     }
 

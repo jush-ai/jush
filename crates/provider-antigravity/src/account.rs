@@ -15,6 +15,7 @@ use jush_provider_common::credentials::{
 use jush_provider_subscription_cli::CliWork;
 
 use crate::CLI;
+use crate::acp::Refusal;
 
 /// Where `agy` keeps the sign-in, in its `HOME`.
 pub(crate) const SIGN_IN: &str = ".gemini/antigravity-cli/antigravity-oauth-token";
@@ -40,7 +41,7 @@ impl AgyAuth {
         Self { pool, account }
     }
 
-    fn account(&self) -> Result<&str, AuthFailure> {
+    pub(crate) fn account(&self) -> Result<&str, AuthFailure> {
         self.account
             .as_deref()
             .ok_or(AuthFailure::new(CLI.name, AuthReason::Missing))
@@ -70,6 +71,16 @@ impl AgyAuth {
             account: self.account()?.to_owned(),
             handover: None,
         })
+    }
+
+    /// Why `agy` refused a request, when it refused it for the account's
+    /// sign-in, which Google no longer takes: then the account is signed out.
+    pub(crate) async fn refused(&self, refusal: &Refusal) -> Option<AuthFailure> {
+        if !refusal.asks_sign_in() {
+            return None;
+        }
+        self.signed_out().await;
+        Some(AuthFailure::new(CLI.name, AuthReason::SignedOut))
     }
 
     /// Marks the account signed out: Google no longer takes its sign-in.

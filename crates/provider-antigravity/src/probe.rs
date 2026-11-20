@@ -10,11 +10,11 @@
 use std::sync::Arc;
 
 use jush_provider_common::CatalogError;
-use jush_provider_common::credentials::{AuthFailure, AuthReason};
+use jush_provider_common::credentials::AuthFailure;
 use jush_provider_common::quota::QuotaError;
 use jush_provider_subscription_cli::{AccountMachine, Probed, Unanswered, probe};
 use serde::Deserialize as _;
-use serde_json::{Value, json};
+use serde_json::Value;
 
 use crate::account::AgyAuth;
 use crate::acp::{self, NewSession, Output, Refusal};
@@ -75,14 +75,13 @@ impl Prober {
             Ok(session) => NewSession::deserialize(session).map_err(|error| {
                 ProbeFailure::Invalid(format!("Antigravity's new session cannot be read: {error}"))
             }),
-            Err(refusal) if refusal.asks_sign_in() => {
-                self.auth.signed_out().await;
-                Err(ProbeFailure::Auth(AuthFailure::new(CLI.name, AuthReason::SignedOut)))
-            }
-            Err(refusal) => Err(ProbeFailure::Unavailable(format!(
-                "Antigravity did not open a session: {}",
-                refusal.message
-            ))),
+            Err(refusal) => match self.auth.refused(&refusal).await {
+                Some(failure) => Err(ProbeFailure::Auth(failure)),
+                None => Err(ProbeFailure::Unavailable(format!(
+                    "Antigravity did not open a session: {}",
+                    refusal.message
+                ))),
+            },
         }
     }
 }
@@ -91,18 +90,5 @@ impl Prober {
 /// how `agy` refused it or `initialize`.
 async fn new_session(probed: Probed<'_>) -> Result<Result<Value, Refusal>, Unanswered> {
     let mut output = Output::new(probed.output);
-    let write = |error| {
-        Unanswered::Failed(format!("Antigravity's request could not be written: {error}"))
-    };
-    probed.control.write_stdin(acp::initialize(1)).await.map_err(write)?;
-    if let Err(refusal) = output.answer(1).await? {
-        return Ok(Err(refusal));
-    }
-    let new = json!({ "cwd": start::home(probed.site), "mcpServers": [] });
-    probed
-        .control
-        .write_stdin(acp::request(2, "session/new", new))
-        .await
-        .map_err(write)?;
-    output.answer(2).await
+    acp::open(probed.control, &mut output, &start::home(probed.site), None).await
 }
