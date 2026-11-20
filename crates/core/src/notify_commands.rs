@@ -106,7 +106,7 @@ async fn send(core: Rc<Core>, call: Call<SendArgs>, port: RpcPort) -> Result<u8,
     if let Some((mark, _)) = core.schedule_input(&conversation)
         && core.store().notify_run(mark.run_id).await.map_err(failed)?
     {
-        core.mark(jush_core_sync::Part::Metadata(conversation.clone()));
+        core.mark(jush_core_sync::Part::Conversation(conversation.clone()));
     }
     // Counted now, so the agent is told at once; delivery goes on in the
     // background, and a browser its push service no longer knows is

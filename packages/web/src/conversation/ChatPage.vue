@@ -115,7 +115,7 @@ provideHistoryReading((node) => {
   return current ? store.history.reading(current, node) : { before: false, after: false }
 })
 /** The schedules that wake the conversation, which the taskbar's Schedules button lists. */
-const schedules = computed(() => conversation.value?.metadata.shown.value?.schedules ?? [])
+const schedules = computed(() => conversation.value?.schedules ?? [])
 /** The commands the conversation's calls left running that ended, with their output once read. */
 const endedTerminals = computed(() => {
   const current = conversation.value
