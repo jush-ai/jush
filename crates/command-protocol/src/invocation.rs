@@ -207,17 +207,21 @@ pub enum ColorScheme {
 /// conversation, followed by the entry's id.
 pub const PROVIDER_SCOPE_PREFIX: &str = "provider-";
 
+/// The scope name of the owner's script on a device that belongs to no
+/// conversation, such as a program's (`POST /devices/:id/exec`).
+pub const DEVICE_SCOPE: &str = "device";
+
 /// Whether the scope `name` of a context is a conversation's, not the one of
 /// work that belongs to none: a resident names a conversation in its log only
 /// when the work serves one.
 pub fn is_conversation_scope(name: &str) -> bool {
-    !name.starts_with(PROVIDER_SCOPE_PREFIX)
+    !name.starts_with(PROVIDER_SCOPE_PREFIX) && name != DEVICE_SCOPE
 }
 
 /// What a declared command knows beyond its arguments: which conversation it
 /// serves, who started it, and the locale and color scheme its results are
 /// presented in. Work that belongs to no conversation names the provider
-/// entry it serves instead.
+/// entry it serves instead, or the device's own scope ([`DEVICE_SCOPE`]).
 ///
 /// The backend is its only source, and nothing reads it from the environment:
 /// a script can change variables, and every program a job runs inherits them.
@@ -350,9 +354,10 @@ pub struct Completion {
 /// The longest conversation name.
 pub const CONVERSATION_NAME_CHARS: usize = 64;
 
-/// A garde rule: the value names a conversation, or the provider entry that
-/// work outside any conversation serves, as 1 to 64 ASCII letters, digits,
-/// `-` and `_`. The runner names a job's directory after it
+/// A garde rule: the value names a conversation, or for work outside any
+/// conversation the provider entry it serves or the device's own scope
+/// ([`DEVICE_SCOPE`]), as 1 to 64 ASCII letters, digits, `-` and `_`. The
+/// runner names a job's directory after it
 /// (`crates/runner-jobs/src/tasks.rs`), so it can never name another path.
 pub fn conversation_name(value: &str, _: &()) -> garde::Result {
     let valid = !value.is_empty()
@@ -395,7 +400,7 @@ fn json_object(value: &serde_json::Value, _: &()) -> garde::Result {
 
 /// Variable names are non-empty and hold neither NUL nor `=`; values hold no
 /// NUL.
-fn environment(variables: &BTreeMap<String, String>, _: &()) -> garde::Result {
+pub fn environment(variables: &BTreeMap<String, String>, _: &()) -> garde::Result {
     for (name, value) in variables {
         if name.is_empty() || name.contains(['\0', '=']) {
             return Err(garde::Error::new(format!(

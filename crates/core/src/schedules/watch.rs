@@ -12,22 +12,17 @@
 //! - A check a pause, an edit of the trigger or a deletion overtook is stopped,
 //!   and records nothing.
 
-use std::cell::{Cell, RefCell};
-use std::rc::Rc;
+use std::collections::BTreeMap;
 use std::time::Duration;
 
+use jush_core_device_access::scripts::{self, Ran, Script, ScriptEnd};
 use jush_core_store::schedules::{RunCause, StoredSchedule, WatchOutput};
 use jush_core_sync::Part;
-use jush_runner_client::{ContextSource, EnvironmentOptions, RemoteDevice, RemoteShellEnvironment};
-use jush_command_protocol::{CommandCaller, CommandContext, Viewable};
-use jush_device_interface::{
-    CommandRecord, Ending, ExecRequest, DeviceError, JobCaller, Numbers, OutputRecord, PageFeed, ShellEnvironment,
-};
-use jush_shared_types::{NodeId, Sequence, StreamKind, Timestamp};
+use jush_command_protocol::CommandCaller;
+use jush_device_interface::{DeviceError, JobCaller, OutputRecord};
+use jush_shared_types::{NodeId, StreamKind, Timestamp};
 use jush_web_api_protocol::schedules::{RunNote, RunState, Trigger};
-use futures_util::future::LocalBoxFuture;
 use sha2::{Digest, Sha256};
-use tokio::sync::watch;
 use tokio_util::sync::CancellationToken;
 
 use super::message::{CUT_BYTES, Output, last_bytes};
@@ -46,116 +41,45 @@ enum Checked {
     Failed(String),
 }
 
-/// A watch's jobs have no page that follows them.
-struct NoPage(watch::Sender<bool>);
-
-impl PageFeed for NoPage {
-    fn changed(&self, _: &Rc<RefCell<CommandRecord>>) {}
-
-    fn watching(&self) -> watch::Receiver<bool> {
-        self.0.subscribe()
-    }
-}
-
-/// A watch's command numbers, which no one reads.
-#[derive(Default)]
-struct Count(Cell<u64>);
-
-impl Numbers for Count {
-    fn next(&self, _: Sequence) -> LocalBoxFuture<'_, Result<u64, DeviceError>> {
-        self.0.set(self.0.get() + 1);
-        let next = self.0.get();
-        Box::pin(async move { Ok(next) })
-    }
-}
-
-/// Runs `script` in `cwd` on `device` as the agent's shell would, and answers
-/// its output, or why there is none.
-async fn run_command(
-    device: RemoteDevice,
-    cwd: Option<String>,
-    context: CommandContext,
-    script: String,
-    stop: &CancellationToken,
-) -> Checked {
-    let source: ContextSource = Rc::new(move || {
-        let context = context.clone();
-        Box::pin(async move { Ok(context) })
-    });
-    let environment = RemoteShellEnvironment::new(EnvironmentOptions::new(
-        device,
-        source,
-        Rc::new(NoPage(watch::Sender::new(false))),
-        Rc::new(Count::default()),
-    ));
-    let request = ExecRequest {
-        script,
-        cwd,
-        caller: JobCaller {
-            node: NodeId::try_from("schedule").expect("a name is not empty"),
-            tool_use_id: "watch".into(),
-            turn: None,
-        },
-        title: "Change watch".into(),
-        service: true,
-        viewable: Viewable {
-            model: "none".into(),
-            media_types: Some(Vec::new()),
-        },
+/// How a check's command ended, which records nothing when a pause, an edit
+/// or a deletion overtook it.
+fn checked(ran: Result<Ran, DeviceError>) -> Checked {
+    let ran = match ran {
+        Ok(ran) => ran,
+        Err(error) => return Checked::Failed(error.message),
     };
-    let cancel = CancellationToken::new();
-    let command = match environment.start(request, cancel.clone()).await {
-        Ok(command) => command,
-        Err(error) => return Checked::Failed(error.to_string()),
-    };
-    let ended = tokio::select! {
-        ended = tokio::time::timeout(COMMAND_TIME, environment.ended(&command)) => Some(ended),
-        () = stop.cancelled() => None,
-    };
-    let checked = match ended {
-        // Dropped by a pause, an edit or a deletion: what it gave is not read.
-        None => Checked::Failed("the check was dropped".into()),
-        Some(Err(_)) => Checked::TimedOut,
-        Some(Ok(Err(error))) => Checked::Failed(error.to_string()),
-        Some(Ok(Ok(Ending::Aborted))) => Checked::Failed("the command was stopped".into()),
-        Some(Ok(Ok(Ending::Lost(reason)))) => Checked::Failed(reason),
-        Some(Ok(Ok(Ending::Exited(exit)))) => match environment.status(&command) {
-            Ok(status) => {
-                let mut stdout = Vec::new();
-                let mut digest = Sha256::new();
-                if let Some(whole) = status.whole {
-                    for record in whole.output.records() {
-                        match record {
-                            OutputRecord::Output(StreamKind::Stdout, bytes) => {
-                                digest.update(bytes);
-                                stdout.extend_from_slice(bytes);
-                                if stdout.len() > 2 * CUT_BYTES {
-                                    stdout = last_bytes(&stdout, CUT_BYTES);
-                                }
-                            }
-                            // Past the 16 MB the device keeps, the middle is
-                            // left out: its length stands for it.
-                            OutputRecord::LeftOut(bytes) => digest.update(format!("\0left out {bytes}\0")),
-                            OutputRecord::Output(..) => {}
+    match ran.end {
+        ScriptEnd::Exited(exit) => {
+            let mut stdout = Vec::new();
+            let mut digest = Sha256::new();
+            for record in ran.output.records() {
+                match record {
+                    OutputRecord::Output(StreamKind::Stdout, bytes) => {
+                        digest.update(bytes);
+                        stdout.extend_from_slice(bytes);
+                        if stdout.len() > 2 * CUT_BYTES {
+                            stdout = last_bytes(&stdout, CUT_BYTES);
                         }
                     }
+                    // Past the 16 MB the device keeps, the middle is left
+                    // out: its length stands for it.
+                    OutputRecord::LeftOut(bytes) => digest.update(format!("\0left out {bytes}\0")),
+                    OutputRecord::Output(..) => {}
                 }
-                Checked::Output(
-                    Output {
-                        stdout: last_bytes(&stdout, CUT_BYTES),
-                        exit,
-                    },
-                    digest.finalize().to_vec(),
-                )
             }
-            Err(error) => Checked::Failed(error.to_string()),
-        },
-    };
-    // A command over its time, or of a dropped check, is stopped, and every
-    // one let go of.
-    cancel.cancel();
-    environment.dispose_all().await;
-    checked
+            Checked::Output(
+                Output {
+                    stdout: last_bytes(&stdout, CUT_BYTES),
+                    exit,
+                },
+                digest.finalize().to_vec(),
+            )
+        }
+        ScriptEnd::TimedOut { .. } => Checked::TimedOut,
+        // What a dropped check gave is not read.
+        ScriptEnd::Stopped => Checked::Failed("the check was dropped".into()),
+        ScriptEnd::Lost(reason) => Checked::Failed(reason),
+    }
 }
 
 impl Core {
@@ -306,10 +230,22 @@ impl Core {
             Ok(context) => context,
             Err(error) => return failed(&error),
         };
+        let script = Script {
+            script,
+            cwd: None,
+            env: BTreeMap::new(),
+            stdin: None,
+            context,
+            caller: JobCaller {
+                node: NodeId::try_from("schedule").expect("a name is not empty"),
+                tool_use_id: "watch".into(),
+                turn: None,
+            },
+        };
         let cancel = CancellationToken::new();
         self.device_core()
             .with_device(&schedule.conversation, None, &cancel, async |device| {
-                run_command(device.device.clone(), None, context, script, stop).await
+                checked(scripts::run(&device.device, script, Some(COMMAND_TIME), stop).await)
             })
             .await
             .unwrap_or_else(|error| failed(&error))

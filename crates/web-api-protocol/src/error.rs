@@ -49,6 +49,10 @@ pub struct ErrorBody {
     /// directory, which the page opens rather than a second one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub project: Option<crate::projects::ProjectDto>,
+    /// With `command_timed_out`, what the script printed before it was
+    /// stopped.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output: Option<crate::devices::ExecOutput>,
     /// The request the answer is of, as its `X-Request-Id` names it.
     #[serde(rename = "requestId")]
     pub request_id: RequestId,
@@ -174,6 +178,11 @@ pub enum ErrorCode {
     DeviceManaged,
     /// The device's runner is not connected.
     DeviceOffline,
+    /// The device lost a script it ran, or its runner was away when the
+    /// script was to be stopped (`POST /devices/:id/exec`).
+    DeviceLost,
+    /// A script ran past its time and was stopped on its device.
+    CommandTimedOut,
     /// The device is the caller's Cloud, which no direct channel reaches.
     NotAPairedDevice,
     /// The caller owns no conversation of that id.

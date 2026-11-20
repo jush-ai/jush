@@ -7,6 +7,7 @@ use axum::http::{HeaderName, HeaderValue, Method, StatusCode};
 use axum::response::{IntoResponse, Response};
 use std::collections::BTreeMap;
 
+use jush_web_api_protocol::devices::ExecOutput;
 use jush_web_api_protocol::error::{ErrorBody, ErrorCode};
 use jush_web_api_protocol::ids::LoginId;
 use jush_web_api_protocol::passkeys::PasskeyId;
@@ -52,6 +53,8 @@ pub struct ApiError {
     login_id: Option<LoginId>,
     /// The project a `project_exists` answer names.
     project: Option<ProjectDto>,
+    /// What a script a `command_timed_out` answer stopped printed.
+    output: Option<ExecOutput>,
     /// The `Retry-After` the answer carries, in whole seconds.
     retry_after: Option<u64>,
     /// The ETag of the file a refused read is an answer of, such as one
@@ -82,6 +85,7 @@ impl ApiError {
             credential_id: None,
             login_id: None,
             project: None,
+            output: None,
             retry_after: None,
             etag: None,
             read_at: None,
@@ -123,6 +127,12 @@ impl ApiError {
     /// The error as the answer that names the user's project `project`.
     pub fn with_project(mut self, project: ProjectDto) -> Self {
         self.project = Some(project);
+        self
+    }
+
+    /// The error with what the script it stopped printed.
+    pub fn with_output(mut self, output: ExecOutput) -> Self {
+        self.output = Some(output);
         self
     }
 
@@ -356,6 +366,7 @@ impl ApiError {
             credential_id: self.credential_id,
             login_id: self.login_id,
             project: self.project,
+            output: self.output,
             request_id: request_id::current_or_new(),
         };
         (self.status, body)
@@ -363,28 +374,23 @@ impl ApiError {
 }
 
 impl IntoResponse for ApiError {
-    fn into_response(self) -> Response {
-        let body = ErrorBody {
-            code: self.code,
-            message: self.message,
-            params: self.params,
-            reason: self.reason,
-            credential_id: self.credential_id,
-            login_id: self.login_id,
-            project: self.project,
-            request_id: request_id::current_or_new(),
-        };
-        let mut response = (self.status, Json(body)).into_response();
+    fn into_response(mut self) -> Response {
+        let code = self.code;
+        let retry_after = self.retry_after;
+        let etag = self.etag.take();
+        let read_at = self.read_at.take();
+        let (status, body) = self.into_body();
+        let mut response = (status, Json(body)).into_response();
         // The request's answered line names the code.
-        response.extensions_mut().insert(self.code);
+        response.extensions_mut().insert(code);
         let headers = response.headers_mut();
-        if let Some(seconds) = self.retry_after {
+        if let Some(seconds) = retry_after {
             headers.insert(axum::http::header::RETRY_AFTER, seconds.into());
         }
-        if let Some(etag) = self.etag.and_then(|etag| HeaderValue::from_str(&etag).ok()) {
+        if let Some(etag) = etag.and_then(|etag| HeaderValue::from_str(&etag).ok()) {
             headers.insert(axum::http::header::ETAG, etag);
         }
-        if let Some(read_at) = self.read_at.as_ref().and_then(read_at_value) {
+        if let Some(read_at) = read_at.as_ref().and_then(read_at_value) {
             headers.insert(READ_AT, read_at);
         }
         response
