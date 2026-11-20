@@ -20,6 +20,11 @@ jush-device-interface = { path = "../device-interface" }
 jush-provider-common = { path = "../provider-common" }
 bytes.workspace = true
 futures-util.workspace = true
+# A release is validated as the package's protocol declares it.
+garde.workspace = true
+jiff.workspace = true
+# The vendors' distributions, read with no redirect followed.
+reqwest = { workspace = true, features = ["rustls"] }
 thiserror.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true

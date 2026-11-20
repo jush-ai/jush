@@ -33,10 +33,7 @@ bytes.workspace = true
 # stream of its messages, and these channels are both.
 futures-channel = { version = "0.3", features = ["sink"] }
 futures-util.workspace = true
-# A release's manifest is validated as the package's protocol declares it.
-garde.workspace = true
 jiff.workspace = true
-reqwest = { workspace = true, features = ["rustls", "stream"] }
 # The SDK MCP server; `local` runs its service loop and handlers on the
 # user's shard, which is one thread.
 rmcp = { version = "3.4", default-features = false, features = ["local", "server"] }

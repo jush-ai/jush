@@ -6,7 +6,8 @@
 //! - [`Cli`] says what differs between CLIs as the machine runs them, and
 //!   [`CliReleases`] reads a vendor's releases into the release record the
 //!   `jush.subscription-cli` package installs
-//!   (`crates/command-package-subscription-cli/src/lib.rs`).
+//!   (`crates/command-package-subscription-cli/src/lib.rs`), following the
+//!   newest as [`FollowedReleases`] does (`releases.rs`).
 //! - [`Placement`] starts a CLI's processes on the machine the backend
 //!   chooses, and [`AccountMachine`] reaches it for account work
 //!   (`placement.rs`).
@@ -24,6 +25,7 @@ mod idle;
 mod login;
 mod placement;
 mod process;
+mod releases;
 
 use futures_util::future::{BoxFuture, LocalBoxFuture, Shared};
 use jush_command_package_subscription_cli_protocol::Release;
@@ -33,6 +35,7 @@ use std::time::Duration;
 pub use idle::{Closing, IDLE_FOR, Idle, IdleProcesses, Seat};
 pub use login::{CliKit, CliLogin};
 pub use process::{HeldProcess, Tail, exit_message};
+pub use releases::{Distribution, Fetch, FollowedReleases};
 pub use placement::{
     AccountMachine, AccountWork, CliSite, CliStart, CliStarter, CliSystem, CliWork, ConfigDir,
     Handover, Placed, Placement, StartError, StartStage, StartSteps, WorkLease,
