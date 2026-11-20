@@ -270,6 +270,7 @@ pub fn family_name(family: &str) -> &str {
         "codex" => "Codex",
         "claude-code" => "Claude Code",
         "grok-build" => "Grok Build",
+        "antigravity" => "Antigravity",
         other => other,
     }
 }

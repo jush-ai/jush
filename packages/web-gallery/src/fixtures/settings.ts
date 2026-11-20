@@ -269,8 +269,11 @@ export function provider(
     media: { image: { shape: null, enabled: true }, video: { shape: null, enabled: true }, audio: { shape: null, enabled: true } },
     search: gallerySearch(partial.family),
     logo: providerLogo({ kind: partial.kind, providerType: partial.family, vendorId: partial.vendorId ?? null }),
-    // As the backend's families say: Claude Code's CLI makes its requests on another machine.
-    ...(partial.kind === 'subscription' ? { connectsThrough: partial.family !== 'claude-code' } : {}),
+    // As the backend's families say: Claude Code's and Antigravity's CLIs make their requests
+    // on another machine.
+    ...(partial.kind === 'subscription'
+      ? { connectsThrough: partial.family !== 'claude-code' && partial.family !== 'antigravity' }
+      : {}),
     ...partial,
   }
   return 'cacheTtl' in partial ? entry : { ...entry, cacheTtl: galleryCacheTtl(entry) }
@@ -800,6 +803,28 @@ export function mockProviders(): MockProvider[] {
         ],
       }
     ),
+    provider({
+      id: 'antigravity', name: 'Antigravity', kind: 'subscription', family: 'antigravity',
+      // Its catalog is what a new session of the account offers, each model with the thinking
+      // levels Google gives it; it takes images and no other file.
+      catalogFetched: ago(6 * MINUTE),
+      // Google reports no usage through the CLI, so the account shows its plan alone.
+      accounts: [{ id: 'ag1', label: 'alex@example.com', plan: 'Google AI Pro', active: true, quota: [] }],
+      models: [
+        model({
+          id: 'gemini-4-neon', name: 'Gemini 4 Neon', contextWindow: 1_048_576, outputLimit: 65_536, tools: true,
+          extensions: ['.png', '.jpg', '.jpeg', '.gif', '.webp'], efforts: ['low', 'medium', 'high', 'xhigh'],
+        }),
+        model({
+          id: 'gemini-3.8-flash', name: 'Gemini 3.8 Flash', contextWindow: 1_048_576, outputLimit: 65_536, tools: true,
+          extensions: ['.png', '.jpg', '.jpeg', '.gif', '.webp'], efforts: ['low', 'medium', 'high'],
+        }),
+        model({
+          id: 'claude-sonnet-5-5', name: 'Claude Sonnet 5.5', contextWindow: 200_000, outputLimit: 64_000, tools: true,
+          extensions: ['.png', '.jpg', '.jpeg', '.gif', '.webp'], efforts: ['low', 'medium', 'high'],
+        }),
+      ],
+    }),
     provider({
       id: 'anthropic', name: 'Anthropic', kind: 'api_key', family: 'anthropic', vendorId: 'anthropic',
       baseUrl: 'https://api.anthropic.com', wireApi: 'anthropic-messages', apiKey: '', keyConfigured: true, testedIn: '412 ms',

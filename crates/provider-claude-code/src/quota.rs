@@ -21,32 +21,25 @@ use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
-use jush_device_interface::{Process, ProcessOutput};
+use jush_device_interface::ProcessOutput;
 use jush_provider_common::quota::{
     Observation, ObservedWindows, ProbeCost, ProbeReading, QuotaError, QuotaSource,
     clamp_used_percent, plan_label, rfc3339, severity,
 };
 use jush_provider_common::wire::{NonEmpty, Reported, Tagged};
 use jush_shared_types::{QuotaKind, QuotaPlan, QuotaScope, QuotaSeverity, QuotaUnit, QuotaWindow, StreamKind, Timestamp};
+use futures_util::StreamExt as _;
 use futures_util::future::BoxFuture;
 use futures_util::stream::LocalBoxStream;
-use futures_util::{FutureExt as _, StreamExt as _};
 use serde::Deserialize;
-use tokio::sync::oneshot;
-use tokio_util::sync::CancellationToken;
 
 use crate::account::ClaudeAuth;
 use crate::cli;
 use crate::input::{self, ControlRequest, Input};
-use jush_provider_subscription_cli::{HeldProcess, Tail, exit_message};
 use crate::output::{ControlResponseBody, Line};
-use jush_provider_subscription_cli::{AccountMachine, AccountWork, CliWork, Placed, Placement};
+use jush_provider_subscription_cli::{AccountMachine, CliWork, Probed, Tail, Unanswered, probe};
 
 use crate::{CLI, MachineState};
-
-/// How long a probe waits for the CLI's answer, such as one held behind a
-/// lock a killed process left (`crates/provider-claude-code/src/account.rs`).
-const PROBE_LIMIT: Duration = Duration::from_secs(30);
 
 /// How long after a probe a process's start runs another, for the flags it
 /// refreshes: half the CLI's own refresh interval of six hours.
@@ -127,24 +120,16 @@ impl QuotaSource for ClaudeQuota {
             if let CliWork::Account { account, .. } = &account.work {
                 self.state.flags.refreshed(account);
             }
-            let (answer, answered) = oneshot::channel();
-            let work = account.work;
-            let probe: AccountWork = Box::new(move |placement, abandoned| {
-                Box::pin(async move {
-                    let probed = ask_usage(&*placement, work, abandoned).await;
-                    // A probe nobody waits for any more reports to nobody.
-                    let _ = answer.send(probed);
-                })
-            });
-            machine
-                .run(&CLI, self.entry.clone(), probe)
-                .await
-                .map_err(|error| QuotaError::Unavailable(error.0))?;
-            let usage = answered.await.unwrap_or_else(|_| {
-                Err(QuotaError::Unavailable(
-                    "Claude Code's usage probe ended without an answer".into(),
-                ))
-            })?;
+            let usage = probe(
+                &*machine,
+                &CLI,
+                self.entry.clone(),
+                account.work,
+                Arc::new(cli::probe),
+                Box::new(|probed| Box::pin(ask_usage(probed))),
+            )
+            .await
+            .map_err(QuotaError::Unavailable)?;
             if let Some(version) = account.handed_over {
                 self.auth.handed_over(version).await;
             }
@@ -212,92 +197,34 @@ struct UsageAnswer {
     subscription_type: Option<String>,
 }
 
-/// Starts the probe's process for `work` through `placement`, asks it for its
-/// usage and closes it, within thirty seconds: the answer of its `get_usage`
-/// request.
-///
-/// It gives up when nobody waits for it any more (`abandoned`). Its process is
-/// held outside what gives up, and closed, SIGTERM first, however the probe
-/// ends: on its answer, its timeout or its abandonment alike
-/// (`crates/provider-claude-code/src/live.rs`).
-async fn ask_usage(
-    placement: &dyn Placement,
-    work: CliWork,
-    abandoned: CancellationToken,
-) -> Result<serde_json::Value, QuotaError> {
-    let unavailable = QuotaError::Unavailable;
-    let timed_out = || {
-        unavailable(format!(
-            "Claude Code did not answer its usage request within {} seconds",
-            PROBE_LIMIT.as_secs()
+/// Asks the probe's process for its usage: the answer of its `get_usage`
+/// request (`crates/provider-subscription-cli/src/probe.rs`).
+async fn ask_usage(probed: Probed<'_>) -> Result<serde_json::Value, Unanswered> {
+    let lines = [
+        input::line(&Input::ControlRequest {
+            request_id: "initialize",
+            request: ControlRequest::InitializeBare {},
+        }),
+        input::line(&Input::ControlRequest {
+            request_id: USAGE_REQUEST,
+            request: ControlRequest::GetUsage {
+                skip_behaviors: true,
+            },
+        }),
+    ]
+    .concat();
+    probed.control.write_stdin(lines.into()).await.map_err(|error| {
+        Unanswered::Failed(format!(
+            "Claude Code's usage request could not be written: {error}"
         ))
-    };
-    let given_up = || unavailable("The usage probe was given up".into());
-    let _work = placement.work();
-    let deadline = tokio::time::Instant::now() + PROBE_LIMIT;
-    // A start given up removes what it made.
-    let started = tokio::select! {
-        started = tokio::time::timeout_at(deadline, placement.start(work, Arc::new(cli::probe), &|_| {})) => started,
-        () = abandoned.cancelled() => return Err(given_up()),
-    };
-    let Placed {
-        process, config, ..
-    } = started
-        .map_err(|_| timed_out())?
-        .map_err(|error| unavailable(error.0))?;
-    let Process {
-        output,
-        control,
-        exit,
-    } = process;
-    let exit = exit.shared();
-    let mut handle = HeldProcess::of(control, exit.clone(), Some(config));
-    let asked = async {
-        let lines = [
-            input::line(&Input::ControlRequest {
-                request_id: "initialize",
-                request: ControlRequest::InitializeBare {},
-            }),
-            input::line(&Input::ControlRequest {
-                request_id: USAGE_REQUEST,
-                request: ControlRequest::GetUsage {
-                    skip_behaviors: true,
-                },
-            }),
-        ]
-        .concat();
-        match handle.control().write_stdin(lines.into()).await {
-            Ok(()) => answer(output).await,
-            Err(error) => Answer::Failed(format!(
-                "Claude Code's usage request could not be written: {error}"
-            )),
-        }
-    };
-    let answered = tokio::select! {
-        answered = tokio::time::timeout_at(deadline, asked) => answered.map_err(|_| timed_out()),
-        () = abandoned.cancelled() => Err(given_up()),
-    };
-    handle.close().await;
-    match answered? {
-        Answer::Usage(usage) => Ok(usage),
-        Answer::Failed(message) => Err(unavailable(message)),
-        Answer::Ended(stderr) if !stderr.is_empty() => Err(unavailable(stderr)),
-        Answer::Ended(_) => Err(unavailable(exit_message(&CLI, &exit.await))),
-    }
-}
-
-/// What the probe's process answered.
-enum Answer {
-    /// What its `get_usage` request answered.
-    Usage(serde_json::Value),
-    /// It refused the request, or could not be asked.
-    Failed(String),
-    /// Its output ended first, with the tail of its standard error.
-    Ended(String),
+    })?;
+    answer(probed.output).await
 }
 
 /// Reads the CLI's output until the answer to its `get_usage` request.
-async fn answer(mut output: LocalBoxStream<'static, ProcessOutput>) -> Answer {
+async fn answer(
+    mut output: LocalBoxStream<'static, ProcessOutput>,
+) -> Result<serde_json::Value, Unanswered> {
     let mut stdout = Vec::new();
     let mut stderr = Tail::default();
     while let Some(chunk) = output.next().await {
@@ -327,12 +254,14 @@ async fn answer(mut output: LocalBoxStream<'static, ProcessOutput>) -> Answer {
             }
             if subtype.as_deref() != Some("success") {
                 let reason = error.into_inner().unwrap_or_else(|| "no reason given".into());
-                return Answer::Failed(format!("Claude Code refused its usage request: {reason}"));
+                return Err(Unanswered::Failed(format!(
+                    "Claude Code refused its usage request: {reason}"
+                )));
             }
-            return Answer::Usage(response.unwrap_or_default());
+            return Ok(response.unwrap_or_default());
         }
     }
-    Answer::Ended(stderr.text())
+    Err(Unanswered::Ended(stderr.text()))
 }
 
 /// The windows Jush names, by the vendor's id, with their length and the

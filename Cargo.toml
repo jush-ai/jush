@@ -64,6 +64,7 @@ members = [
   "crates/provider-registry",
   "crates/provider-anthropic-api",
   "crates/provider-claude-code",
+  "crates/provider-antigravity",
   "crates/provider-subscription-cli",
   "crates/provider-codex",
   "crates/provider-google",

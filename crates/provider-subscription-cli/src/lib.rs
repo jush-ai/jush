@@ -12,7 +12,8 @@
 //!   chooses, and [`AccountMachine`] reaches it for account work
 //!   (`placement.rs`).
 //! - [`IdleProcesses`] holds the idle processes of the machine, of every CLI
-//!   (`idle.rs`).
+//!   (`idle.rs`), and [`probe`] runs a process of an account that answers
+//!   one question (`probe.rs`).
 //! - [`CliKit`] signs an account in through its CLI's own login, the same
 //!   for every CLI but in what [`CliLogin`] says (`login.rs`), and
 //!   [`HeldProcess`] holds a process a provider started (`process.rs`).
@@ -24,6 +25,7 @@
 mod idle;
 mod login;
 mod placement;
+mod probe;
 mod process;
 mod releases;
 
@@ -34,6 +36,7 @@ use std::time::Duration;
 
 pub use idle::{Closing, IDLE_FOR, Idle, IdleProcesses, Seat};
 pub use login::{CliKit, CliLogin};
+pub use probe::{PROBE_LIMIT, Probed, Question, Unanswered, probe};
 pub use process::{HeldProcess, Tail, exit_message};
 pub use releases::{Distribution, Fetch, FollowedReleases};
 pub use placement::{

@@ -4993,6 +4993,7 @@ dependencies = [
  "jush-plugin-web",
  "jush-plugin-widget",
  "jush-provider-anthropic-api",
+ "jush-provider-antigravity",
  "jush-provider-bytedance",
  "jush-provider-claude-code",
  "jush-provider-codex",
@@ -5379,6 +5380,7 @@ dependencies = [
  "jush-machine-manager-protocol",
  "jush-plugin-host",
  "jush-plugin-interface",
+ "jush-provider-antigravity",
  "jush-provider-claude-code",
  "jush-provider-common",
  "jush-provider-registry",
@@ -6069,6 +6071,25 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+]
+
+[[package]]
+name = "jush-provider-antigravity"
+version = "0.1.65"
+dependencies = [
+ "bytes",
+ "futures-util",
+ "jush-command-package-subscription-cli-protocol",
+ "jush-device-interface",
+ "jush-provider-common",
+ "jush-provider-subscription-cli",
+ "jush-shared-types",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "url",
 ]
 
 [[package]]

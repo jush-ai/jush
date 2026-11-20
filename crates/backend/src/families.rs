@@ -14,8 +14,9 @@ use jush_provider_registry::families::{
 };
 use jush_provider_anthropic_api::{AnthropicConfig, AnthropicProvider};
 use jush_backend_user_shard::conversation::subscription_cli::MachineSlot;
+use jush_provider_antigravity::{AntigravityConfig, AntigravityProvider};
 use jush_provider_claude_code::{ClaudeCodeConfig, ClaudeCodeProvider, MachineState};
-use jush_provider_subscription_cli::{AccountMachine, Cli, Placement};
+use jush_provider_subscription_cli::{Cli, Placement};
 use jush_provider_codex::{CodexConfig, CodexProvider, CodexReleases};
 use jush_provider_common::credentials::SubscriptionAccounts;
 use jush_provider_common::quota::{MemorySnapshots, QuotaSnapshotStore};
@@ -41,6 +42,7 @@ pub fn builtin(machine: MachineSlot) -> FamilyRegistry {
             jush_provider_openai_api::compatible_audio(args.name, args.key, &args.base, args.models, args.clock)
         }))
         .with("anthropic", AnthropicFamily)
+        .with("antigravity", AntigravityFamily(machine.clone()))
         .with("claude-code", ClaudeCodeFamily::new(machine))
         .with("codex", CodexFamily::default())
         .with("google", GoogleFamily)
@@ -499,11 +501,6 @@ impl ClaudeCodeFamily {
         }
     }
 
-    /// The machine, once the backend's shards started.
-    fn machine(&self) -> Option<Arc<dyn AccountMachine>> {
-        self.machine.get().map(|machine| Arc::new(machine) as Arc<dyn AccountMachine>)
-    }
-
     fn build(&self, args: FamilyArgs) -> Result<ClaudeCodeProvider, FamilyError> {
         let FamilyCredential::Subscription(subscription) = args.credential else {
             return Err(FamilyError::WrongCredential);
@@ -513,7 +510,7 @@ impl ClaudeCodeFamily {
             args.entry_id,
             args.label,
             account,
-            self.machine(),
+            self.machine.account_machine(),
             self.state.clone(),
         );
         config.searches = args.searches;
@@ -563,7 +560,64 @@ impl ProviderFamily for ClaudeCodeFamily {
         &self,
         args: FamilyArgs,
     ) -> Option<Result<Box<dyn SubscriptionAccounts>, FamilyError>> {
-        let machine = self.machine()?;
+        let machine = self.machine.account_machine()?;
+        Some(
+            self.build(args)
+                .map(|provider| provider.login_accounts(machine)),
+        )
+    }
+}
+
+/// The `antigravity` family: Google accounts signed in by `agy`'s own login,
+/// whose requests run `agy` on the Subscriptions machine. It holds the
+/// machine a sign-in and a probe run on, once the backend's shards started.
+pub struct AntigravityFamily(MachineSlot);
+
+impl AntigravityFamily {
+    fn build(&self, args: FamilyArgs) -> Result<AntigravityProvider, FamilyError> {
+        let FamilyCredential::Subscription(subscription) = args.credential else {
+            return Err(FamilyError::WrongCredential);
+        };
+        let (account, quota) = bound(subscription.account);
+        let config = AntigravityConfig {
+            id: args.entry_id,
+            display_name: args.label,
+            account,
+            machine: self.0.account_machine(),
+        };
+        Ok(AntigravityProvider::new(
+            config,
+            subscription.pool,
+            quota,
+            args.models_dev,
+            args.clock,
+        ))
+    }
+}
+
+impl ProviderFamily for AntigravityFamily {
+    fn credential(&self) -> CredentialKind {
+        CredentialKind::Subscription
+    }
+
+    fn provider(&self, args: FamilyArgs) -> Result<Arc<dyn Provider>, FamilyError> {
+        Ok(Arc::new(self.build(args)?))
+    }
+
+    /// `agy` makes the requests, on the Subscriptions machine.
+    fn connects_through(&self) -> bool {
+        false
+    }
+
+    fn cli(&self) -> Option<&'static Cli> {
+        Some(&jush_provider_antigravity::CLI)
+    }
+
+    fn login_accounts(
+        &self,
+        args: FamilyArgs,
+    ) -> Option<Result<Box<dyn SubscriptionAccounts>, FamilyError>> {
+        let machine = self.0.account_machine()?;
         Some(
             self.build(args)
                 .map(|provider| provider.login_accounts(machine)),
