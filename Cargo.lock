@@ -6290,20 +6290,26 @@ dependencies = [
 name = "jush-provider-subscription-cli"
 version = "0.1.65"
 dependencies = [
+ "base64 0.22.1",
  "bytes",
+ "futures-channel",
  "futures-util",
  "garde",
  "jiff",
  "jush-command-package-subscription-cli-protocol",
  "jush-device-interface",
  "jush-provider-common",
+ "jush-shared-artifacts",
  "jush-shared-types",
  "reqwest",
+ "rmcp",
+ "serde_json",
  "thiserror 2.0.20",
  "tokio",
  "tokio-util",
  "tracing",
  "url",
+ "uuid",
 ]
 
 [[package]]

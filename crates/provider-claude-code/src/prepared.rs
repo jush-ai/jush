@@ -30,8 +30,7 @@ use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
 use crate::Shared;
-use crate::idle;
-use jush_provider_subscription_cli::{Closing, Idle, Seat};
+use jush_provider_subscription_cli::{Closing, Idle, Seat, log_unused};
 use crate::live::{LiveCli, ProcessKey, Written};
 use jush_provider_subscription_cli::Placement;
 use crate::timing::Took;
@@ -186,7 +185,7 @@ async fn wait(
             () = taken_by_nobody(&mut taker), if taker.is_some() => return,
             closed = &mut closing, if taker.is_none() => {
                 if closed == Closing::Unused {
-                    idle::log_unused(&shared, &session, Idle::Prepared);
+                    log_unused(&shared.id, &session, Idle::Prepared);
                 }
                 return;
             }
@@ -221,7 +220,7 @@ async fn wait(
             }
             closed = &mut closing => {
                 if closed == Closing::Unused {
-                    idle::log_unused(&shared, &session, Idle::Prepared);
+                    log_unused(&shared.id, &session, Idle::Prepared);
                 }
                 live.close().await;
                 return;

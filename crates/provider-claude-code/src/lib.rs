@@ -48,7 +48,6 @@ mod account;
 mod cli;
 mod failure;
 mod files;
-mod idle;
 mod input;
 mod live;
 mod login;

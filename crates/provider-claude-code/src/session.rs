@@ -46,7 +46,7 @@ use sha2::{Digest as _, Sha256};
 use uuid::Uuid;
 
 use crate::input::{MCP_SERVER, Message};
-use crate::{RECORD_OWNER, WEB_SEARCH, mcp};
+use crate::{RECORD_OWNER, WEB_SEARCH};
 use jush_provider_subscription_cli::CliSystem;
 
 /// The key of a reference to a block's medium in an entry kept on the
@@ -630,7 +630,7 @@ fn result_content(output: &[ResultPart]) -> Vec<Value> {
                 },
             }),
             ResultPart::Video(bytes) | ResultPart::Document { bytes, .. } => {
-                json!({ "type": "text", "text": mcp::unsent_text(bytes) })
+                json!({ "type": "text", "text": jush_provider_subscription_cli::unsent_text(bytes) })
             }
         })
         .collect()
