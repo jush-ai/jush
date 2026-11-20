@@ -24,13 +24,19 @@
 //!   next run takes it: seat freed      v limit: the holder closes it
 //! ```
 
+use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::future::Future;
+use std::rc::Rc;
 use std::sync::{Arc, Mutex, PoisonError, Weak};
 use std::time::Duration;
 
+use futures_util::future::LocalBoxFuture;
 use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
+use tokio_util::task::AbortOnDropHandle;
+
+use crate::placement::{Placement, WorkLease};
 
 /// How long a process stays idle before it is closed.
 ///
@@ -217,6 +223,149 @@ impl Drop for Seat {
     fn drop(&mut self) {
         if let Some(set) = self.set.upgrade() {
             set.state().seats.retain(|seat| seat.id != self.id);
+        }
+    }
+}
+
+/// Logs that a process of `entry`'s, serving the session `node`, waiting as
+/// `idle`, was closed after five idle minutes.
+pub fn log_unused(entry: &str, node: &str, idle: Idle) {
+    tracing::info!(
+        event = "subscription_cli_process.idle_closed",
+        provider = %entry,
+        node,
+        process = idle.as_str(),
+        reason = "unused",
+        ms = u64::try_from(IDLE_FOR.as_millis()).unwrap_or(u64::MAX),
+        "an idle CLI process was closed"
+    );
+}
+
+/// A process a runtime keeps between its session's actions.
+pub trait KeptProcess: 'static {
+    /// The session it serves, which the logs name.
+    fn node(&self) -> String;
+
+    /// Closes it, SIGTERM first, and waits for its end.
+    fn close(self) -> LocalBoxFuture<'static, ()>;
+}
+
+/// A runtime's process kept from its last action, seated idle until the next
+/// run takes it; meanwhile its seat may close it.
+pub struct Kept<T> {
+    live: Rc<RefCell<Option<T>>>,
+    _closer: AbortOnDropHandle<()>,
+}
+
+impl<T: KeptProcess> Kept<T> {
+    /// Seats `live`, a process of `entry`'s runtime in the directory of
+    /// `account`, which no action uses any more, among the idle processes of
+    /// its machine, `idle`.
+    pub fn seat(idle: &Arc<IdleProcesses>, entry: &str, account: Option<&str>, live: T) -> Self {
+        let seat = idle.seat(entry, account, Idle::Kept);
+        let live = Rc::new(RefCell::new(Some(live)));
+        let closer = {
+            let live = live.clone();
+            let entry = entry.to_owned();
+            let closing = seat.closing();
+            tokio::task::spawn_local(async move {
+                let closing = closing.await;
+                drop(seat);
+                let Some(live) = live.borrow_mut().take() else {
+                    return;
+                };
+                if closing == Closing::Unused {
+                    log_unused(&entry, &live.node(), Idle::Kept);
+                }
+                // A close of its own, which a run taking the process
+                // meanwhile cannot cut short.
+                tokio::task::spawn_local(live.close());
+            })
+        };
+        Self {
+            live,
+            _closer: AbortOnDropHandle::new(closer),
+        }
+    }
+
+    /// The process, which leaves its seat; none when its seat closed it.
+    pub fn take(self) -> Option<T> {
+        self.live.borrow_mut().take()
+    }
+
+    /// What `read` reads of the process while it is still kept; none when its
+    /// seat closed it.
+    pub fn read<R>(&self, read: impl FnOnce(&T) -> R) -> Option<R> {
+        self.live.borrow().as_ref().map(read)
+    }
+}
+
+/// A runtime's one kept process: held while its session's action goes on,
+/// seated idle once the action ended, and the hold of the machine for the
+/// action, from its first request to its end, across the tool calls between
+/// its requests, so that a process waiting on a long tool keeps its machine
+/// awake (`crates/backend-cloud/src/lib.rs`).
+pub struct ProcessSlot<T> {
+    live: Option<T>,
+    kept: Option<Kept<T>>,
+    action: Option<WorkLease>,
+}
+
+impl<T> Default for ProcessSlot<T> {
+    fn default() -> Self {
+        Self {
+            live: None,
+            kept: None,
+            action: None,
+        }
+    }
+}
+
+impl<T: KeptProcess> ProcessSlot<T> {
+    /// A request of the session's action: the machine is held from now to
+    /// the action's end.
+    pub fn act(&mut self, placement: &dyn Placement) {
+        if self.action.is_none() {
+            self.action = Some(placement.work());
+        }
+    }
+
+    /// The kept process, whether its action goes on or not; none when there
+    /// is none or its seat closed it.
+    pub fn take(&mut self) -> Option<T> {
+        self.live.take().or_else(|| self.kept.take().and_then(Kept::take))
+    }
+
+    /// Keeps `live` while the action goes on.
+    pub fn keep(&mut self, live: T) {
+        self.live = Some(live);
+    }
+
+    /// What `read` reads of the kept process; none when there is none.
+    pub fn read<R>(&self, read: impl FnOnce(&T) -> R) -> Option<R> {
+        match (&self.live, &self.kept) {
+            (Some(live), _) => Some(read(live)),
+            (None, Some(kept)) => kept.read(read),
+            (None, None) => None,
+        }
+    }
+
+    /// The action ended: the machine is no longer held for it, and the
+    /// process kept from its last run is seated idle among the processes of
+    /// `placement`'s machine, as one of `entry`'s runtime in the directory of
+    /// `account`.
+    pub fn idle(&mut self, placement: &dyn Placement, entry: &str, account: Option<&str>) {
+        self.action = None;
+        if let Some(live) = self.live.take() {
+            self.kept = Some(Kept::seat(&placement.idle(), entry, account, live));
+        }
+    }
+
+    /// Lets the machine go and closes the kept process, SIGTERM first.
+    pub async fn close(&mut self) {
+        self.action = None;
+        if let Some(live) = self.take() {
+            live.close().await;
         }
     }
 }

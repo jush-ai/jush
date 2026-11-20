@@ -17,6 +17,8 @@
 //! - [`CliKit`] signs an account in through its CLI's own login, the same
 //!   for every CLI but in what [`CliLogin`] says (`login.rs`), and
 //!   [`HeldProcess`] holds a process a provider started (`process.rs`).
+//! - [`ToolServer`] is Jush's MCP server for one process, through which the
+//!   model's tool calls reach the agent (`tools.rs`).
 //!
 //! The crate knows no CLI and no vendor. The backend implements the
 //! placement, and each CLI's provider builds what it starts; the crate runs
@@ -28,17 +30,21 @@ mod placement;
 mod probe;
 mod process;
 mod releases;
+mod tools;
 
 use futures_util::future::{BoxFuture, LocalBoxFuture, Shared};
 use jush_command_package_subscription_cli_protocol::Release;
 use jush_device_interface::{ProcessControl, ProcessEnd, Signal};
 use std::time::Duration;
 
-pub use idle::{Closing, IDLE_FOR, Idle, IdleProcesses, Seat};
+pub use idle::{
+    Closing, IDLE_FOR, Idle, IdleProcesses, Kept, KeptProcess, ProcessSlot, Seat, log_unused,
+};
 pub use login::{CliKit, CliLogin};
 pub use probe::{PROBE_LIMIT, Probed, Question, Unanswered, probe};
 pub use process::{HeldProcess, Tail, exit_message};
 pub use releases::{Distribution, Fetch, FollowedReleases};
+pub use tools::{ToolEvent, ToolServer, tool_result, unsent_text};
 pub use placement::{
     AccountMachine, AccountWork, CliSite, CliStart, CliStarter, CliSystem, CliWork, ConfigDir,
     Handover, Placed, Placement, StartError, StartStage, StartSteps, WorkLease,

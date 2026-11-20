@@ -42,11 +42,11 @@ use tokio_util::sync::CancellationToken;
 use tokio_util::task::AbortOnDropHandle;
 
 use crate::input::{self, ControlRequest, ControlResponse, Input, MCP_SERVER, Manifest, McpReply};
-use crate::mcp::{self, Mcp, McpEvent};
+use crate::mcp::{Mcp, McpEvent};
 use crate::mirror::Mirror;
 use crate::output::{ControlRequestLine, LastCall, Line, Replaced, Streaming};
 use jush_provider_subscription_cli::{
-    CliSite, CliWork, HeldProcess, Placed, Placement, Tail, exit_message,
+    CliSite, CliWork, HeldProcess, KeptProcess, Placed, Placement, Tail, exit_message,
 };
 use crate::session::{self, SessionFile};
 use crate::timing::{StartTiming, Took};
@@ -888,7 +888,7 @@ impl LiveCli {
                 .map(|call| {
                     let (output, is_error) = tool_result(&items, &call.tool_use_id)
                         .expect("every call of the batch has a result");
-                    (call.tool_use_id.clone(), mcp::tool_result(output, is_error))
+                    (call.tool_use_id.clone(), jush_provider_subscription_cli::tool_result(output, is_error))
                 })
                 .collect::<Vec<_>>()
         })
@@ -1171,5 +1171,15 @@ fn undecodable(error: &dyn std::fmt::Display, text: String) -> ProviderFailure {
         format!("Claude Code sent a line Jush cannot read: {error}"),
         text,
     )
+}
+
+impl KeptProcess for LiveCli {
+    fn node(&self) -> String {
+        LiveCli::node(self).to_owned()
+    }
+
+    fn close(self) -> LocalBoxFuture<'static, ()> {
+        Box::pin(LiveCli::close(self))
+    }
 }
 
