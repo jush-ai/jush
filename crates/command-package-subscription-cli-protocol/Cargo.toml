@@ -12,6 +12,7 @@ doctest = false
 bench = false
 
 [dependencies]
+jush-command-protocol = { path = "../command-protocol" }
 semver.workspace = true
 garde.workspace = true
 serde.workspace = true

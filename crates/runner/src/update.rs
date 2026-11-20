@@ -394,10 +394,7 @@ fn expected(update: &RunnerUpdate) -> io::Result<Digest> {
             host_target()
         )));
     };
-    Ok(Digest {
-        size: executable.size,
-        sha256: executable.sha256.clone(),
-    })
+    Ok(Digest::sha256(executable.size, executable.sha256.clone()))
 }
 
 /// The executable of `release` in place in `<releases>/<release>/`, checked

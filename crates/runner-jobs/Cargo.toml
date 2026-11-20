@@ -18,6 +18,7 @@ jush-command-declarations = { path = "../command-declarations" }
 jush-runner-process = { path = "../runner-process" }
 jush-runner-protocol = { path = "../runner-protocol" }
 jush-runner-command-packages = { path = "../runner-command-packages" }
+jush-shared-artifacts = { path = "../shared-artifacts" }
 bytes.workspace = true
 futures-util.workspace = true
 serde.workspace = true

@@ -198,7 +198,7 @@ async fn upstream(
         .plain()?;
     let digest = jush_shared_artifacts::digest(&path, DOWNLOAD_BYTES, cancel).await?;
     let archive = tokio::fs::read(&path).await?;
-    if digest.sha256 != recorded {
+    if digest.hash.hex() != recorded {
         return Err(Error::Checksum {
             name: crate_.name.clone(),
             version: crate_.version.clone(),

@@ -9,7 +9,7 @@
 use jush_command_package_subscription_cli_protocol::{
     ErrorCode, Installed, Release, Status, StatusRequest,
 };
-use jush_command_protocol::{ArtifactForm, ArtifactInstall};
+use jush_command_protocol::ArtifactInstall;
 use jush_command_sdk::{Artifacts, ResidentError};
 
 use crate::{platform, release};
@@ -82,10 +82,10 @@ pub async fn ensure(
         invocation: invocation.to_owned(),
         name: release.cli.clone(),
         version: release.version.clone(),
-        sha256: artifact.sha256.clone(),
+        hash: artifact.hash.clone(),
         size: artifact.size,
-        form: ArtifactForm::File,
-        url: None,
+        form: artifact.form.clone(),
+        url: artifact.url.clone(),
     };
     let path = artifacts.install(install, None).await?;
     Ok(Installed {

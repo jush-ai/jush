@@ -376,10 +376,7 @@ fn copy_verified(
     stage: &Path,
     manifest: &CloudImageManifest,
 ) -> Result<(), BaseError> {
-    let expected = Digest {
-        size: manifest.rootfs.size,
-        sha256: manifest.rootfs.sha256.clone(),
-    };
+    let expected = Digest::sha256(manifest.rootfs.size, manifest.rootfs.sha256.clone());
     let mut from = fs_err::File::open(source)?;
     let mut to = fs_err::File::create_new(stage.join(manifest.rootfs.file.name()))?;
     let mut verifier = Verifier::new(&expected);
@@ -428,10 +425,7 @@ fn publish(off: &OffLoop, release: &Release, stage: &Path, bases: &Path) -> Resu
     let root = stage.join("rootfs");
     let directory = fs_err::File::open(&root)?;
     for (path, artifact) in &release.manifest.executables {
-        let expected = Digest {
-            size: artifact.size,
-            sha256: artifact.sha256.clone(),
-        };
+        let expected = Digest::sha256(artifact.size, artifact.sha256.clone());
         verify_executable(directory.file(), path, &expected)?;
     }
     fs_err::remove_file(stage.join(release.manifest.rootfs.file.name()))?;

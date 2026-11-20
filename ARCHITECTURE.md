@@ -398,7 +398,7 @@ command-package-fetch-protocol -> shared-types
 command-package-browser-protocol -> shared-types, live-view-protocol, shared-recording-protocol
 command-package-mobile-protocol -> shared-types, live-view-protocol, shared-recording-protocol
 live-view-protocol -> shared-types
-command-package-subscription-cli-protocol -> none
+command-package-subscription-cli-protocol -> command-protocol
 runner-protocol -> command-protocol, command-declarations, device-paths, shared-types
 machine-manager-protocol -> command-protocol, runner-protocol, shared-types
 supervisor-protocol -> none
@@ -452,7 +452,7 @@ runner-device -> shared-artifacts, command-protocol, command-sdk, runner-process
 runner-direct -> live-view-protocol, runner-protocol
 runner-command-packages -> shared-artifacts, command-protocol, command-sdk, runner-process, runner-protocol
 runner-shell -> command-protocol, command-sdk, runner-process, runner-protocol
-runner-jobs -> command-protocol, command-sdk, command-declarations, runner-process, runner-protocol, runner-command-packages
+runner-jobs -> shared-artifacts, command-protocol, command-sdk, command-declarations, runner-process, runner-protocol, runner-command-packages
 live-view -> command-sdk, live-view-protocol, shared-types
 command-package-browser-chrome -> command-package-browser-protocol, command-protocol, command-sdk, live-view, live-view-protocol, shared-artifacts, shared-recording, shared-recording-protocol, shared-types
 backend-page-sync -> backend-database, web-api-protocol, plugin-host

@@ -34,7 +34,9 @@ use jush_command_package_browser_protocol::release::{
     ARTIFACT, BrowserRelease, ChromeRuntime, RUNTIME_FONTS, RUNTIME_FONTS_ENTRY,
     RUNTIME_LIBRARIES, RUNTIME_LIBRARIES_ENTRY, ReleasePlatform, RuntimeArchive, RuntimeArchives,
 };
-use jush_command_protocol::{ArtifactForm, ArtifactInstall, ArtifactProgress, host_target};
+use jush_command_protocol::{
+    ArtifactForm, ArtifactHash, ArtifactInstall, ArtifactProgress, host_target,
+};
 use jush_command_sdk::Artifacts;
 use tokio::sync::{mpsc, watch};
 
@@ -109,12 +111,12 @@ impl Chrome {
             invocation: invocation.to_owned(),
             name: ARTIFACT.to_owned(),
             version: release.version.clone(),
-            sha256: platform.sha256.clone(),
+            hash: ArtifactHash::Sha256(platform.sha256.clone()),
             size: platform.size,
             form: ArtifactForm::Archive {
                 entry: platform.executable.clone(),
             },
-            url: Some(platform.url.clone()),
+            url: platform.url.clone(),
         };
         let line = |progress| Some(text::install_progress(&title, progress));
         let path = install_reporting(&source, chrome, &lines, line)
@@ -220,7 +222,7 @@ async fn installed(source: &Artifacts, name: &str, sha256: &str) -> Result<Optio
         .map_err(|error| BrowserError::Installation(error.to_string()))?;
     Ok(installed
         .into_iter()
-        .find(|installed| installed.sha256 == sha256)
+        .find(|installed| matches!(&installed.hash, ArtifactHash::Sha256(hex) if hex == sha256))
         .map(|installed| PathBuf::from(installed.path)))
 }
 
@@ -320,12 +322,12 @@ fn runtime_install(
         invocation: invocation.to_owned(),
         name: name.to_owned(),
         version: runtime.release.to_string(),
-        sha256: archive.sha256.clone(),
+        hash: ArtifactHash::Sha256(archive.sha256.clone()),
         size: archive.size,
         form: ArtifactForm::Archive {
             entry: entry.to_owned(),
         },
-        url: Some(archive.url.clone()),
+        url: archive.url.clone(),
     }
 }
 

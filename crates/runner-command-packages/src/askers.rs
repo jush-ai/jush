@@ -8,7 +8,7 @@
 
 use std::sync::{Arc, Mutex, MutexGuard};
 
-use jush_command_protocol::PackageArtifact;
+use jush_shared_artifacts::Digest;
 use futures_util::future::BoxFuture;
 use tokio_util::sync::CancellationToken;
 
@@ -72,7 +72,7 @@ impl Drop for Asking {
 impl ArtifactResolver for Askers {
     fn resolve<'a>(
         &'a self,
-        artifact: &'a PackageArtifact,
+        artifact: &'a Digest,
         cancel: &'a CancellationToken,
     ) -> BoxFuture<'a, Result<ArtifactSource, RuntimeError>> {
         Box::pin(async move {

@@ -46,7 +46,8 @@ mod registry;
 
 use std::{fmt, path::PathBuf, time::SystemTime};
 
-use jush_command_protocol::{ArtifactLocation, PackageArtifact, ResidentSequence};
+use jush_command_protocol::{ArtifactLocation, ResidentSequence};
+use jush_shared_artifacts::Digest;
 use futures_util::future::BoxFuture;
 use tokio_util::sync::CancellationToken;
 
@@ -172,9 +173,18 @@ impl ArtifactSource {
 pub trait ArtifactResolver: Send + Sync + 'static {
     fn resolve<'a>(
         &'a self,
-        artifact: &'a PackageArtifact,
+        artifact: &'a Digest,
         cancel: &'a CancellationToken,
     ) -> BoxFuture<'a, Result<ArtifactSource, RuntimeError>>;
+}
+
+/// The SHA-256 the backend locates `artifact` by: it locates only a package's
+/// executable, which Jush hashes with SHA-256; a program's install names its
+/// URL (`crates/command-protocol/src/artifacts.rs`).
+pub fn located_by(artifact: &Digest) -> Result<String, RuntimeError> {
+    artifact.hash.sha256().map(str::to_owned).ok_or_else(|| {
+        RuntimeError::Location("the backend locates an artifact by its SHA-256 only".into())
+    })
 }
 
 /// Where a resident's requests to the backend go: its conversation numbers

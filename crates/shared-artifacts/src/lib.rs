@@ -3,7 +3,7 @@
 //! The crate holds:
 //!
 //! - downloads over HTTPS (plain HTTP too for a caller whose digest came over a
-//!   connection it trusts) with a declared size and SHA-256, and measured ones
+//!   connection it trusts) with a declared size and hash, and measured ones
 //!   for a release being prepared;
 //! - digests, and durable atomic publication;
 //! - release publication, and Jush's releases on GitHub;
@@ -40,7 +40,7 @@ pub use coding::{
     CONTENT_CODING, Effort, check_encoded_blocking, encoded_bound, decode_blocking, decode_file, decode_stream,
     encode_blocking,
 };
-pub use digest::{Digest, Verifier, digest};
+pub use digest::{Digest, Hash, Verifier, digest};
 pub use download::{
     Download, Fetch, Headers, NO_HEADERS, Patience, Received, Unsent, client, copy, discard, download,
     download_bytes,
@@ -81,7 +81,7 @@ pub enum Error {
     TooLarge { declared: u64 },
     #[error("the artifact has {actual} bytes, not the declared {declared}")]
     Size { declared: u64, actual: u64 },
-    #[error("the artifact does not match its declared SHA-256")]
+    #[error("the artifact does not match its declared hash")]
     Digest,
     /// The server sent the bytes in a content coding the download does not
     /// decode: only [`CONTENT_CODING`] and none are.

@@ -7,31 +7,32 @@
 //!
 //! An artifact is any file the runner installs on its device for a package: the
 //! package's executable, or software its program needs, such as Chrome for
-//! Testing or the Claude Code CLI. All go through one cache and are reported
-//! the same way. What differs is who asks and where the digest comes from:
+//! Testing or a subscription's CLI. All go through one cache and are reported
+//! the same way. What differs is who asks, where the digest comes from and
+//! where the bytes are:
 //!
-//! | Artifact | Asked by | Digest from |
+//! | Artifact | Asked by | Digest and URL from |
 //! | --- | --- | --- |
-//! | a package's executable | the runner, before it starts the program | the pinned descriptor |
-//! | software from its official source | the program, when its user asks | the program's own record, which also names the URL |
-//! | a file the backend chose at run time | the program, during the call that named it | the record the backend gave the call |
+//! | a package's executable | the runner, before it starts the program | the pinned descriptor; the backend locates it |
+//! | software from its publisher | the program, when its user asks | the program's own record, or the record the backend gave the call |
 //!
 //! ```text
-//! Resident                        Runner                          Backend
-//!   |<-- POST /v1/artifacts --------|  opened after GET /v1/info     |
-//!   |--- {id 4, install: {...}} --->|  cache? image? no              |
-//!   |                               |--- artifact_resolve ---------->|
-//!   |                               |<-- artifact_location ----------|
-//!   |<-- {id 4, path} --------------|  download, verify, unpack      |
+//! Resident                        Runner                      Publisher
+//!   |<-- POST /v1/artifacts --------|  opened after GET /v1/info |
+//!   |--- {id 4, install: {...}} --->|  cache? image? no          |
+//!   |                               |--- GET <url> ------------->|
+//!   |<-- {id 4, path} --------------|  verify, unpack            |
 //! ```
 //!
 //! # Rules
 //!
 //! - A program uses only the paths the runner answers; it never downloads or
 //!   looks for an artifact itself.
-//! - A URL the program names cannot change what runs either: the runner checks
-//!   the download against the size and SHA-256 the same request gives, whatever
+//! - The URL the program names cannot change what runs: the runner checks
+//!   the download against the size and hash the same request gives, whatever
 //!   the transport.
+//! - The hash is the one the artifact's publisher gives, SHA-256 or SHA-512,
+//!   so the runner checks the very bytes the publisher hashed.
 //! - An install request ends with its invocation, and the runner then cancels
 //!   the download it waits for unless another request needs the same artifact.
 
@@ -41,7 +42,28 @@ use serde_with::rust::unwrap_or_skip;
 use super::ProtocolError;
 use super::package::{MAX_SAFE_INTEGER, digest};
 
-/// How an artifact is installed: one executable file, or a zip archive
+/// An artifact's hash in lowercase hex, by the algorithm its publisher gives,
+/// written beside the artifact's other fields as `"sha256": "<hex>"` or
+/// `"sha512": "<hex>"`.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, garde::Validate)]
+#[serde(rename_all = "snake_case")]
+pub enum ArtifactHash {
+    Sha256(#[garde(custom(digest))] String),
+    Sha512(#[garde(custom(sha512))] String),
+}
+
+/// A garde rule: the value is a SHA-512 in lowercase hex.
+fn sha512(value: &str, _: &()) -> garde::Result {
+    let hex = value
+        .bytes()
+        .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'));
+    if value.len() != 128 || !hex {
+        return Err(garde::Error::new("is not a SHA-512 digest"));
+    }
+    Ok(())
+}
+
+/// How an artifact is installed: one executable file, or an archive
 /// unpacked, whose entry is the file its user starts.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, garde::Validate)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
@@ -54,9 +76,8 @@ pub enum ArtifactForm {
 }
 
 /// An artifact to install for `invocation`: its line's name and its version
-/// for the user, its bytes' SHA-256 and size, its form, and, for software the
-/// program installs from its official source, the URL it downloads from. Without a URL, the runner asks the backend
-/// where.
+/// for the user, its bytes' hash and size, its form, and the URL its
+/// publisher serves it at.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, garde::Validate)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ArtifactInstall {
@@ -66,19 +87,15 @@ pub struct ArtifactInstall {
     pub name: String,
     #[garde(length(min = 1, max = 100))]
     pub version: String,
-    #[garde(custom(digest))]
-    pub sha256: String,
+    #[serde(flatten)]
+    #[garde(dive)]
+    pub hash: ArtifactHash,
     #[garde(range(min = 1, max = MAX_SAFE_INTEGER))]
     pub size: u64,
     #[garde(dive)]
     pub form: ArtifactForm,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        with = "unwrap_or_skip"
-    )]
-    #[garde(inner(custom(crate::package::download_url)))]
-    pub url: Option<String>,
+    #[garde(custom(crate::package::download_url))]
+    pub url: String,
 }
 
 /// Which artifacts of the line `name` the device has.
@@ -146,15 +163,16 @@ impl ArtifactRequest {
     }
 }
 
-/// One artifact of a line the device has: its version and SHA-256, and the
+/// One artifact of a line the device has: its version and hash, and the
 /// absolute path of the file or of the archive's entry.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, garde::Validate)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct InstalledArtifact {
     #[garde(length(min = 1))]
     pub version: String,
-    #[garde(custom(digest))]
-    pub sha256: String,
+    #[serde(flatten)]
+    #[garde(dive)]
+    pub hash: ArtifactHash,
     #[garde(length(min = 1))]
     pub path: String,
 }

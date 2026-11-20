@@ -19,7 +19,9 @@ use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
-use jush_command_package_subscription_cli_protocol::{Artifact, Release, is_version};
+use jush_command_package_subscription_cli_protocol::{
+    Artifact, ArtifactForm, ArtifactHash, Release, is_version,
+};
 use jush_provider_common::kept::KeptRead;
 use jush_provider_subscription_cli::{CliReleases, ReleaseError};
 use jush_shared_types::Clock;
@@ -163,7 +165,8 @@ impl Distribution {
                 let artifact = Artifact {
                     url: format!("{}/{version}/{platform}/{}", self.base, entry.binary),
                     size: entry.size,
-                    sha256: entry.checksum,
+                    hash: ArtifactHash::Sha256(entry.checksum),
+                    form: ArtifactForm::File,
                 };
                 (platform, artifact)
             })
