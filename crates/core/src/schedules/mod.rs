@@ -1,7 +1,7 @@
 //! The schedules of the user's conversations in their core: what a
-//! conversation's metadata lists and `jush schedule` reads and changes, the
-//! scheduler that owns every trigger, a run from its trigger to its turn's
-//! end, the change watches, and the calls of the URL triggers.
+//! conversation's entry lists and `jush schedule` and a program read and
+//! change, the scheduler that owns every trigger, a run from its trigger to
+//! its turn's end, the change watches, and the calls of the URL triggers.
 //!
 //! A schedule belongs to one conversation and wakes only it; the conversation's
 //! deletion deletes it, and while the conversation is archived it wakes nothing,
@@ -28,14 +28,14 @@ use std::time::Duration;
 use base64::Engine;
 use jush_core_store::StorageError;
 use jush_agent_session::EndedTurn;
-use jush_core_store::schedules::{RunCause, StoredRun, StoredSchedule};
+use jush_core_store::schedules::{StoredRun, StoredSchedule};
 use jush_core_sync::Part;
 use jush_core_store::seal::Row;
 use jush_shared_types::{ScheduleId, ScheduleRunId, Timestamp};
 use jush_web_api_protocol::ids::ConversationId;
 use jush_web_api_protocol::schedules::{
-    ConversationSchedule, IfBusy, LastRun, MonthDay, NEW_NAME, RUNS_SHOWN, Repeat, RepeatUnit, ScheduleDto,
-    SchedulePatch, ScheduleRunDto, Task, Timing, Trigger, Weekday,
+    AgentTurn, ConversationSchedule, IfBusy, LastRun, MonthDay, NEW_NAME, RUNS_SHOWN, Repeat, RepeatUnit, RunCause,
+    ScheduleDto, SchedulePatch, ScheduleRunDto, Task, Timing, Trigger, Weekday,
 };
 use rand::RngCore;
 use tokio::sync::Notify;
@@ -106,6 +106,10 @@ struct Pending {
 pub enum ScheduleError {
     #[error("This conversation has no such schedule.")]
     NotFound,
+    #[error("No such conversation.")]
+    ConversationNotFound,
+    #[error("This schedule has no run {0}.")]
+    NoRun(ScheduleRunId),
     #[error("{0}")]
     Cron(String),
     #[error("{0}")]
@@ -126,6 +130,9 @@ pub enum ScheduleError {
     NoSecret,
     #[error("{0}")]
     NotDoneOf(String),
+    /// A run now that could not be recorded, which the log says why of.
+    #[error("The run could not be recorded, and did not start.")]
+    NotRecorded,
     #[error(transparent)]
     Storage(#[from] StorageError),
 }
@@ -211,11 +218,10 @@ impl Core {
         self.schedules().wake.notify_one();
     }
 
-    /// The conversation's schedules changed: its pages receive them in its
-    /// metadata, and the scheduler looks at their times again.
+    /// The conversation's schedules changed: its entry in the product state
+    /// carries them, and the scheduler looks at their times again.
     pub(crate) fn schedules_changed(&self, conversation: &ConversationId) {
         self.mark(Part::Conversation(conversation.clone()));
-        self.mark(Part::Metadata(conversation.clone()));
         self.rearm_schedules();
     }
 
@@ -230,7 +236,7 @@ impl Core {
         Ok(listed)
     }
 
-    /// The conversation's schedules as its metadata lists them, newest first.
+    /// The conversation's schedules as its entry lists them, newest first.
     pub(crate) async fn conversation_schedules(
         &self,
         conversation: &ConversationId,
@@ -271,9 +277,13 @@ impl Core {
         conversation: &ConversationId,
         id: &ScheduleId,
     ) -> Result<StoredSchedule, ScheduleError> {
-        self.store().owned_schedule(conversation.clone(), id.clone())
-            .await?
-            .ok_or(ScheduleError::NotFound)
+        if let Some(schedule) = self.store().owned_schedule(conversation.clone(), id.clone()).await? {
+            return Ok(schedule);
+        }
+        match self.store().conversation(conversation.clone()).await? {
+            Some(_) => Err(ScheduleError::NotFound),
+            None => Err(ScheduleError::ConversationNotFound),
+        }
     }
 
     async fn schedule_dto(&self, schedule: StoredSchedule) -> Result<ScheduleDto, StorageError> {
@@ -292,8 +302,35 @@ impl Core {
             paused: schedule.paused,
             next_at,
             created_at: schedule.created_at,
+            created_in: schedule.created_in,
+            edited_in: schedule.edited_in,
             runs: runs.into_iter().map(run_dto).collect(),
         })
+    }
+
+    /// The conversation's schedule `id` as `jush schedule show` shows it.
+    pub async fn schedule(&self, conversation: &ConversationId, id: &ScheduleId) -> Result<ScheduleDto, ScheduleError> {
+        let stored = self.stored_schedule(conversation, id).await?;
+        Ok(self.schedule_dto(stored).await?)
+    }
+
+    /// The runs of the conversation's schedule `id` before its run `before`,
+    /// newest first, [`RUNS_SHOWN`] at most; the latest without `before`.
+    pub async fn schedule_runs(
+        &self,
+        conversation: &ConversationId,
+        id: &ScheduleId,
+        before: Option<ScheduleRunId>,
+    ) -> Result<Vec<ScheduleRunDto>, ScheduleError> {
+        let stored = self.stored_schedule(conversation, id).await?;
+        // A run the schedule never had would read as the end of its runs.
+        if let Some(before) = &before
+            && self.store().schedule_run(before.clone()).await?.is_none_or(|run| run.schedule != stored.id)
+        {
+            return Err(ScheduleError::NoRun(before.clone()));
+        }
+        let runs = self.store().schedule_runs_before(stored.id, before, RUNS_SHOWN).await?;
+        Ok(runs.into_iter().map(run_dto).collect())
     }
 
     /// When the schedule next fires by itself, as its menu says it.
@@ -324,21 +361,26 @@ impl Core {
         })
     }
 
-    /// `jush schedule create`: a new schedule of `conversation` from its
-    /// defaults, with `patch` over them.
+    /// `jush schedule create`, and a program's: a new schedule of
+    /// `conversation` from its defaults, with `patch` over them, which the
+    /// agent's turn `by` made, or a program for none.
     ///
-    /// The defaults are *New Schedule*, paused, every day with one task at
-    /// 09:00 in the user's time zone and no message, which waits while the
+    /// The defaults are *New Schedule*, on, every day with one task at 09:00
+    /// in the user's time zone and no message, which waits while the
     /// conversation is busy. A URL trigger gets its secret at once; the answer
     /// carries it when there is one.
     pub async fn create_schedule(
         &self,
         conversation: &ConversationId,
         patch: SchedulePatch,
+        by: Option<AgentTurn>,
     ) -> Result<(ScheduleDto, Option<String>), ScheduleError> {
         let store = self.store();
+        // The record's id, as the caller may spell it in another case, which
+        // the conversation's tree and marks would not match.
+        let record = store.conversation(conversation.clone()).await?.ok_or(ScheduleError::ConversationNotFound)?;
         let now = store.now();
-        let names: HashSet<String> = store.conversation_schedules(conversation.clone())
+        let names: HashSet<String> = store.conversation_schedules(record.id.clone())
             .await?
             .into_iter()
             .map(|schedule| schedule.name)
@@ -353,7 +395,8 @@ impl Core {
         let reported = jush_core_devices::command_context::reported(store).await?;
         let defaults = StoredSchedule {
             id: new_schedule_id(),
-            conversation: conversation.clone(),
+            conversation_archived: record.archived(),
+            conversation: record.id,
             name,
             trigger: Trigger::Time {
                 timing: Timing::Repeat {
@@ -372,18 +415,20 @@ impl Core {
             max_runs_per_day: None,
             if_busy: IfBusy::Queue,
             prompt: String::new(),
-            paused: true,
+            paused: false,
             since: now,
-            conversation_archived: false,
             has_secret: false,
             watch: None,
             created_at: now,
             updated_at: now,
+            created_in: by,
+            edited_in: None,
         };
-        self.save_schedule(defaults, patch, Save::Create).await
+        self.save_schedule(defaults, patch, Save::Create, None).await
     }
 
-    /// `jush schedule edit`; with `new_secret`, a URL trigger's secret is
+    /// `jush schedule edit`, and a program's change, by the agent's turn `by`
+    /// or a program for none; with `new_secret`, a URL trigger's secret is
     /// replaced, and the old one stops working at once.
     pub async fn change_schedule(
         &self,
@@ -391,23 +436,31 @@ impl Core {
         id: &ScheduleId,
         patch: SchedulePatch,
         new_secret: bool,
+        by: Option<AgentTurn>,
     ) -> Result<(ScheduleDto, Option<String>), ScheduleError> {
         let stored = self.stored_schedule(conversation, id).await?;
-        self.save_schedule(stored, patch, Save::Edit { new_secret }).await
+        self.save_schedule(stored, patch, Save::Edit { new_secret }, by).await
     }
 
-    /// Applies `patch` to `schedule`, checks the whole, and writes it.
+    /// Applies `patch` to `schedule`, checks the whole, and writes it; a
+    /// change of what it does, anything but whether it is on, names `by` as
+    /// its last editor.
     async fn save_schedule(
         &self,
         mut schedule: StoredSchedule,
         patch: SchedulePatch,
         save: Save,
+        by: Option<AgentTurn>,
     ) -> Result<(ScheduleDto, Option<String>), ScheduleError> {
         let new = matches!(save, Save::Create);
         // Turning a schedule off or on changes nothing the checks below read,
         // so a schedule a later time zone or holiday table no longer takes can
-        // still be turned off.
-        let only_paused = !new && patch == SchedulePatch { paused: patch.paused, ..SchedulePatch::default() };
+        // still be turned off; nor does it change who last said what it does.
+        let only_paused = matches!(save, Save::Edit { new_secret: false })
+            && patch == SchedulePatch { paused: patch.paused, ..SchedulePatch::default() };
+        if !new && !only_paused {
+            schedule.edited_in = by;
+        }
         let store = self.store();
         let now = store.now();
         let before = schedule.clone();
@@ -618,15 +671,16 @@ impl Core {
         self.rearm_schedules();
     }
 
-    /// `jush schedule run`: a run whatever the timing, the daily limit or
-    /// whether the schedule is paused, of the repeat's task `task`, which may
-    /// be left out when the repeat has only one.
+    /// `jush schedule run`, and a program's run now: a run whatever the
+    /// timing, the daily limit or whether the schedule is paused, of the
+    /// repeat's task `task`, which may be left out when the repeat has only
+    /// one. Answers the schedule and the run as it started.
     pub async fn run_schedule_now(
         &self,
         conversation: &ConversationId,
         id: &ScheduleId,
         task: Option<String>,
-    ) -> Result<StoredSchedule, ScheduleError> {
+    ) -> Result<(StoredSchedule, ScheduleRunDto), ScheduleError> {
         let schedule = self.stored_schedule(conversation, id).await?;
         let task = match (runs::tasks_of(&schedule.trigger), task) {
             (None, None) => None,
@@ -639,17 +693,19 @@ impl Core {
             return Err(ScheduleError::NoMessage);
         }
         let at = self.store().now();
-        self.fire(
-            &schedule,
-            runs::Fired {
-                cause: jush_core_store::schedules::RunCause::Now,
-                at,
-                task: task.map(|task| task.id.clone()),
-                payload: runs::Payload::None,
-            },
-        )
-        .await;
-        Ok(schedule)
+        let run = self
+            .fire(
+                &schedule,
+                runs::Fired {
+                    cause: RunCause::Now,
+                    at,
+                    task: task.map(|task| task.id.clone()),
+                    payload: runs::Payload::None,
+                },
+            )
+            .await
+            .ok_or(ScheduleError::NotRecorded)?;
+        Ok((schedule, run_dto(run)))
     }
 
     /// The conversation was archived: its schedules wake nothing while it is,
@@ -928,7 +984,7 @@ impl Core {
                     .await?;
             }
         }
-        self.mark(Part::Metadata(schedule.conversation.clone()));
+        self.mark(Part::Conversation(schedule.conversation.clone()));
         Ok(())
     }
 }
@@ -937,10 +993,12 @@ impl Core {
 fn run_dto(run: StoredRun) -> ScheduleRunDto {
     ScheduleRunDto {
         id: run.id,
+        cause: run.cause,
         at: run.at,
         task_id: run.task,
         state: run.state,
         note: run.note,
         line: run.line,
+        turn: run.turn,
     }
 }

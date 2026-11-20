@@ -1,4 +1,4 @@
-import type { AgentCost, Block, CacheChart, ConversationAttachment, PendingCall, ProviderFailureFacts, QueuedMessage, SessionPhase, SideQuestion, TurnSpeed, Version } from '@jush-agent/protocol'
+import type { AgentCost, Block, CacheChart, ConversationAttachment, ConversationSchedule, PendingCall, ProviderFailureFacts, QueuedMessage, SessionPhase, SideQuestion, TurnSpeed, Version } from '@jush-agent/protocol'
 import type { ShownError } from '@jush-agent/web-ui/infra/errors'
 import type { FileBrowserPlatform } from '@jush-agent/web-ui/files/types'
 import type { DeviceStart } from '@jush-agent/web-ui/devices/installation'
@@ -66,8 +66,8 @@ export interface Conversation extends Omit<SidebarConversation, 'device'> {
   archived: boolean
   /** When it was archived; null while it is not. */
   archivedAt: string | null
-  /** Whether it has schedules, which the sidebar marks. */
-  scheduled: boolean
+  /** The schedules that wake it, newest first: the sidebar marks one that has any, and its Schedules menu lists them. */
+  schedules: ConversationSchedule[]
   /**
    * What a page shows only of an open conversation, as its lane or a read
    * of it brings it and the page's own changes, such as a model chosen, show

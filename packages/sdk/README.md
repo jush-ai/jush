@@ -412,6 +412,44 @@ if (tester) {
 }
 ```
 
+## Schedules
+
+A schedule wakes its conversation with a message: at set times, when a
+command's output changes, when its URL is called, or when another
+conversation finishes. The conversation's agent makes one with
+`jush schedule`; your program makes, changes, runs and removes any
+conversation's schedules with `conversation.schedules`, which takes the same
+fields:
+
+```ts
+const { schedule } = await conversation.schedules.create({
+  name: 'Daily report',
+  trigger: { kind: 'time', timing: { kind: 'cron', expression: '0 10 * * 1-5' } },
+  timeZone: 'America/New_York',
+  prompt: 'Post the daily report.',
+})
+await conversation.schedules.update(schedule.id, { paused: true })
+await conversation.schedules.run(schedule.id)
+const runs = await conversation.schedules.runs(schedule.id)
+await conversation.schedules.remove(schedule.id)
+```
+
+A new schedule starts from the defaults of `jush schedule create`, every day
+at 09:00, and is on unless the patch says `paused: true`. `create` and
+`update` answer the schedule with `secret`, a URL trigger's secret when the
+call made one, and null otherwise: it is the only time the secret is shown.
+
+`runs(id, before?)` answers 50 runs at most, newest first; pass the last
+one's id as `before` for the 50 before it. Each run says what fired it
+(`cause`) and the turn its message started (`turn`), whose id is the
+message's: null until the message goes, such as in the answer of `run`,
+and for a run skipped before it went. A schedule's `createdIn` and
+`editedIn` name the agent's turn that made it and that last changed what it
+does; both are null when your program did.
+
+Each conversation in `core.state` lists its schedules with their next time
+and last run, and `core.on('state')` hears of each change and each run.
+
 ## Permission requests
 
 A command that acts on Jush itself, such as `jush credentials`, which hands

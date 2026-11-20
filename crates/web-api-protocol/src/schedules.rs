@@ -3,7 +3,7 @@
 //! alike. The backend's scheduler reads the timing; this crate only carries
 //! it.
 
-use jush_shared_types::{Nullable, ScheduleId, ScheduleRunId, Timestamp};
+use jush_shared_types::{NodeId, Nullable, ScheduleId, ScheduleRunId, Timestamp, TurnId};
 use garde::Validate;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -12,10 +12,10 @@ use serde_with::rust::{double_option, unwrap_or_skip};
 use crate::ids::ConversationId;
 use crate::text::Trimmed;
 
-/// The runs `jush schedule show` lists, newest first; older ones are kept
-/// until the schedule is deleted, and are not shown.
+/// The runs `jush schedule show` lists, newest first, and a page of a
+/// schedule's runs holds; older ones are kept until the schedule is deleted.
 ///
-/// Bounded because the list goes into the agent's context window and a
+/// Bounded because the list goes into the agent's context window, and a
 /// schedule's runs have no end.
 pub const RUNS_SHOWN: usize = 50;
 /// The name a new schedule starts with.
@@ -310,6 +310,22 @@ pub enum IfBusy {
     Steer,
 }
 
+/// What fired a run.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RunCause {
+    /// A time of its timing.
+    Time,
+    /// A change of its watch's output.
+    Change,
+    /// A call of its URL.
+    Url,
+    /// Another conversation finished working.
+    Done,
+    /// A run now that an agent's `jush schedule run` or a program asked for.
+    Now,
+}
+
 /// Where a run stands.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -356,6 +372,7 @@ pub enum RunNote {
 #[serde(rename_all = "camelCase")]
 pub struct ScheduleRunDto {
     pub id: ScheduleRunId,
+    pub cause: RunCause,
     /// When its trigger fired.
     pub at: Timestamp,
     /// The repeat's task that started it; null for a single trigger.
@@ -371,6 +388,21 @@ pub struct ScheduleRunDto {
     #[serde(deserialize_with = "Option::deserialize")]
     #[schemars(with = "Nullable<String>")]
     pub line: Option<String>,
+    /// The turn its message started, whose id is the message's; null for a
+    /// run that started none, as one skipped while its device was offline.
+    #[serde(deserialize_with = "Option::deserialize")]
+    #[schemars(with = "Nullable<TurnId>")]
+    pub turn: Option<TurnId>,
+}
+
+/// An agent's turn: the agent, whose node is the conversation's id for its
+/// root, and the turn, whose id for a turn a message started is the
+/// message's.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentTurn {
+    pub node: NodeId,
+    pub turn: TurnId,
 }
 
 /// A schedule as `jush schedule` shows it, with its latest runs.
@@ -396,14 +428,68 @@ pub struct ScheduleDto {
     #[schemars(with = "Nullable<Timestamp>")]
     pub next_at: Option<Timestamp>,
     pub created_at: Timestamp,
+    /// The agent's turn whose `jush schedule create` made it; null for one a
+    /// program made.
+    #[serde(deserialize_with = "Option::deserialize")]
+    #[schemars(with = "Nullable<AgentTurn>")]
+    pub created_in: Option<AgentTurn>,
+    /// The agent's turn whose `jush schedule edit` last changed what it
+    /// does, anything but whether it is on; null when no agent changed it
+    /// since it was made, or a program changed it last.
+    #[serde(deserialize_with = "Option::deserialize")]
+    #[schemars(with = "Nullable<AgentTurn>")]
+    pub edited_in: Option<AgentTurn>,
     /// Its latest runs, newest first, [`RUNS_SHOWN`] at most.
     pub runs: Vec<ScheduleRunDto>,
 }
 
-/// What `jush schedule create` and `edit` change; a new schedule starts from
-/// its defaults, *New Schedule*, paused, every day with one task at 09:00 and
-/// no message, which waits if the conversation is busy, and takes these over
-/// them.
+/// A schedule a program made or changed, with a URL trigger's secret when
+/// the change made one: the only time the secret is shown.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ScheduleAnswer {
+    pub schedule: ScheduleDto,
+    #[serde(deserialize_with = "Option::deserialize")]
+    #[schemars(with = "Nullable<String>")]
+    pub secret: Option<String>,
+}
+
+/// `POST /conversations/:id/schedules/:schedule/runs`: a run now, as `jush
+/// schedule run` starts one.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema, Validate)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct NewScheduleRun {
+    /// The repeat's task it runs, which may be left out when the repeat has
+    /// one; none for a single trigger.
+    #[serde(default, skip_serializing_if = "Option::is_none", with = "unwrap_or_skip")]
+    #[schemars(with = "String")]
+    #[garde(inner(length(min = 1)))]
+    pub task: Option<String>,
+}
+
+/// `GET /conversations/:id/schedules/:schedule/runs`: a page of its runs,
+/// newest first, [`RUNS_SHOWN`] at most.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ScheduleRuns {
+    pub runs: Vec<ScheduleRunDto>,
+}
+
+/// `?before=` of `GET /conversations/:id/schedules/:schedule/runs`: the
+/// runs before the run `before`; the latest without it. Queries are the
+/// backend's alone and are not emitted.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ScheduleRunsQuery {
+    #[serde(default)]
+    pub before: Option<ScheduleRunId>,
+}
+
+/// What `jush schedule create` and `edit`, and a program's
+/// `POST /conversations/:id/schedules` and `PATCH` of one, change; a new
+/// schedule starts from its defaults, *New Schedule*, every day with one task
+/// at 09:00 and no message, which waits if the conversation is busy, and
+/// takes these over them. It is on unless the patch pauses it.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema, Validate)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SchedulePatch {
@@ -440,7 +526,7 @@ pub struct SchedulePatch {
 
 /// A schedule of a conversation as its Schedules menu lists it: what wakes
 /// the conversation, when it next will, and how it last did. The user pauses,
-/// resumes and deletes it there; the agent does the rest.
+/// resumes and deletes it there; the agent and a program do the rest.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ConversationSchedule {
@@ -462,15 +548,6 @@ pub struct ConversationSchedule {
     #[serde(deserialize_with = "Option::deserialize")]
     #[schemars(with = "Nullable<LastRun>")]
     pub last_run: Option<LastRun>,
-}
-
-/// `PATCH /conversations/:id/schedules/:schedule`: the user pauses or resumes
-/// one of the conversation's schedules from its Schedules menu.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, Validate)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct ScheduleChange {
-    #[garde(skip)]
-    pub paused: bool,
 }
 
 /// How a schedule last woke its conversation.

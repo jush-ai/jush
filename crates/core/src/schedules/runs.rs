@@ -18,7 +18,7 @@
 //! once schedule is deleted with it once its message reached the
 //! conversation.
 
-use jush_core_store::schedules::{RunCause, StoredRun, StoredSchedule};
+use jush_core_store::schedules::{StoredRun, StoredSchedule};
 use jush_core_store::tree::RootTurn;
 use jush_core_device_access::root_of;
 use jush_core_sync::Part;
@@ -27,7 +27,7 @@ use jush_shared_types::{
 };
 use jush_web_api_protocol::devices::DeviceKind;
 use jush_web_api_protocol::ids::{ConversationId, DeviceId};
-use jush_web_api_protocol::schedules::{IfBusy, RunNote, RunState, Task, Timing, Trigger};
+use jush_web_api_protocol::schedules::{IfBusy, RunCause, RunNote, RunState, Task, Timing, Trigger};
 
 use super::hooks::Call;
 use super::message;
@@ -180,8 +180,10 @@ impl Core {
     }
 
     /// Fires a run of `schedule`: records it, skipped when its conversation
-    /// cannot run it, and otherwise carries it in a task of its own.
-    pub(crate) async fn fire(&self, schedule: &StoredSchedule, fired: Fired) {
+    /// cannot run it, and otherwise carries it in a task of its own. Answers
+    /// the run as it was recorded; none when it could not be, and it did not
+    /// start.
+    pub(crate) async fn fire(&self, schedule: &StoredSchedule, fired: Fired) -> Option<StoredRun> {
         let store = self.store();
         let runnable = self.runnable(schedule).await;
         let skipped = matches!(runnable, Err(Unrunnable::Gone | Unrunnable::Offline(_)));
@@ -203,8 +205,9 @@ impl Core {
         };
         if let Err(error) = store.insert_schedule_run(run.clone()).await {
             tracing::error!(event = "schedule_run.start_failed", user = %self.user(), schedule = %schedule.id, run = %run.id, %error, "a run was not recorded, and did not start");
-            return;
+            return None;
         }
+        let recorded = run.clone();
         tracing::info!(
             event = "schedule.fired",
             user = %self.user(),
@@ -215,9 +218,9 @@ impl Core {
             skipped_reason = skipped.then(|| run.note.as_ref().map_or("gone", note_name)),
             "a schedule fired"
         );
-        self.mark(Part::Metadata(schedule.conversation.clone()));
+        self.mark(Part::Conversation(schedule.conversation.clone()));
         if skipped {
-            return;
+            return Some(recorded);
         }
         let core = self.this();
         let schedule = schedule.clone();
@@ -248,6 +251,7 @@ impl Core {
                 core.end_run(run, &schedule.conversation).await;
             }
         });
+        Some(recorded)
     }
 
     /// Starts the run's turn: writes a URL's bodies into the conversation's

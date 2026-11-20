@@ -7,9 +7,9 @@
 //! what it needs of these when it starts and when one changes; nothing here
 //! polls.
 
-use jush_shared_types::{ScheduleId, ScheduleRunId, Timestamp, TurnId};
+use jush_shared_types::{NodeId, ScheduleId, ScheduleRunId, Timestamp, TurnId};
 use jush_web_api_protocol::ids::ConversationId;
-use jush_web_api_protocol::schedules::{IfBusy, RunNote, RunState, Trigger};
+use jush_web_api_protocol::schedules::{AgentTurn, IfBusy, RunCause, RunNote, RunState, Trigger};
 use rusqlite::{Connection, OptionalExtension, Row, params};
 
 use super::StorageError;
@@ -23,7 +23,8 @@ const CALLS: &str = "schedule_calls";
 const COLUMNS: &str = "id, conversation_id, name, trigger, time_zone, max_runs_per_day, if_busy, prompt,
      paused, since, secret IS NOT NULL AS has_secret,
      (SELECT archived_at IS NOT NULL FROM conversations WHERE id = schedules.conversation_id) AS conversation_archived,
-     watch_stdout, watch_digest, watch_exit, watch_checked_at, created_at, updated_at";
+     watch_stdout, watch_digest, watch_exit, watch_checked_at, created_at, updated_at,
+     created_node, created_turn, edited_node, edited_turn";
 
 const RUN_COLUMNS: &str = "id, schedule_id, cause, at, state, note, line, turn_id, notified, task_id";
 
@@ -52,6 +53,11 @@ pub struct StoredSchedule {
     pub watch: Option<WatchOutput>,
     pub created_at: Timestamp,
     pub updated_at: Timestamp,
+    /// The agent's turn that made it; none for a program's.
+    pub created_in: Option<AgentTurn>,
+    /// The agent's turn that last changed what it does; none when no agent
+    /// did since it was made, or a program did last.
+    pub edited_in: Option<AgentTurn>,
 }
 
 impl StoredSchedule {
@@ -101,44 +107,47 @@ pub struct PendingCall {
     pub body: Vec<u8>,
 }
 
-/// What fired a run.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RunCause {
-    Time,
-    Change,
-    Url,
-    /// Another conversation finished working.
-    Done,
-    /// An agent's `jush schedule run`.
-    Now,
+fn cause_str(cause: RunCause) -> &'static str {
+    match cause {
+        RunCause::Time => "time",
+        RunCause::Change => "change",
+        RunCause::Url => "url",
+        RunCause::Done => "done",
+        RunCause::Now => "now",
+    }
 }
 
-impl RunCause {
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::Time => "time",
-            Self::Change => "change",
-            Self::Url => "url",
-            Self::Done => "done",
-            Self::Now => "now",
+fn cause_of(text: &str) -> Result<RunCause, StorageError> {
+    Ok(match text {
+        "time" => RunCause::Time,
+        "change" => RunCause::Change,
+        "url" => RunCause::Url,
+        "done" => RunCause::Done,
+        "now" => RunCause::Now,
+        other => {
+            return Err(StorageError::Corrupt {
+                table: RUNS,
+                column: "cause",
+                reason: format!("unknown cause {other}"),
+            });
         }
-    }
+    })
+}
 
-    fn of(text: &str) -> Result<Self, StorageError> {
-        Ok(match text {
-            "time" => Self::Time,
-            "change" => Self::Change,
-            "url" => Self::Url,
-            "done" => Self::Done,
-            "now" => Self::Now,
-            other => {
-                return Err(StorageError::Corrupt {
-                    table: RUNS,
-                    column: "cause",
-                    reason: format!("unknown cause {other}"),
-                });
-            }
-        })
+/// An agent's turn as the columns `node` and `turn` hold it, which are both
+/// set or both null.
+fn agent_turn(row: &Row<'_>, node: &'static str, turn: &'static str) -> Result<Option<AgentTurn>, StorageError> {
+    match (row.get::<_, Option<String>>(node)?, row.get::<_, Option<String>>(turn)?) {
+        (Some(node_id), Some(turn_id)) => Ok(Some(AgentTurn {
+            node: decode(TABLE, node, NodeId::try_from(node_id))?,
+            turn: decode(TABLE, turn, TurnId::try_from(turn_id))?,
+        })),
+        (None, None) => Ok(None),
+        _ => Err(StorageError::Corrupt {
+            table: TABLE,
+            column: node,
+            reason: "an agent's node and its turn go together".into(),
+        }),
     }
 }
 /// One run as it is stored.
@@ -250,6 +259,8 @@ fn schedule_row(row: &Row<'_>) -> Result<StoredSchedule, StorageError> {
         watch,
         created_at: instant(row, TABLE, "created_at")?,
         updated_at: instant(row, TABLE, "updated_at")?,
+        created_in: agent_turn(row, "created_node", "created_turn")?,
+        edited_in: agent_turn(row, "edited_node", "edited_turn")?,
     })
 }
 
@@ -259,7 +270,7 @@ fn run_row(row: &Row<'_>) -> Result<StoredRun, StorageError> {
     Ok(StoredRun {
         id: decode(RUNS, "id", ScheduleRunId::try_from(row.get::<_, String>("id")?))?,
         schedule: decode(RUNS, "schedule_id", ScheduleId::try_from(row.get::<_, String>("schedule_id")?))?,
-        cause: RunCause::of(&row.get::<_, String>("cause")?)?,
+        cause: cause_of(&row.get::<_, String>("cause")?)?,
         at: instant(row, RUNS, "at")?,
         task: row.get("task_id")?,
         state: state_of(&row.get::<_, String>("state")?)?,
@@ -359,11 +370,12 @@ impl CoreStore {
             let a = &schedule;
             transaction.execute(
                 "INSERT INTO schedules (id, conversation_id, name, trigger, time_zone, max_runs_per_day, if_busy,
-                   prompt, paused, since, created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+                   prompt, paused, since, created_at, updated_at, created_node, created_turn, edited_node,
+                   edited_turn)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
                  ON CONFLICT (id) DO UPDATE SET name = ?3, trigger = ?4, time_zone = ?5,
                    max_runs_per_day = ?6, if_busy = ?7, prompt = ?8, paused = ?9,
-                   since = ?10, updated_at = ?12
+                   since = ?10, updated_at = ?12, edited_node = ?15, edited_turn = ?16
                  WHERE conversation_id = ?2",
                 params![
                     a.id.as_str(),
@@ -378,6 +390,10 @@ impl CoreStore {
                     a.since.as_millisecond(),
                     a.created_at.as_millisecond(),
                     a.updated_at.as_millisecond(),
+                    a.created_in.as_ref().map(|turn| turn.node.as_str()),
+                    a.created_in.as_ref().map(|turn| turn.turn.as_str()),
+                    a.edited_in.as_ref().map(|turn| turn.node.as_str()),
+                    a.edited_in.as_ref().map(|turn| turn.turn.as_str()),
                 ],
             )?;
             if let Some(secret) = secret {
@@ -450,15 +466,38 @@ impl CoreStore {
 
     /// The latest runs of the schedule `id`, newest first.
     pub async fn schedule_runs(&self, id: ScheduleId, limit: usize) -> Result<Vec<StoredRun>, StorageError> {
+        self.schedule_runs_before(id, None, limit).await
+    }
+
+    /// The runs of the schedule `id` before its run `before`, newest first;
+    /// the latest without it, and none when `before` is not one of its runs.
+    pub async fn schedule_runs_before(
+        &self,
+        id: ScheduleId,
+        before: Option<ScheduleRunId>,
+        limit: usize,
+    ) -> Result<Vec<StoredRun>, StorageError> {
         self.call(move |connection, _| {
-            connection
-                .prepare_cached(&format!(
-                    "SELECT {RUN_COLUMNS} FROM schedule_runs WHERE schedule_id = ?1
-                     ORDER BY at DESC, rowid DESC LIMIT ?2"
-                ))?
-                .query_map(params![id.as_str(), limit as i64], |row| Ok(run_row(row)))?
-                .map(|row| row?)
-                .collect()
+            let limit = limit as i64;
+            let rows = match &before {
+                None => connection
+                    .prepare_cached(&format!(
+                        "SELECT {RUN_COLUMNS} FROM schedule_runs WHERE schedule_id = ?1
+                         ORDER BY at DESC, rowid DESC LIMIT ?2"
+                    ))?
+                    .query_map(params![id.as_str(), limit], |row| Ok(run_row(row)))?
+                    .collect::<Result<Vec<_>, _>>()?,
+                Some(before) => connection
+                    .prepare_cached(&format!(
+                        "SELECT {RUN_COLUMNS} FROM schedule_runs
+                         WHERE schedule_id = ?1
+                           AND (at, rowid) < (SELECT at, rowid FROM schedule_runs WHERE id = ?2 AND schedule_id = ?1)
+                         ORDER BY at DESC, rowid DESC LIMIT ?3",
+                    ))?
+                    .query_map(params![id.as_str(), before.as_str(), limit], |row| Ok(run_row(row)))?
+                    .collect::<Result<Vec<_>, _>>()?,
+            };
+            rows.into_iter().collect()
         })
         .await
     }
@@ -499,7 +538,7 @@ impl CoreStore {
                 params![
                     run.id.as_str(),
                     run.schedule.as_str(),
-                    run.cause.as_str(),
+                    cause_str(run.cause),
                     run.at.as_millisecond(),
                     state_str(run.state),
                     note_text(&run.note),

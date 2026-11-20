@@ -266,10 +266,11 @@ pub struct ConversationSummary {
     /// them with the output.
     #[garde(range(max = MAX_SAFE_INTEGER))]
     pub unread_permission_requests: u64,
-    /// Whether the conversation has a schedule, which the sidebar marks with
-    /// an alarm clock; its schedules are in its metadata.
+    /// The schedules that wake the conversation, newest first: the sidebar
+    /// marks a conversation that has one with an alarm clock, and its
+    /// Schedules menu lists them.
     #[garde(skip)]
-    pub scheduled: bool,
+    pub schedules: Vec<crate::schedules::ConversationSchedule>,
     /// The conversation's work: its tabs under the revision that counts
     /// its changes. The page draws the work's frame and tabs from it as soon
     /// as the conversation is listed.
@@ -373,9 +374,6 @@ pub struct ConversationMetadata {
     /// that rises with each change of them in this run of the backend.
     #[garde(dive)]
     pub permissions: ConversationPermissions,
-    /// The conversation's schedules, which wake it, newest first.
-    #[garde(skip)]
-    pub schedules: Vec<crate::schedules::ConversationSchedule>,
     /// The commands the calls on the conversation's current path left
     /// running that ended, its root's and those of the subagents on that
     /// path, newest first. A command that runs is the live frames'.

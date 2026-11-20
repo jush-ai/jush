@@ -32,10 +32,10 @@ use std::time::Duration;
 
 use bytes::Bytes;
 use jush_core_store::StorageError;
-use jush_core_store::schedules::{NewCall, PendingCall, RunCause};
+use jush_core_store::schedules::{NewCall, PendingCall};
 use jush_device_interface::{FileContents, Device, WhenExists, WriteOptions};
 use jush_shared_types::{ScheduleId, ScheduleRunId, Timestamp};
-use jush_web_api_protocol::schedules::{RunState, Trigger};
+use jush_web_api_protocol::schedules::{RunCause, RunState, Trigger};
 use jush_web_api_protocol::ids::ConversationId;
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
