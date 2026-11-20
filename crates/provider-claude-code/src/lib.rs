@@ -1,9 +1,10 @@
 //! The Claude Code provider: a `claude-code` subscription entry's account,
-//! signed in by the CLI's own login on the Claude Code machine, inferring
+//! signed in by the CLI's own login on the Subscriptions machine, inferring
 //! through Jush's own copy of the vendor's CLI.
 //!
 //! - A session's runtime keeps one CLI process and exchanges stream-json with
-//!   it over the `shell` process a [`Placement`] starts.
+//!   it over the `shell` process a `Placement` starts
+//!   (`crates/provider-subscription-cli/src/placement.rs`).
 //! - A new process resumes a session written from the conversation's blocks,
 //!   whose entries the CLI mirrors back onto them.
 //! - Every process of an account runs in the account's one directory, where the
@@ -21,7 +22,7 @@
 //! tools run, the CLI handing each call back to the agent.
 //!
 //! ```text
-//! backend (user's shard)       Claude Code machine (nobody has a shell)
+//! backend (user's shard)       Subscriptions machine (nobody has a shell)
 //! +--------------------+       +------------------------------------+
 //! | ClaudeCodeRuntime  | start | runner                             |
 //! |   Placement -------+------>|   CLI process, cwd ~/run           |
@@ -54,7 +55,6 @@ mod login;
 mod mcp;
 mod models;
 mod output;
-mod placement;
 mod prepared;
 mod mirror;
 mod quota;
@@ -66,33 +66,47 @@ mod timing;
 use std::rc::Rc;
 use std::sync::Arc;
 
-use jush_command_package_claude_code_protocol::PACKAGE;
 use jush_provider_common::credentials::{Accounts, CredentialPool, SubscriptionAccounts};
 use jush_provider_common::models_dev::ModelsDevClient;
 use jush_provider_common::quota::{ProbeAsk, ProviderQuota, QuotaError, QuotaSnapshotStore};
 use jush_provider_common::{
-    Capabilities, CatalogError, Provider, ProviderRuntime, RuntimeEnv, RuntimeError, Searches,
+    CatalogError, Provider, ProviderRuntime, RuntimeEnv, RuntimeError, Searches,
 };
+use jush_provider_subscription_cli::{AccountMachine, Cli, Placement};
 use jush_shared_types::{
     AuthState, Clock, ProviderErrorDiagnostics, ProviderFailureFacts, ProviderModelList,
     RuntimeState, Timestamp,
 };
 use futures_util::future::BoxFuture;
 
-pub use placement::{
-    AccountMachine, AccountWork, CliSite, CliStart, CliStarter, CliSystem, CliWork, ConfigDir,
-    Handover, MachineState, Placed, Placement, StartError, StartStage, StartSteps, WorkLease,
-};
-pub use live::close_process;
-pub use idle::IdleProcesses;
-
 use crate::account::ClaudeAuth;
+use crate::mcp::ClientProtocol;
 use crate::login::ClaudeKit;
-use crate::quota::ClaudeQuota;
+use crate::quota::{ClaudeQuota, FlagRefreshes};
 use crate::run::ClaudeCodeRuntime;
 
 /// How messages name the family.
 const FAMILY: &str = "Claude Code";
+
+/// The Claude Code CLI as the Subscriptions machine runs it: each process's
+/// own directory is under the account's `projects`, where the CLI keeps its
+/// sessions (`CLAUDE_CODE_PROJECT_DIR_NAME`).
+pub static CLI: Cli = Cli {
+    name: "Claude Code",
+    process_parent: "projects",
+};
+
+/// What the family keeps of the Subscriptions machine for every provider of
+/// every account, since each session's runtime builds a provider of its own.
+#[derive(Default)]
+pub struct MachineState {
+    /// When each account's feature flags were last fetched there
+    /// (`crates/provider-claude-code/src/quota.rs`).
+    pub(crate) flags: FlagRefreshes,
+    /// The MCP protocol version the machine's CLI asks for
+    /// (`crates/provider-claude-code/src/mcp.rs`).
+    pub(crate) mcp_protocol: ClientProtocol,
+}
 
 /// The CLI's own tool that runs Anthropic's web search.
 const WEB_SEARCH: &str = "WebSearch";
@@ -111,9 +125,11 @@ pub struct ClaudeCodeConfig {
     /// The account the provider stands for; `None` only for a provider built
     /// to add the entry's first account.
     pub account: Option<String>,
-    /// The Claude Code machine, which the account's usage probe runs on;
+    /// The Subscriptions machine, which the account's usage probe runs on;
     /// none for a provider that cannot reach it, which cannot probe.
     pub machine: Option<Arc<dyn AccountMachine>>,
+    /// What the family keeps of the machine, which every provider shares.
+    pub state: Arc<MachineState>,
     /// The Anthropic search the entry turned on, which the CLI runs.
     pub searches: Searches,
 }
@@ -125,12 +141,14 @@ impl ClaudeCodeConfig {
         display_name: impl Into<String>,
         account: Option<String>,
         machine: Option<Arc<dyn AccountMachine>>,
+        state: Arc<MachineState>,
     ) -> Self {
         Self {
             id: id.into(),
             display_name: display_name.into(),
             account,
             machine,
+            state,
             searches: Searches::default(),
         }
     }
@@ -142,7 +160,7 @@ impl ClaudeCodeConfig {
 /// Its runtimes start their CLI through a placement
 /// ([`ClaudeCodeProvider::process_runtime`]). The generic [`Provider::runtime`]
 /// refuses, since only the backend can choose the machine
-/// (`crates/provider-claude-code/src/placement.rs`).
+/// (`crates/provider-subscription-cli/src/placement.rs`).
 pub struct ClaudeCodeProvider {
     shared: Arc<Shared>,
 }
@@ -160,29 +178,25 @@ struct Shared {
     /// machine ([`ClaudeCodeProvider::login_accounts`]).
     accounts: Accounts<ClaudeKit>,
     models_dev: ModelsDevClient,
-    /// The Claude Code machine, and what the provider keeps of it; none for a
-    /// provider that cannot reach it, which cannot probe.
+    /// The Subscriptions machine; none for a provider that cannot reach it,
+    /// which cannot probe.
     machine: Option<Arc<dyn AccountMachine>>,
+    /// What the family keeps of the machine.
+    state: Arc<MachineState>,
 }
 
 impl Shared {
     /// The MCP protocol version the machine's CLI asks for, as far as the
     /// machine's processes told (`crates/provider-claude-code/src/mcp.rs`).
     fn mcp_protocol(&self) -> rmcp::model::ProtocolVersion {
-        self.machine.as_ref().map_or(rmcp::model::ProtocolVersion::LATEST, |machine| {
-            machine.state().mcp_protocol.get()
-        })
+        self.state.mcp_protocol.get()
     }
 
     /// Runs the usage probe of `account` in the background, as a process of
     /// the account starts, when the flags it refreshes are due
     /// (`crates/provider-claude-code/src/quota.rs`). Nothing waits for it.
     fn refresh_flags(self: &Arc<Self>, account: &str) {
-        if !self
-            .machine
-            .as_ref()
-            .is_some_and(|machine| machine.state().flags.due(account))
-        {
+        if self.machine.is_none() || !self.state.flags.due(account) {
             return;
         }
         let shared = self.clone();
@@ -220,10 +234,12 @@ impl ClaudeCodeProvider {
         let source = ClaudeQuota {
             auth: auth.clone(),
             machine: config.machine.clone(),
+            state: config.state.clone(),
             entry: config.id.clone(),
         };
         let kit = ClaudeKit {
             machine: None,
+            state: config.state.clone(),
             entry: config.id.clone(),
             pool: pool.clone(),
         };
@@ -239,6 +255,7 @@ impl ClaudeCodeProvider {
                 accounts: Accounts::new(pool, kit, clock),
                 models_dev,
                 machine: config.machine,
+                state: config.state,
             }),
         }
     }
@@ -254,6 +271,7 @@ impl ClaudeCodeProvider {
     pub fn login_accounts(&self, machine: Arc<dyn AccountMachine>) -> Box<dyn SubscriptionAccounts> {
         let kit = ClaudeKit {
             machine: Some(machine),
+            state: self.shared.state.clone(),
             entry: self.shared.id.clone(),
             pool: self.shared.pool.clone(),
         };
@@ -266,10 +284,6 @@ impl ClaudeCodeProvider {
 }
 
 impl Provider for ClaudeCodeProvider {
-    fn capabilities(&self) -> Capabilities {
-        Capabilities { cli_package: Some(PACKAGE) }
-    }
-
     /// The account as its record holds it: signed in, unless its vendor
     /// signed it out; reading it starts nothing.
     fn auth_status(&self) -> BoxFuture<'_, AuthState> {
@@ -284,7 +298,7 @@ impl Provider for ClaudeCodeProvider {
     }
 
     /// Whether the CLI runs is known only when a request starts it on the
-    /// Claude Code machine.
+    /// Subscriptions machine.
     fn runtime_state(&self) -> RuntimeState {
         RuntimeState::Unknown {
             message: Some("Claude Code runs on its machine when a request needs it".into()),

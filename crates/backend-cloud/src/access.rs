@@ -46,13 +46,13 @@ impl dyn CloudShard {
         self.access(device).await
     }
 
-    /// The Claude Code machine, made on its first use and woken when it is
+    /// The Subscriptions machine, made on its first use and woken when it is
     /// stopped, for the shard of the instance's master, whose record it
     /// is.
-    pub async fn claude_code_access(&self) -> Result<MachineAccess, CloudError> {
+    pub async fn subscriptions_access(&self) -> Result<MachineAccess, CloudError> {
         let device = self
             .control()
-            .managed_machine_or_create(self.user().clone(), ManagedMachine::ClaudeCode)
+            .managed_machine_or_create(self.user().clone(), ManagedMachine::Subscriptions)
             .await?;
         self.access(device).await
     }

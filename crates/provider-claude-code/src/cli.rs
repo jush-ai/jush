@@ -31,7 +31,7 @@ use jush_provider_common::{InferenceRequest, Searches};
 use jush_provider_common::openai_request::reasoning_effort;
 use jush_shared_types::ThinkingConfig;
 
-use crate::placement::{CliSite, CliStart};
+use jush_provider_subscription_cli::{CliSite, CliStart};
 use crate::session::SessionFile;
 use crate::WEB_SEARCH;
 

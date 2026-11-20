@@ -71,7 +71,7 @@ use url::Url;
 use jush_backend_accounts::email_change::AccountMail;
 use jush_backend_blobs::store::{S3Config, Storage};
 use jush_backend_cloud::tuning::CloudTuning;
-use jush_backend_user_shard::conversation::claude_cli::MachineSlot;
+use jush_backend_user_shard::conversation::subscription_cli::MachineSlot;
 use jush_provider_claude_code::releases::DEFAULT_RELEASES_URL;
 use jush_provider_registry::families::FamilyRegistry;
 use jush_backend_providers::vault::entries::SeededAccount;
@@ -239,7 +239,7 @@ pub struct Config {
         hide_env_values = true
     )]
     pub instance_secret: Option<String>,
-    /// The Claude Code distribution whose newest release the CLI on each Cloud follows
+    /// The Claude Code distribution whose newest release the CLI on the Subscriptions machine follows
     #[arg(
         long,
         env = "JUSH_CLAUDE_RELEASES_URL",
@@ -489,12 +489,12 @@ pub struct BackendConfig {
     /// The media catalog the release carries, until a newer one is
     /// downloaded.
     pub media_catalog: Arc<media_catalog::Catalog>,
-    /// The Claude Code distribution whose newest release the CLI on each
-    /// Cloud follows (`crates/provider-claude-code/src/releases.rs`).
+    /// The Claude Code distribution whose newest release the CLI on the
+    /// Subscriptions machine follows (`crates/provider-claude-code/src/releases.rs`).
     pub claude_releases: Url,
-    /// Where the Claude Code machine is, which the backend's shards put
-    /// there as they start and the Claude Code family of `families` reads.
-    pub claude_machine: MachineSlot,
+    /// Where the Subscriptions machine is, which the backend's shards put
+    /// there as they start and the CLI families of `families` read.
+    pub subscriptions_machine: MachineSlot,
     /// How long a device login waits for its user, and how long its result
     /// is kept.
     pub logins: LoginTiming,
@@ -532,7 +532,7 @@ impl BackendConfig {
         address: SocketAddr,
         machines_socket: PathBuf,
     ) -> Self {
-        let claude_machine = MachineSlot::default();
+        let subscriptions_machine = MachineSlot::default();
         let plugins = crate::plugins::builtin(&data_dir);
         Self {
             log: ServerLog::detached(&data_dir),
@@ -553,8 +553,8 @@ impl BackendConfig {
             account_mail: None,
             clock: Arc::new(SystemClock),
             shards: ShardPlacement::Threads(NonZeroUsize::MIN),
-            families: crate::families::builtin(claude_machine.clone()),
-            claude_machine,
+            families: crate::families::builtin(subscriptions_machine.clone()),
+            subscriptions_machine,
             plugins,
             models_dev_url: ModelsDevClient::DEFAULT_URL
                 .parse()

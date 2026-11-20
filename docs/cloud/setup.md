@@ -131,6 +131,7 @@ The backend's definition of each holds.
 | `JUSH_MANAGED_DNS` | The IPv4 resolvers a Cloud uses. Optional: see [DNS](#dns). |
 | `JUSH_MANAGED_LIMITS` | `on` (default) or `off`: whether gVisor sandboxes run under the cgroup CPU, memory and PID limits. |
 | `JUSH_MANAGED_CPUS`, `JUSH_MANAGED_MEM_MIB` | Per-sandbox CPU budget and total memory limit, with the limits on. Either one with `JUSH_MANAGED_LIMITS=off` fails configuration. |
+| `JUSH_MANAGED_SUBSCRIPTIONS_MEM_MIB` | The memory limit of the Subscriptions machine, which runs every user's subscription CLIs, with the limits on; default 4096. With `JUSH_MANAGED_LIMITS=off` it fails configuration. |
 | `JUSH_MANAGED_SUBNET`, `JUSH_MANAGED_SLOTS` | The IPv4 address pool and the maximum number of network slots. |
 
 The sizing defaults and limits are in `crates/backend-cloud/src/tuning.rs`
@@ -190,7 +191,7 @@ Network, not a variable:
 
 No choice opens the server's own addresses, the network pool, which is the
 other Clouds, loopback, link-local `169.254.0.0/16`, where cloud metadata
-services answer, multicast or reserved ranges. The Claude Code machine
+services answer, multicast or reserved ranges. The Subscriptions machine
 reaches none of it either.
 
 A refused connection fails at once with ICMP administratively prohibited,

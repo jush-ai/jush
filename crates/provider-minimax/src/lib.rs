@@ -14,7 +14,7 @@ mod videos;
 use std::sync::Arc;
 
 use jush_provider_common::{
-    Capabilities, CatalogError, Provider, ProviderRuntime, RuntimeEnv, RuntimeError, Secret, audio::AudioMaker,
+    CatalogError, Provider, ProviderRuntime, RuntimeEnv, RuntimeError, Secret, audio::AudioMaker,
     credentials::SubscriptionAccounts, images::ImageMaker, media::MediaVendor, quota::ProviderQuota, videos::VideoMaker,
 };
 use jush_shared_types::{AuthState, Clock, ProviderErrorDiagnostics, ProviderFailureFacts, ProviderModelList, RuntimeState, Timestamp};
@@ -110,10 +110,6 @@ impl MinimaxProvider {
 }
 
 impl Provider for MinimaxProvider {
-    fn capabilities(&self) -> Capabilities {
-        self.text.capabilities()
-    }
-
     fn auth_status(&self) -> BoxFuture<'_, AuthState> {
         self.text.auth_status()
     }

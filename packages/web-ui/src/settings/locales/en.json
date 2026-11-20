@@ -1120,7 +1120,7 @@
     "doneActive": "Signed in. This account is now active for {vendor}.",
     "doneKept": "Signed in. {vendor} keeps using its active account.",
     "failedHint": "The sign-in didn’t complete.",
-    "waitingMachine": "Waiting for Claude Code’s machine to connect…",
+    "waitingMachine": "Waiting for the Subscriptions machine to connect…",
     "installing": "Installing the command-line tool…",
     "startingTool": "Starting the command-line tool…",
     "contacting": "Contacting {vendor}…",

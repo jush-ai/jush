@@ -74,7 +74,7 @@ pub struct LoginIo<'a> {
     /// What the login waits for before it has anything to show, for a family
     /// whose login prepares in steps the user should see.
     ///
-    /// An example is a Claude sign-in waiting for the Claude Code machine
+    /// An example is a Claude sign-in waiting for the Subscriptions machine
     /// (`crates/provider-claude-code/src/account.rs`). A login is `preparing`
     /// until it reports another stage, and `waiting_for_user` once it reports
     /// `pending`. A family whose login prepares in one step reports none.

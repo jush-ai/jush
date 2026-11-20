@@ -77,7 +77,7 @@
 //!    ```sh
 //!    bun xtask native build --target x86_64-unknown-linux-musl \
 //!      --package jush-runner --package jush-file --package jush-fetch \
-//!      --package jush-browser --package jush-claude-code --package jush-mobile \
+//!      --package jush-browser --package jush-subscription-cli --package jush-mobile \
 //!      --package jush-backend --package jush-machine-manager
 //!    bun xtask server-release --output /opt/jush/dev-<build> \
 //!      --target x86_64-unknown-linux-musl --server x86_64-unknown-linux-musl

@@ -1120,7 +1120,7 @@
     "doneActive": "サインインしました。このアカウントが {vendor} の有効なアカウントになりました。",
     "doneKept": "サインインしました。{vendor} は引き続き有効なアカウントを使います。",
     "failedHint": "サインインを完了できませんでした。",
-    "waitingMachine": "Claude Code のマシンの接続を待っています…",
+    "waitingMachine": "サブスクリプション用マシンの接続を待っています…",
     "installing": "コマンドラインツールをインストールしています…",
     "startingTool": "コマンドラインツールを起動しています…",
     "contacting": "{vendor} に接続しています…",

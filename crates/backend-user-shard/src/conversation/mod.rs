@@ -6,13 +6,14 @@
 //!   conversation's database;
 //! - the conversation lane;
 //! - the provider runtimes the sessions infer with;
-//! - the Claude Code CLI's work on the user's Cloud, and the provider test;
+//! - the subscriptions' CLIs' work on the Subscriptions machine, and the
+//!   provider test;
 //! - the conversations' summaries and the failure facts of their history;
 //! - the resume of a failed turn at its retry time;
 //! - their deletion, and the search index that follows them.
 
 mod announcement;
-pub mod claude_cli;
+pub mod subscription_cli;
 mod cloud_project;
 pub use cloud_project::CloudProject;
 mod connection_test;

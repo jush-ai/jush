@@ -246,10 +246,6 @@ impl Config {
 }
 
 impl Provider for Borrowed {
-    fn capabilities(&self) -> jush_provider_common::Capabilities {
-        jush_provider_common::Capabilities::default()
-    }
-
     fn auth_status(&self) -> BoxFuture<'_, AuthState> {
         Box::pin(async move {
             match self.config.lending().await {

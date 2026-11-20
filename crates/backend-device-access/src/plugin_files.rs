@@ -306,7 +306,7 @@ async fn install_until_done(shard: Rc<dyn DeviceShard>, device: DeviceId, wake: 
 ///    read, every conversation's and those of the workspaces whose
 ///    conversations run on the device, [`WRITES_AT_ONCE`] at a time.
 ///
-/// A device that is offline, or the Claude Code machine, which runs no
+/// A device that is offline, or the Subscriptions machine, which runs no
 /// command, passes at once. A directory that fails leaves the others to go
 /// on, and fails the pass.
 async fn pass(shard: &dyn DeviceShard, device: &DeviceId) -> Result<(), String> {
@@ -318,7 +318,7 @@ async fn pass(shard: &dyn DeviceShard, device: &DeviceId) -> Result<(), String> 
         .device(device.clone())
         .await
         .map_err(|error| error.to_string())?;
-    if record.is_none_or(|record| record.machine == Some(ManagedMachine::ClaudeCode)) {
+    if record.is_none_or(|record| record.machine == Some(ManagedMachine::Subscriptions)) {
         return Ok(());
     }
     let sets = shard.directory_sets().await?;

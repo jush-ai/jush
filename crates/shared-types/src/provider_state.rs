@@ -444,13 +444,13 @@ pub struct AccountInfo {
 
 /// What a login waits for (`crates/provider-claude-code/src/account.rs`): it is
 /// `preparing` from its start, and `waiting_for_user` once it has a link or
-/// a code to show. A Claude sign-in waits for the Claude Code machine, for
+/// a code to show. A Claude sign-in waits for the Subscriptions machine, for
 /// the CLI's install and for the CLI's start in between.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum LoginStage {
     Preparing,
-    /// The Claude Code machine's access is acquired: its runner woken or
+    /// The Subscriptions machine's access is acquired: its runner woken or
     /// awaited.
     WaitingForMachine,
     /// The CLI is installed on the machine.

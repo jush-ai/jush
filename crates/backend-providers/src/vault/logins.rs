@@ -259,8 +259,8 @@ impl LoginFlows {
 
     /// Starts `starter`'s login of `family`, which the request `request`
     /// asked for: into `existing`, or into a new entry of the starter's
-    /// labelled `label`. A login that runs a process runs it on the Claude
-    /// Code machine. Only `starter` reads, answers and cancels it.
+    /// labelled `label`. A login that runs a process runs it on the
+    /// Subscriptions machine. Only `starter` reads, answers and cancels it.
     pub async fn start(
         self: &Arc<Self>,
         starter: UserId,

@@ -59,7 +59,7 @@ use crate::failure::read_failure;
 use crate::idle::Kept;
 use crate::live::{LiveCli, Next, Written};
 use crate::output::{self, Answered, ContentBlock, Line, Printed, StreamEvent, Streaming, TurnEnd};
-use crate::placement::{Placement, WorkLease};
+use jush_provider_subscription_cli::{Placement, WorkLease};
 use crate::prepared::Prepared;
 use crate::timing::{self, RunTiming, Took};
 

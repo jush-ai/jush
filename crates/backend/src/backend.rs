@@ -468,7 +468,7 @@ impl Backend {
             media_catalog_url: config.media_catalog_url,
             media_catalog: config.media_catalog,
             claude_releases: config.claude_releases,
-            claude_machine: config.claude_machine,
+            subscriptions_machine: config.subscriptions_machine,
             logins: config.logins,
             clock: config.clock,
             master_account: config.master_account,

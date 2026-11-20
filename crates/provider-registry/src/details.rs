@@ -92,6 +92,7 @@ impl ProviderRegistry {
     ) -> Result<ProviderDetails, RegistryError> {
         let provider = self.provider_for(entry).await;
         let (auth, runtime) = self.health(entry, &provider).await;
+        let cli_name = self.cli(entry).map(|cli| cli.name.to_owned());
         let provider = match provider {
             Ok(provider) => provider,
             // An entry without its key has no provider to ask,
@@ -104,7 +105,7 @@ impl ProviderRegistry {
                     active: None,
                     quota: None,
                     quota_capability: QuotaCapability::None {},
-                    cli_package: None,
+                    cli_name,
                 });
             }
             Err(error) => return Err(error),
@@ -143,7 +144,7 @@ impl ProviderRegistry {
             active,
             quota,
             quota_capability,
-            cli_package: provider.capabilities().cli_package.map(str::to_owned),
+            cli_name,
         };
         Ok(if disclose {
             details

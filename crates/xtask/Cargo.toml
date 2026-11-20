@@ -17,7 +17,7 @@ jush-command-package-mobile-protocol = { path = "../plugin-mobile/protocol" }
 jush-live-view-protocol = { path = "../live-view-protocol" }
 jush-command-package-file-protocol = { path = "../plugin-file/protocol" }
 jush-command-package-fetch-protocol = { path = "../plugin-web/protocol" }
-jush-command-package-claude-code-protocol = { path = "../command-package-claude-code-protocol" }
+jush-command-package-subscription-cli-protocol = { path = "../command-package-subscription-cli-protocol" }
 # `testing` for `built_program`: `xtask dev` starts the programs the
 # workspace built beside it.
 jush-command-protocol = { path = "../command-protocol", features = ["testing"] }

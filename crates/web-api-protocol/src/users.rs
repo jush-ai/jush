@@ -39,7 +39,7 @@ pub struct CloudStorage {
 
 impl CloudStorage {
     /// An account's until an administrator changes it, and always the
-    /// Claude Code machine's.
+    /// Subscriptions machine's.
     pub const DEFAULT: Self = Self {
         system_gb: 16,
         home_gb: 16,

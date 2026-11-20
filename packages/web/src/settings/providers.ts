@@ -78,7 +78,7 @@ export const useProviderSettings = defineStore('provider-settings', () => {
       }
     >
   >({})
-  /** The newest version of each process provider's CLI, as last read (`crates/backend-user-shard/src/conversation/claude_cli.rs`). */
+  /** The newest version of each process provider's CLI, as last read (`crates/backend-user-shard/src/conversation/subscription_cli.rs`). */
   const newestClis = ref<Record<string, SettingsProviderCli['newest']>>({})
   /**
    * Process provider `providerId`'s CLI: its newest version once read, and
@@ -108,7 +108,7 @@ export const useProviderSettings = defineStore('provider-settings', () => {
     ).map((provider) => ({
       ...provider,
       ...testResults.value[provider.id],
-      ...(provider.cliPackage === null ? {} : { cli: cliOf(provider.id) }),
+      ...(provider.cliName === null ? {} : { cli: cliOf(provider.id) }),
       ...edits.value[provider.id],
     }))
     // The signed-in subscriptions in the user's order, which generated
@@ -226,7 +226,7 @@ export const useProviderSettings = defineStore('provider-settings', () => {
       kind,
       providerType: id,
       // Not configured, the entry has no provider to name a CLI.
-      cliPackage: null,
+      cliName: null,
       configured: false,
       keyConfigured: false,
       vendorId: null,

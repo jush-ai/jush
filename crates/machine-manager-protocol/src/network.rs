@@ -18,7 +18,7 @@ use std::{fmt, net::Ipv4Addr, str::FromStr};
 use ipnet::Ipv4Net;
 use serde::{Deserialize, Serialize};
 
-/// What Clouds reach; the Claude Code machine reaches the internet whatever
+/// What Clouds reach; the Subscriptions machine reaches the internet whatever
 /// they are.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]

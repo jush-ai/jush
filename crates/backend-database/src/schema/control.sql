@@ -198,9 +198,9 @@ CREATE TABLE devices (
   -- for a Cloud.
   mark_number INTEGER CHECK (mark_number > 0),
   -- Which managed machine a managed device is: the user's Cloud, or the
-  -- Claude Code machine, which only the instance's master holds
-  -- (managed-hosts.md § The Claude Code machine); none for a paired device.
-  machine      TEXT CHECK (machine IN ('cloud', 'claude_code')),
+  -- Subscriptions machine, which only the instance's master holds
+  -- (managed-hosts.md § The Subscriptions machine); none for a paired device.
+  machine      TEXT CHECK (machine IN ('cloud', 'subscriptions')),
   -- The home its runner last reported (sessions-and-targets.md § Resolve a
   -- target); none before its runner first reported one since the release
   -- that began keeping it.

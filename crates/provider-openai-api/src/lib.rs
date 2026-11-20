@@ -22,7 +22,7 @@ pub use audio::compatible_audio;
 use std::sync::Arc;
 
 use jush_provider_common::{
-    Capabilities, InferenceRequest, OfferedModel, Provider, ProviderHttp, ProviderRun, ProviderRuntime,
+    InferenceRequest, OfferedModel, Provider, ProviderHttp, ProviderRun, ProviderRuntime,
     ModelWires, RequestLimits, ToolResultKinds, RuntimeEnv, RuntimeError, Secret, endpoint_url, read_http_failure,
     audio::AudioMaker,
     images::ImageMaker,
@@ -180,10 +180,6 @@ impl OpenAiProvider {
 }
 
 impl Provider for OpenAiProvider {
-    fn capabilities(&self) -> Capabilities {
-        Capabilities::default()
-    }
-
     /// Whether the vendor accepts the entry's key, or its lack of one,
     /// shows on the first request.
     fn auth_status(&self) -> BoxFuture<'_, AuthState> {

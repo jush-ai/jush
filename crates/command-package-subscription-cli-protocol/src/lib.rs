@@ -1,8 +1,13 @@
-//! The `jush.claude-code` package's contract
-//! (`crates/command-package-claude-code/src/lib.rs`):
+//! The `jush.subscription-cli` package's contract
+//! (`crates/command-package-subscription-cli/src/lib.rs`):
 //!
-//! - `claude-code.ensure` installs the Claude Code CLI a release record names.
-//! - `claude-code.status` lists the installations.
+//! - `subscription-cli.ensure` installs the version of a subscription's CLI,
+//!   such as Claude Code, that a release record names.
+//! - `subscription-cli.status` lists a CLI's installations.
+//!
+//! A CLI is named by its name, such as `Claude Code`, which names its line in
+//! the runner's cache and the package's messages. The package knows no CLI:
+//! the backend reads each vendor's releases into the record.
 //!
 //! Each writes one JSON document to stdout, a failure included, because a
 //! resident stream carries only stdout.
@@ -17,14 +22,14 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer, de::DeserializeOwn
 use serde_json::Value;
 
 /// The package's id in the native catalog.
-pub const PACKAGE: &str = "jush.claude-code";
+pub const PACKAGE: &str = "jush.subscription-cli";
 
 /// The package's operations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Operation {
-    /// `claude-code.ensure`: installs the version a release record names.
+    /// `subscription-cli.ensure`: installs the version a release record names.
     Ensure,
-    /// `claude-code.status`: lists the installed versions.
+    /// `subscription-cli.status`: lists the installed versions.
     Status,
 }
 
@@ -32,11 +37,11 @@ impl Operation {
     /// Every operation, in the order the descriptor lists them.
     pub const ALL: [Operation; 2] = [Self::Ensure, Self::Status];
 
-    /// The operation's name, such as `claude-code.ensure`.
+    /// The operation's name, such as `subscription-cli.ensure`.
     pub fn name(self) -> &'static str {
         match self {
-            Self::Ensure => "claude-code.ensure",
-            Self::Status => "claude-code.status",
+            Self::Ensure => "subscription-cli.ensure",
+            Self::Status => "subscription-cli.status",
         }
     }
 
@@ -86,12 +91,16 @@ fn cli_version(value: &str, _: &()) -> garde::Result {
     Ok(())
 }
 
-/// What `claude-code.ensure` reads from stdin: one CLI version and its official
-/// executable for each platform key. Every entry is checked, not only this
-/// machine's.
+/// What `subscription-cli.ensure` reads from stdin: the CLI, one version of
+/// it and its official executable for each platform key. Every entry is
+/// checked, not only this machine's.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, garde::Validate)]
 #[serde(deny_unknown_fields)]
 pub struct Release {
+    /// The CLI's name, such as `Claude Code`; at most 100 bytes, as the
+    /// runner takes a line's name.
+    #[garde(length(min = 1, max = 100))]
+    pub cli: String,
     #[garde(custom(cli_version))]
     pub version: String,
     #[garde(dive)]
@@ -128,8 +137,26 @@ pub struct Installed {
     pub path: PathBuf,
 }
 
-/// What `claude-code.status` answers: this machine's platform key and the
-/// versions the runner has, the newest install first.
+/// What `subscription-cli.status` reads from stdin: the CLI whose
+/// installations it lists, by its name.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, garde::Validate)]
+#[serde(deny_unknown_fields)]
+pub struct StatusRequest {
+    #[garde(length(min = 1, max = 100))]
+    pub cli: String,
+}
+
+impl StatusRequest {
+    /// Decodes a status request.
+    pub fn parse(bytes: &[u8]) -> Result<Self, DecodeError> {
+        let request: Self = serde_json::from_slice(bytes)?;
+        garde::Validate::validate(&request)?;
+        Ok(request)
+    }
+}
+
+/// What `subscription-cli.status` answers: this machine's platform key and the
+/// versions of the CLI the runner has, the newest install first.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Status {
@@ -142,6 +169,7 @@ pub struct Status {
 #[serde(rename_all = "snake_case")]
 pub enum ErrorCode {
     InvalidRelease,
+    InvalidRequest,
     UnsupportedPlatform,
     InstallFailed,
 }

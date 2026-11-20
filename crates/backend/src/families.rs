@@ -4,6 +4,7 @@
 //! They are the registry the backend starts with, beside which a test registers
 //! scripted families.
 
+use std::rc::Rc;
 use std::sync::{Arc, OnceLock};
 
 use jush_provider_registry::registry::MEDIA_FAMILY;
@@ -12,13 +13,14 @@ use jush_provider_registry::families::{
     ProviderFamily,
 };
 use jush_provider_anthropic_api::{AnthropicConfig, AnthropicProvider};
-use jush_backend_user_shard::conversation::claude_cli::MachineSlot;
-use jush_provider_claude_code::{AccountMachine, ClaudeCodeConfig, ClaudeCodeProvider};
+use jush_backend_user_shard::conversation::subscription_cli::MachineSlot;
+use jush_provider_claude_code::{ClaudeCodeConfig, ClaudeCodeProvider, MachineState};
+use jush_provider_subscription_cli::{AccountMachine, Cli, Placement};
 use jush_provider_codex::{CodexConfig, CodexProvider, CodexReleases};
 use jush_provider_common::credentials::SubscriptionAccounts;
 use jush_provider_common::quota::{MemorySnapshots, QuotaSnapshotStore};
 use jush_provider_common::media::MediaVendor;
-use jush_provider_common::{Provider, Searches};
+use jush_provider_common::{Provider, ProviderRuntime, Searches};
 use jush_provider_bytedance::{Ark, ArkConfig, ArkProvider, Speech, SpeechConfig, SpeechProvider};
 use jush_provider_elevenlabs::{ElevenLabsConfig, ElevenLabsProvider};
 use jush_provider_google::{GoogleConfig, GoogleProvider};
@@ -31,15 +33,15 @@ use jush_backend_runners::public_url::PublicUrl;
 use jush_shared_types::{AudioShape, CacheTtl, ImageShape, VideoShape, WireApi};
 use jush_web_api_protocol::providers::CredentialKind;
 
-/// The families built into the backend, whose Claude Code family reads its
-/// machine from `machine`.
+/// The families built into the backend, whose CLI families read their machine
+/// from `machine`.
 pub fn builtin(machine: MachineSlot) -> FamilyRegistry {
     FamilyRegistry::default()
         .with_compatible_audio(Arc::new(|args: CompatibleAudioArgs| {
             jush_provider_openai_api::compatible_audio(args.name, args.key, &args.base, args.models, args.clock)
         }))
         .with("anthropic", AnthropicFamily)
-        .with("claude-code", ClaudeCodeFamily { machine })
+        .with("claude-code", ClaudeCodeFamily::new(machine))
         .with("codex", CodexFamily::default())
         .with("google", GoogleFamily)
         .with("grok-build", GrokBuildFamily::new())
@@ -479,14 +481,24 @@ impl ProviderFamily for GrokBuildFamily {
 }
 
 /// The `claude-code` family: Claude accounts signed in by the Claude Code
-/// CLI's own login, whose requests run the CLI on the Claude Code machine.
+/// CLI's own login, whose requests run the CLI on the Subscriptions machine.
 pub struct ClaudeCodeFamily {
     /// The machine a sign-in and a usage probe run on, once the backend's
     /// shards started; a session's processes reach it through their shard.
     machine: MachineSlot,
+    /// What the family keeps of the machine, which every provider it builds
+    /// shares.
+    state: Arc<MachineState>,
 }
 
 impl ClaudeCodeFamily {
+    fn new(machine: MachineSlot) -> Self {
+        Self {
+            machine,
+            state: Arc::default(),
+        }
+    }
+
     /// The machine, once the backend's shards started.
     fn machine(&self) -> Option<Arc<dyn AccountMachine>> {
         self.machine.get().map(|machine| Arc::new(machine) as Arc<dyn AccountMachine>)
@@ -497,7 +509,13 @@ impl ClaudeCodeFamily {
             return Err(FamilyError::WrongCredential);
         };
         let (account, quota) = bound(subscription.account);
-        let mut config = ClaudeCodeConfig::new(args.entry_id, args.label, account, self.machine());
+        let mut config = ClaudeCodeConfig::new(
+            args.entry_id,
+            args.label,
+            account,
+            self.machine(),
+            self.state.clone(),
+        );
         config.searches = args.searches;
         Ok(ClaudeCodeProvider::new(
             config,
@@ -522,9 +540,23 @@ impl ProviderFamily for ClaudeCodeFamily {
         Ok(Arc::new(self.build(args)?))
     }
 
-    /// The CLI makes the requests, on the Claude Code machine.
+    /// The CLI makes the requests, on the Subscriptions machine.
     fn connects_through(&self) -> bool {
         false
+    }
+
+    fn cli(&self) -> Option<&'static Cli> {
+        Some(&jush_provider_claude_code::CLI)
+    }
+
+    fn process_runtime(
+        &self,
+        provider: Arc<dyn Provider>,
+        placement: Rc<dyn Placement>,
+    ) -> Option<Box<dyn ProviderRuntime>> {
+        let provider: Arc<dyn std::any::Any + Send + Sync> = provider;
+        let provider = provider.downcast::<ClaudeCodeProvider>().ok()?;
+        Some(provider.process_runtime(placement))
     }
 
     fn login_accounts(

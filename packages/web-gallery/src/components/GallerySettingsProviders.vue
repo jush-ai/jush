@@ -399,7 +399,7 @@ const CLI_STEP_BYTES = 10_485_760
 /** The specimen's CLI installs under way, which end when the page goes. */
 const cliInstalls = new Set<number>()
 
-/** Installing while Claude Code’s machine wakes, then downloading with its sizes, then installed; Install works until the request is taken. */
+/** Installing while the Subscriptions machine wakes, then downloading with its sizes, then installed; Install works until the request is taken. */
 async function installCli(p: SettingsProviderEntry) {
   const cli = p.cli
   if (!cli || cli.install?.state === 'installing') {
@@ -529,7 +529,7 @@ function beginLogin(p: SettingsProviderEntry) {
     provider: p,
     phase: { kind: 'starting', stage: 'preparing' },
   }
-  // As the product's: a Claude sign-in waits for Claude Code's machine and the command-line tool's start first.
+  // As the product's: a Claude sign-in waits for the Subscriptions machine and the command-line tool's start first.
   const stages: ProviderLoginStage[] = mock.family === 'claude-code' ? ['waiting_for_machine', 'starting'] : []
   const next = () => {
     if (!login.value) {

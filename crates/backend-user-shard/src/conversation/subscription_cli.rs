@@ -1,25 +1,23 @@
-//! Jush's Claude Code CLI on the Claude Code machine
-//! (`crates/command-package-claude-code/src/lib.rs`,
-//! `crates/provider-claude-code/src/placement.rs`,
-//! `crates/provider-claude-code/src/account.rs`;
+//! Jush's copies of the subscriptions' CLIs, such as Claude Code's, on the
+//! Subscriptions machine (`crates/command-package-subscription-cli/src/lib.rs`,
+//! `crates/provider-subscription-cli/src/placement.rs`;
 //! `crates/backend-cloud/src/lib.rs`).
 //!
 //! The module covers:
 //!
-//! - the versions the machine has and the install of the vendor's newest,
-//!   through the `jush.claude-code` package;
+//! - the versions of each CLI the machine has and the install of the vendor's
+//!   newest, through the `jush.subscription-cli` package;
 //! - the placement that starts a provider's process there, in its account's
-//!   directory with a directory of its own for its session, or a sign-in's new
-//!   directory;
+//!   directory with a directory of its own, or a sign-in's new directory;
 //! - the machine as every user's sign-in and usage probe reach it;
 //! - the installs no conversation asked for, whose outcome the settings page
 //!   shows.
 //!
 //! # Installed versions
 //!
-//! What each machine has installed is kept per runner connection, and a process
-//! start asks the machine nothing: the root's process and three subagents'
-//! starting on a laptop ask its runner once in all.
+//! What each machine has installed of each CLI is kept per runner connection,
+//! and a process start asks the machine nothing: the root's process and three
+//! subagents' starting on a laptop ask its runner once in all.
 //!
 //! - Showing a version is never a reason to wake a machine.
 //! - A newer version does not interrupt work: a machine with a usable version
@@ -38,7 +36,6 @@
 //! Each run, sign-in and probe holds a lease of the machine for its whole life,
 //! which keeps it awake and wakes it.
 
-use std::any::Any;
 use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
 use std::fmt;
@@ -51,7 +48,6 @@ use jush_backend_cloud::access::MachineAccess;
 use jush_backend_database::control::ControlService;
 use jush_backend_page_sync::Part;
 use jush_plugin_host::Lost;
-use jush_provider_claude_code::releases::ReleaseError;
 use jush_provider_common::ProviderRuntime;
 use jush_provider_registry::entry::ProviderEntry;
 use jush_provider_registry::registry::ProviderRegistry;
@@ -60,8 +56,8 @@ use jush_runner_client::{
     AttachedArtifact, Link, RemoteDevice, ResidentCallError, ResidentRequest, WeakLink,
 };
 use jush_backend_runners::command_context::{command_context, provider_context};
-use jush_command_package_claude_code_protocol::{
-    Installed, Operation, PACKAGE, Release, Reply, Status,
+use jush_command_package_subscription_cli_protocol::{
+    Installed, Operation, PACKAGE, Release, Reply, Status, StatusRequest,
 };
 use jush_command_protocol::{
     ArtifactLocation, ArtifactUrl, CommandCaller, CommandContext, PackageArtifact,
@@ -71,10 +67,10 @@ use jush_device_interface::{
     ProcessEnd, ProcessOutput, RmOptions, Signal, SpawnError, SpawnErrorKind, WhenExists,
     WriteOptions,
 };
-use jush_provider_claude_code::{
-    AccountMachine, AccountWork, ClaudeCodeProvider, CliSite, CliStart, CliStarter, CliSystem, CliWork, ConfigDir,
-    IdleProcesses, MachineState, Placed, Placement, StartError, StartStage, StartSteps, WorkLease,
-    close_process,
+use jush_provider_subscription_cli::{
+    AccountMachine, AccountWork, Cli, CliReleases, CliSite, CliStart, CliStarter, CliSystem, CliWork,
+    ConfigDir, IdleProcesses, Placed, Placement, ReleaseError, StartError, StartStage, StartSteps,
+    WorkLease, close_process,
 };
 use jush_web_api_protocol::ids::{ConversationId, DeviceId, ProviderId, UserId};
 use jush_runner_protocol::wire::DeviceDownload;
@@ -96,39 +92,60 @@ use crate::shard::{Shard, Shards};
 /// Bounded because the answer is read into memory from a package's process.
 const MAX_ANSWER_BYTES: usize = 1024 * 1024;
 
-/// Why the machine has no usable CLI, with the version that was wanted.
+/// Why the machine has no usable copy of the CLI `cli`, with the version that
+/// was wanted.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct CliError {
+    cli: &'static str,
     version: Option<String>,
     reason: String,
 }
 
-impl fmt::Display for CliError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match &self.version {
-            Some(version) => write!(
-                f,
-                "Claude Code {version} could not be installed: {}",
-                self.reason
-            ),
-            None => write!(f, "Claude Code could not be installed: {}", self.reason),
-        }
-    }
-}
-
-impl std::error::Error for CliError {}
-
-impl From<ReleaseError> for CliError {
-    fn from(error: ReleaseError) -> Self {
+impl CliError {
+    /// The newest release of `cli` could not be read.
+    fn unread(cli: &'static Cli, error: ReleaseError) -> Self {
         Self {
+            cli: cli.name,
             version: None,
             reason: error.to_string(),
         }
     }
 }
 
-/// What a provider's process is for (`crates/provider-claude-code/src/placement.rs`); it
-/// names the command context the package's operations run under.
+impl fmt::Display for CliError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let cli = self.cli;
+        match &self.version {
+            Some(version) => write!(f, "{cli} {version} could not be installed: {}", self.reason),
+            None => write!(f, "{cli} could not be installed: {}", self.reason),
+        }
+    }
+}
+
+impl std::error::Error for CliError {}
+
+/// Each subscription's CLI the backend follows the releases of, by the CLI's
+/// name.
+#[derive(Default)]
+pub struct CliReleaseReaders(HashMap<&'static str, Arc<dyn CliReleases>>);
+
+impl CliReleaseReaders {
+    /// The readers with `cli`'s releases read by `releases`.
+    pub fn with(mut self, cli: &'static Cli, releases: Arc<dyn CliReleases>) -> Self {
+        self.0.insert(cli.name, releases);
+        self
+    }
+
+    /// The reader of `cli`'s releases; none for a CLI the backend reads none
+    /// of.
+    pub fn of(&self, cli: &Cli) -> Option<&Arc<dyn CliReleases>> {
+        self.0.get(cli.name)
+    }
+}
+
+/// What a provider's process is for
+/// (`crates/provider-subscription-cli/src/placement.rs`); it names the command
+/// context the package's operations run under.
 #[derive(Debug, Clone)]
 pub(crate) enum ProcessWork {
     /// A request of the conversation.
@@ -138,40 +155,45 @@ pub(crate) enum ProcessWork {
     Account(ProviderId),
 }
 
-/// The machine the CLI is wanted on: its device, a handle to it, its home,
-/// and the context the package's operations run under.
+/// The machine the CLI `cli` is wanted on: its device, a handle to it, its
+/// home, and the context the package's operations run under.
 #[derive(Clone)]
 struct CliTarget {
+    cli: &'static Cli,
     device: DeviceId,
     remote: RemoteDevice,
     home: String,
     context: CommandContext,
 }
 
-/// The Claude Code machine as every shard reaches it: through the shard of
+impl CliTarget {
+    /// What the backend keeps the target's versions by.
+    fn key(&self) -> VersionsKey {
+        (self.device.clone(), self.cli.name)
+    }
+}
+
+/// The Subscriptions machine as every shard reaches it: through the shard of
 /// the instance's master, which holds it
 /// (`crates/backend-cloud/src/lib.rs`). It serves a sign-in and a usage
 /// probe from any thread.
 #[derive(Clone)]
-pub struct ClaudeMachine {
+pub struct SubscriptionsMachine {
     shards: Shards,
     control: ControlService,
     /// The master, read once: an instance's master never changes.
     master: Arc<tokio::sync::OnceCell<UserId>>,
     /// The machine's idle processes, of every user's runtimes.
     idle: Arc<IdleProcesses>,
-    /// What the provider keeps of the machine.
-    state: Arc<MachineState>,
 }
 
-impl ClaudeMachine {
+impl SubscriptionsMachine {
     pub fn new(shards: Shards, control: ControlService) -> Self {
         Self {
             shards,
             control,
             master: Arc::default(),
             idle: Arc::default(),
-            state: Arc::default(),
         }
     }
 
@@ -211,31 +233,32 @@ impl ClaudeMachine {
     }
 }
 
-/// Where the Claude Code machine is once the master's shard has started,
-/// which every shard and the Claude Code family read; empty before then,
+/// Where the Subscriptions machine is once the master's shard has started,
+/// which every shard and every CLI's family read; empty before then,
 /// and in a backend without shards. Its clones share it.
 #[derive(Clone, Default)]
-pub struct MachineSlot(Arc<std::sync::OnceLock<ClaudeMachine>>);
+pub struct MachineSlot(Arc<std::sync::OnceLock<SubscriptionsMachine>>);
 
 impl MachineSlot {
     /// Puts `machine` there, once: a second is refused and the first kept,
     /// which the answer says.
-    pub(crate) fn set(&self, machine: ClaudeMachine) -> bool {
+    pub(crate) fn set(&self, machine: SubscriptionsMachine) -> bool {
         self.0.set(machine).is_ok()
     }
 
     /// The machine; none before the master's shard has started.
-    pub fn get(&self) -> Option<ClaudeMachine> {
+    pub fn get(&self) -> Option<SubscriptionsMachine> {
         self.0.get().cloned()
     }
 }
 
-impl AccountMachine for ClaudeMachine {
-    fn state(&self) -> &MachineState {
-        &self.state
-    }
-
-    fn run(&self, entry: String, work: AccountWork) -> BoxFuture<'static, Result<(), StartError>> {
+impl AccountMachine for SubscriptionsMachine {
+    fn run(
+        &self,
+        cli: &'static Cli,
+        entry: String,
+        work: AccountWork,
+    ) -> BoxFuture<'static, Result<(), StartError>> {
         let machine = self.clone();
         Box::pin(async move {
             let entry = ProviderId::try_from(entry).map_err(|error| StartError(error.to_string()))?;
@@ -245,11 +268,11 @@ impl AccountMachine for ClaudeMachine {
                     let context = match provider_context(control, shard.user(), &entry).await {
                         Ok(context) => context,
                         Err(error) => {
-                            tracing::warn!(event = "claude_code.command_context_missing", account = %entry, %error, "Claude Code account work found no command context");
+                            tracing::warn!(event = "subscription_cli.command_context_missing", account = %entry, cli = cli.name, %error, "account work of a CLI found no command context");
                             return;
                         }
                     };
-                    let placement = MachinePlacement::placement(Rc::downgrade(&shard), context);
+                    let placement = MachinePlacement::placement(Rc::downgrade(&shard), context, cli);
                     work(placement, abandoned).await;
                 })
                 .await
@@ -263,10 +286,10 @@ impl AccountMachine for ClaudeMachine {
                 .on_machine(move |shard, _| async move {
                     let access = shard
                         .cloud_shard()
-                        .claude_code_access()
+                        .subscriptions_access()
                         .await
                         .map_err(|error| StartError(error.to_string()))?;
-                    let gates = shard.claude_cli().gates.clone();
+                    let gates = shard.subscription_cli().gates.clone();
                     gates.remove(&access, &account).await
                 })
                 .await?
@@ -276,22 +299,24 @@ impl AccountMachine for ClaudeMachine {
 
 /// The placement of a provider's process for a user's conversation or
 /// entry: every start crosses once to the master's shard, which starts the
-/// process on the Claude Code machine and relays it back as `Send` pipe
+/// process on the Subscriptions machine and relays it back as `Send` pipe
 /// ends.
 pub(crate) struct CrossPlacement {
     shard: Weak<Shard>,
     work: ProcessWork,
-    machine: ClaudeMachine,
+    cli: &'static Cli,
+    machine: SubscriptionsMachine,
 }
 
 impl CrossPlacement {
-    /// The placement a provider's process of `work` starts with.
-    pub fn placement(shard: Weak<Shard>, work: ProcessWork) -> Rc<dyn Placement> {
+    /// The placement a process of `cli` for `work` starts with.
+    fn placement(shard: Weak<Shard>, work: ProcessWork, cli: &'static Cli) -> Rc<dyn Placement> {
         // A shard that is gone starts nothing.
-        match shard.upgrade().and_then(|shard| shard.claude_machine()) {
+        match shard.upgrade().and_then(|shard| shard.subscriptions_machine()) {
             Some(machine) => Rc::new(Self {
                 shard,
                 work,
+                cli,
                 machine,
             }),
             None => Rc::new(Unplaced),
@@ -299,9 +324,9 @@ impl CrossPlacement {
     }
 
     /// A session's runtime of `entry`'s provider for `account`, whose CLI
-    /// processes of `work` start through the placement: a provider of its own
-    /// (`ProviderRegistry::own_provider`), which only Claude Code's is of those
-    /// whose CLI runs as a process.
+    /// processes of `work` start through the placement: a provider of its own,
+    /// which its family builds the runtime of
+    /// (`ProviderRegistry::process_runtime`).
     pub async fn runtime(
         shard: Weak<Shard>,
         registry: &ProviderRegistry,
@@ -309,11 +334,13 @@ impl CrossPlacement {
         account: Option<&CredentialId>,
         work: ProcessWork,
     ) -> Result<Box<dyn ProviderRuntime>, String> {
-        let provider: Arc<dyn Any + Send + Sync> = registry.own_provider(entry, account).await.map_err(|error| error.to_string())?;
-        let provider = provider
-            .downcast::<ClaudeCodeProvider>()
-            .map_err(|_| format!("The provider family {} runs no process Jush places", entry.family))?;
-        Ok(provider.process_runtime(Self::placement(shard, work)))
+        let cli = registry
+            .cli(entry)
+            .ok_or_else(|| format!("The provider family {} runs no process Jush places", entry.family))?;
+        registry
+            .process_runtime(entry, account, Self::placement(shard, work, cli))
+            .await
+            .map_err(|error| error.to_string())
     }
 
     /// The command context the package's operations run under for the work.
@@ -344,8 +371,9 @@ impl Placement for CrossPlacement {
             let context = self.context(&shard).await?;
             drop(shard);
             let (staged, mut reached) = mpsc::unbounded_channel();
+            let cli = self.cli;
             let started = self.machine.on_machine(move |shard, abandoned| async move {
-                let placement = MachinePlacement::new(Rc::downgrade(&shard), context);
+                let placement = MachinePlacement::new(Rc::downgrade(&shard), context, cli);
                 let stages = move |stage| {
                     // A start nobody waits for reports to nobody.
                     let _ = staged.send(stage);
@@ -391,7 +419,7 @@ impl Placement for CrossPlacement {
                     })
                     .await;
                 if let Err(error) = held {
-                    tracing::warn!(event = "claude_code_machine.hold_failed", step = "work", %error, "the Claude Code machine was not held for work");
+                    tracing::warn!(event = "subscriptions_machine.hold_failed", step = "work", %error, "the Subscriptions machine was not held for work");
                 }
             });
         }
@@ -403,7 +431,7 @@ impl Placement for CrossPlacement {
     }
 }
 
-/// The placement of a shard that has no Claude Code machine to reach, as in
+/// The placement of a shard that has no Subscriptions machine to reach, as in
 /// a backend that has no shards: every start fails.
 struct Unplaced;
 
@@ -414,7 +442,7 @@ impl Placement for Unplaced {
         _: CliStarter,
         _: &'a dyn Fn(StartStage),
     ) -> LocalBoxFuture<'a, Result<Placed, StartError>> {
-        Box::pin(async { Err(StartError("The Claude Code machine is not available".into())) })
+        Box::pin(async { Err(StartError("The Subscriptions machine is not available".into())) })
     }
 
     fn work(&self) -> WorkLease {
@@ -466,7 +494,7 @@ impl Pipes {
             control: Box::new(RelayedControl(control)),
             exit: async move {
                 exit.await.unwrap_or_else(|_| {
-                    ProcessEnd::Lost("the Claude Code machine's relay of the process ended".into())
+                    ProcessEnd::Lost("the Subscriptions machine's relay of the process ended".into())
                 })
             }
             .boxed_local(),
@@ -603,9 +631,8 @@ fn relay(shard: &Shard, placed: Placed, hold: Option<AccountHold>) -> Relayed {
     }
 }
 
-/// The accounts whose processes run on the Claude Code machine, each with its
-/// gate, which the master's shard keeps
-/// (`crates/provider-claude-code/src/account.rs`).
+/// The accounts whose processes run on the Subscriptions machine, of every CLI,
+/// each with its gate, which the master's shard keeps.
 ///
 /// Every process of an account holds its gate shared, from before its directory
 /// is readied until the directory the process made of its own is removed.
@@ -658,20 +685,20 @@ impl AccountGates {
         let shared = match gate.lock.clone().try_read_owned() {
             Ok(shared) => shared,
             Err(_) => {
-                tracing::info!(event = "claude_code_start.waited", account, reason = "account_change", "a start of a Claude Code account waits for a change of the account");
+                tracing::info!(event = "subscription_cli_start.waited", account, reason = "account_change", "a start of an account's process waits for a change of the account");
                 let waited = std::time::Instant::now();
                 let shared = gate.lock.clone().read_owned().await;
                 tracing::info!(
-                    event = "claude_code_start.released",
+                    event = "subscription_cli_start.released",
                     account,
                     waited_ms = u64::try_from(waited.elapsed().as_millis()).unwrap_or(u64::MAX),
-                    "a start of a Claude Code account was released"
+                    "a start of an account's process was released"
                 );
                 shared
             }
         };
         if gate.removed.get() {
-            return Err(StartError("The Claude Code account was removed".into()));
+            return Err(StartError("The account was removed".into()));
         }
         let closing = gate.closing.borrow().clone();
         Ok(AccountHold {
@@ -711,14 +738,14 @@ impl AccountGates {
             force: true,
         };
         access.remote.fs().rm(&directory, options).await.map_err(|error| {
-            StartError(format!("The account's directory could not be deleted on Claude Code's machine: {error}"))
+            StartError(format!("The account's directory could not be deleted on the Subscriptions machine: {error}"))
         })?;
         gate.removed.set(true);
         Ok(())
     }
 }
 
-/// The Claude Code machine as the master's shard starts a process on it, for a
+/// The Subscriptions machine as the master's shard starts a process on it, for a
 /// user's start that crossed there or for a sign-in or a usage probe that runs
 /// there.
 ///
@@ -737,15 +764,17 @@ pub(crate) struct MachinePlacement {
     shard: Weak<Shard>,
     /// The context the package's operations run under.
     context: CommandContext,
+    /// The CLI whose processes it starts.
+    cli: &'static Cli,
 }
 
 impl MachinePlacement {
-    pub(crate) fn new(shard: Weak<Shard>, context: CommandContext) -> Self {
-        Self { shard, context }
+    pub(crate) fn new(shard: Weak<Shard>, context: CommandContext, cli: &'static Cli) -> Self {
+        Self { shard, context, cli }
     }
 
-    pub(crate) fn placement(shard: Weak<Shard>, context: CommandContext) -> Rc<dyn Placement> {
-        Rc::new(Self::new(shard, context))
+    pub(crate) fn placement(shard: Weak<Shard>, context: CommandContext, cli: &'static Cli) -> Rc<dyn Placement> {
+        Rc::new(Self::new(shard, context, cli))
     }
 
     /// A hold of the machine for work starting now, which wakes it when it
@@ -755,7 +784,7 @@ impl MachinePlacement {
         let holder = shard.clone();
         shard.tasks().spawn_local(async move {
             let admitted = tokio::select! {
-                admitted = holder.cloud_shard().claude_code_access() => admitted,
+                admitted = holder.cloud_shard().subscriptions_access() => admitted,
                 _ = &mut released => return,
             };
             match admitted {
@@ -765,7 +794,7 @@ impl MachinePlacement {
                     let _ = released.await;
                 }
                 Err(error) => {
-                    tracing::warn!(event = "claude_code_machine.hold_failed", step = "access", %error, "the Claude Code machine could not be held for work")
+                    tracing::warn!(event = "subscriptions_machine.hold_failed", step = "access", %error, "the Subscriptions machine could not be held for work")
                 }
             }
         });
@@ -790,8 +819,8 @@ impl MachinePlacement {
                 .upgrade()
                 .ok_or_else(|| StartError("The backend is shutting down".into()))?;
             stages(StartStage::Machine);
-            // Each step's time, which the run's span carries
-            // (`crates/provider-claude-code/src/prepared.rs`).
+            let cli = self.cli.name;
+            // Each step's time, which the run's span carries.
             let mut steps = StartSteps::default();
             let mut step = Instant::now();
             let mut lap = |into: &mut Duration| {
@@ -801,19 +830,19 @@ impl MachinePlacement {
             };
             let access = shard
                 .cloud_shard()
-                .claude_code_access()
+                .subscriptions_access()
                 .await
                 .map_err(|error| StartError(error.to_string()))?;
             lap(&mut steps.admit);
             let executable = shard
-                .cli_executable_at(&access, &self.context, stages)
+                .cli_executable_at(&access, &self.context, self.cli, stages)
                 .await
                 .map_err(StartError)?;
             lap(&mut steps.executable);
             stages(StartStage::Process);
             let fs = access.remote.fs();
             let made = |what: &str, error: DeviceError| {
-                StartError(format!("Claude Code's {what} could not be made on its machine: {error}"))
+                StartError(format!("{cli}'s {what} could not be made on its machine: {error}"))
             };
             let run_dir = format!("{}/run", access.home);
             fs.mkdir(&run_dir, MkdirOptions { recursive: true })
@@ -831,7 +860,7 @@ impl MachinePlacement {
                     // A change of the account under way or waiting goes
                     // first; this start then finds its directory as the
                     // change left it.
-                    let gates = shard.claude_cli().gates.clone();
+                    let gates = shard.subscription_cli().gates.clone();
                     let hold = gates.hold(&account).await?;
                     fs.mkdir(&account_dir, MkdirOptions { recursive: true })
                         .await
@@ -845,7 +874,7 @@ impl MachinePlacement {
                             .map_err(|error| made("handed-over sign-in", error))?;
                     }
                     let name = uuid::Uuid::new_v4().simple().to_string();
-                    let path = format!("{account_dir}/projects/{name}");
+                    let path = format!("{account_dir}/{}/{name}", self.cli.process_parent);
                     fs.mkdir(&path, MkdirOptions { recursive: true })
                         .await
                         .map_err(|error| made("process's directory", error))?;
@@ -867,12 +896,12 @@ impl MachinePlacement {
             lap(&mut steps.directories);
             let system = shard.cli_system(&access, &run_dir).await.map_err(|error| {
                 StartError(format!(
-                    "The Claude Code machine could not be asked what it tells Claude Code of itself: {error}"
+                    "The Subscriptions machine could not be asked what it tells {cli} of itself: {error}"
                 ))
             })?;
             lap(&mut steps.system);
             // The machine keeps as many idle processes as its memory holds.
-            if let (Some(machine), Some(link)) = (shard.claude_machine(), shard.devices().link(&access.device.id)) {
+            if let (Some(machine), Some(link)) = (shard.subscriptions_machine(), shard.devices().link(&access.device.id)) {
                 machine.idle().hold_memory(link.memory());
             }
             let site = CliSite {
@@ -888,7 +917,7 @@ impl MachinePlacement {
             steps.file_bytes = files.iter().map(|(_, bytes)| bytes.len() as u64).sum();
             dir.write(files).await.map_err(|error| {
                 StartError(format!(
-                    "Claude Code's session could not be written on its machine: {error}"
+                    "{cli}'s files could not be written on its machine: {error}"
                 ))
             })?;
             lap(&mut steps.files);
@@ -899,14 +928,13 @@ impl MachinePlacement {
                 .await
                 .map_err(|error| {
                     StartError(format!(
-                        "Claude Code could not be started on its machine: {error}"
+                        "{cli} could not be started on its machine: {error}"
                     ))
                 })?;
             lap(&mut steps.spawn);
             // A start that finds the executable it was given gone, as after
             // another runner sharing the cache removed it, drops what is
-            // kept of the machine's versions
-            // (`crates/provider-claude-code/src/releases.rs`).
+            // kept of the machine's versions.
             let kept_by = self.shard.clone();
             let device = access.device.id.clone();
             let exit = process
@@ -921,8 +949,8 @@ impl MachinePlacement {
                     );
                     // A shard that is gone keeps nothing to drop.
                     if let (true, Some(shard)) = (gone, kept_by.upgrade()) {
-                        shard.claude_cli().forget_versions(&device);
-                        tracing::info!(event = "claude_code_versions.dropped", device_id = %device, reason = "executable_gone", "the Claude Code versions kept for the device were dropped");
+                        shard.subscription_cli().forget_versions(&device);
+                        tracing::info!(event = "subscription_cli_versions.dropped", device_id = %device, cli, reason = "executable_gone", "the CLI versions kept for the device were dropped");
                     }
                     end
                 })
@@ -1057,7 +1085,7 @@ async fn hand_over(
     written
 }
 
-/// What a process made of its own on the Claude Code machine: an account's
+/// What a process made of its own on the Subscriptions machine: an account's
 /// process, its directory under the account's, removed once the process
 /// ended; a sign-in, its new directory, removed the same way unless it
 /// becomes an account's.
@@ -1119,7 +1147,7 @@ impl MachineDir {
             // A directory left behind is said here; the next sign-in or
             // process makes its own all the same.
             if let Err(error) = device.fs().rm(&path, options).await {
-                tracing::warn!(event = "claude_code_dir.remove_failed", path, %error, "a Claude Code directory was not removed");
+                tracing::warn!(event = "subscription_cli_dir.remove_failed", path, %error, "a CLI process's directory was not removed");
             }
         })
     }
@@ -1149,7 +1177,7 @@ impl ConfigDir for MachineDir {
             }
             let shutting_down = || DeviceError::new(DeviceErrorKind::Unavailable, "the backend is shutting down");
             let gates = match self.shard.upgrade() {
-                Some(shard) => shard.claude_cli().gates.clone(),
+                Some(shard) => shard.subscription_cli().gates.clone(),
                 None => return Err(shutting_down()),
             };
             // Waiting here for the account's processes gives up with the
@@ -1212,15 +1240,15 @@ impl Drop for MachineDir {
 ///
 /// It keeps:
 ///
-/// - the versions each machine has;
-/// - the versions being installed beside the one in use;
-/// - on the master's shard, what it keeps of the Claude Code machine: the run
+/// - the versions of each CLI each machine has;
+/// - the versions being installed beside the one in use, of each CLI;
+/// - on the master's shard, what it keeps of the Subscriptions machine: the run
 ///   directory's real path there and the gates of the accounts whose processes
 ///   it starts.
 #[derive(Default)]
-pub(crate) struct ClaudeCli {
-    versions: RefCell<HashMap<DeviceId, KeptVersions>>,
-    upgrading: RefCell<HashSet<String>>,
+pub(crate) struct SubscriptionCli {
+    versions: RefCell<HashMap<VersionsKey, KeptVersions>>,
+    upgrading: RefCell<HashSet<(&'static str, String)>>,
     /// The accounts whose processes the master's shard starts, each with
     /// its gate.
     gates: Rc<AccountGates>,
@@ -1229,12 +1257,16 @@ pub(crate) struct ClaudeCli {
     run_dir: RefCell<Option<(WeakLink, String)>>,
 }
 
-/// The versions a machine has, newest install first, as one answer that
-/// every start waiting for it shares.
+/// The versions a machine has of a CLI, newest install first, as one answer
+/// that every start waiting for it shares.
 type Versions = Shared<LocalBoxFuture<'static, Result<Vec<Installed>, CliError>>>;
 
-/// What the backend keeps of the CLI versions a machine has
-/// (`crates/provider-claude-code/src/releases.rs`).
+/// A machine and a CLI, by its name, whose versions the backend keeps.
+type VersionsKey = (DeviceId, &'static str);
+
+/// What the backend keeps of the versions of a CLI a machine has, of which the
+/// backend follows the vendor's newest
+/// (`crates/provider-subscription-cli/src/lib.rs`).
 ///
 /// It is the answer of the runner connection `link`, asked once on it, or what
 /// the backend's own install over it left. A new connection asks again.
@@ -1257,21 +1289,20 @@ impl KeptVersions {
 
 /// A start waiting for an ask of a machine's versions. The last one to
 /// give up before the answer drops the ask, so the next start asks again
-/// rather than wait for an ask nobody waits for
-/// (`crates/provider-claude-code/src/releases.rs`).
+/// rather than wait for an ask nobody waits for.
 struct WaitingForVersions<'a> {
-    cli: &'a ClaudeCli,
-    device: &'a DeviceId,
+    cli: &'a SubscriptionCli,
+    key: VersionsKey,
     versions: Versions,
     waiting: Rc<Cell<usize>>,
 }
 
 impl<'a> WaitingForVersions<'a> {
-    fn new(cli: &'a ClaudeCli, device: &'a DeviceId, versions: Versions, waiting: Rc<Cell<usize>>) -> Self {
+    fn new(cli: &'a SubscriptionCli, key: VersionsKey, versions: Versions, waiting: Rc<Cell<usize>>) -> Self {
         waiting.set(waiting.get() + 1);
         Self {
             cli,
-            device,
+            key,
             versions,
             waiting,
         }
@@ -1286,28 +1317,28 @@ impl Drop for WaitingForVersions<'_> {
         }
         let mut kept = self.cli.versions.borrow_mut();
         if kept
-            .get(self.device)
+            .get(&self.key)
             .is_some_and(|kept| kept.versions.ptr_eq(&self.versions))
         {
             // Dropping the ask cancels its call to the machine.
-            kept.remove(self.device);
-            tracing::info!(event = "claude_code_versions.ask_abandoned", device_id = %self.device, "the ask of the device's Claude Code versions was given up by every start that waited for it");
+            kept.remove(&self.key);
+            let (device, cli) = &self.key;
+            tracing::info!(event = "subscription_cli_versions.ask_abandoned", device_id = %device, cli, "the ask of the device's CLI versions was given up by every start that waited for it");
         }
     }
 }
 
-impl ClaudeCli {
-    /// Drops what is kept of `device`'s versions, for its next start to ask
-    /// again.
+impl SubscriptionCli {
+    /// Drops what is kept of `device`'s versions of every CLI, for its next
+    /// start of each to ask again.
     fn forget_versions(&self, device: &DeviceId) {
-        self.versions.borrow_mut().remove(device);
+        self.versions.borrow_mut().retain(|(kept, _), _| kept != device);
     }
 }
 
 impl Shard {
     /// What the machine `access` holds tells a process in `run_dir` of itself, as
-    /// the CLI reads it to describe its environment
-    /// (`crates/provider-claude-code/src/session.rs`).
+    /// a CLI reads it to describe its environment.
     ///
     /// It gives the kernel and the `SHELL` its runner reported in its hello, and
     /// the directory with its links resolved, once per runner connection. No
@@ -1322,7 +1353,7 @@ impl Shard {
             .ok_or("the machine's runner reported no kernel")?
             .clone();
         let kept = self
-            .claude_cli()
+            .subscription_cli()
             .run_dir
             .borrow()
             .as_ref()
@@ -1337,7 +1368,7 @@ impl Shard {
                     .realpath(run_dir)
                     .await
                     .map_err(|error| error.to_string())?;
-                *self.claude_cli().run_dir.borrow_mut() = Some((link.downgrade(), path.clone()));
+                *self.subscription_cli().run_dir.borrow_mut() = Some((link.downgrade(), path.clone()));
                 path
             }
         };
@@ -1349,15 +1380,17 @@ impl Shard {
         })
     }
 
-    /// The CLI's executable on the machine `access` holds, installed first
+    /// The executable of `cli` on the machine `access` holds, installed first
     /// when the machine has none, which it reports to `stages`.
     async fn cli_executable_at(
         &self,
         access: &MachineAccess,
         context: &CommandContext,
+        cli: &'static Cli,
         stages: &dyn Fn(StartStage),
     ) -> Result<String, String> {
         let target = CliTarget {
+            cli,
             device: access.device.id.clone(),
             remote: access.remote.clone(),
             home: access.home.clone(),
@@ -1368,10 +1401,9 @@ impl Shard {
             .map_err(|error| error.to_string())
     }
 
-    /// The executable to start on `target`
-    /// (`crates/provider-claude-code/src/releases.rs`): the wanted
-    /// version when the machine has it, else the newest it has while the wanted
-    /// one installs beside it.
+    /// The executable to start on `target`: the wanted version when the
+    /// machine has it, else the newest it has while the wanted one installs
+    /// beside it.
     ///
     /// A machine with a version never waits for the release pointer: without a
     /// believed answer it starts its newest, and the pointer is read in the
@@ -1382,7 +1414,11 @@ impl Shard {
         target: &CliTarget,
         stages: &dyn Fn(StartStage),
     ) -> Result<String, CliError> {
-        let releases = &self.services().claude_releases;
+        let releases = self.services().cli_releases.of(target.cli).ok_or_else(|| CliError {
+            cli: target.cli.name,
+            version: None,
+            reason: "this backend reads none of its releases".into(),
+        })?;
         let installed = self.cli_versions(target).await?;
         let Some(newest) = installed.first() else {
             stages(StartStage::Install);
@@ -1391,13 +1427,15 @@ impl Shard {
                 Err(error) => {
                     // The install failed before the machine was asked to
                     // do anything; what it has is asked again all the same.
-                    self.claude_cli().forget_versions(&target.device);
-                    return Err(error.into());
+                    self.subscription_cli().forget_versions(&target.device);
+                    return Err(CliError::unread(target.cli, error));
                 }
             };
             let installing = self.ensure_cli(target, &wanted);
             let installed = match self.devices().link(&target.device) {
-                Some(link) => reporting_download(installing, link.watch_downloading(), stages).await,
+                Some(link) => {
+                    reporting_download(installing, target.cli, link.watch_downloading(), stages).await
+                }
                 None => installing.await,
             }?;
             return Ok(installed.path.to_string_lossy().into_owned());
@@ -1416,8 +1454,7 @@ impl Shard {
     }
 
     /// The versions `target`'s machine has, newest install first, as the backend
-    /// keeps them for its runner connection
-    /// (`crates/provider-claude-code/src/releases.rs`).
+    /// keeps them for its runner connection.
     ///
     /// The versions are asked once on the connection, by whichever start comes
     /// first, while the others wait for the same answer. A failed ask, or one
@@ -1430,15 +1467,15 @@ impl Shard {
         };
         let (versions, waiting) = self.kept_or_asked(target, &link);
         let _waiting =
-            WaitingForVersions::new(self.claude_cli(), &target.device, versions.clone(), waiting);
+            WaitingForVersions::new(self.subscription_cli(), target.key(), versions.clone(), waiting);
         let answer = versions.clone().await;
         if answer.is_err() {
-            let mut kept = self.claude_cli().versions.borrow_mut();
+            let mut kept = self.subscription_cli().versions.borrow_mut();
             if kept
-                .get(&target.device)
+                .get(&target.key())
                 .is_some_and(|kept| kept.versions.ptr_eq(&versions))
             {
-                kept.remove(&target.device);
+                kept.remove(&target.key());
             }
         }
         answer
@@ -1449,10 +1486,10 @@ impl Shard {
     /// the starts waiting for it. The ask runs while a start waits for it:
     /// the starts that wait poll it in turn.
     fn kept_or_asked(&self, target: &CliTarget, link: &Link) -> (Versions, Rc<Cell<usize>>) {
-        let mut kept = self.claude_cli().versions.borrow_mut();
-        if let Some(kept) = kept.get(&target.device).filter(|kept| kept.link.is(link)) {
+        let mut kept = self.subscription_cli().versions.borrow_mut();
+        if let Some(kept) = kept.get(&target.key()).filter(|kept| kept.link.is(link)) {
             if kept.versions.peek().is_none() {
-                tracing::info!(event = "claude_code_versions.ask_shared", device_id = %target.device, "a start shares the ask of the device's Claude Code versions under way");
+                tracing::info!(event = "subscription_cli_versions.ask_shared", device_id = %target.device, cli = target.cli.name, "a start shares the ask of the device's CLI versions under way");
             }
             return (kept.versions.clone(), kept.waiting.clone());
         }
@@ -1462,6 +1499,7 @@ impl Shard {
         let versions = async move {
             let Some(shard) = shard.upgrade() else {
                 return Err(CliError {
+                    cli: asked.cli.name,
                     version: None,
                     reason: "the backend is shutting down".into(),
                 });
@@ -1472,7 +1510,7 @@ impl Shard {
         .shared();
         let entry = KeptVersions::new(link.downgrade(), versions.clone());
         let waiting = entry.waiting.clone();
-        kept.insert(target.device.clone(), entry);
+        kept.insert(target.key(), entry);
         (versions, waiting)
     }
 
@@ -1486,7 +1524,7 @@ impl Shard {
         let installed = match ensured {
             Ok(installed) => installed,
             Err(error) => {
-                self.claude_cli().forget_versions(&target.device);
+                self.subscription_cli().forget_versions(&target.device);
                 return Err(error);
             }
         };
@@ -1495,24 +1533,23 @@ impl Shard {
             (Some(link), Some(current)) if link.is(&current) => {
                 let left: Result<_, CliError> = Ok(vec![installed.clone()]);
                 let versions = futures_util::future::ready(left).boxed_local().shared();
-                self.claude_cli()
+                self.subscription_cli()
                     .versions
                     .borrow_mut()
-                    .insert(target.device.clone(), KeptVersions::new(link, versions));
+                    .insert(target.key(), KeptVersions::new(link, versions));
             }
             // The connection ended meanwhile: the next one asks.
-            _ => self.claude_cli().forget_versions(&target.device),
+            _ => self.subscription_cli().forget_versions(&target.device),
         }
         Ok(installed)
     }
 
     /// Drops what is kept of `device`'s CLI versions when `lost` names the
-    /// package's state there, which went without the runner saying so
-    /// (`crates/provider-claude-code/src/releases.rs`).
+    /// package's state there, which went without the runner saying so.
     pub(crate) fn cli_package_lost(&self, device: &DeviceId, lost: &Lost<'_>) {
         if matches!(lost, Lost::Every | Lost::Package(PACKAGE)) {
-            self.claude_cli().forget_versions(device);
-            tracing::info!(event = "claude_code_versions.dropped", device_id = %device, reason = "package_lost", "the Claude Code versions kept for the device were dropped");
+            self.subscription_cli().forget_versions(device);
+            tracing::info!(event = "subscription_cli_versions.dropped", device_id = %device, reason = "package_lost", "the CLI versions kept for the device were dropped");
         }
     }
 
@@ -1523,12 +1560,8 @@ impl Shard {
     /// next start notices the newer one again. Its device admits each operation
     /// without waking the machine, and shutdown cancels it.
     fn upgrade_cli(&self, target: CliTarget, release: Release) {
-        if !self
-            .claude_cli()
-            .upgrading
-            .borrow_mut()
-            .insert(release.version.clone())
-        {
+        let upgrade = (target.cli.name, release.version.clone());
+        if !self.subscription_cli().upgrading.borrow_mut().insert(upgrade.clone()) {
             return;
         }
         let shard = self.this();
@@ -1538,9 +1571,9 @@ impl Shard {
                 () = shard.closed() => None,
             };
             if let Some(Err(error)) = upgraded {
-                tracing::warn!(event = "claude_code_cli.update_failed", user = %shard.user(), %error, "the Claude Code machine's CLI was not updated");
+                tracing::warn!(event = "subscription_cli.update_failed", user = %shard.user(), cli = target.cli.name, %error, "a CLI on the Subscriptions machine was not updated");
             }
-            shard.claude_cli().upgrading.borrow_mut().remove(&release.version);
+            shard.subscription_cli().upgrading.borrow_mut().remove(&upgrade);
         });
     }
 
@@ -1569,20 +1602,20 @@ impl Shard {
                         Ok(Some(stored)) => stored.active().map(|account| account.as_str().to_owned()),
                         Ok(None) | Err(_) => None,
                     };
-                    if let Some(machine) = self.claude_machine() {
+                    if let Some(machine) = self.subscriptions_machine() {
                         machine.idle().close_prepared_of(entry.as_str(), active.as_deref());
                     }
                     self.agent().prepare_open(Some(entry.as_str()));
                 }
                 Err(RecvError::Lagged(missed)) => {
                     tracing::warn!(
-                        event = "claude_code_accounts.changes_missed",
+                        event = "subscription_cli_accounts.changes_missed",
                         user = %self.user(),
                         missed,
                         outcome = "prepared_processes_closed",
                         "account changes were missed"
                     );
-                    if let Some(machine) = self.claude_machine() {
+                    if let Some(machine) = self.subscriptions_machine() {
                         machine.idle().close_prepared();
                     }
                     self.agent().prepare_open(None);
@@ -1593,14 +1626,14 @@ impl Shard {
         }
     }
 
-    /// Installs the CLI on the Claude Code machine for account work of
+    /// Installs `cli` on the Subscriptions machine for account work of
     /// `entry`, as a task of the shard, and records the outcome for the
     /// settings page. Shutdown cancels it.
-    pub(crate) fn install_cli(&self, entry: ProviderId) {
+    pub(crate) fn install_cli(&self, entry: ProviderId, cli: &'static Cli) {
         let shard = self.this();
         self.tasks().spawn_local(async move {
             let installed = tokio::select! {
-                installed = shard.install_cli_now(&entry) => installed,
+                installed = shard.install_cli_now(&entry, cli) => installed,
                 () = shard.closed() => return,
             };
             let outcome = match installed {
@@ -1615,12 +1648,12 @@ impl Shard {
         });
     }
 
-    /// Installs the CLI on the Claude Code machine, on the master's shard,
+    /// Installs `cli` on the Subscriptions machine, on the master's shard,
     /// which holds it.
-    async fn install_cli_now(&self, entry: &ProviderId) -> Result<String, String> {
+    async fn install_cli_now(&self, entry: &ProviderId, cli: &'static Cli) -> Result<String, String> {
         let machine = self
-            .claude_machine()
-            .ok_or("The Claude Code machine is not available")?;
+            .subscriptions_machine()
+            .ok_or("The Subscriptions machine is not available")?;
         let context = provider_context(&self.services().control, self.user(), entry)
             .await
             .map_err(|error| format!("The command context could not be read: {error}"))?;
@@ -1630,7 +1663,7 @@ impl Shard {
             .on_machine(move |shard, _| async move {
                 let access = shard
                     .cloud_shard()
-                    .claude_code_access()
+                    .subscriptions_access()
                     .await
                     .map_err(|error| error.to_string())?;
                 let services = shard.services();
@@ -1641,17 +1674,18 @@ impl Shard {
                         services.sync.mark(&user, Part::Providers);
                     }
                 };
-                shard.cli_executable_at(&access, &context, &download).await
+                shard.cli_executable_at(&access, &context, cli, &download).await
             })
             .await
             .map_err(|error| error.0)?
     }
 }
 
-/// Runs `installing` and reports to `stages` how far the CLI's download on
+/// Runs `installing` and reports to `stages` how far the download of `cli` on
 /// the machine came, as its runner says in `downloads`.
 async fn reporting_download<T>(
     installing: impl Future<Output = T>,
+    cli: &Cli,
     mut downloads: tokio::sync::watch::Receiver<Vec<DeviceDownload>>,
     stages: &dyn Fn(StartStage),
 ) -> T {
@@ -1670,7 +1704,7 @@ async fn reporting_download<T>(
                 let progress = downloads
                     .borrow_and_update()
                     .iter()
-                    .filter(|download| download.package == PACKAGE)
+                    .filter(|download| download.package == PACKAGE && download.name == cli.name)
                     .fold(None, |sum: Option<DownloadProgress>, download| {
                         let sum = sum.unwrap_or(DownloadProgress { received: 0, size: 0 });
                         Some(DownloadProgress {
@@ -1688,11 +1722,19 @@ async fn reporting_download<T>(
 
 /// The versions `target` has, newest first.
 async fn installed(services: &Services, target: &CliTarget) -> Result<Vec<Installed>, CliError> {
+    let request = StatusRequest {
+        cli: target.cli.name.to_owned(),
+    };
+    let input = serde_json::to_vec(&request).map_err(|error| CliError {
+        cli: target.cli.name,
+        version: None,
+        reason: error.to_string(),
+    })?;
     let status: Status = call(
         services,
         target,
         Operation::Status,
-        Bytes::new(),
+        Bytes::from(input),
         Vec::new(),
         None,
     )
@@ -1707,12 +1749,13 @@ async fn ensure(
     release: &Release,
 ) -> Result<Installed, CliError> {
     let failed = |reason: String| CliError {
+        cli: target.cli.name,
         version: Some(release.version.clone()),
         reason,
     };
     let record = serde_json::to_vec(release).map_err(|error| failed(error.to_string()))?;
     // The runner may download each of the release's executables from its
-    // official URL (`crates/command-package-claude-code/src/lib.rs`).
+    // official URL (`crates/command-package-subscription-cli/src/lib.rs`).
     let attached = release
         .platforms
         .values()
@@ -1751,6 +1794,7 @@ async fn call<T: DeserializeOwned>(
     version: Option<&str>,
 ) -> Result<T, CliError> {
     let failed = |reason: String| CliError {
+        cli: target.cli.name,
         version: version.map(str::to_owned),
         reason,
     };
@@ -1761,7 +1805,7 @@ async fn call<T: DeserializeOwned>(
         .filter(|_| services.native.serves(PACKAGE, &served))
     else {
         return Err(failed(
-            "this deployment does not carry the jush.claude-code package, which installs it".into(),
+            "this deployment does not carry the jush.subscription-cli package, which installs it".into(),
         ));
     };
     let request = ResidentRequest {
@@ -1864,10 +1908,16 @@ impl CliInstalls {
     }
 }
 
-/// Starts the install of `entry`'s CLI on the Claude Code machine for
+/// Starts the install of `entry`'s CLI, `cli`, on the Subscriptions machine for
 /// `user` unless one is under way. Nobody waits for it: the user's pages
 /// learn of its start and its end with the providers' part.
-pub async fn start_install(services: &Services, shards: &Shards, user: &UserId, entry: &ProviderId) {
+pub async fn start_install(
+    services: &Services,
+    shards: &Shards,
+    user: &UserId,
+    entry: &ProviderId,
+    cli: &'static Cli,
+) {
     if !services.cli_installs.begin(user, entry) {
         return;
     }
@@ -1875,7 +1925,7 @@ pub async fn start_install(services: &Services, shards: &Shards, user: &UserId, 
     let id = entry.clone();
     let queued = shards
         .of(user)
-        .call(move |shard, _| async move { shard.install_cli(id) })
+        .call(move |shard, _| async move { shard.install_cli(id, cli) })
         .await;
     if let Err(error) = queued {
         let failed = CliInstall::Failed {

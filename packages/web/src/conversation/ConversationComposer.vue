@@ -33,7 +33,7 @@ import { placesFor } from '../devices/files'
 import { conversationDeviceSource } from './files'
 import { claimStoredFile, uploadAttachment } from '../api/uploads'
 import type { Conversation, ProductAttachment } from '../state/types'
-import { cliPackageOf } from '../state/catalog'
+import { cliNameOf } from '../state/catalog'
 import { useSettingsAddress } from '../settings/address'
 import { useContextCard } from './context-card'
 import { useConversationWorkflows } from './workflows'
@@ -203,7 +203,7 @@ const costProfiles = keptComputed(() => workflowProfiles(
 // the page polls says when it ends, and the input returns by itself.
 const usesCloud = computed(() =>
   execution.value.kind === 'cloud' ||
-  cliPackageOf(product.catalog, props.conversation.model.providerId) !== null,
+  cliNameOf(product.catalog, props.conversation.model.providerId) !== null,
 )
 const hold = computed(() =>
   usesCloud.value && product.snapshot?.cloud?.state === 'resetting'

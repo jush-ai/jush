@@ -179,7 +179,7 @@ const props = defineProps<{
   onRemove?: Action<[id: string]>
   onRemoveAccount?: Action<[provider: SettingsProviderEntry, accountId: string]>
   onRemoveModel?: Action<[provider: SettingsProviderEntry, model: SettingsProviderModel]>
-  /** Installs the CLI on Claude Code's machine again; Install works until the backend took it. */
+  /** Installs the CLI on the Subscriptions machine again; Install works until the backend took it. */
   onInstallCli?: Action<[provider: SettingsProviderEntry]>
   /** Whether the user went on past the warning about several accounts, which then never shows again. */
   multiAccountWarned?: boolean

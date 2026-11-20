@@ -48,7 +48,7 @@ use jush_provider_common::models_dev::ModelsDevClient;
 use jush_shared_types::Clock;
 use object_store::ObjectStore;
 
-use crate::conversation::claude_cli::{CliInstalls, MachineSlot};
+use crate::conversation::subscription_cli::{CliInstalls, CliReleaseReaders, MachineSlot};
 use crate::tuning::{ConversationTuning, LifecycleTuning, MediaTuning, PageTuning, RunnerTuning};
 
 const CONTROL_DATABASE: &str = "control.sqlite";
@@ -78,12 +78,13 @@ pub struct Services {
     pub provider_registry: Arc<ProviderRegistry>,
     /// The catalog of image and video models (`crates/provider-common/src/media_catalog.rs`).
     pub media: MediaCatalog,
-    /// The vendor's Claude Code releases, which the CLI on the Claude Code machine follows.
-    pub claude_releases: ClaudeReleases,
+    /// The vendors' releases of each CLI on the Subscriptions machine, which
+    /// it follows.
+    pub cli_releases: CliReleaseReaders,
     /// The outcome of the CLI installs no conversation asked for.
     pub cli_installs: CliInstalls,
-    /// The Claude Code machine, set as the shards start.
-    pub claude_machine: MachineSlot,
+    /// The Subscriptions machine, set as the shards start.
+    pub subscriptions_machine: MachineSlot,
     pub operations: Arc<ProviderOperations>,
     pub logins: Arc<LoginFlows>,
     /// Runners waiting to be paired, which have no user yet.
@@ -158,9 +159,9 @@ pub struct ProviderSetup {
     pub media_catalog: Arc<jush_provider_common::media_catalog::Catalog>,
     /// The Claude Code distribution.
     pub claude_releases: url::Url,
-    /// Where the Claude Code machine is, which the master's shard puts there
-    /// as it starts and the Claude Code family reads too.
-    pub claude_machine: MachineSlot,
+    /// Where the Subscriptions machine is, which the master's shard puts there
+    /// as it starts and every CLI's family reads too.
+    pub subscriptions_machine: MachineSlot,
     pub logins: LoginTiming,
     pub clock: Arc<dyn Clock>,
     /// The account the master account's entry of its family holds.
@@ -431,6 +432,8 @@ impl Services {
         let claude_releases =
             ClaudeReleases::new(&providers.claude_releases, edge.clone(), clock.clone())
                 .map_err(ServicesError::Http)?;
+        let cli_releases = CliReleaseReaders::default()
+            .with(&jush_provider_claude_code::CLI, Arc::new(claude_releases));
         let store: Arc<dyn RegistryStore> = Arc::new(vault.clone());
         let provider_registry = ProviderRegistry::new(
             store.clone(),
@@ -481,9 +484,9 @@ impl Services {
             master_account: providers.master_account,
             provider_registry,
             media,
-            claude_releases,
+            cli_releases,
             cli_installs: CliInstalls::default(),
-            claude_machine: providers.claude_machine,
+            subscriptions_machine: providers.subscriptions_machine,
             operations,
             logins,
             claims: PendingClaims::new(settings.runners.claims_per_minute),

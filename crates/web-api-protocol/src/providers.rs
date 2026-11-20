@@ -617,11 +617,11 @@ pub struct ProviderDetails {
     #[schemars(with = "Nullable<QuotaSnapshot>")]
     pub quota: Option<QuotaSnapshot>,
     pub quota_capability: QuotaCapability,
-    /// The command package whose CLI the provider's requests run as a
-    /// process, such as `jush.claude-code`; null when its requests are HTTP.
+    /// The name of the subscription's CLI the provider's requests run as a
+    /// process, such as `Claude Code`; null when its requests are HTTP.
     #[serde(deserialize_with = "Option::deserialize")]
     #[schemars(with = "Nullable<String>")]
-    pub cli_package: Option<String>,
+    pub cli_name: Option<String>,
 }
 
 /// An entry in the product state: the entry and what the backend could read
@@ -633,7 +633,7 @@ pub struct ProviderState {
     pub provider: ProviderDto,
     pub details: ProviderReading,
     /// The user's last install of the entry's command-line tool on the
-    /// Claude Code machine that no conversation asked for, since the backend
+    /// Subscriptions machine that no conversation asked for, since the backend
     /// started; null before one. The backend announces each change, so a
     /// page follows an install without asking.
     #[serde(deserialize_with = "Option::deserialize")]
@@ -1029,11 +1029,11 @@ pub struct ModelCatalog {
 pub struct CatalogProvider {
     pub provider_id: ProviderId,
     pub display_name: String,
-    /// The command package whose CLI the provider's requests run as a
+    /// The name of the subscription's CLI the provider's requests run as a
     /// process; null when its requests are HTTP.
     #[serde(deserialize_with = "Option::deserialize")]
     #[schemars(with = "Nullable<String>")]
-    pub cli_package: Option<String>,
+    pub cli_name: Option<String>,
     pub models: Vec<CatalogModel>,
     /// The image models the entry offers, newest first: a vendor entry's
     /// vendor's as the media catalog describes them, a compatible entry's
@@ -1191,7 +1191,7 @@ pub struct ModelMatch {
 }
 
 /// `GET /providers/:id/cli`: the newest version of the command-line tool
-/// of an entry whose provider runs one on the Claude Code machine. Reading
+/// of an entry whose provider runs one on the Subscriptions machine. Reading
 /// it wakes nothing; the install's state is the entry's
 /// ([`ProviderState::cli_install`]).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -1226,7 +1226,7 @@ pub enum CliInstall {
         #[schemars(with = "Nullable<DownloadProgress>")]
         download: Option<DownloadProgress>,
     },
-    /// `path` is the executable on the Claude Code machine.
+    /// `path` is the executable on the Subscriptions machine.
     Installed {
         path: String,
     },

@@ -1120,7 +1120,7 @@
     "doneActive": "Sesión iniciada. Esta cuenta ahora está activa para {vendor}.",
     "doneKept": "Sesión iniciada. {vendor} sigue usando su cuenta activa.",
     "failedHint": "El inicio de sesión no se completó.",
-    "waitingMachine": "Esperando a que se conecte la máquina de Claude Code…",
+    "waitingMachine": "Esperando a que se conecte la máquina de suscripciones…",
     "installing": "Instalando la herramienta de línea de comandos…",
     "startingTool": "Iniciando la herramienta de línea de comandos…",
     "contacting": "Contactando a {vendor}…",

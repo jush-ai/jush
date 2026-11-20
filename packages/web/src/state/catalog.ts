@@ -15,17 +15,18 @@ import type {
 } from '../api/generated/web-api'
 
 /**
- * The package of the CLI that `providerId`'s requests start on the Cloud, by
- * the catalog; null when its requests are HTTP or the catalog lacks it.
+ * The name of the CLI that `providerId`'s requests start on the Subscriptions
+ * machine, by the catalog; null when its requests are HTTP or the catalog
+ * lacks it.
  */
-export function cliPackageOf(catalog: readonly CatalogProvider[], providerId: string): string | null {
-  return catalog.find((provider) => provider.providerId === providerId)?.cliPackage ?? null
+export function cliNameOf(catalog: readonly CatalogProvider[], providerId: string): string | null {
+  return catalog.find((provider) => provider.providerId === providerId)?.cliName ?? null
 }
 
 export interface ProductProvider extends SettingsProviderEntry {
   providerType: string
-  /** The package of the CLI its requests start on the Cloud; null when they are HTTP. */
-  cliPackage: string | null
+  /** The name of the CLI its requests start on the Subscriptions machine; null when they are HTTP. */
+  cliName: string | null
   configured: boolean
   keyConfigured: boolean
 }
@@ -163,7 +164,7 @@ export function providerView(
     kind: entry.kind,
     providerType: entry.providerType,
     configured: true,
-    cliPackage: details?.cliPackage ?? catalog?.cliPackage ?? null,
+    cliName: details?.cliName ?? catalog?.cliName ?? null,
     keyConfigured: entry.hasApiKey,
     vendorId: entry.vendorId,
     compatible: entry.compatible,

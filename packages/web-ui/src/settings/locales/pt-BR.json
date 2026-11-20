@@ -1120,7 +1120,7 @@
     "doneActive": "Conectado. Esta conta agora está ativa para {vendor}.",
     "doneKept": "Conectado. {vendor} continua usando a conta ativa.",
     "failedHint": "O login não foi concluído.",
-    "waitingMachine": "Aguardando a máquina do Claude Code se conectar…",
+    "waitingMachine": "Aguardando a máquina de assinaturas se conectar…",
     "installing": "Instalando a ferramenta de linha de comando…",
     "startingTool": "Iniciando a ferramenta de linha de comando…",
     "contacting": "Contatando {vendor}…",

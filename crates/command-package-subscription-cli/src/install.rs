@@ -1,39 +1,42 @@
-//! The Claude Code CLI on the machine that runs it
-//! (`crates/command-package-claude-code/src/lib.rs`).
+//! A subscription's CLI on the machine that runs it
+//! (`crates/command-package-subscription-cli/src/lib.rs`).
 //!
 //! It covers the release's executable for this machine, which the runner
-//! installs as the package's artifact `Claude Code`, and the versions of it the
-//! runner has. Nothing here downloads or looks for the CLI.
+//! installs as the package's artifact named after the CLI, such as `Claude
+//! Code`, and the versions of it the runner has. Nothing here downloads or
+//! looks for the CLI.
 
-use jush_command_package_claude_code_protocol::{ErrorCode, Installed, Release, Status};
+use jush_command_package_subscription_cli_protocol::{
+    ErrorCode, Installed, Release, Status, StatusRequest,
+};
 use jush_command_protocol::{ArtifactForm, ArtifactInstall};
 use jush_command_sdk::{Artifacts, ResidentError};
 
 use crate::{platform, release};
 
-/// The artifact line of the CLI.
-pub const NAME: &str = "Claude Code";
-
 /// Why an operation failed. `code` is what the caller branches on; a
 /// cancellation ends the invocation without an answer.
 #[derive(Debug, thiserror::Error)]
-pub enum EnsureError {
+pub enum OperationError {
     #[error("invalid release record: {0}")]
     InvalidRelease(String),
+    #[error("invalid request: {0}")]
+    InvalidRequest(String),
     #[error("{0}")]
     UnsupportedPlatform(String),
-    #[error("Claude Code installation failed: {0}")]
+    #[error("installation failed: {0}")]
     InstallFailed(String),
     #[error("cancelled")]
     Cancelled,
 }
 
-impl EnsureError {
+impl OperationError {
     /// The code the caller branches on; a cancellation has none, since it
     /// ends the invocation without a document.
     pub fn code(&self) -> Option<ErrorCode> {
         Some(match self {
             Self::InvalidRelease(_) => ErrorCode::InvalidRelease,
+            Self::InvalidRequest(_) => ErrorCode::InvalidRequest,
             Self::UnsupportedPlatform(_) => ErrorCode::UnsupportedPlatform,
             Self::InstallFailed(_) => ErrorCode::InstallFailed,
             Self::Cancelled => return None,
@@ -41,7 +44,7 @@ impl EnsureError {
     }
 }
 
-impl From<ResidentError> for EnsureError {
+impl From<ResidentError> for OperationError {
     fn from(error: ResidentError) -> Self {
         match error {
             ResidentError::Cancelled => Self::Cancelled,
@@ -51,9 +54,14 @@ impl From<ResidentError> for EnsureError {
     }
 }
 
-/// Parses and validates the input of `claude-code.ensure`.
-pub fn release(input: &[u8]) -> Result<Release, EnsureError> {
+/// Parses and validates the input of `subscription-cli.ensure`.
+pub fn release(input: &[u8]) -> Result<Release, OperationError> {
     release::parse(input)
+}
+
+/// Parses and validates the input of `subscription-cli.status`.
+pub fn status_request(input: &[u8]) -> Result<StatusRequest, OperationError> {
+    StatusRequest::parse(input).map_err(|error| OperationError::InvalidRequest(error.to_string()))
 }
 
 /// The release's executable for this machine, which the runner installs for
@@ -62,17 +70,17 @@ pub async fn ensure(
     artifacts: &Artifacts,
     invocation: &str,
     release: &Release,
-) -> Result<Installed, EnsureError> {
-    let platform = current_platform()?;
+) -> Result<Installed, OperationError> {
+    let platform = current_platform(&release.cli)?;
     let artifact = release.platforms.get(platform).ok_or_else(|| {
-        EnsureError::UnsupportedPlatform(format!(
-            "Claude Code {} has no build for {platform}",
-            release.version
+        OperationError::UnsupportedPlatform(format!(
+            "{} {} has no build for {platform}",
+            release.cli, release.version
         ))
     })?;
     let install = ArtifactInstall {
         invocation: invocation.to_owned(),
-        name: NAME.to_owned(),
+        name: release.cli.clone(),
         version: release.version.clone(),
         sha256: artifact.sha256.clone(),
         size: artifact.size,
@@ -86,12 +94,12 @@ pub async fn ensure(
     })
 }
 
-/// This machine's platform key, and the versions of the CLI the runner has,
-/// the newest install first.
-pub async fn status(artifacts: &Artifacts) -> Result<Status, EnsureError> {
-    let platform = current_platform()?;
+/// This machine's platform key, and the versions of the CLI `cli` the runner
+/// has, the newest install first.
+pub async fn status(artifacts: &Artifacts, cli: &str) -> Result<Status, OperationError> {
+    let platform = current_platform(cli)?;
     let installed = artifacts
-        .installed(NAME)
+        .installed(cli)
         .await?
         .into_iter()
         .map(|installed| Installed {
@@ -105,10 +113,10 @@ pub async fn status(artifacts: &Artifacts) -> Result<Status, EnsureError> {
     })
 }
 
-fn current_platform() -> Result<&'static str, EnsureError> {
+fn current_platform(cli: &str) -> Result<&'static str, OperationError> {
     platform::current().ok_or_else(|| {
-        EnsureError::UnsupportedPlatform(format!(
-            "Claude Code has no build for this machine ({} {})",
+        OperationError::UnsupportedPlatform(format!(
+            "{cli} has no build for this machine ({} {})",
             std::env::consts::OS,
             std::env::consts::ARCH
         ))

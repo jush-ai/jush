@@ -5004,6 +5004,7 @@ dependencies = [
  "jush-provider-openai-api",
  "jush-provider-registry",
  "jush-provider-relay",
+ "jush-provider-subscription-cli",
  "jush-runner-protocol",
  "jush-shared-artifacts",
  "jush-shared-cli",
@@ -5215,6 +5216,7 @@ dependencies = [
  "jush-provider-common",
  "jush-provider-registry",
  "jush-provider-relay",
+ "jush-provider-subscription-cli",
  "jush-runner-client",
  "jush-runner-protocol",
  "jush-shared-artifacts",
@@ -5369,7 +5371,7 @@ dependencies = [
  "jush-backend-providers",
  "jush-backend-runners",
  "jush-command-declarations",
- "jush-command-package-claude-code-protocol",
+ "jush-command-package-subscription-cli-protocol",
  "jush-command-protocol",
  "jush-conversation-lane-protocol",
  "jush-device-interface",
@@ -5381,6 +5383,7 @@ dependencies = [
  "jush-provider-common",
  "jush-provider-registry",
  "jush-provider-relay",
+ "jush-provider-subscription-cli",
  "jush-runner-client",
  "jush-runner-protocol",
  "jush-shared-artifacts",
@@ -5426,24 +5429,6 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
-]
-
-[[package]]
-name = "jush-claude-code"
-version = "0.1.65"
-dependencies = [
- "bytes",
- "jush-command-package-claude-code-protocol",
- "jush-command-protocol",
- "jush-command-sdk",
- "jush-shared-cli",
- "serde",
- "serde_json",
- "thiserror 2.0.20",
- "tokio",
- "tokio-util",
- "tracing",
- "url",
 ]
 
 [[package]]
@@ -5515,18 +5500,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "jush-command-package-claude-code-protocol"
-version = "0.1.65"
-dependencies = [
- "garde",
- "semver",
- "serde",
- "serde_json",
- "serde_plain",
- "thiserror 2.0.20",
-]
-
-[[package]]
 name = "jush-command-package-fetch-protocol"
 version = "0.1.65"
 dependencies = [
@@ -5565,6 +5538,18 @@ dependencies = [
  "serde_json",
  "serde_plain",
  "serde_with",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "jush-command-package-subscription-cli-protocol"
+version = "0.1.65"
+dependencies = [
+ "garde",
+ "semver",
+ "serde",
+ "serde_json",
+ "serde_plain",
  "thiserror 2.0.20",
 ]
 
@@ -6111,9 +6096,10 @@ dependencies = [
  "futures-util",
  "garde",
  "jiff",
- "jush-command-package-claude-code-protocol",
+ "jush-command-package-subscription-cli-protocol",
  "jush-device-interface",
  "jush-provider-common",
+ "jush-provider-subscription-cli",
  "jush-shared-artifacts",
  "jush-shared-types",
  "reqwest",
@@ -6272,6 +6258,7 @@ dependencies = [
  "jush-provider-anthropic-api",
  "jush-provider-common",
  "jush-provider-openai-api",
+ "jush-provider-subscription-cli",
  "jush-shared-types",
  "jush-web-api-protocol",
  "reqwest",
@@ -6312,6 +6299,21 @@ dependencies = [
  "tokio-util",
  "tracing",
  "url",
+]
+
+[[package]]
+name = "jush-provider-subscription-cli"
+version = "0.1.65"
+dependencies = [
+ "bytes",
+ "futures-util",
+ "jush-command-package-subscription-cli-protocol",
+ "jush-device-interface",
+ "jush-shared-types",
+ "thiserror 2.0.20",
+ "tokio",
+ "tokio-util",
+ "tracing",
 ]
 
 [[package]]
@@ -6756,6 +6758,24 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "unicode-width 0.2.2",
+]
+
+[[package]]
+name = "jush-subscription-cli"
+version = "0.1.65"
+dependencies = [
+ "bytes",
+ "jush-command-package-subscription-cli-protocol",
+ "jush-command-protocol",
+ "jush-command-sdk",
+ "jush-shared-cli",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "url",
 ]
 
 [[package]]
@@ -12263,10 +12283,10 @@ dependencies = [
  "garde",
  "jush-backend",
  "jush-command-package-browser-protocol",
- "jush-command-package-claude-code-protocol",
  "jush-command-package-fetch-protocol",
  "jush-command-package-file-protocol",
  "jush-command-package-mobile-protocol",
+ "jush-command-package-subscription-cli-protocol",
  "jush-command-protocol",
  "jush-conversation-lane-protocol",
  "jush-live-view-protocol",

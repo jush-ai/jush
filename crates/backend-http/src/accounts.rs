@@ -92,7 +92,7 @@ fn started(id: LoginId) -> (StatusCode, Json<LoginStarted>) {
 }
 
 /// Starts a login into a new entry of the family the body names; a
-/// sign-in that runs a process runs it on the Claude Code machine.
+/// sign-in that runs a process runs it on the Subscriptions machine.
 pub(super) async fn start_login(
     State(services): State<Arc<Services>>,
     AuthUser(user): AuthUser,

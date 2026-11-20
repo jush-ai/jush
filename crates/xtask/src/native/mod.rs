@@ -123,8 +123,8 @@ pub enum Executable {
     Fetch,
     #[value(name = "jush-browser")]
     Browser,
-    #[value(name = "jush-claude-code")]
-    Claude,
+    #[value(name = "jush-subscription-cli")]
+    SubscriptionCli,
     #[value(name = "jush-mobile")]
     Mobile,
     #[value(name = "jush-backend")]
@@ -143,7 +143,7 @@ impl Executable {
         Self::File,
         Self::Fetch,
         Self::Browser,
-        Self::Claude,
+        Self::SubscriptionCli,
         Self::Mobile,
     ];
     /// The command programs, each the program of a command package.
@@ -151,7 +151,7 @@ impl Executable {
         Self::File,
         Self::Fetch,
         Self::Browser,
-        Self::Claude,
+        Self::SubscriptionCli,
         Self::Mobile,
     ];
 
@@ -162,7 +162,7 @@ impl Executable {
             Self::File => "jush-file",
             Self::Fetch => "jush-fetch",
             Self::Browser => "jush-browser",
-            Self::Claude => "jush-claude-code",
+            Self::SubscriptionCli => "jush-subscription-cli",
             Self::Mobile => "jush-mobile",
             Self::Backend => "jush-backend",
             Self::Machines => "jush-machine-manager",
@@ -178,7 +178,7 @@ impl Executable {
             | Self::File
             | Self::Fetch
             | Self::Browser
-            | Self::Claude
+            | Self::SubscriptionCli
             | Self::Mobile => true,
             Self::Backend | Self::Machines | Self::Server => false,
         }
@@ -191,7 +191,7 @@ impl Executable {
             | Self::File
             | Self::Fetch
             | Self::Browser
-            | Self::Claude
+            | Self::SubscriptionCli
             | Self::Mobile => TARGETS,
             // Servers run Linux; a developer may also run the backend on a
             // Mac, with the Cloud in a Lima VM.

@@ -26,11 +26,10 @@ use crate::{
 /// entry. It is used from any thread: the backend's request handlers read its
 /// status, models and quota, and each user's shard builds runtimes from it.
 ///
-/// It is `Any`, so the part of the backend that places a provider's CLI
-/// process tells that provider's concrete type and asks it for the runtime.
+/// It is `Any`, so its family tells its concrete type, as the family of a
+/// provider whose CLI runs as a process does to build the runtime over the
+/// backend's placement.
 pub trait Provider: std::any::Any + Send + Sync {
-    fn capabilities(&self) -> Capabilities;
-
     /// Whether the credential is present and usable. Never makes an
     /// inference request.
     fn auth_status(&self) -> BoxFuture<'_, AuthState>;
@@ -133,15 +132,6 @@ impl OfferedModel {
     pub fn named(id: String) -> Self {
         Self { id, thinking_form: None }
     }
-}
-
-/// What a provider requires of the device its conversation runs on.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct Capabilities {
-    /// The command package whose CLI its requests run as a process on a
-    /// machine the backend places them on, such as `jush.claude-code`; none
-    /// for a provider whose requests are HTTP.
-    pub cli_package: Option<&'static str>,
 }
 
 /// What the user's shard gives a runtime it builds.

@@ -19,7 +19,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use bytes::Bytes;
-use jush_device_interface::{Process, ProcessControl, ProcessEnd, ProcessOutput, Signal};
+use jush_device_interface::{Process, ProcessControl, ProcessEnd, ProcessOutput};
 use jush_provider_common::quota::Observation;
 use jush_provider_common::wire::Tagged;
 use jush_provider_common::{
@@ -45,7 +45,7 @@ use crate::input::{self, ControlRequest, ControlResponse, Input, MCP_SERVER, Man
 use crate::mcp::{self, Mcp, McpEvent};
 use crate::mirror::Mirror;
 use crate::output::{ControlRequestLine, LastCall, Line, Replaced, Streaming};
-use crate::placement::{CliSite, CliWork, ConfigDir, Placed, Placement};
+use jush_provider_subscription_cli::{CliSite, CliWork, ConfigDir, Placed, Placement, close_process};
 use crate::session::{self, SessionFile};
 use crate::timing::{StartTiming, Took};
 use crate::{FAMILY, Shared, cli};
@@ -56,9 +56,6 @@ pub(crate) const WIRE: &str = "jush::provider::claude_code::wire";
 /// How much of the process's standard error is kept: a process may print
 /// without end, and the tail is where it says why it failed.
 const STDERR_TAIL_BYTES: usize = 64 * 1024;
-
-/// How long a closed process has to end after SIGTERM before SIGKILL.
-const CLOSE_GRACE: Duration = Duration::from_secs(5);
 
 /// The longest line Jush reads; a longer one fails the run like a line that
 /// cannot be read: a line is held whole in memory, and a process may print one
@@ -818,12 +815,10 @@ impl LiveCli {
                             if let JsonRpcMessage::Request(request) = &message
                                 && let ClientRequest::InitializeRequest(initialize) = &request.request
                             {
-                                if let Some(machine) = &self.shared.machine {
-                                    machine
-                                        .state()
-                                        .mcp_protocol
-                                        .asked(&initialize.params.protocol_version);
-                                }
+                                self.shared
+                                    .state
+                                    .mcp_protocol
+                                    .asked(&initialize.params.protocol_version);
                             }
                             mcp.pass(&request_id, message)
                         }
@@ -1186,33 +1181,10 @@ async fn close(parts: Parts) {
         exit,
         config,
     } = parts;
-    // A process that already ended, or whose machine went away, takes no
-    // signal; its end is known either way.
-    let _ = control.kill(Signal::Terminate).await;
-    if tokio::time::timeout(CLOSE_GRACE, exit.clone()).await.is_err() {
-        let _ = control.kill(Signal::Kill).await;
-        exit.await;
-    }
+    close_process(control, exit).await;
     if let Some(config) = config {
         config.remove().await;
     }
-}
-
-/// Closes the process `control` drives, whose end is `exit`, SIGTERM first and
-/// SIGKILL five seconds later, and waits for its end.
-///
-/// It is how anything that holds a CLI process closes it, a sign-in or the
-/// backend's relay of a process to another user's shard.
-pub async fn close_process(
-    control: Box<dyn ProcessControl>,
-    exit: SharedFuture<LocalBoxFuture<'static, ProcessEnd>>,
-) {
-    close(Parts {
-        control,
-        exit,
-        config: None,
-    })
-    .await;
 }
 
 /// The server's next event; a process without tools has none.
@@ -1322,6 +1294,6 @@ pub(crate) fn exit_message(end: &ProcessEnd) -> String {
             Some(detail) => format!("Claude Code did not start ({}): {detail}", error.kind),
             None => format!("Claude Code did not start ({})", error.kind),
         },
-        ProcessEnd::Lost(reason) => format!("Claude Code's machine went away: {reason}"),
+        ProcessEnd::Lost(reason) => format!("The Subscriptions machine went away: {reason}"),
     }
 }

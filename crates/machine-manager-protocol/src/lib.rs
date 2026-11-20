@@ -107,15 +107,43 @@ pub struct LeftSandbox {
     pub slot: u16,
     pub programs: BaseVersion,
     /// Absent from a record an earlier release wrote, which does not say
-    /// whether its sandbox is the Claude Code machine: it is then taken as
+    /// whether its sandbox is the Subscriptions machine: it is then taken as
     /// one, which reaches the internet alone whatever the network policy,
     /// until its next boot.
-    #[serde(default = "unknown_machine")]
+    ///
+    /// Absent too when the sandbox is the Subscriptions machine: the release
+    /// before it named that machine otherwise and fails on a name it does not
+    /// know, and a rollback's manager reads this record before it starts.
+    #[serde(
+        default = "unknown_machine",
+        deserialize_with = "machine_as_recorded",
+        skip_serializing_if = "SandboxMachine::is_subscriptions"
+    )]
     pub machine: SandboxMachine,
 }
 
 fn unknown_machine() -> SandboxMachine {
-    SandboxMachine::ClaudeCode
+    SandboxMachine::Subscriptions
+}
+
+impl SandboxMachine {
+    fn is_subscriptions(&self) -> bool {
+        *self == Self::Subscriptions
+    }
+}
+
+/// The machine a record a manager keeps on disk names, read as the release
+/// that wrote it named it: the release before the machine ran every
+/// subscription's CLI called the Subscriptions machine `claude_code`, and the
+/// next release's manager reads its records as it takes its machines over.
+pub fn machine_as_recorded<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<SandboxMachine, D::Error> {
+    use serde::Deserialize as _;
+    match String::deserialize(deserializer)?.as_str() {
+        "claude_code" => Ok(SandboxMachine::Subscriptions),
+        other => SandboxMachine::deserialize(serde::de::value::StrDeserializer::new(other)),
+    }
 }
 
 pub use state::{

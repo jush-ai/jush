@@ -243,6 +243,7 @@ struct ProcessRecord {
     started: u64,
     /// The host's boot, after which the pid names no process of the device.
     boot: String,
+    #[serde(deserialize_with = "jush_machine_manager_protocol::machine_as_recorded")]
     machine: SandboxMachine,
 }
 

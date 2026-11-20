@@ -16,8 +16,8 @@ starts with Cloud selected, but selecting Cloud does not start a machine.
 The execution host starts only when something needs it, as follows:
 
 - File operations and processes acquire the execution host when needed.
-- A provider that runs a process, such as Claude Code, acquires the Claude Code
-  machine.
+- A provider that runs a process, such as Claude Code, acquires the
+  Subscriptions machine.
 - Reading history and using an HTTP provider do not require a running Cloud
   machine.
 
@@ -73,7 +73,8 @@ The following table lists what each part is responsible for:
 | Machine manager | Run each user's Cloud as a gVisor sandbox with persistent volumes on a Linux host. |
 
 Most providers make HTTP requests from the backend. Claude Code instead runs
-its CLI on the user's Cloud, whatever the conversation's execution target is.
+its CLI on the Subscriptions machine, whatever the conversation's execution
+target is.
 The two sides of that boundary work as follows:
 
 - The provider in the backend exchanges stream-json with that process through
@@ -148,10 +149,9 @@ The following files define persistence and lifetimes:
 The backend vault stores configured provider credentials, encrypted with the
 instance secret.
 
-The Claude Code provider passes the selected account's token to the CLI on the
-user's Cloud, in the process's environment. This does not make the runner a
-credential vault, but the token is available to that process and its execution
-environment. It never reaches a paired device.
+The Claude Code CLI keeps the account's sign-in in the account's directory on
+the Subscriptions machine, where no user has a shell. The backend holds none,
+and it never reaches a user's Cloud or a paired device.
 
 The web app uses backend APIs rather than receiving stored provider secrets.
 
