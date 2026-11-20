@@ -13,14 +13,21 @@
 //! - A probe, a process of the account that answers one question and is
 //!   closed, gives the catalog and the plan from a new session, and the
 //!   usage from a usage read (`probe.rs`, `models.rs`, `quota.rs`).
+//! - A session's runtime keeps one process between turns (`run.rs`,
+//!   `live.rs`), which runs Jush's agent with the request's system prompt and
+//!   loads the conversation's history written into its database
+//!   (`history.rs`). The model's tool calls reach the agent over an MCP
+//!   channel through a companion process (`tools.rs`), and `agy`'s reported
+//!   failures are read from its text (`failure.rs`).
 //!
 //! ```text
 //! backend (user's shard)          Subscriptions machine
 //! +--------------------+          +----------------------------------+
-//! | AntigravityProvider| start    | sh -> agy acp                    |
-//! |   probe, sign-in --+--------->|   HOME = processes/<id>/         |
-//! |   ACP lines <------+--------->|   sign-in -> the account's       |
-//! +--------------------+          |   --HTTPS--> Google              |
+//! | AntigravityRuntime | start    | agy acp --agent jush             |
+//! |   ACP lines <------+--------->|   HOME = processes/<id>/         |
+//! |   MCP server <-----+--------->|   companion sh <-pipes-> agy's   |
+//! +--------------------+          |   sign-in -> the account's       |
+//!                                 |   --HTTPS--> Google              |
 //!                                 +----------------------------------+
 //! ```
 //!
@@ -30,13 +37,19 @@
 
 mod account;
 mod acp;
+mod failure;
+mod history;
+mod live;
 mod login;
 mod models;
 mod probe;
 mod quota;
 pub mod releases;
+mod run;
 mod start;
+mod tools;
 
+use std::rc::Rc;
 use std::sync::Arc;
 
 use futures_util::future::BoxFuture;
@@ -46,7 +59,7 @@ use jush_provider_common::quota::{ProviderQuota, QuotaSnapshotStore};
 use jush_provider_common::{
     CatalogError, Provider, ProviderRuntime, RuntimeEnv, RuntimeError, read_http_failure,
 };
-use jush_provider_subscription_cli::{AccountMachine, Cli, CliKit};
+use jush_provider_subscription_cli::{AccountMachine, Cli, CliKit, Placement};
 use jush_shared_types::{
     AuthState, Clock, ProviderErrorDiagnostics, ProviderFailureFacts, ProviderModelList,
     RuntimeState, Timestamp,
@@ -56,6 +69,7 @@ use crate::account::AgyAuth;
 use crate::login::AgyLogin;
 use crate::probe::Prober;
 use crate::quota::AgyQuota;
+use crate::run::AgyRuntime;
 
 /// `agy` as the Subscriptions machine runs it: each process's own directory
 /// is under the account's `processes`.
@@ -82,8 +96,10 @@ pub struct AntigravityConfig {
 /// An `antigravity` entry's provider for one account, shared by every user
 /// and request of the entry.
 ///
-/// The generic [`Provider::runtime`] refuses, since only the backend can
-/// choose the machine (`crates/provider-subscription-cli/src/placement.rs`).
+/// Its runtimes start their processes through a placement
+/// ([`AntigravityProvider::process_runtime`]). The generic
+/// [`Provider::runtime`] refuses, since only the backend can choose the
+/// machine (`crates/provider-subscription-cli/src/placement.rs`).
 pub struct AntigravityProvider {
     shared: Arc<Shared>,
 }
@@ -138,6 +154,12 @@ impl AntigravityProvider {
                 models_dev,
             }),
         }
+    }
+
+    /// A session's runtime, which starts its processes through `placement`
+    /// and keeps at most one of them between runs.
+    pub fn process_runtime(&self, placement: Rc<dyn Placement>) -> Box<dyn ProviderRuntime> {
+        Box::new(AgyRuntime::new(self.shared.clone(), placement))
     }
 
     /// The entry's account operations with a sign-in that runs `agy`'s own

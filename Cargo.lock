@@ -6042,6 +6042,8 @@ dependencies = [
 name = "jush-provider-antigravity"
 version = "0.1.65"
 dependencies = [
+ "async-stream",
+ "base64 0.22.1",
  "bytes",
  "futures-util",
  "jush-command-package-subscription-cli-protocol",
@@ -6049,6 +6051,8 @@ dependencies = [
  "jush-provider-common",
  "jush-provider-subscription-cli",
  "jush-shared-types",
+ "rmcp",
+ "rusqlite",
  "serde",
  "serde_json",
  "tokio",

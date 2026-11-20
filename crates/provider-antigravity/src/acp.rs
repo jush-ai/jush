@@ -6,7 +6,7 @@
 use bytes::Bytes;
 use futures_util::StreamExt as _;
 use futures_util::stream::LocalBoxStream;
-use jush_device_interface::ProcessOutput;
+use jush_device_interface::{ProcessControl, ProcessOutput};
 use jush_provider_subscription_cli::{Tail, Unanswered};
 use jush_shared_types::StreamKind;
 use serde::Deserialize;
@@ -20,15 +20,12 @@ const AUTH_REQUIRED: i64 = -32000;
 
 /// The line of request `id`, `method` with `params`.
 pub(crate) fn request(id: u64, method: &str, params: Value) -> Bytes {
-    let message = json!({ "jsonrpc": "2.0", "id": id, "method": method, "params": params });
-    let mut line = message.to_string().into_bytes();
-    line.push(b'\n');
-    line.into()
+    line(&json!({ "jsonrpc": "2.0", "id": id, "method": method, "params": params }))
 }
 
 /// The `initialize` request: Jush offers `agy` no file system and no
 /// terminal of its own.
-pub(crate) fn initialize(id: u64) -> Bytes {
+fn initialize(id: u64) -> Bytes {
     request(
         id,
         "initialize",
@@ -124,7 +121,7 @@ impl Refusal {
     }
 }
 
-/// A line of `agy`'s output, as far as an answer is read from it.
+/// A line of `agy`'s output, as far as Jush reads it.
 #[derive(Deserialize)]
 struct Message {
     #[serde(default)]
@@ -132,15 +129,148 @@ struct Message {
     #[serde(default)]
     method: Option<String>,
     #[serde(default)]
+    params: Option<Value>,
+    #[serde(default)]
     result: Option<Value>,
     #[serde(default)]
     error: Option<Refusal>,
 }
 
+/// A line of `agy`'s output.
+pub(crate) enum Line {
+    /// The answer to Jush's request `id`.
+    Answer {
+        id: Value,
+        answer: Result<Value, Refusal>,
+    },
+    /// A notification, such as a session's `session/update`, with its
+    /// parameters.
+    Notification { method: String, params: Value },
+    /// A request of `agy`'s, which Jush answers.
+    Request { id: Value },
+}
+
+/// The `session/new` request, in the process's directory `cwd`: the session's
+/// MCP servers are the agent's.
+fn new_session(id: u64, cwd: &str) -> Bytes {
+    request(id, "session/new", json!({ "cwd": cwd, "mcpServers": [] }))
+}
+
+/// The `session/load` request of the session `session`, in `cwd`.
+fn load_session(id: u64, session: &str, cwd: &str) -> Bytes {
+    request(
+        id,
+        "session/load",
+        json!({ "sessionId": session, "cwd": cwd, "mcpServers": [] }),
+    )
+}
+
+/// The `session/set_model` request: the session's model from now on, at its
+/// level, such as `gemini-4-neon-high`.
+pub(crate) fn set_model(id: u64, session: &str, model: &str) -> Bytes {
+    request(
+        id,
+        "session/set_model",
+        json!({ "sessionId": session, "modelId": model }),
+    )
+}
+
+/// The `session/prompt` request: a turn of the session, answering `prompt`,
+/// ACP content blocks.
+pub(crate) fn prompt(id: u64, session: &str, prompt: Vec<Value>) -> Bytes {
+    request(
+        id,
+        "session/prompt",
+        json!({ "sessionId": session, "prompt": prompt }),
+    )
+}
+
+/// Writes request `line`, of id `id`, to the process `control` drives, and
+/// reads its `output` until the answer: what `agy` answered, or refused.
+///
+/// A request of `agy`'s meanwhile is refused, and every other line passed
+/// over, such as the history a load replays as updates, which the transcript
+/// holds already.
+pub(crate) async fn ask(
+    control: &dyn ProcessControl,
+    output: &mut Output,
+    id: u64,
+    line: Bytes,
+) -> Result<Result<Value, Refusal>, Unanswered> {
+    let written = |error| Unanswered::Failed(format!("Antigravity's input could not be written: {error}"));
+    control.write_stdin(line).await.map_err(written)?;
+    let id = Value::from(id);
+    loop {
+        match output.line().await {
+            Some(Line::Answer { id: answered, answer }) if answered == id => return Ok(answer),
+            Some(Line::Request { id }) => control.write_stdin(refuse(id)).await.map_err(written)?,
+            Some(_) => {}
+            None => return Err(Unanswered::Ended(output.stderr())),
+        }
+    }
+}
+
+/// The request ids of opening a session, in their order; a process's later
+/// requests count on from [`FIRST_FREE`].
+const INITIALIZE: u64 = 1;
+const SESSION: u64 = 2;
+pub(crate) const FIRST_FREE: u64 = 3;
+
+/// Opens a session in a new process whose directory is `cwd`: `initialize`,
+/// then `session/load` of `load`, else `session/new`. What the session's
+/// request answered, or how `agy` refused either.
+pub(crate) async fn open(
+    control: &dyn ProcessControl,
+    output: &mut Output,
+    cwd: &str,
+    load: Option<&str>,
+) -> Result<Result<Value, Refusal>, Unanswered> {
+    if let Err(refusal) = ask(control, output, INITIALIZE, initialize(INITIALIZE)).await? {
+        return Ok(Err(refusal));
+    }
+    let session = match load {
+        Some(session) => load_session(SESSION, session, cwd),
+        None => new_session(SESSION, cwd),
+    };
+    ask(control, output, SESSION, session).await
+}
+
+/// The answer that refuses `agy`'s request `id`: Jush offers no method, since
+/// it gave `agy` no file system, no terminal and no question to ask.
+pub(crate) fn refuse(id: Value) -> Bytes {
+    line(&json!({
+        "jsonrpc": "2.0",
+        "id": id,
+        "error": { "code": -32601, "message": "Method not found" },
+    }))
+}
+
+fn line(message: &Value) -> Bytes {
+    let mut line = message.to_string().into_bytes();
+    line.push(b'\n');
+    line.into()
+}
+
+/// Bytes a process wrote, taken a whole line at a time.
+#[derive(Default)]
+pub(crate) struct Lines(Vec<u8>);
+
+impl Lines {
+    pub(crate) fn push(&mut self, bytes: &[u8]) {
+        self.0.extend_from_slice(bytes);
+    }
+
+    /// The next whole line, its newline included.
+    pub(crate) fn next(&mut self) -> Option<Vec<u8>> {
+        let end = self.0.iter().position(|byte| *byte == b'\n')?;
+        Some(self.0.drain(..=end).collect())
+    }
+}
+
 /// `agy`'s output, read line by line.
 pub(crate) struct Output {
     stream: LocalBoxStream<'static, ProcessOutput>,
-    stdout: Vec<u8>,
+    stdout: Lines,
     stderr: Tail,
 }
 
@@ -148,36 +278,46 @@ impl Output {
     pub(crate) fn new(stream: LocalBoxStream<'static, ProcessOutput>) -> Self {
         Self {
             stream,
-            stdout: Vec::new(),
+            stdout: Lines::default(),
             stderr: Tail::default(),
         }
     }
 
-    /// Reads until the answer to request `id`, passing over every other
-    /// line, notifications among them.
-    pub(crate) async fn answer(&mut self, id: u64) -> Result<Result<Value, Refusal>, Unanswered> {
-        let id = Value::from(id);
+    /// The next line `agy` wrote; none once its output ended. A line that is
+    /// no JSON-RPC message is passed over. Dropping the future loses nothing.
+    pub(crate) async fn line(&mut self) -> Option<Line> {
         loop {
-            while let Some(end) = self.stdout.iter().position(|byte| *byte == b'\n') {
-                let line: Vec<u8> = self.stdout.drain(..=end).collect();
+            while let Some(line) = self.stdout.next() {
                 let Ok(message) = serde_json::from_slice::<Message>(&line) else {
                     continue;
                 };
-                if message.method.is_some() || message.id.as_ref() != Some(&id) {
-                    continue;
-                }
-                if let Some(refusal) = message.error {
-                    return Ok(Err(refusal));
-                }
-                return Ok(Ok(message.result.unwrap_or(Value::Null)));
+                let line = match (message.id, message.method) {
+                    (Some(id), Some(_)) => Line::Request { id },
+                    (None, Some(method)) => Line::Notification {
+                        method,
+                        params: message.params.unwrap_or(Value::Null),
+                    },
+                    (Some(id), None) => Line::Answer {
+                        id,
+                        answer: match message.error {
+                            Some(refusal) => Err(refusal),
+                            None => Ok(message.result.unwrap_or(Value::Null)),
+                        },
+                    },
+                    (None, None) => continue,
+                };
+                return Some(line);
             }
-            let Some(chunk) = self.stream.next().await else {
-                return Err(Unanswered::Ended(self.stderr.text()));
-            };
+            let chunk = self.stream.next().await?;
             match chunk.stream {
-                StreamKind::Stdout => self.stdout.extend_from_slice(&chunk.bytes),
+                StreamKind::Stdout => self.stdout.push(&chunk.bytes),
                 StreamKind::Stderr => self.stderr.push(&chunk.bytes),
             }
         }
+    }
+
+    /// The tail of what `agy` wrote to its standard error.
+    pub(crate) fn stderr(&self) -> String {
+        self.stderr.text()
     }
 }

@@ -619,6 +619,16 @@ impl ProviderFamily for AntigravityFamily {
         Some(&jush_provider_antigravity::CLI)
     }
 
+    fn process_runtime(
+        &self,
+        provider: Arc<dyn Provider>,
+        placement: Rc<dyn Placement>,
+    ) -> Option<Box<dyn ProviderRuntime>> {
+        let provider: Arc<dyn std::any::Any + Send + Sync> = provider;
+        let provider = provider.downcast::<AntigravityProvider>().ok()?;
+        Some(provider.process_runtime(placement))
+    }
+
     fn login_accounts(
         &self,
         args: FamilyArgs,
