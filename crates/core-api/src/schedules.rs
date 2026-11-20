@@ -1,13 +1,15 @@
 //! A conversation's schedules, as the web contract reaches them.
 //!
-//! - The user pauses, resumes or deletes a schedule of a conversation they
-//!   own, in the caller's core; the change reaches the conversation's pages
-//!   in its metadata. The agent does the rest, with `jush schedule`.
+//! - A program makes, reads, changes, runs and deletes a schedule of a
+//!   conversation the caller owns, in the caller's core, with the types
+//!   `jush schedule` uses; the page's switch and Delete are two of these
+//!   changes. Each reaches the conversation's entry in the product state.
 //! - A schedule's URL, `/hooks/<id>`, is authenticated by no session: its id
 //!   and its secret are its only keys.
 
 use std::time::Instant;
 
+use axum::Json;
 use axum::extract::{Path, Request, State};
 use axum::http::{Method, StatusCode};
 use axum::response::{IntoResponse, Response};
@@ -17,13 +19,16 @@ use jush_web_api_protocol::error::ErrorCode;
 use jush_core_store::StorageError;
 use jush_web_api_protocol::ids::{ConversationId, UserId};
 use futures_util::future::BoxFuture;
-use jush_web_api_protocol::schedules::{ScheduleChange, SchedulePatch};
+use jush_web_api_protocol::schedules::{
+    NewScheduleRun, ScheduleAnswer, ScheduleDto, SchedulePatch, ScheduleRunDto, ScheduleRuns, ScheduleRunsQuery,
+};
 
 use crate::api::Api;
 use crate::body::{JsonBody, read};
 use crate::error::ApiError;
 use crate::caller::Principal;
 use crate::page_client::client_address;
+use crate::query::QueryParams;
 
 /// The one answer an unknown address and a wrong secret share.
 pub(crate) fn unauthorized() -> ApiError {
@@ -96,35 +101,79 @@ pub async fn hook(
     }
 }
 
-/// `PATCH /conversations/:id/schedules/:schedule`: the user pauses or resumes
-/// one of the conversation's schedules, 204.
+/// The conversation and the schedule a path names; an id that is not one is
+/// not found.
+fn ids(conversation: String, id: String) -> Result<(ConversationId, ScheduleId), ApiError> {
+    let conversation =
+        ConversationId::try_from(conversation).map_err(|_| refused(ScheduleError::ConversationNotFound))?;
+    let id = ScheduleId::try_from(id).map_err(|_| refused(ScheduleError::NotFound))?;
+    Ok((conversation, id))
+}
+
+/// `POST /conversations/:id/schedules`: a program makes a schedule of the
+/// conversation from the defaults `jush schedule create` takes, with the
+/// patch over them, on unless the patch pauses it; 201.
+pub(crate) async fn create(
+    State(state): State<Api>,
+    Principal(user): Principal,
+    Path(conversation): Path<String>,
+    JsonBody(patch): JsonBody<SchedulePatch>,
+) -> Result<(StatusCode, Json<ScheduleAnswer>), ApiError> {
+    let conversation =
+        ConversationId::try_from(conversation).map_err(|_| refused(ScheduleError::ConversationNotFound))?;
+    let (schedule, secret) = state
+        .shards
+        .of(&user)
+        .call(move |core, _| async move { core.create_schedule(&conversation, patch, None).await })
+        .await?
+        .map_err(refused)?;
+    Ok((StatusCode::CREATED, Json(ScheduleAnswer { schedule, secret })))
+}
+
+/// `GET /conversations/:id/schedules/:schedule`: one of the conversation's
+/// schedules, as `jush schedule show` shows it.
+pub(crate) async fn show(
+    State(state): State<Api>,
+    Principal(user): Principal,
+    Path((conversation, id)): Path<(String, String)>,
+) -> Result<Json<ScheduleDto>, ApiError> {
+    let (conversation, id) = ids(conversation, id)?;
+    let schedule = state
+        .shards
+        .of(&user)
+        .call(move |core, _| async move { core.schedule(&conversation, &id).await })
+        .await?
+        .map_err(refused)?;
+    Ok(Json(schedule))
+}
+
+/// `PATCH /conversations/:id/schedules/:schedule`: a program changes what the
+/// patch names of one of the conversation's schedules, as the page's switch
+/// turns it off and on.
 pub(crate) async fn change(
     State(state): State<Api>,
     Principal(user): Principal,
     Path((conversation, id)): Path<(String, String)>,
-    JsonBody(change): JsonBody<ScheduleChange>,
-) -> Result<StatusCode, ApiError> {
-    let conversation = ConversationId::try_from(conversation).map_err(|_| refused(ScheduleError::NotFound))?;
-    let id = ScheduleId::try_from(id).map_err(|_| refused(ScheduleError::NotFound))?;
-    let patch = SchedulePatch { paused: Some(change.paused), ..SchedulePatch::default() };
-    state
+    JsonBody(patch): JsonBody<SchedulePatch>,
+) -> Result<Json<ScheduleAnswer>, ApiError> {
+    let (conversation, id) = ids(conversation, id)?;
+    let (schedule, secret) = state
         .shards
         .of(&user)
-        .call(move |core, _| async move { core.change_schedule(&conversation, &id, patch, false).await })
+        .call(move |core, _| async move { core.change_schedule(&conversation, &id, patch, false, None).await })
         .await?
         .map_err(refused)?;
-    Ok(StatusCode::NO_CONTENT)
+    Ok(Json(ScheduleAnswer { schedule, secret }))
 }
 
-/// `DELETE /conversations/:id/schedules/:schedule`: the user deletes one of
-/// the conversation's schedules, 204.
+/// `DELETE /conversations/:id/schedules/:schedule`: deletes one of the
+/// conversation's schedules with its runs' records, 204.
 pub(crate) async fn delete(
     State(state): State<Api>,
     Principal(user): Principal,
     Path((conversation, id)): Path<(String, String)>,
 ) -> Result<StatusCode, ApiError> {
-    let conversation = ConversationId::try_from(conversation).map_err(|_| refused(ScheduleError::NotFound))?;
-    let id = ScheduleId::try_from(id).map_err(|_| refused(ScheduleError::NotFound))?;
+    let (conversation, id) = ids(conversation, id)?;
     state
         .shards
         .of(&user)
@@ -134,13 +183,54 @@ pub(crate) async fn delete(
     Ok(StatusCode::NO_CONTENT)
 }
 
+/// `POST /conversations/:id/schedules/:schedule/runs`: runs one of the
+/// conversation's schedules now, as `jush schedule run` does; 201 with the
+/// run as it started.
+pub(crate) async fn run(
+    State(state): State<Api>,
+    Principal(user): Principal,
+    Path((conversation, id)): Path<(String, String)>,
+    JsonBody(run): JsonBody<NewScheduleRun>,
+) -> Result<(StatusCode, Json<ScheduleRunDto>), ApiError> {
+    let (conversation, id) = ids(conversation, id)?;
+    let (_, run) = state
+        .shards
+        .of(&user)
+        .call(move |core, _| async move { core.run_schedule_now(&conversation, &id, run.task).await })
+        .await?
+        .map_err(refused)?;
+    Ok((StatusCode::CREATED, Json(run)))
+}
+
+/// `GET /conversations/:id/schedules/:schedule/runs?before=`: a page of the
+/// schedule's runs before the run `before`, newest first; the latest
+/// without it.
+pub(crate) async fn runs(
+    State(state): State<Api>,
+    Principal(user): Principal,
+    Path((conversation, id)): Path<(String, String)>,
+    QueryParams(query): QueryParams<ScheduleRunsQuery>,
+) -> Result<Json<ScheduleRuns>, ApiError> {
+    let (conversation, id) = ids(conversation, id)?;
+    let runs = state
+        .shards
+        .of(&user)
+        .call(move |core, _| async move { core.schedule_runs(&conversation, &id, query.before).await })
+        .await?
+        .map_err(refused)?;
+    Ok(Json(ScheduleRuns { runs }))
+}
+
 fn refused(error: ScheduleError) -> ApiError {
     let message = error.to_string();
     let (status, code) = match error {
         ScheduleError::NotFound => (StatusCode::NOT_FOUND, ErrorCode::ScheduleNotFound),
+        ScheduleError::ConversationNotFound => (StatusCode::NOT_FOUND, ErrorCode::ConversationNotFound),
+        ScheduleError::NoRun(_) => (StatusCode::BAD_REQUEST, ErrorCode::InvalidQuery),
         ScheduleError::Storage(error) => return error.into(),
-        // The rest are an agent's, which `jush schedule` words.
-        other => return ApiError::new(StatusCode::BAD_REQUEST, ErrorCode::InvalidBody, other.to_string()),
+        ScheduleError::NotRecorded => return ApiError::internal_message(message),
+        // The rest refuse a part of the patch, which the message names.
+        _ => (StatusCode::BAD_REQUEST, ErrorCode::InvalidBody),
     };
     ApiError::new(status, code, message)
 }

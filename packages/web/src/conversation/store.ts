@@ -105,7 +105,7 @@ import {
   type ProductState,
   type ReadRequest,
   type SidebarReorder,
-  type ScheduleChange,
+  type SchedulePatch,
   type SuggestedReplyUse,
 } from '@jush-agent/protocol'
 import type { WorkflowChoice } from '@jush-agent/protocol'
@@ -410,7 +410,7 @@ export const useConversations = defineStore('conversations', () => {
       | 'pinned'
       | 'archived'
       | 'archivedAt'
-      | 'scheduled'
+      | 'schedules'
       | 'target'
       | 'worktree'
       | 'revision'
@@ -428,7 +428,7 @@ export const useConversations = defineStore('conversations', () => {
       pinned: record.pinned,
       archived: record.archived,
       archivedAt: record.archivedAt,
-      scheduled: record.scheduled,
+      schedules: record.schedules,
       target: record.target,
       projectId:
         record.target.kind === 'project' ? record.target.projectId : null,
@@ -879,7 +879,7 @@ export const useConversations = defineStore('conversations', () => {
           workspaceId: draft.local.conversation.workspaceId ?? useWorkspaces().current ?? '',
           // A draft is created where the page chose, never in a worktree.
           worktree: null,
-          scheduled: false,
+          schedules: [],
           permissionRequests: 0,
           unreadPermissionRequests: 0,
           status: 'idle',
@@ -2781,7 +2781,7 @@ export const useConversations = defineStore('conversations', () => {
       pinned: false,
       archived: false,
       archivedAt: null,
-      scheduled: false,
+      schedules: [],
       target: projectId
         ? { kind: 'project', projectId: projectId }
         : { kind: 'cloud' },
@@ -3229,19 +3229,20 @@ export const useConversations = defineStore('conversations', () => {
    * Turns the schedule `schedule` of the conversation `id` off, or with
    * `paused` false on, the switch of its row in the Schedules menu: the row
    * shows it at once, and returns if the backend refuses. When it next wakes
-   * the conversation comes with the metadata the change brings.
+   * the conversation comes with the entry the change brings.
    */
   async function pauseSchedule(id: string, schedule: string, paused: boolean): Promise<void> {
     const conversation = items.value.find((item) => item.id === id)
     if (!conversation || conversation.persistence !== 'synced') {
       return
     }
-    const change = conversation.metadata.change((metadata) => ({
-      ...metadata,
-      schedules: metadata.schedules.map((each) => (each.id === schedule
-        ? { ...each, paused, nextAt: paused ? null : each.nextAt }
-        : each)),
-    }))
+    const change = product.change(`conversation:${id}`, (state) =>
+      withConversation(state, id, (record) => ({
+        ...record,
+        schedules: record.schedules.map((each) => (each.id === schedule
+          ? { ...each, paused, nextAt: paused ? null : each.nextAt }
+          : each)),
+      })))
     const signal = lifetime.signal
     await writes
       .run(id, async () => {
@@ -3250,7 +3251,7 @@ export const useConversations = defineStore('conversations', () => {
         await apiRequest(`/conversations/${encodeURIComponent(id)}/schedules/${encodeURIComponent(schedule)}`, {
           method: 'PATCH',
           signal,
-          ...jsonBody({ paused } satisfies ScheduleChange),
+          ...jsonBody({ paused } satisfies SchedulePatch),
         })
         change.land()
       })
@@ -3269,10 +3270,11 @@ export const useConversations = defineStore('conversations', () => {
     if (!conversation || conversation.persistence !== 'synced') {
       return
     }
-    const change = conversation.metadata.change((metadata) => ({
-      ...metadata,
-      schedules: metadata.schedules.filter((each) => each.id !== schedule),
-    }))
+    const change = product.change(`conversation:${id}`, (state) =>
+      withConversation(state, id, (record) => ({
+        ...record,
+        schedules: record.schedules.filter((each) => each.id !== schedule),
+      })))
     const signal = lifetime.signal
     await writes
       .run(id, async () => {

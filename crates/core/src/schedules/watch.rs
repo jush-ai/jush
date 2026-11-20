@@ -16,12 +16,12 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 use jush_core_device_access::scripts::{self, Ran, Script, ScriptEnd};
-use jush_core_store::schedules::{RunCause, StoredSchedule, WatchOutput};
+use jush_core_store::schedules::{StoredSchedule, WatchOutput};
 use jush_core_sync::Part;
 use jush_command_protocol::CommandCaller;
 use jush_device_interface::{DeviceError, JobCaller, OutputRecord};
 use jush_shared_types::{NodeId, StreamKind, Timestamp};
-use jush_web_api_protocol::schedules::{RunNote, RunState, Trigger};
+use jush_web_api_protocol::schedules::{RunCause, RunNote, RunState, Trigger};
 use sha2::{Digest, Sha256};
 use tokio_util::sync::CancellationToken;
 
@@ -158,7 +158,7 @@ impl Core {
         let mut run = super::runs::skipped(schedule, RunCause::Change, now, note.1);
         run.state = note.0;
         match store.insert_schedule_run(run).await {
-            Ok(()) => self.mark(Part::Metadata(schedule.conversation.clone())),
+            Ok(()) => self.mark(Part::Conversation(schedule.conversation.clone())),
             Err(error) => tracing::warn!(event = "schedule_watch.record_failed", schedule = %schedule.id, what = "run", %error, "a watch's run was not recorded"),
         }
     }

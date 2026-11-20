@@ -42,7 +42,7 @@ export {
   type ProviderAccounts,
   type SignIn,
 } from './core'
-export { Conversation, type ConversationEvent, type Input, type Permission, type Turn } from './conversation'
+export { Conversation, type ConversationEvent, type ConversationSchedules, type Input, type Permission, type Turn } from './conversation'
 export {
   definePlugin,
   leaf,

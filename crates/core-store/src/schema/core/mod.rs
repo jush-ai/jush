@@ -5,5 +5,12 @@
 //! is the current one until the first change, and then the first of these.
 
 type Shipped = super::Shipped<()>;
+/// The step of each schema of the history, as its own module says it.
+type Migration = super::Migration<()>;
 
-pub(super) const HISTORY: &[Shipped] = &[];
+mod from_0_2_6247;
+
+pub(super) const HISTORY: &[Shipped] = &[Shipped {
+    sql: include_str!("from_0_2_6247.sql"),
+    migration: from_0_2_6247::MIGRATION,
+}];

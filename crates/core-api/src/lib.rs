@@ -184,9 +184,14 @@ pub fn routes() -> Router<Api> {
         .route("/plugins/{plugin}/features/{feature}", put(plugins::switch_feature))
         .route("/instructions", put(instructions::replace))
         .route("/conversations/{id}/pins/{pin}", delete(pins::unpin))
+        .route("/conversations/{id}/schedules", post(schedules::create))
         .route(
             "/conversations/{id}/schedules/{schedule}",
-            patch(schedules::change).delete(schedules::delete),
+            get(schedules::show).patch(schedules::change).delete(schedules::delete),
+        )
+        .route(
+            "/conversations/{id}/schedules/{schedule}/runs",
+            get(schedules::runs).post(schedules::run),
         )
         .route("/port-forwards", get(port_forwards::list).post(port_forwards::create))
         .route("/port-forwards/{id}", patch(port_forwards::patch).delete(port_forwards::delete))

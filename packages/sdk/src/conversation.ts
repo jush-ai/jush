@@ -27,6 +27,10 @@ import {
   conversationDetailSchema,
   conversationFrameSchema,
   conversationUpdateSchema,
+  scheduleAnswerSchema,
+  scheduleDtoSchema,
+  scheduleRunDtoSchema,
+  scheduleRunsSchema,
   subagentMessageAnswerSchema,
   transcriptPageSchema,
   turnStateSchema,
@@ -39,6 +43,10 @@ import {
   type ConversationUpdate,
   type PermissionRequest,
   type RequestedValues,
+  type ScheduleAnswer,
+  type ScheduleDto,
+  type SchedulePatch,
+  type ScheduleRunDto,
   type TurnOutcome,
   type TurnState,
 } from '@jush-agent/protocol'
@@ -72,6 +80,24 @@ export interface Permission {
 /** What `events()` yields: the lane's events, and each new permission request. */
 export type ConversationEvent = ClientSessionEvent | { type: 'permission'; permission: Permission }
 
+/**
+ * A conversation's schedules, as `jush schedule` acts on them; each call is
+ * one of the core's routes, and opens no lane.
+ */
+export interface ConversationSchedules {
+  /** Makes one from the patch over the defaults `jush schedule create` takes; it is on unless the patch pauses it. */
+  create(patch: SchedulePatch): Promise<ScheduleAnswer>
+  get(id: string): Promise<ScheduleDto>
+  /** Changes what the patch names. */
+  update(id: string, patch: SchedulePatch): Promise<ScheduleAnswer>
+  /** Removes it and its runs' records. */
+  remove(id: string): Promise<void>
+  /** Runs it now, of the repeat's task `task`; resolves with the run as it started, before its message names a turn. */
+  run(id: string, task?: string): Promise<ScheduleRunDto>
+  /** Its runs before the run `before`, newest first, 50 at most; the latest without it. */
+  runs(id: string, before?: string): Promise<ScheduleRunDto[]>
+}
+
 export class Conversation {
   private client: ConversationClient | null = null
   private opening: Promise<ConversationClient> | null = null
@@ -88,7 +114,23 @@ export class Conversation {
   /** Whether the lane dropped again while it was being opened again. */
   private droppedAgain = false
 
-  constructor(readonly id: string, private readonly routes: CoreRoutes) {}
+  readonly schedules: ConversationSchedules
+
+  constructor(readonly id: string, private readonly routes: CoreRoutes) {
+    const path = `/conversations/${encodeURIComponent(id)}/schedules`
+    const one = (schedule: string) => `${path}/${encodeURIComponent(schedule)}`
+    this.schedules = {
+      create: (patch) => routes.json('POST', path, scheduleAnswerSchema, patch),
+      get: (schedule) => routes.json('GET', one(schedule), scheduleDtoSchema),
+      update: (schedule, patch) => routes.json('PATCH', one(schedule), scheduleAnswerSchema, patch),
+      remove: (schedule) => routes.send('DELETE', one(schedule)),
+      run: (schedule, task) => routes.json('POST', `${one(schedule)}/runs`, scheduleRunDtoSchema, task === undefined ? {} : { task }),
+      runs: async (schedule, before) => {
+        const query = before === undefined ? '' : `?before=${encodeURIComponent(before)}`
+        return (await routes.json('GET', `${one(schedule)}/runs${query}`, scheduleRunsSchema)).runs
+      },
+    }
+  }
 
   /** Opens the conversation's lane, once; each action opens it first. */
   open(): Promise<ConversationClient> {

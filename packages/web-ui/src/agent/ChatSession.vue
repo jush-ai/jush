@@ -597,9 +597,9 @@ watch(
 provideLabelRoom(() => titleRoom.value)
 // The dock, its cards, chips and composer, shows with the transcript, never
 // over the loading pane: what it shows arrives by different reads, such as
-// the schedules with the metadata, which answers before the transcript, and
-// one that came first would stand alone under Loading, then move up when the
-// composer comes.
+// the suggested replies with the metadata, which answers before the
+// transcript, and one that came first would stand alone under Loading, then
+// move up when the composer comes.
 const dockShown = computed(() => props.conversation.archived || transcriptShown(props.conversation.load))
 // Recovery of an unfinished turn needs:
 //

@@ -88,6 +88,21 @@ impl Core {
         let (status, facts) = self.standing(&record.id).await;
         let resolved = self.device_core().resolve_target(&record).await?;
         let archived = record.archived();
+        // Most conversations have none, which their record says without a
+        // read of their schedules.
+        let schedules = match record.scheduled {
+            true => self.conversation_schedules(&record.id).await.unwrap_or_else(|error| {
+                tracing::error!(
+                    event = "conversation_summary.read_failed",
+                    conversation = %record.id,
+                    what = "schedules",
+                    error = &error as &dyn std::error::Error,
+                    "a conversation's schedules could not be read for its entry"
+                );
+                Vec::new()
+            }),
+            false => Vec::new(),
+        };
         Ok(ConversationSummary {
             unread: record.unread_end().map(|end| if end.failed { UnreadEnd::Failed } else { UnreadEnd::Answered }),
             status,
@@ -105,7 +120,7 @@ impl Core {
             revision: facts.revision,
             permission_requests: record.permission_requests,
             unread_permission_requests: record.unread_permission_requests,
-            scheduled: record.scheduled,
+            schedules,
             work,
         })
     }
@@ -146,7 +161,6 @@ impl Core {
             .map(|kept| kept.cost)
             .unwrap_or_default();
         let first_call_at = self.store().conversation_first_call(record.id.clone()).await?;
-        let schedules = self.conversation_schedules(&record.id).await?;
         let ended_commands = self.ended_commands(&record.id).await;
         let notifications_card = self.store().notifications_card(record.id.clone()).await?;
         let pins = self.conversation_pins(&record.id).await?;
@@ -173,7 +187,6 @@ impl Core {
             last_attachment: facts.last_attachment,
             plugin_revisions: self.plugins().plugin_revisions(&record.id),
             permissions,
-            schedules,
             ended_commands,
             id: record.id,
         })
