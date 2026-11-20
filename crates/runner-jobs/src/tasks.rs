@@ -41,7 +41,7 @@ use crate::{
     connection::ConnectionHandle,
 };
 use bytes::Bytes;
-use jush_command_protocol::{CommandCaller, CommandContext, Viewable};
+use jush_command_protocol::{CommandCaller, CommandContext, Viewable, is_conversation_scope};
 use jush_runner_protocol::manifest::Manifest;
 use serde::{Deserialize, Serialize};
 use jush_runner_command_packages::ResidentHandle;
@@ -204,8 +204,10 @@ struct Work {
 pub enum TaskCommand {
     Shell {
         script: String,
-        /// The conversation the job belongs to and the agent that started
-        /// it, whose scratch directory `JUSH_SCRATCH` names.
+        /// The scope the job belongs to, a conversation's or not
+        /// (`jush_command_protocol::is_conversation_scope`), and the agent
+        /// that started it: a conversation's agent's scratch directory is
+        /// what `JUSH_SCRATCH` names.
         conversation: String,
         caller: CommandCaller,
         stdin: Option<wire::PipeRef>,
@@ -691,8 +693,12 @@ impl JobConfig {
                     running,
                 } = self.directories.create(&id, &cancel).await?;
                 env.insert(JOB_ID_ENV.into(), id.clone());
-                let scratch = self.scratch.create(&conversation, &caller).await?;
-                env.insert(SCRATCH_ENV.into(), scratch.to_string_lossy().into_owned());
+                // Work that serves no conversation has no scratch directory:
+                // the next connection keeps only conversations' directories.
+                if is_conversation_scope(&conversation) {
+                    let scratch = self.scratch.create(&conversation, &caller).await?;
+                    env.insert(SCRATCH_ENV.into(), scratch.to_string_lossy().into_owned());
+                }
                 let edit_context = jush_command_protocol::EditContext {
                     directory: path.join("changes").to_string_lossy().into_owned(),
                     lock: self

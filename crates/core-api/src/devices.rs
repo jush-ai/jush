@@ -4,22 +4,31 @@
 //!
 //! - pairing the runner waiting under the code it printed;
 //! - renaming and routes, and revocation;
-//! - browsing a paired device's directories to choose a target.
+//! - browsing a paired device's directories to choose a target;
+//! - a program's script on a device, outside any conversation.
 //!
-//! Browsing reaches the device through device access, which wakes nothing: a
-//! device whose runner is not connected answers 409 `device_offline`.
+//! Browsing and a script reach the device through device access, which wakes
+//! nothing: a device whose runner is not connected answers 409
+//! `device_offline`.
+
+use std::time::{Duration, Instant};
 
 use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
+use bytes::Bytes;
+use jush_core_device_access::scripts::{self, Script, ScriptEnd};
+use jush_core_devices::command_context::device_context;
+use jush_device_interface::{JobCaller, OutputRecord, WholeOutput};
+use jush_shared_types::{NodeId, StreamKind};
 use jush_core_store::devices::{DeviceChange, DeviceRecord};
 use jush_web_api_protocol::text::Trimmed;
 use jush_core_devices::files::browse_directory;
 use jush_device_interface::{DeviceError, DeviceErrorKind, MkdirOptions};
 use jush_core_devices::claims::ClaimRefusal;
 use jush_web_api_protocol::devices::{
-    ChangeDevice, Claim, DeviceAnswer, DeviceElevation, DeviceKind,
-    Devices, RevokedDevice,
+    ChangeDevice, Claim, DeviceAnswer, DeviceElevation, DeviceExec, DeviceExecResult, DeviceKind,
+    Devices, ExecOutput, RevokedDevice,
 };
 use jush_web_api_protocol::error::ErrorCode;
 use jush_web_api_protocol::files::{
@@ -185,6 +194,117 @@ pub(crate) async fn browse(
         .await??;
     let (directory, read_at) = listed;
     Ok(crate::files::read_answer(&read_at, Json(directory)))
+}
+
+/// `POST /devices/:id/exec`: runs a script on a paired device, outside any
+/// conversation, as the agent's shell runs a command, and answers once it
+/// ended. A caller that goes away first, as a program whose connection ends,
+/// has it stopped. The core's close answers at once; the device stops the
+/// script when it connects again (`crates/runner-client/src/device_jobs.rs`).
+pub(crate) async fn exec(
+    State(state): State<Api>,
+    Principal(user): Principal,
+    Path(id): Path<String>,
+    JsonBody(exec): JsonBody<DeviceExec>,
+) -> Result<Json<DeviceExecResult>, ApiError> {
+    let device = owned_device(&state, &user, &id, Some(DeviceKind::User)).await?;
+    state
+        .shards
+        .of(&user)
+        .call(move |core, gone| async move {
+            let remote = core
+                .devices()
+                .device_access(&device.id)
+                .await
+                .ok_or_else(ApiError::device_offline)?;
+            let script = Script {
+                script: exec.script,
+                cwd: exec.cwd.or_else(|| core.devices().home(&device.id)),
+                env: exec.env,
+                stdin: Some(Bytes::from(exec.stdin)),
+                context: device_context(core.store()).await?,
+                caller: JobCaller {
+                    node: NodeId::try_from("program").expect("a name is not empty"),
+                    tool_use_id: "exec".into(),
+                    turn: None,
+                },
+            };
+            let time = exec.timeout_ms.map(Duration::from_millis);
+            let began = Instant::now();
+            let stop = gone.child_token();
+            let run = scripts::run(&remote, script, time, &stop);
+            tokio::pin!(run);
+            let ran = tokio::select! {
+                ran = &mut run => ran,
+                () = core.closed() => {
+                    stop.cancel();
+                    run.await
+                }
+            };
+            // A script that never started leaves the device as it was.
+            let ran = ran.map_err(|error| {
+                ApiError::new(
+                    StatusCode::CONFLICT,
+                    ErrorCode::DeviceOffline,
+                    format!("The script did not start: {}", error.message),
+                )
+            })?;
+            tracing::info!(
+                event = "device_exec.ended",
+                device_id = %device.id,
+                end = ?ran.end,
+                elapsed_ms = u64::try_from(began.elapsed().as_millis()).unwrap_or(u64::MAX),
+                "a program's script on a device ended"
+            );
+            let output = exec_output(&ran.output);
+            let timeout_ms = exec.timeout_ms.unwrap_or_default();
+            match ran.end {
+                ScriptEnd::Exited(exit_code) => Ok(Json(DeviceExecResult { exit_code, output })),
+                // What the script did is the caller's, not the backend's: no
+                // 5xx, which the backend's log counts as its own failure.
+                ScriptEnd::TimedOut { stopped: true } => Err(ApiError::new(
+                    StatusCode::CONFLICT,
+                    ErrorCode::CommandTimedOut,
+                    format!("The script ran past {timeout_ms} ms and was stopped"),
+                )
+                .with_output(output)),
+                ScriptEnd::TimedOut { stopped: false } => Err(ApiError::new(
+                    StatusCode::CONFLICT,
+                    ErrorCode::DeviceLost,
+                    format!("The script ran past {timeout_ms} ms while the device's runner was away"),
+                )),
+                ScriptEnd::Lost(reason) => Err(ApiError::new(
+                    StatusCode::CONFLICT,
+                    ErrorCode::DeviceLost,
+                    format!("The device lost the script: {reason}"),
+                )),
+                // The core closes, or the caller went away and reads no answer.
+                ScriptEnd::Stopped => Err(ApiError::backend_closing()),
+            }
+        })
+        .await?
+}
+
+/// A script's output as the contract carries it: each stream's bytes read as
+/// UTF-8, and the bytes the device left out or that were not read from it.
+fn exec_output(output: &WholeOutput) -> ExecOutput {
+    let mut streams = [Vec::new(), Vec::new()];
+    let mut left_out = output.missing().map_or(0, |missing| missing.bytes);
+    for record in output.records() {
+        match record {
+            OutputRecord::Output(StreamKind::Stdout, bytes) => streams[0].extend_from_slice(bytes),
+            OutputRecord::Output(StreamKind::Stderr, bytes) => streams[1].extend_from_slice(bytes),
+            OutputRecord::LeftOut(bytes) => left_out += bytes,
+        }
+    }
+    let [stdout, stderr] = streams.map(|bytes| {
+        String::from_utf8(bytes).unwrap_or_else(|error| String::from_utf8_lossy(error.as_bytes()).into_owned())
+    });
+    ExecOutput {
+        stdout,
+        stderr,
+        left_out_bytes: left_out,
+    }
 }
 
 /// `GET /devices/:id/workflows?directory=`: the Workflow menu's list for a new

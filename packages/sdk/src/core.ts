@@ -16,6 +16,7 @@ import {
   coreStateSchema,
   createdConversationSchema,
   deviceAnswerSchema,
+  deviceExecResultSchema,
   loginStartedSchema,
   providerAnswerSchema,
   providersSchema,
@@ -29,6 +30,7 @@ import {
   type CreateConversation,
   type CreateProvider,
   type DeviceDto,
+  type DeviceExec,
   type ProviderDto,
   type ProviderPatch,
   type PushMessage,
@@ -454,6 +456,30 @@ export class Providers {
   }
 }
 
+/** Where and how `device.exec` runs a script. */
+export interface ExecOptions {
+  /** The directory it starts in; the home directory the device's runner reported by default. */
+  cwd?: string
+  /** The variables it starts with, above the device's own environment. */
+  env?: Record<string, string>
+  /** What it reads on its standard input, which then ends. */
+  stdin?: string
+  /** How many milliseconds it may run before it is stopped on the device; 0, the default, or `Infinity` for no limit. */
+  timeout?: number
+  /** Stops it; the run rejects with its reason, as a `fetch` does. */
+  signal?: AbortSignal
+}
+
+/** How a script `device.exec` ran exited, and what it printed, read as UTF-8. */
+export interface ExecResult {
+  /** Its exit status, as the agent's shell reports one. */
+  exitCode: number
+  stdout: string
+  stderr: string
+  /** The bytes missing from `stdout` and `stderr`: a device keeps 16 MiB of a script's output and leaves out the middle of more, and a read of it that failed keeps only its first and newest bytes. */
+  leftOutBytes: number
+}
+
 /** A device of the core, which a runner serves: one that dialed the process, or over a channel the program gives it. */
 export class Device {
   constructor(
@@ -529,6 +555,27 @@ export class Device {
     // The runner ends with its channel.
     void connected.ended.then(() => child.stdin?.end())
     return child
+  }
+
+  /**
+   * Runs `script` on the device, outside any conversation, as the agent's
+   * shell runs a command, and resolves once it exited, whatever its status.
+   * Rejects with a `JushError` when it has no status: `device_offline`, when
+   * it never ran; `command_timed_out`, when it ran past `timeout` and was
+   * stopped (`SIGTERM`, then `SIGKILL` 5 seconds later), with what it printed
+   * in `body.output`; `device_lost`, when the device lost it or its input was
+   * cut; `backend_closing`, when the core closed while it ran, whose device
+   * stops it when it connects again.
+   */
+  async exec(script: string, options: ExecOptions = {}): Promise<ExecResult> {
+    const { timeout, signal, ...where } = options
+    // 0 is no limit, as Node's `child_process` reads it, and so is any
+    // number that is not finite. The backend takes whole milliseconds, so a
+    // fraction rounds up.
+    const limited = timeout !== undefined && timeout !== 0 && Number.isFinite(timeout)
+    const body: DeviceExec = { script, ...where, ...(limited ? { timeoutMs: Math.ceil(timeout) } : {}) }
+    const ran = await this.routes.json('POST', `/devices/${encodeURIComponent(this.id)}/exec`, deviceExecResultSchema, body, signal)
+    return { exitCode: ran.exitCode, ...ran.output }
   }
 
   /**

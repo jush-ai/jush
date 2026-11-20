@@ -352,6 +352,13 @@ impl Server {
                 if !self.started {
                     self.done = true;
                 }
+                // The rest of the input went with the runner that relayed
+                // it, and no runner after it has it: the job reads the
+                // input's end, as a program whose ssh client went does,
+                // rather than wait for it forever.
+                if let Some(input) = self.input.take() {
+                    let _ = input.send(ProcessInput::End);
+                }
             }
             Event::AskPeers { task, signal, answer } => {
                 if self.connection.is_none() {

@@ -27,6 +27,7 @@
 
 mod device_jobs;
 mod file_watch;
+mod job_views;
 mod link;
 mod manifest;
 mod output_records;
@@ -44,6 +45,7 @@ mod stream_pipe;
 
 pub use device_jobs::{CLOUD_RESTARTED, DeviceJobs, Hello, NEVER_RECEIVED, RUNNER_RESTARTED, UPGRADED};
 pub use file_watch::{DeviceEvent, DeviceSubscriber};
+pub use job_views::{StreamViews, View, push_reason, received_output};
 pub use link::{
     DirectAdmission, DirectAnswer, ForwardEvent, HttpHead, HttpRequest, PackageEvent, PeerEvent, JobEnd, JobMedium, JobOrigin, JobOutput, Link, LinkDriver, LinkEnd, LinkOptions,
     DeviceLog, LinkPolicy, SocketEnd,

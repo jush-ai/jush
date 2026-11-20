@@ -216,6 +216,55 @@ for (const listed of core.state.devices) {
 }
 ```
 
+### Scripts outside a conversation
+
+`device.exec(script, options)` runs a script on a paired device as the agent's
+shell runs a command, for work that is no conversation's, such as a filter a
+chat message goes through before the agent hears of it. No transcript holds
+it, and no model reads it:
+
+```ts
+const { exitCode, stdout } = await device.exec('bun filter.js', {
+  cwd: '/work/filters/release-notes',
+  env: { CHAT_TOKEN: token },
+  stdin: JSON.stringify(event),
+  timeout: 10_000,
+})
+```
+
+- It starts in `cwd`, the home directory of the device's runner by default,
+  with `env` above the device's environment; `env` reaches the script's
+  process and no file on the device.
+- It resolves once the script exited, whatever its status, with its
+  `exitCode`, `stdout` and `stderr` read as UTF-8. A device keeps 16 MiB of a
+  script's output and leaves out the middle of more, and a read of it that
+  failed keeps only its first and newest bytes; `leftOutBytes` counts what is
+  missing.
+- Each run is a job of its own, so runs on one device go side by side.
+- The request, the script and `stdin` with it, is JSON of at most 1 MiB.
+- A device whose runner drops keeps running the script, and the result comes
+  once the runner is back. `timeout`, in milliseconds, bounds the wait; 0, the
+  default, sets no limit. A script past its time gets `SIGTERM`, and
+  `SIGKILL` 5 seconds later if it is still running.
+- A runner that ends, or whose connection breaks, after the core sent it the
+  whole of `stdin` but before the script read all of it, loses the rest: the
+  script reads the input's end there, as a program whose `ssh` client went
+  does.
+- `signal` stops the script, and the promise rejects with its reason, as a
+  `fetch`'s does. The end of your program's connection to the core stops it
+  too.
+
+It rejects with a `JushError` only when the script has no exit status:
+
+- `device_offline`: the runner was not connected, and the script never ran.
+- `command_timed_out`: it ran past `timeout` and was stopped; what it printed
+  is in `error.body.output`.
+- `device_lost`: the device lost it; its runner was away when it was to be
+  stopped; or the runner's connection broke before the core sent it the
+  whole of `stdin`.
+- `backend_closing`: the core closed while it ran. The device stops the
+  script when it connects to the core again.
+
 `device.revoke()` revokes a device, as the app's Revoke does: its token opens
 nothing from then on, the commands running on it are lost, and the commands of
 a conversation whose target it is fail until `update({ target })` names

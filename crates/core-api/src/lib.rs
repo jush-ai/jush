@@ -210,6 +210,7 @@ pub fn routes() -> Router<Api> {
         .route("/devices/claim", post(devices::claim))
         .route("/devices/{id}", delete(devices::revoke).patch(devices::change))
         .route("/devices/{id}/elevation", post(devices::elevate))
+        .route("/devices/{id}/exec", post(devices::exec))
         .route("/devices/{id}/fs", get(devices::browse).post(devices::make_directory))
         .route("/devices/{id}/workflows", get(devices::workflows))
         .route(

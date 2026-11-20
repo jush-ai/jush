@@ -4,7 +4,7 @@
 
 use jush_command_protocol::{
     BrowserProfile, ColorScheme, CommandCaller, CommandContext, CommandLocale,
-    PROVIDER_SCOPE_PREFIX,
+    DEVICE_SCOPE, PROVIDER_SCOPE_PREFIX,
 };
 use jush_web_api_protocol::ids::{ConversationId, ProviderId};
 use jush_web_api_protocol::settings::BrowserLocale;
@@ -49,6 +49,13 @@ pub async fn provider_context(
         CommandCaller::User {},
     )
     .await
+}
+
+/// The context of the owner's script on a device, which belongs to no
+/// conversation (`crates/core-device-access/src/scripts.rs`): it names the
+/// device's scope.
+pub async fn device_context(store: &CoreStore) -> Result<CommandContext, StorageError> {
+    context(store, DEVICE_SCOPE.to_owned(), CommandCaller::User {}).await
 }
 
 async fn context(
