@@ -1,15 +1,18 @@
 //! Devices: the list, pairing, and a device's log.
 
+use std::collections::BTreeMap;
+
 use jush_runner_protocol::direct::CANDIDATE_CHARS;
 /// The STUN servers' URLs, which the product state names to the page.
 pub use jush_runner_protocol::direct::{NotAStunUrl, StunUrl};
 use jush_runner_protocol::wire::{
     AutostartUnavailable, DeviceArtifact, DeviceDownload, Elevation, ElevationOutcome, OperatingSystem, RunnerPlatform,
 };
-use jush_shared_types::{Nullable, Timestamp};
+use jush_shared_types::{MAX_SAFE_INTEGER, Nullable, Timestamp};
 use garde::Validate;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use serde_with::rust::unwrap_or_skip;
 
 use crate::ids::{DeviceId, ProjectId};
 use crate::text::Trimmed;
@@ -220,6 +223,60 @@ pub struct ChangeDevice {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct DeviceAnswer {
     pub device: DeviceDto,
+}
+
+/// `POST /devices/:id/exec`: a script a program runs on the device outside
+/// any conversation, as the agent's shell runs a command
+/// (`crates/core-device-access/src/scripts.rs`). The answer comes once it
+/// ended.
+#[derive(Debug, Deserialize, JsonSchema, Validate)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DeviceExec {
+    #[garde(custom(crate::not_blank))]
+    pub script: String,
+    /// The directory it starts in; absent for the home directory the
+    /// device's runner reported.
+    #[serde(default, with = "unwrap_or_skip")]
+    #[schemars(with = "String")]
+    #[garde(inner(length(min = 1)))]
+    pub cwd: Option<String>,
+    /// The variables it starts with, above the device's own.
+    #[serde(default)]
+    #[garde(custom(jush_command_protocol::environment))]
+    pub env: BTreeMap<String, String>,
+    /// What it reads on its standard input, which then ends.
+    #[serde(default)]
+    #[garde(skip)]
+    pub stdin: String,
+    /// How long it may run before it is stopped, in milliseconds; absent for
+    /// as long as it runs.
+    #[serde(default, with = "unwrap_or_skip")]
+    #[schemars(with = "u64")]
+    #[garde(range(min = 1, max = MAX_SAFE_INTEGER))]
+    pub timeout_ms: Option<u64>,
+}
+
+/// `{ exitCode, output }`: the answer of `POST /devices/:id/exec`, the exit
+/// status as the agent's shell reports one.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct DeviceExecResult {
+    pub exit_code: i32,
+    pub output: ExecOutput,
+}
+
+/// What a script printed, read as UTF-8 with an invalid byte as U+FFFD.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, Validate)]
+#[serde(rename_all = "camelCase")]
+pub struct ExecOutput {
+    #[garde(skip)]
+    pub stdout: String,
+    #[garde(skip)]
+    pub stderr: String,
+    /// The bytes missing from both: the middle a device leaves out past the
+    /// 16 MiB of a job's output it keeps, and what could not be read from it.
+    #[garde(range(max = MAX_SAFE_INTEGER))]
+    pub left_out_bytes: u64,
 }
 
 /// `{ removed }`: the answer of a revocation, the ids of the projects

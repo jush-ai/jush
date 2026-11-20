@@ -7,6 +7,7 @@
 //!   detach).
 //! - File transfers, uploads, remote files, user streams and the file watch.
 //! - The shell environments of the agent's nodes over the access.
+//! - The owner's scripts on a device, which no transcript holds.
 //! - The product's `jush device` and `jush attachment` groups.
 //!
 //! The operations are methods of `dyn DeviceCore`, what device access needs of its
@@ -89,6 +90,7 @@ pub mod lease;
 mod machine;
 pub mod plugin_files;
 pub mod remote_files;
+pub mod scripts;
 pub mod shells;
 pub mod stream;
 pub mod target;

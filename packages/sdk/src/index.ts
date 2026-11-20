@@ -36,6 +36,8 @@ export {
   Providers,
   type AcceptedSocket,
   type ConversationOptions,
+  type ExecOptions,
+  type ExecResult,
   type Notified,
   type ProviderAccounts,
   type SignIn,

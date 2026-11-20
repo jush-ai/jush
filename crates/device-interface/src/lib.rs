@@ -50,7 +50,7 @@ pub use device::{
     ByteRange, ByteStream, CpOptions, Descriptor, DirEntry, FileContents, FileKind, FileStat, Device, DeviceError,
     DeviceErrorKind, DeviceFs, DeviceIdentity, DeviceKey, DeviceProcess, LinkTarget, MkdirOptions, Process,
     ProcessControl, ProcessEnd, ProcessOutput, RmOptions, Signal, SpawnEnv, SpawnError,
-    SpawnErrorKind, SpawnRequest, SymbolicLink, WhenExists, WriteOptions,
+    SpawnErrorKind, SpawnRequest, SymbolicLink, WhenExists, WriteOptions, signal_status,
 };
 pub use media::CommandMedium;
 pub use output::{

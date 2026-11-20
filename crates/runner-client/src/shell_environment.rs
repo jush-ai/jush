@@ -45,8 +45,8 @@ use jush_device_interface::{
     BinaryOutput, CommandMedium, CommandRecord, CommandSet, CommandStatus, DEFAULT_BINARY_LIMIT_BYTES,
     DEFAULT_OUTPUT_LIMIT_BYTES, EditedFiles, Ending, ExecRequest, Device, DeviceError, DeviceErrorKind, DeviceKey,
     JobCaller, Missing, Numbers, OutputRecord, PageFeed, PageView, ProcessEnd, Seen,
-    ShellEnvironment, ShellError, SpawnErrorKind, Streams, TakenUp, Unreachable, UnsentStart, WholeOutput,
-    binary_line,
+    ShellEnvironment, ShellError, Streams, TakenUp, Unreachable, UnsentStart, WholeOutput,
+    binary_line, signal_status,
 };
 use jush_runner_protocol::{
     manifest::ManifestError,
@@ -62,7 +62,8 @@ use tokio_util::{sync::CancellationToken, task::TaskTracker};
 
 use crate::{
     CommandCatalog, JobEnd, JobMedium, JobOutput, JobStart, RemoteDevice, RemoteJob, Withdrawal,
-    device_jobs::Newest, manifest::CommandSelection,
+    job_views::{StreamViews, View, push_reason, received_output},
+    manifest::CommandSelection,
 };
 
 /// The product's device access around one job: it holds what the device needs,
@@ -840,11 +841,7 @@ impl RemoteShellEnvironment {
             // A job the runner could not run names why; any other kind is
             // bash's own.
             ProcessEnd::NotStarted(error) => {
-                let reason = match (&error.kind, &error.detail) {
-                    (SpawnErrorKind::Other, Some(detail)) => detail.clone(),
-                    _ => format!("bash: {}", error.kind),
-                };
-                let page = push_reason(&mut received, &reason);
+                let page = push_reason(&mut received, &error.to_string());
                 set_files(retained.await);
                 let settlement = Settlement {
                     end: CommandEnd::Exited { exit_code: 127 },
@@ -861,7 +858,7 @@ impl RemoteShellEnvironment {
                 // command printed: the end says why it was lost
                 // (`crates/agent-server/src/server/shell_output.rs`).
                 let missing = Some(Missing {
-                    bytes: streams.iter().map(Received::unreceived).sum(),
+                    bytes: streams.iter().map(|stream| stream.views.unreceived()).sum(),
                     reason: LOST.into(),
                 })
                 .filter(|missing| missing.bytes > 0);
@@ -891,17 +888,15 @@ impl RemoteShellEnvironment {
                 return self.end(command, record, settlement, Some(job)).await;
             }
             ProcessEnd::Exited(code) => *code,
-            ProcessEnd::Signalled(signal) if matches!(signal.as_str(), "SIGTERM" | "SIGKILL") => {
-                130
-            }
-            ProcessEnd::Signalled(_) => 128,
+            ProcessEnd::Signalled(signal) => signal_status(signal),
         };
+        let [stdout, stderr] = [&streams[0].views, &streams[1].views];
         let lengths = end.output.unwrap_or(wire::OutputLengths {
-            stdout_bytes: streams[0].received(),
-            stderr_bytes: streams[1].received(),
+            stdout_bytes: stdout.received(),
+            stderr_bytes: stderr.received(),
         });
-        let unreceived = lengths.stdout_bytes.saturating_sub(streams[0].received())
-            + lengths.stderr_bytes.saturating_sub(streams[1].received());
+        let unreceived = lengths.stdout_bytes.saturating_sub(stdout.received())
+            + lengths.stderr_bytes.saturating_sub(stderr.received());
         // What the end adds to the pages' view: the whole output when the
         // view lacks some of it, which shows its end anew; otherwise only a
         // line that stands for a binary stdout.
@@ -919,31 +914,16 @@ impl RemoteShellEnvironment {
             Some(Ok(output)) => (output, String::new(), true),
             Some(Err(error)) => {
                 tracing::warn!(event = "command_output.read_failed", device_id = self.0.options.device.device_id().as_deref(), %command, %error, "the command's kept output could not be read");
-                // The output ends with each stream's newest bytes the
-                // runner sent, past what lies between them and the start.
-                let newest = Received::newest_bytes(&streams);
-                let kept: u64 = newest
-                    .iter()
-                    .map(|(left_out, _, bytes)| left_out + bytes.len() as u64)
-                    .sum();
-                if !newest.is_empty() {
-                    let left_out = newest.iter().map(|(left_out, ..)| left_out).sum();
-                    received.push(OutputRecord::LeftOut(left_out));
-                    received.extend(
-                        newest
-                            .into_iter()
-                            .map(|(_, stream, bytes)| OutputRecord::Output(stream, bytes)),
-                    );
-                }
-                let missing = Some(Missing {
-                    bytes: unreceived.saturating_sub(kept),
-                    reason: format!("not read from the device: {}", error.message),
-                })
-                .filter(|missing| missing.bytes > 0);
-                let page = missing
-                    .as_ref()
+                let output = received_output(
+                    received,
+                    [stdout, stderr],
+                    unreceived,
+                    format!("not read from the device: {}", error.message),
+                );
+                let page = output
+                    .missing()
                     .map_or_else(String::new, |missing| format!("{}\n", missing.line()));
-                (WholeOutput::new(received, missing), page, false)
+                (output, page, false)
             }
         };
         let binary = output.binary_stdout(lengths.stdout_bytes, self.0.options.binary_limit);
@@ -1447,43 +1427,14 @@ fn path_change(change: &wire::JobPathChange) -> PathChange {
     }
 }
 
-/// Adds why a command ended without running to its end to its output: a
-/// line on stderr, after the output's last line. Returns the text it added.
-fn push_reason(output: &mut Vec<OutputRecord>, reason: &str) -> String {
-    let last = output.iter().rev().find_map(|record| match record {
-        OutputRecord::Output(_, bytes) => bytes.last().copied(),
-        OutputRecord::LeftOut(_) => None,
-    });
-    let separator = if last.is_none_or(|byte| byte == b'\n') {
-        ""
-    } else {
-        "\n"
-    };
-    let text = format!("{separator}{reason}\n");
-    output.push(OutputRecord::Output(
-        StreamKind::Stderr,
-        Bytes::from(text.clone()),
-    ));
-    text
-}
-
-/// What the backend received of one stream of a job (`crates/runner-jobs/src/tasks.rs`).
+/// What the backend received of one stream of a job, and the pages' view of
+/// it.
 #[derive(Default)]
 struct Received {
-    /// Where the stream's part of the output it holds ends: its first bytes,
-    /// within `JOB_VIEW_BYTES`, up to the first it did not receive, such as
-    /// bytes the runner printed while no connection served that no read
-    /// delivered again. Bytes after such a gap stay out of it, so the
-    /// output never joins bytes across it, and the end reads the kept
-    /// output.
-    head: u64,
-    /// The stream's length on the device, as its messages told it.
-    device: u64,
+    views: StreamViews,
     /// Where the pages' view of the stream's next bytes starts.
     next: u64,
     text: Utf8Stream,
-    /// The stream's newest bytes beyond its first `JOB_VIEW_BYTES`.
-    newest: Newest,
 }
 
 impl Received {
@@ -1498,33 +1449,20 @@ impl Received {
         received: &RefCell<Vec<OutputRecord>>,
     ) -> bool {
         let end = chunk.offset + chunk.bytes.len() as u64;
-        self.device = self.device.max(end);
-        if chunk.offset < wire::JOB_VIEW_BYTES as u64 {
-            // The device's jobs deliver a stream's first bytes without
-            // overlap (`JobEntry::deliver`), so a message that does not
-            // start where the held output ends lies past a gap.
-            if chunk.offset == self.head {
-                self.head = end;
-                if !chunk.bytes.is_empty() {
-                    received
-                        .borrow_mut()
-                        .push(OutputRecord::Output(chunk.stream, chunk.bytes.clone()));
-                }
-            }
+        if let View::First = self.views.take(&chunk, &mut received.borrow_mut()) {
             self.next = end;
             let text = self.text.decode(&chunk.bytes);
             return record.borrow_mut().append_output(chunk.stream, &text);
         }
         record.borrow_mut().grew(chunk.stream, end);
-        if chunk.bytes.is_empty() {
+        let Some((offset, newest)) = self.views.newest().filter(|_| !chunk.bytes.is_empty()) else {
             return false;
-        }
-        self.newest.keep(chunk.offset, &chunk.bytes);
+        };
         record.borrow_mut().set_newest(
             chunk.stream,
-            self.newest.offset(),
-            self.newest.offset().saturating_sub(self.head),
-            whole_characters(self.newest.bytes()),
+            offset,
+            offset.saturating_sub(self.views.received()),
+            whole_characters(newest),
         );
         // The pages' view takes only the bytes it does not hold yet: a job
         // nobody follows sends its newest bytes again with each message.
@@ -1542,34 +1480,6 @@ impl Received {
         text.push_str(&self.text.decode(fresh));
         self.next = end;
         record.borrow_mut().append_page_output(&text)
-    }
-
-    /// The bytes of the stream in the output the backend holds.
-    fn received(&self) -> u64 {
-        self.head
-    }
-
-    /// Each stream's newest bytes beyond its start, with the bytes left out
-    /// between the start and them.
-    fn newest_bytes(streams: &[Received]) -> Vec<(u64, StreamKind, Bytes)> {
-        [StreamKind::Stdout, StreamKind::Stderr]
-            .into_iter()
-            .zip(streams)
-            .filter(|(_, stream)| !stream.newest.is_empty())
-            .map(|(kind, stream)| {
-                (
-                    stream.newest.offset().saturating_sub(stream.head),
-                    kind,
-                    Bytes::copy_from_slice(stream.newest.bytes()),
-                )
-            })
-            .collect()
-    }
-
-    /// The bytes of the stream the device held beyond those, as far as its
-    /// messages told.
-    fn unreceived(&self) -> u64 {
-        self.device.saturating_sub(self.head)
     }
 }
 
