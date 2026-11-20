@@ -38,7 +38,7 @@ use tokio_util::sync::CancellationToken;
 use crate::account::ClaudeAuth;
 use crate::cli;
 use crate::input::{self, ControlRequest, Input};
-use crate::live::{Handle, Tail, exit_message};
+use jush_provider_subscription_cli::{HeldProcess, Tail, exit_message};
 use crate::output::{ControlResponseBody, Line};
 use jush_provider_subscription_cli::{AccountMachine, AccountWork, CliWork, Placed, Placement};
 
@@ -251,7 +251,7 @@ async fn ask_usage(
         exit,
     } = process;
     let exit = exit.shared();
-    let mut handle = Handle::of(control, exit.clone(), Some(config));
+    let mut handle = HeldProcess::of(control, exit.clone(), Some(config));
     let asked = async {
         let lines = [
             input::line(&Input::ControlRequest {
@@ -282,7 +282,7 @@ async fn ask_usage(
         Answer::Usage(usage) => Ok(usage),
         Answer::Failed(message) => Err(unavailable(message)),
         Answer::Ended(stderr) if !stderr.is_empty() => Err(unavailable(stderr)),
-        Answer::Ended(_) => Err(unavailable(exit_message(&exit.await))),
+        Answer::Ended(_) => Err(unavailable(exit_message(&CLI, &exit.await))),
     }
 }
 

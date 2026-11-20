@@ -422,7 +422,7 @@ provider-minimax -> shared-types, provider-common
 provider-codex -> shared-types, provider-common, shared-artifacts
 provider-grok-build -> shared-types, provider-common
 provider-relay -> shared-types, provider-common
-provider-subscription-cli -> command-package-subscription-cli-protocol, shared-types, device-interface
+provider-subscription-cli -> command-package-subscription-cli-protocol, shared-types, provider-common, device-interface
 provider-claude-code -> command-package-subscription-cli-protocol, shared-types, provider-common, device-interface, shared-artifacts, provider-subscription-cli
 provider-registry -> shared-types, provider-common, provider-anthropic-api, provider-openai-api, web-api-protocol, provider-subscription-cli
 device-paths -> none
