@@ -2,31 +2,30 @@
 //! (`crates/command-protocol/src/artifacts.rs`).
 //!
 //! Each install names the invocation it serves, which the runner started for
-//! one job or one stream and registered here with that work's resolver, so the
-//! backend locates the artifact for that work. An install held by a running
-//! resident is not removed with its line's older artifacts while the resident
-//! lives.
+//! one job or one stream and registered here, and ends with it. The runner
+//! downloads the artifact from the URL the install names. An install held by
+//! a running resident is not removed with its line's older artifacts while
+//! the resident lives.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard};
 
-use jush_command_protocol::{ArtifactAsk, ArtifactReply, PackageArtifact};
+use jush_command_protocol::{ArtifactAsk, ArtifactReply};
+use jush_shared_artifacts::Digest;
 use futures_util::future::BoxFuture;
 use tokio_util::sync::CancellationToken;
 
 use crate::{ArtifactResolver, ArtifactSource, RuntimeError};
-use crate::cache::{ArtifactCache, Hold, Progress, Wanted};
+use crate::cache::{ArtifactCache, Hold, Progress, Wanted, hash_of};
 
-/// The invocations running now, by id: the package each runs in, the
-/// resolver of the work it serves, and a token its end cancels. Cloning
-/// shares the table.
+/// The invocations running now, by id: the package each runs in and a token
+/// its end cancels. Cloning shares the table.
 #[derive(Clone, Default)]
 pub struct Invocations(Arc<Mutex<HashMap<String, Registered>>>);
 
 #[derive(Clone)]
 struct Registered {
     package: String,
-    resolver: Arc<dyn ArtifactResolver>,
     ended: CancellationToken,
 }
 
@@ -39,18 +38,12 @@ pub struct Invoking {
 }
 
 impl Invocations {
-    /// Registers `id`, an invocation of `package` serving the work
-    /// `resolver` locates artifacts for, until the returned guard drops.
-    pub fn register(
-        &self,
-        id: &str,
-        package: &str,
-        resolver: Arc<dyn ArtifactResolver>,
-    ) -> Invoking {
+    /// Registers `id`, an invocation of `package`, until the returned guard
+    /// drops.
+    pub fn register(&self, id: &str, package: &str) -> Invoking {
         let ended = CancellationToken::new();
         let registered = Registered {
             package: package.to_owned(),
-            resolver,
             ended: ended.clone(),
         };
         self.table().insert(id.to_owned(), registered);
@@ -119,19 +112,16 @@ impl ResidentArtifacts {
                     package: &self.package,
                     name: &install.name,
                     version: &install.version,
-                    artifact: PackageArtifact {
-                        sha256: install.sha256.clone(),
+                    digest: Digest {
                         size: install.size,
+                        hash: hash_of(&install.hash),
                     },
                     form: &install.form,
                 };
                 // Held from the start, so an install of another version of
                 // the line meanwhile leaves it.
-                let hold = self.cache.holds().hold(&install.sha256);
-                let resolver: Arc<dyn ArtifactResolver> = match install.url.clone() {
-                    Some(url) => Arc::new(Official(url)),
-                    None => invocation.resolver,
-                };
+                let hold = self.cache.holds().hold(&wanted.key());
+                let resolver = Arc::new(Publisher(install.url.clone()));
                 let path = self
                     .cache
                     .install(&wanted, resolver, progress, &invocation.ended)
@@ -150,15 +140,15 @@ impl ResidentArtifacts {
     }
 }
 
-/// The official source a program names for software it installs itself
+/// The URL a program names for software it installs
 /// (`crates/command-protocol/src/artifacts.rs`): the runner downloads from it
 /// directly and asks the backend nothing.
-struct Official(String);
+struct Publisher(String);
 
-impl ArtifactResolver for Official {
+impl ArtifactResolver for Publisher {
     fn resolve<'a>(
         &'a self,
-        _artifact: &'a PackageArtifact,
+        _artifact: &'a Digest,
         _cancel: &'a CancellationToken,
     ) -> BoxFuture<'a, Result<ArtifactSource, RuntimeError>> {
         let source = ArtifactSource::Url {

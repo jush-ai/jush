@@ -314,7 +314,7 @@ async fn prepare(
             target: platform.target.to_owned(),
             url: download.url.clone(),
             size: digest.size,
-            sha256: digest.sha256,
+            sha256: digest.hash.hex().to_owned(),
             executable: platform.executable.to_owned(),
         });
     }
@@ -410,6 +410,6 @@ async fn runtime_archive(
     Ok(RuntimeArchive {
         url,
         size: digest.size,
-        sha256: digest.sha256,
+        sha256: digest.hash.hex().to_owned(),
     })
 }

@@ -412,14 +412,15 @@ impl Opening {
             Some(digest) => Some(residents.lease(digest).await),
             None => None,
         };
-        // What the program asks for during the invocation is located for
-        // this stream (`crates/command-protocol/src/artifacts.rs`).
+        // The stream locates its package's executable, and what the program
+        // asks for during the invocation is installed for it
+        // (`crates/command-protocol/src/artifacts.rs`).
         let resolver = Arc::new(StreamArtifacts::new(
             opener.connection.clone(),
             stream_id.clone(),
         ));
         let numbers = Arc::new(opener.connection.clone());
-        let invoking = residents.invoking(&stream_id, &package.id, resolver.clone());
+        let invoking = residents.invoking(&stream_id, &package.id);
         let mut acquire_ms = 0u64;
         let opened = async {
             let mut resident = residents

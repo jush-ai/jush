@@ -52,16 +52,12 @@ use jush_provider_common::ProviderRuntime;
 use jush_provider_registry::entry::ProviderEntry;
 use jush_provider_registry::registry::ProviderRegistry;
 use jush_web_api_protocol::ids::CredentialId;
-use jush_runner_client::{
-    AttachedArtifact, Link, RemoteDevice, ResidentCallError, ResidentRequest, WeakLink,
-};
+use jush_runner_client::{Link, RemoteDevice, ResidentCallError, ResidentRequest, WeakLink};
 use jush_backend_runners::command_context::{command_context, provider_context};
 use jush_command_package_subscription_cli_protocol::{
     Installed, Operation, PACKAGE, Release, Reply, Status, StatusRequest,
 };
-use jush_command_protocol::{
-    ArtifactLocation, ArtifactUrl, CommandCaller, CommandContext, PackageArtifact,
-};
+use jush_command_protocol::{CommandCaller, CommandContext};
 use jush_device_interface::{
     FileContents, Device as _, DeviceError, DeviceErrorKind, MkdirOptions, Process, ProcessControl,
     ProcessEnd, ProcessOutput, RmOptions, Signal, SpawnError, SpawnErrorKind, WhenExists,
@@ -1735,7 +1731,6 @@ async fn installed(services: &Services, target: &CliTarget) -> Result<Vec<Instal
         target,
         Operation::Status,
         Bytes::from(input),
-        Vec::new(),
         None,
     )
     .await?;
@@ -1754,43 +1749,24 @@ async fn ensure(
         reason,
     };
     let record = serde_json::to_vec(release).map_err(|error| failed(error.to_string()))?;
-    // The runner may download each of the release's executables from its
-    // official URL (`crates/command-package-subscription-cli/src/lib.rs`).
-    let attached = release
-        .platforms
-        .values()
-        .map(|artifact| AttachedArtifact {
-            artifact: PackageArtifact {
-                sha256: artifact.sha256.clone(),
-                size: artifact.size,
-            },
-            location: ArtifactLocation::Url(ArtifactUrl {
-                url: artifact.url.clone(),
-                expires_at: None,
-            }),
-        })
-        .collect();
     call(
         services,
         target,
         Operation::Ensure,
         Bytes::from(record),
-        attached,
         Some(&release.version),
     )
     .await
 }
 
 /// Runs `operation` of the package on `target` with `input` as its whole
-/// input and `attached` as the artifacts it may install, and decodes the one
-/// document it answers. A nonzero exit keeps a failure document; an output
+/// input, and decodes the one document it answers. A nonzero exit keeps a failure document; an output
 /// with no document is a resident that failed.
 async fn call<T: DeserializeOwned>(
     services: &Services,
     target: &CliTarget,
     operation: Operation,
     input: Bytes,
-    attached: Vec<AttachedArtifact>,
     version: Option<&str>,
 ) -> Result<T, CliError> {
     let failed = |reason: String| CliError {
@@ -1816,7 +1792,6 @@ async fn call<T: DeserializeOwned>(
         json: None,
         cwd: target.home.clone(),
         resolver: services.native.resolver(&services.public_url),
-        attached,
     };
     let (output, exit) = match target
         .remote

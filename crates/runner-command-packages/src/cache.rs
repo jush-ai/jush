@@ -1,12 +1,15 @@
 //! The verified artifact cache: an artifact is published into the cache only
-//! once its size and SHA-256 match what the runner was given, and is reused
+//! once its size and hash match what the runner was given, and is reused
 //! unread from then on.
 //!
-//! An entry is one of two kinds:
+//! An entry is named by its key, the name of its hash
+//! ([`jush_shared_artifacts::Hash::name`]): a SHA-256's hex, or
+//! `sha512-<hex>` for an artifact its publisher hashes with SHA-512. It is one
+//! of two kinds:
 //!
 //! - A `file`: one file per digest.
-//! - An `archive` (a zip or `.tar.zst`, told apart by its first bytes):
-//!   unpacked into a directory per digest, with a receipt.
+//! - An `archive` (a zip, `.tar.zst` or `.tar.gz`, told apart by its first
+//!   bytes): unpacked into a directory per digest, with a receipt.
 //!
 //! Beside each entry a record names its line and version. A line is the package
 //! and the name, the versions of one thing. The records let the cache answer
@@ -25,7 +28,7 @@
 //!
 //! # Trust
 //!
-//! Every download checks the size and SHA-256 the runner was given over its
+//! Every download checks the size and hash the runner was given over its
 //! authenticated connection, so no URL's scheme or host changes what runs, and
 //! no partial or mismatched file is ever executed.
 //!
@@ -67,10 +70,12 @@ use std::{
     time::SystemTime,
 };
 
-use jush_command_protocol::{ArtifactForm, ArtifactProgress, InstalledArtifact, PackageArtifact};
+use jush_command_protocol::{
+    ArtifactForm, ArtifactHash, ArtifactProgress, InstalledArtifact, PackageArtifact,
+};
 use jush_shared_artifacts::{
-    Archive, ArchiveInstall, CONTENT_CODING, Digest, Download, Mode, Permissions, Publication,
-    Staged,
+    Archive, ArchiveInstall, CONTENT_CODING, Digest, Download, Hash, Mode, Permissions,
+    Publication, Staged,
 };
 use serde::{Deserialize, Serialize};
 use jush_runner_process::backend::Backend;
@@ -99,7 +104,7 @@ const REDIRECTS: usize = 10;
 /// The suffix of an entry's line record, beside the entry.
 const LINE: &str = ".line.json";
 
-/// The prefix of a download's staging file, `.download-<sha256>`, which
+/// The prefix of a download's staging file, `.download-<key>`, which
 /// keeps its bytes for a resume, beside its coding record, the line it is
 /// of and its lock (`crates/shared-artifacts/src/download.rs`).
 const STAGING: &str = ".download-";
@@ -170,7 +175,7 @@ impl Reported {
 /// install off the table once nobody waits for it or it ended.
 struct Joined<'a> {
     installs: &'a Mutex<HashMap<String, InFlight>>,
-    sha256: &'a str,
+    key: &'a str,
     asking: Option<Asking>,
     install: Option<Shared<Sharing>>,
 }
@@ -182,10 +187,10 @@ impl Drop for Joined<'_> {
         drop(self.asking.take());
         let mut installs = self.installs.lock().expect("the installs in flight are intact");
         if installs
-            .get(self.sha256)
+            .get(self.key)
             .is_some_and(|in_flight| in_flight.running().is_none())
         {
-            installs.remove(self.sha256);
+            installs.remove(self.key);
         }
     }
 }
@@ -193,7 +198,7 @@ impl Drop for Joined<'_> {
 pub struct ArtifactCache {
     root: PathBuf,
     /// Where the device's image preinstalls command artifacts, each in a
-    /// directory named by its SHA-256. Nothing is there on a paired device.
+    /// directory named by its key. Nothing is there on a paired device.
     image: Option<PathBuf>,
     checked: Mutex<Checked>,
     http: reqwest::Client,
@@ -220,7 +225,7 @@ pub struct ArtifactCache {
 /// A download in progress, by the digest it fetches.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Downloading {
-    pub sha256: String,
+    pub key: String,
     pub download: DeviceDownload,
 }
 
@@ -231,7 +236,7 @@ const SHOWN_EVERY: std::time::Duration = std::time::Duration::from_millis(250);
 /// A download the cache publishes while it lasts; dropping it ends it.
 struct Shown<'a> {
     downloading: &'a watch::Sender<Vec<Downloading>>,
-    sha256: String,
+    key: String,
     at: Option<std::time::Instant>,
 }
 
@@ -240,10 +245,10 @@ impl<'a> Shown<'a> {
         downloading: &'a watch::Sender<Vec<Downloading>>,
         line: &Line,
         version: &str,
-        artifact: &PackageArtifact,
+        artifact: &Digest,
     ) -> Self {
         let shown = Downloading {
-            sha256: artifact.sha256.clone(),
+            key: artifact.hash.name(),
             download: DeviceDownload {
                 package: line.package.clone(),
                 name: line.name.clone(),
@@ -255,7 +260,7 @@ impl<'a> Shown<'a> {
         downloading.send_modify(|downloads| downloads.push(shown));
         Self {
             downloading,
-            sha256: artifact.sha256.clone(),
+            key: artifact.hash.name(),
             at: None,
         }
     }
@@ -271,7 +276,7 @@ impl<'a> Shown<'a> {
         self.at = Some(now);
         let size = size.max(1);
         self.downloading.send_modify(|downloads| {
-            for shown in downloads.iter_mut().filter(|shown| shown.sha256 == self.sha256) {
+            for shown in downloads.iter_mut().filter(|shown| shown.key == self.key) {
                 shown.download.size = size;
                 shown.download.received = received.min(size);
             }
@@ -283,7 +288,7 @@ impl Drop for Shown<'_> {
     fn drop(&mut self) {
         // Two installs of one digest share one download, so one entry goes.
         self.downloading.send_modify(|downloads| {
-            if let Some(index) = downloads.iter().position(|shown| shown.sha256 == self.sha256) {
+            if let Some(index) = downloads.iter().position(|shown| shown.key == self.key) {
                 downloads.remove(index);
             }
         });
@@ -291,16 +296,21 @@ impl Drop for Shown<'_> {
 }
 
 /// An artifact to install: its line (its package and name) and version, its
-/// bytes' size and SHA-256, and its form.
+/// bytes' size and hash, and its form.
 pub struct Wanted<'a> {
     pub package: &'a str,
     pub name: &'a str,
     pub version: &'a str,
-    pub artifact: PackageArtifact,
+    pub digest: Digest,
     pub form: &'a ArtifactForm,
 }
 
 impl Wanted<'_> {
+    /// The key of its entry.
+    pub fn key(&self) -> String {
+        self.digest.hash.name()
+    }
+
     fn line(&self) -> Line {
         Line {
             package: self.package.to_owned(),
@@ -329,21 +339,21 @@ pub struct Holds(Arc<Mutex<HashMap<String, usize>>>);
 /// One hold of a digest, released when dropped.
 pub struct Hold {
     holds: Holds,
-    sha256: String,
+    key: String,
 }
 
 impl Holds {
-    /// Holds `sha256` until the returned hold is dropped.
-    pub fn hold(&self, sha256: &str) -> Hold {
-        *self.counts().entry(sha256.to_owned()).or_default() += 1;
+    /// Holds `key` until the returned hold is dropped.
+    pub fn hold(&self, key: &str) -> Hold {
+        *self.counts().entry(key.to_owned()).or_default() += 1;
         Hold {
             holds: self.clone(),
-            sha256: sha256.to_owned(),
+            key: key.to_owned(),
         }
     }
 
-    fn held(&self, sha256: &str) -> bool {
-        self.counts().contains_key(sha256)
+    fn held(&self, key: &str) -> bool {
+        self.counts().contains_key(key)
     }
 
     fn counts(&self) -> MutexGuard<'_, HashMap<String, usize>> {
@@ -354,10 +364,10 @@ impl Holds {
 impl Drop for Hold {
     fn drop(&mut self) {
         let mut counts = self.holds.counts();
-        if let Some(count) = counts.get_mut(&self.sha256) {
+        if let Some(count) = counts.get_mut(&self.key) {
             *count -= 1;
             if *count == 0 {
-                counts.remove(&self.sha256);
+                counts.remove(&self.key);
             }
         }
     }
@@ -433,7 +443,7 @@ impl ArtifactCache {
         cancel: &CancellationToken,
     ) -> Result<PathBuf, RuntimeError> {
         let path = self.place(wanted, resolver, progress, cancel).await?;
-        self.installed.lock().expect("the digests installed are intact").insert(wanted.artifact.sha256.clone());
+        self.installed.lock().expect("the digests installed are intact").insert(wanted.key());
         self.remove_older(wanted).await;
         self.publish_contents().await;
         Ok(path)
@@ -449,7 +459,7 @@ impl ArtifactCache {
         cancel: &CancellationToken,
     ) -> Result<PathBuf, RuntimeError> {
         let path = self.place(wanted, resolver, &|_| {}, cancel).await?;
-        self.ahead.lock().expect("the digests put here ahead are intact").insert(wanted.artifact.sha256.clone());
+        self.ahead.lock().expect("the digests put here ahead are intact").insert(wanted.key());
         self.publish_contents().await;
         Ok(path)
     }
@@ -464,10 +474,10 @@ impl ArtifactCache {
             let installed = self.installed.lock().expect("the digests installed are intact");
             let earlier = ahead
                 .iter()
-                .filter(|sha256| !release.contains(*sha256) && !installed.contains(*sha256))
+                .filter(|key| !release.contains(*key) && !installed.contains(*key))
                 .cloned()
                 .collect();
-            ahead.retain(|sha256| release.contains(sha256));
+            ahead.retain(|key| release.contains(key));
             earlier
         };
         if earlier.is_empty() {
@@ -480,9 +490,9 @@ impl ArtifactCache {
                 return;
             }
         };
-        for (sha256, record) in records {
-            if earlier.contains(&sha256) && !self.holds.held(&sha256) {
-                self.remove_entry(&sha256, &record).await;
+        for (key, record) in records {
+            if earlier.contains(&key) && !self.holds.held(&key) {
+                self.remove_entry(&key, &record).await;
             }
         }
         self.publish_contents().await;
@@ -552,10 +562,10 @@ impl ArtifactCache {
             .await?
             .into_iter()
             .filter(|(_, record)| record.package == package && record.name == name)
-            .map(|(sha256, record)| {
+            .map(|(key, record)| {
                 let installed = InstalledArtifact {
                     version: record.version,
-                    sha256,
+                    hash: artifact_hash(Hash::named(&key)),
                     path: record.path.to_string_lossy().into_owned(),
                 };
                 (record.installed_at, installed)
@@ -573,17 +583,17 @@ impl ArtifactCache {
         cancel: &CancellationToken,
     ) -> Result<PathBuf, RuntimeError> {
         let cache = self.clone();
-        let artifact = wanted.artifact.clone();
+        let artifact = wanted.digest.clone();
         let line = wanted.line();
         let version = wanted.version.to_owned();
-        let sha256 = &wanted.artifact.sha256;
-        self.shared(sha256, resolver, progress, cancel, move |report, resolver, cancel| {
+        let key = &wanted.key();
+        self.shared(key, resolver, progress, cancel, move |report, resolver, cancel| {
             Box::pin(async move {
-                let destination = cache.root.join(&artifact.sha256);
+                let destination = cache.root.join(artifact.hash.name());
                 if let Some(cached) = cached(&destination, &artifact).await? {
                     return Ok(cached);
                 }
-                let expected = digest_of(&artifact);
+                let expected = artifact.clone();
                 attempts(&cancel, || async {
                     if let Some(file) = cache
                         .preinstalled(ImageCopy::File(&expected), &cancel)
@@ -611,17 +621,17 @@ impl ArtifactCache {
         cancel: &CancellationToken,
     ) -> Result<PathBuf, RuntimeError> {
         let cache = self.clone();
-        let artifact = wanted.artifact.clone();
+        let artifact = wanted.digest.clone();
         let line = wanted.line();
         let version = wanted.version.to_owned();
         let archive = Archive {
-            digest: digest_of(&wanted.artifact),
+            digest: wanted.digest.clone(),
             entry: entry.to_owned(),
         };
-        let sha256 = &wanted.artifact.sha256;
-        self.shared(sha256, resolver, progress, cancel, move |report, resolver, cancel| {
+        let key = &wanted.key();
+        self.shared(key, resolver, progress, cancel, move |report, resolver, cancel| {
             Box::pin(async move {
-                let directory = cache.root.join(&artifact.sha256);
+                let directory = cache.root.join(artifact.hash.name());
                 if let Some(entry) = jush_shared_artifacts::recorded(&directory, &archive).await? {
                     return Ok(entry);
                 }
@@ -654,7 +664,7 @@ impl ArtifactCache {
         .await
     }
 
-    /// Waits for the install of `sha256` in progress, or starts it with `start`
+    /// Waits for the install of `key` in progress, or starts it with `start`
     /// when none is, so concurrent callers share one download per digest.
     ///
     /// The install lives while any caller waits for it: one caller's
@@ -668,7 +678,7 @@ impl ArtifactCache {
     ///   shares the install.
     async fn shared(
         &self,
-        sha256: &str,
+        key: &str,
         resolver: Arc<dyn ArtifactResolver>,
         progress: Progress<'_>,
         cancel: &CancellationToken,
@@ -677,7 +687,7 @@ impl ArtifactCache {
         let (mut joined, mut events, last) = {
             let mut installs = self.installs();
             let running = installs
-                .get(sha256)
+                .get(key)
                 .and_then(|in_flight| Some((in_flight.running()?, in_flight)));
             let (install, callers, reported) = match running {
                 Some((install, in_flight)) => {
@@ -709,7 +719,7 @@ impl ArtifactCache {
                         .downgrade()
                         .expect("an install that was never polled has not finished");
                     installs.insert(
-                        sha256.to_owned(),
+                        key.to_owned(),
                         InFlight {
                             install: weak,
                             callers: callers.clone(),
@@ -726,7 +736,7 @@ impl ArtifactCache {
             };
             let joined = Joined {
                 installs: &self.installs,
-                sha256,
+                key,
                 asking: Some(asking),
                 install: Some(install),
             };
@@ -758,7 +768,7 @@ impl ArtifactCache {
     /// Records `wanted`, installed at `path`, in its line, unless the cache
     /// records it already.
     async fn record(&self, wanted: &Wanted<'_>, path: &Path) -> Result<(), RuntimeError> {
-        let file = self.line_record(&wanted.artifact.sha256);
+        let file = self.line_record(&wanted.key());
         if tokio::fs::try_exists(&file).await? {
             return Ok(());
         }
@@ -797,14 +807,14 @@ impl ArtifactCache {
                 return;
             }
         };
-        for (sha256, record) in records {
+        for (key, record) in records {
             let older = record.package == wanted.package
                 && record.name == wanted.name
-                && sha256 != wanted.artifact.sha256;
-            if !older || self.holds.held(&sha256) || self.ahead.lock().expect("the digests put here ahead are intact").contains(&sha256) {
+                && key != wanted.key();
+            if !older || self.holds.held(&key) || self.ahead.lock().expect("the digests put here ahead are intact").contains(&key) {
                 continue;
             }
-            self.remove_entry(&sha256, &record).await;
+            self.remove_entry(&key, &record).await;
         }
     }
 
@@ -819,19 +829,19 @@ impl ArtifactCache {
                 return;
             }
         };
-        for (sha256, record) in records {
-            if self.holds.held(&sha256) || self.ahead.lock().expect("the digests put here ahead are intact").contains(&sha256) {
+        for (key, record) in records {
+            if self.holds.held(&key) || self.ahead.lock().expect("the digests put here ahead are intact").contains(&key) {
                 continue;
             }
-            self.remove_entry(&sha256, &record).await;
+            self.remove_entry(&key, &record).await;
         }
         self.publish_contents().await;
     }
 
-    /// Removes the artifact `sha256` and its record from the cache, or says
+    /// Removes the artifact `key` and its record from the cache, or says
     /// why it stays.
-    async fn remove_entry(&self, sha256: &str, record: &LineRecord) {
-        let entry = self.root.join(sha256);
+    async fn remove_entry(&self, key: &str, record: &LineRecord) {
+        let entry = self.root.join(key);
         let removed = match tokio::fs::symlink_metadata(&entry).await {
             Ok(metadata) if metadata.is_dir() => tokio::fs::remove_dir_all(&entry).await,
             Ok(_) => tokio::fs::remove_file(&entry).await,
@@ -839,7 +849,7 @@ impl ArtifactCache {
             Err(error) => Err(error),
         };
         let removed = match removed {
-            Ok(()) => tokio::fs::remove_file(self.line_record(sha256)).await,
+            Ok(()) => tokio::fs::remove_file(self.line_record(key)).await,
             Err(error) => Err(error),
         };
         if let Err(error) = removed {
@@ -867,13 +877,13 @@ impl ArtifactCache {
         };
         while let Ok(Some(entry)) = entries.next_entry().await {
             let name = entry.file_name();
-            let Some(sha256) = name
+            let Some(key) = name
                 .to_str()
                 .and_then(|name| name.strip_prefix(STAGING)?.strip_suffix(STAGING_LINE))
             else {
                 continue;
             };
-            if sha256 == wanted.artifact.sha256 || self.installs().contains_key(sha256) {
+            if key == wanted.key() || self.installs().contains_key(key) {
                 continue;
             }
             // A record that cannot be read names no line; its staging file
@@ -882,9 +892,9 @@ impl ArtifactCache {
             if of.and_then(|bytes| serde_json::from_slice::<Line>(&bytes).ok()) != Some(line.clone()) {
                 continue;
             }
-            jush_shared_artifacts::discard(&self.root.join(format!("{STAGING}{sha256}"))).await;
+            jush_shared_artifacts::discard(&self.root.join(format!("{STAGING}{key}"))).await;
             // Each goes when it can; one left is pruned at a later install.
-            let _removed = tokio::fs::remove_file(self.root.join(format!("{STAGING}{sha256}.lock"))).await;
+            let _removed = tokio::fs::remove_file(self.root.join(format!("{STAGING}{key}.lock"))).await;
             let _removed = tokio::fs::remove_file(entry.path()).await;
         }
     }
@@ -897,14 +907,14 @@ impl ArtifactCache {
         let mut entries = tokio::fs::read_dir(&self.root).await?;
         while let Some(entry) = entries.next_entry().await? {
             let name = entry.file_name();
-            let Some(sha256) = name.to_str().and_then(|name| name.strip_suffix(LINE)) else {
+            let Some(key) = name.to_str().and_then(|name| name.strip_suffix(LINE)) else {
                 continue;
             };
             let read = tokio::fs::read(entry.path()).await;
             match read.map(|bytes| serde_json::from_slice::<LineRecord>(&bytes)) {
                 Ok(Ok(record)) => {
-                    let record = self.renamed(&entry.path(), sha256, record).await;
-                    records.push((sha256.to_owned(), record));
+                    let record = self.renamed(&entry.path(), key, record).await;
+                    records.push((key.to_owned(), record));
                 }
                 Ok(Err(error)) => tracing::warn!(
                     event = "artifact_cache.record_failed",
@@ -938,7 +948,7 @@ impl ArtifactCache {
     ///
     /// It goes with the other migrations when the history starts again at the
     /// first formal release.
-    async fn renamed(&self, file: &Path, sha256: &str, mut record: LineRecord) -> LineRecord {
+    async fn renamed(&self, file: &Path, key: &str, mut record: LineRecord) -> LineRecord {
         let moved = record.package.strip_prefix("demi.").map(str::to_owned);
         if moved.is_none() && record.package != "jush.claude-code" {
             return record;
@@ -946,13 +956,13 @@ impl ArtifactCache {
         if let Some(name) = moved {
             record.package = format!("jush.{name}");
             let mut parts = record.path.components();
-            if parts.by_ref().any(|part| part.as_os_str() == sha256) {
+            if parts.by_ref().any(|part| part.as_os_str() == key) {
                 // A file's entry ends at its digest, and joining an empty rest
                 // would end its path with a separator.
                 let rest = parts.as_path();
                 record.path = match rest.as_os_str().is_empty() {
-                    true => self.root.join(sha256),
-                    false => self.root.join(sha256).join(rest),
+                    true => self.root.join(key),
+                    false => self.root.join(key).join(rest),
                 };
             }
         }
@@ -976,8 +986,8 @@ impl ArtifactCache {
         record
     }
 
-    fn line_record(&self, sha256: &str) -> PathBuf {
-        self.root.join(format!("{sha256}{LINE}"))
+    fn line_record(&self, key: &str) -> PathBuf {
+        self.root.join(format!("{key}{LINE}"))
     }
 
     /// The image's `copy`, when it matches.
@@ -994,14 +1004,14 @@ impl ArtifactCache {
         let Some(image) = &self.image else {
             return Ok(None);
         };
-        let sha256 = match copy {
-            ImageCopy::File(expected) => &expected.sha256,
-            ImageCopy::Archive(archive) => &archive.digest.sha256,
+        let key = match copy {
+            ImageCopy::File(expected) => expected.hash.name(),
+            ImageCopy::Archive(archive) => archive.digest.hash.name(),
         };
-        if let Some(checked) = self.checked().get(sha256) {
+        if let Some(checked) = self.checked().get(&key) {
             return Ok(checked.clone());
         }
-        let directory = image.join(sha256);
+        let directory = image.join(&key);
         let found = match copy {
             ImageCopy::File(expected) => check(&directory, expected, cancel).await,
             ImageCopy::Archive(archive) => image_archive(&directory, archive, cancel).await,
@@ -1025,7 +1035,7 @@ impl ArtifactCache {
                 None
             }
         };
-        self.checked().insert(sha256.clone(), checked.clone());
+        self.checked().insert(key, checked.clone());
         Ok(checked)
     }
 
@@ -1041,7 +1051,7 @@ impl ArtifactCache {
         &self,
         line: &Line,
         version: &str,
-        artifact: &PackageArtifact,
+        artifact: &Digest,
         destination: &Path,
         resolver: &dyn ArtifactResolver,
         progress: Progress<'_>,
@@ -1081,13 +1091,12 @@ impl ArtifactCache {
         &self,
         line: &Line,
         version: &str,
-        artifact: &PackageArtifact,
+        artifact: &Digest,
         output: &mut (impl AsyncWrite + Unpin),
         resolver: &dyn ArtifactResolver,
         progress: Progress<'_>,
         cancel: &CancellationToken,
     ) -> Result<(), RuntimeError> {
-        let expected = digest_of(artifact);
         let mut shown = Shown::begin(&self.downloading, line, version, artifact);
         // Each tenth of `total` that `done` passes is reported once.
         let mut reported = 0;
@@ -1110,23 +1119,23 @@ impl ArtifactCache {
                     report(written, artifact.size);
                 });
                 let mut input = tokio::fs::File::open(path).await?;
-                jush_shared_artifacts::copy(&mut input, &expected, &mut output, cancel).await?;
+                jush_shared_artifacts::copy(&mut input, artifact, &mut output, cancel).await?;
                 return Ok(());
             }
             ArtifactSource::Url { url, expires_at } => (url, expires_at),
         };
-        let sha256 = &artifact.sha256;
+        let key = artifact.hash.name();
         // Runners sharing the cache keep one staging file for each artifact.
         let _lock = jush_shared_artifacts::InstallLock::acquire(
-            &self.root.join(format!("{STAGING}{sha256}.lock")),
+            &self.root.join(format!("{STAGING}{key}.lock")),
             cancel,
         )
         .await?;
-        let staging = self.root.join(format!("{STAGING}{sha256}"));
+        let staging = self.root.join(format!("{STAGING}{key}"));
         // The line the staging file is of, so a newer version of the line
         // prunes it.
         let bytes = serde_json::to_vec(line).map_err(io::Error::other)?;
-        tokio::fs::write(self.root.join(format!("{STAGING}{sha256}{STAGING_LINE}")), bytes).await?;
+        tokio::fs::write(self.root.join(format!("{STAGING}{key}{STAGING_LINE}")), bytes).await?;
         // Stored bytes are asked for as they are, in the coding the check
         // decodes, so a range counts them.
         let headers = |_: &reqwest::Url| {
@@ -1193,10 +1202,10 @@ impl ArtifactCache {
                 downloaded => break downloaded?,
             }
         };
-        received.verify(&staging, &expected, output, cancel).await?;
+        received.verify(&staging, artifact, output, cancel).await?;
         // The staging file has gone with its check.
         let _removed =
-            tokio::fs::remove_file(self.root.join(format!("{STAGING}{sha256}{STAGING_LINE}"))).await;
+            tokio::fs::remove_file(self.root.join(format!("{STAGING}{key}{STAGING_LINE}"))).await;
         Ok(())
     }
 }
@@ -1205,7 +1214,7 @@ impl ArtifactCache {
 /// it arrives is asked for once more, and a second expired one fails.
 async fn located(
     resolver: &dyn ArtifactResolver,
-    artifact: &PackageArtifact,
+    artifact: &Digest,
     cancel: &CancellationToken,
 ) -> Result<ArtifactSource, RuntimeError> {
     let expired = |source: &ArtifactSource| {
@@ -1224,20 +1233,33 @@ async fn located(
     Ok(source)
 }
 
-/// An artifact the image may hold: a file of a size and SHA-256, or an
+/// The digest of a package's executable, which Jush hashes with SHA-256.
+pub fn digest_of(artifact: &PackageArtifact) -> Digest {
+    Digest::sha256(artifact.size, artifact.sha256.clone())
+}
+
+/// The hash an install request names.
+pub(crate) fn hash_of(hash: &ArtifactHash) -> Hash {
+    match hash {
+        ArtifactHash::Sha256(hex) => Hash::Sha256(hex.clone()),
+        ArtifactHash::Sha512(hex) => Hash::Sha512(hex.clone()),
+    }
+}
+
+/// `hash` as the artifacts protocol writes it.
+fn artifact_hash(hash: Hash) -> ArtifactHash {
+    match hash {
+        Hash::Sha256(hex) => ArtifactHash::Sha256(hex),
+        Hash::Sha512(hex) => ArtifactHash::Sha512(hex),
+    }
+}
+
+/// An artifact the image may hold: a file of a size and hash, or an
 /// archive unpacked.
 #[derive(Clone, Copy)]
 enum ImageCopy<'a> {
     File(&'a Digest),
     Archive(&'a Archive),
-}
-
-/// The size and SHA-256 `artifact` must have.
-fn digest_of(artifact: &PackageArtifact) -> Digest {
-    Digest {
-        size: artifact.size,
-        sha256: artifact.sha256.clone(),
-    }
 }
 
 /// The cached file at `destination`, when there is one.
@@ -1248,7 +1270,7 @@ fn digest_of(artifact: &PackageArtifact) -> Digest {
 /// repaired.
 async fn cached(
     destination: &Path,
-    artifact: &PackageArtifact,
+    artifact: &Digest,
 ) -> Result<Option<PathBuf>, RuntimeError> {
     let metadata = match tokio::fs::symlink_metadata(destination).await {
         Ok(metadata) => metadata,
@@ -1308,7 +1330,7 @@ async fn image_archive(
 }
 
 /// The image's copy in `directory`: the directory's one entry, a regular
-/// file whose size and SHA-256 are the `expected` ones. A request names no
+/// file whose size and hash are the `expected` ones. A request names no
 /// file, so the copy is whatever the directory holds.
 async fn check(
     directory: &Path,

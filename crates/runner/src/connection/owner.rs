@@ -891,7 +891,7 @@ impl Owner<'_> {
                 sha256,
                 size,
                 packages,
-            } => self.prefetch(release, jush_shared_artifacts::Digest { size, sha256 }, packages),
+            } => self.prefetch(release, jush_shared_artifacts::Digest::sha256(size, sha256), packages),
             Inbound::Programs { packages } => self.keep_programs(packages),
             Inbound::StorageRules { rules } => self.registered.storage.set_rules(rules),
             Inbound::Storage { id, action } => self.storage(id, action),

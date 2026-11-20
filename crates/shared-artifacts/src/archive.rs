@@ -1,6 +1,7 @@
 //! Archive installation: a verified zip archive, or a tar archive compressed
-//! with zstd, unpacked into a directory named by its SHA-256, beside a receipt
-//! that lets a later process trust the files without downloading them again.
+//! with zstd or gzip, unpacked into a directory named by its hash, beside a
+//! receipt that lets a later process trust the files without downloading them
+//! again.
 //!
 //! A runner installs a command package's resources into its artifact cache, and
 //! the Cloud image build installs into the image, with the same steps
@@ -22,7 +23,7 @@ use crate::{Digest, Error, InstallLock, coding::ZSTD_MAGIC};
 /// stops early, and an entry is written to the disk.
 const ENTRY_BYTES: u64 = 1024 * 1024 * 1024;
 
-/// An archive to install: the size and SHA-256 it must have, and its entry,
+/// An archive to install: the size and hash it must have, and its entry,
 /// the file its user starts, as a path inside it with `/` between the
 /// components.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -42,8 +43,8 @@ impl Archive {
     }
 }
 
-/// What an installation records beside its files: the SHA-256 of the archive
-/// it came from and of its entry.
+/// What an installation records beside its files: the name of the archive's
+/// hash ([`crate::Hash::name`]) and of its entry's SHA-256.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct Receipt {
@@ -78,7 +79,7 @@ pub async fn recorded(directory: &Path, archive: &Archive) -> Result<Option<Path
     let Some(receipt) = receipt(directory).await? else {
         return Ok(None);
     };
-    if receipt.archive_hash != archive.digest.sha256 {
+    if receipt.archive_hash != archive.digest.hash.name() {
         return Err(Error::Installation {
             directory: directory.to_owned(),
             reason: "holds another archive".to_owned(),
@@ -88,7 +89,7 @@ pub async fn recorded(directory: &Path, archive: &Archive) -> Result<Option<Path
 }
 
 /// The installation of `archive` at `directory`: its entry, once the
-/// receipt there names the archive and the entry's current SHA-256, or
+/// receipt there names the archive and the entry's current hash, or
 /// none when nothing is at `directory`. An installation that fails the check
 /// is an error rather than a reason to install again or elsewhere: its files
 /// changed after it was installed.
@@ -113,7 +114,9 @@ pub async fn installed(
         }
         Err(error) => return Err(error),
     };
-    if receipt.archive_hash != archive.digest.sha256 || receipt.entry_hash != found.sha256 {
+    if receipt.archive_hash != archive.digest.hash.name()
+        || receipt.entry_hash != found.hash.name()
+    {
         return Err(invalid("fails its integrity check"));
     }
     Ok(Some(entry))
@@ -137,19 +140,19 @@ pub struct Unpacking {
     archive: Archive,
 }
 
-/// Starts installing `archive` into the directory of `root` its SHA-256
-/// names; an installation already there is checked, not replaced.
-/// Installers of one archive share the lock `<SHA-256>.lock` in `root`,
-/// so one fetches the archive and the others find its installation.
+/// Starts installing `archive` into the directory of `root` its hash names
+/// ([`crate::Hash::name`]); an installation already there is checked, not
+/// replaced. Installers of one archive share the lock `<name>.lock` in
+/// `root`, so one fetches the archive and the others find its installation.
 pub async fn install_archive(
     root: &Path,
     archive: &Archive,
     cancel: &CancellationToken,
 ) -> Result<ArchiveInstall, Error> {
-    let sha256 = &archive.digest.sha256;
+    let name = archive.digest.hash.name();
     tokio::fs::create_dir_all(root).await?;
-    let lock = InstallLock::acquire(&root.join(format!("{sha256}.lock")), cancel).await?;
-    let destination = root.join(sha256);
+    let lock = InstallLock::acquire(&root.join(format!("{name}.lock")), cancel).await?;
+    let destination = root.join(name);
     if let Some(entry) = installed(&destination, archive, cancel).await? {
         return Ok(ArchiveInstall::Installed(entry));
     }
@@ -166,7 +169,7 @@ pub async fn install_archive(
 
 impl Unpacking {
     /// Where the caller writes the archive, checked against its declared
-    /// size and SHA-256 as it is written, such as by [`crate::download`].
+    /// size and hash as it is written, such as by [`crate::download`].
     pub fn archive(&self) -> PathBuf {
         self.temporary.path().join("archive")
     }
@@ -196,8 +199,8 @@ async fn publish_installation(
         Err(error) => return Err(error),
     };
     let receipt = Receipt {
-        archive_hash: archive.digest.sha256.clone(),
-        entry_hash: entry.sha256,
+        archive_hash: archive.digest.hash.name(),
+        entry_hash: entry.hash.name(),
     };
     crate::receipt::write(extracted, &receipt).await?;
     if cancel.is_cancelled() {
@@ -212,13 +215,36 @@ async fn publish_installation(
 #[derive(Clone, Copy)]
 enum Format {
     Zip,
-    /// A tar archive compressed with zstd, as the Chrome runtime's
+    Tar(Compression),
+}
+
+/// How a tar archive is compressed.
+#[derive(Clone, Copy)]
+enum Compression {
+    /// As the Chrome runtime's
     /// (`crates/plugin-browser/command-chrome/src/driver/installation.rs`).
-    TarZstd,
+    Zstd,
+    /// As a vendor's CLI may be, such as Antigravity's.
+    Gzip,
+}
+
+impl Compression {
+    /// The tar archive `reader` holds compressed.
+    fn decoder<'a>(self, reader: impl Read + 'a) -> std::io::Result<Box<dyn Read + 'a>> {
+        Ok(match self {
+            Self::Zstd => Box::new(zstd::stream::read::Decoder::new(reader)?),
+            // A gzip file may hold several members, whose data follow one
+            // another; the single-member decoder would stop after the first.
+            Self::Gzip => Box::new(flate2::read::MultiGzDecoder::new(reader)),
+        })
+    }
 }
 
 /// The first bytes of a zip archive's first local file header.
 const ZIP_MAGIC: [u8; 4] = *b"PK\x03\x04";
+
+/// The first bytes of a gzip member.
+const GZIP_MAGIC: [u8; 2] = [0x1f, 0x8b];
 
 /// Which kind of archive `file` holds, read from its start, which the file
 /// is left at.
@@ -228,10 +254,11 @@ fn format(file: &mut File) -> Result<Format, Error> {
     file.seek(SeekFrom::Start(0))?;
     match read {
         Ok(()) if magic == ZIP_MAGIC => Ok(Format::Zip),
-        Ok(()) if magic == ZSTD_MAGIC => Ok(Format::TarZstd),
+        Ok(()) if magic == ZSTD_MAGIC => Ok(Format::Tar(Compression::Zstd)),
+        Ok(()) if magic[..2] == GZIP_MAGIC => Ok(Format::Tar(Compression::Gzip)),
         Err(error) if error.kind() != std::io::ErrorKind::UnexpectedEof => Err(error.into()),
         _ => Err(Error::Archive(
-            "is neither a zip archive nor a tar archive compressed with zstd".to_owned(),
+            "is neither a zip archive nor a tar archive compressed with zstd or gzip".to_owned(),
         )),
     }
 }
@@ -264,10 +291,10 @@ pub async fn holds(archive: &Path, path: &str) -> Result<bool, Error> {
                 let entry = archive.by_index_raw(index).map_err(unreadable)?;
                 Ok(entry.is_file())
             }
-            Format::TarZstd => {
+            Format::Tar(compression) => {
                 let unreadable =
                     |error: std::io::Error| Error::Archive(format!("cannot be read: {error}"));
-                let decoder = zstd::stream::read::Decoder::new(file).map_err(unreadable)?;
+                let decoder = compression.decoder(file).map_err(unreadable)?;
                 let mut archive = tar::Archive::new(decoder);
                 let wanted = Path::new(&path);
                 for entry in archive.entries().map_err(unreadable)? {
@@ -338,10 +365,10 @@ async fn extract(
                 let mut archive = zip::ZipArchive::new(reader).map_err(unusable)?;
                 archive.extract(destination).map_err(unusable)
             }
-            Format::TarZstd => {
+            Format::Tar(compression) => {
                 let unusable =
                     |error: std::io::Error| Error::Archive(format!("cannot be extracted: {error}"));
-                let decoder = zstd::stream::read::Decoder::new(reader).map_err(unusable)?;
+                let decoder = compression.decoder(reader).map_err(unusable)?;
                 std::fs::create_dir(&destination)?;
                 tar::Archive::new(decoder)
                     .unpack(&destination)

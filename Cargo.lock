@@ -5546,6 +5546,7 @@ name = "jush-command-package-subscription-cli-protocol"
 version = "0.1.65"
 dependencies = [
  "garde",
+ "jush-command-protocol",
  "semver",
  "serde",
  "serde_json",
@@ -6469,6 +6470,7 @@ dependencies = [
  "jush-runner-command-packages",
  "jush-runner-process",
  "jush-runner-protocol",
+ "jush-shared-artifacts",
  "serde",
  "serde_json",
  "sha2 0.10.9",
@@ -6630,6 +6632,7 @@ version = "0.1.65"
 dependencies = [
  "async-compression",
  "bytes",
+ "flate2",
  "futures-util",
  "jiff",
  "reqwest",

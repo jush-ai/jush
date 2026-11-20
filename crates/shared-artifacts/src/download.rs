@@ -59,7 +59,7 @@ pub fn download_client() -> Result<reqwest::Client, Error> {
 }
 
 /// [`download_client`], but plain HTTP too: for a caller that received the
-/// size and SHA-256 over a connection it trusts, so the transport cannot
+/// size and hash over a connection it trusts, so the transport cannot
 /// change what it keeps, such as a runner installing a command executable.
 pub fn download_client_allowing_http() -> Result<reqwest::Client, Error> {
     download_client_through(|builder| builder)
@@ -648,7 +648,7 @@ impl ContentRange {
 }
 
 /// Copies `input`, such as a local file, into `output`, enforcing the
-/// declared size and SHA-256.
+/// declared size and hash.
 pub async fn copy(
     input: &mut (impl AsyncRead + Unpin),
     expected: &Digest,

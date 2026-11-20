@@ -9,7 +9,7 @@ use std::{cell::RefCell, collections::BTreeMap, future::Future, rc::Rc, time::Du
 
 use bytes::{Bytes, BytesMut};
 use jush_command_protocol::{
-    ArtifactLocation, CommandContext, MAX_MEDIUM_BYTES, Viewable, PackageArtifact, PackageDescriptor,
+    CommandContext, MAX_MEDIUM_BYTES, Viewable, PackageDescriptor,
 };
 use jush_device_interface::{
     ByteRange, ByteStream, CpOptions, DirEntry, FileContents, FileKind, FileStat, Device, DeviceError,
@@ -826,7 +826,6 @@ impl RemoteDevice {
                 ResidentEntry {
                     package: request.package.clone(),
                     resolver: request.resolver.clone(),
-                    attached: request.attached.clone(),
                     cancel: CancellationToken::new(),
                     done: Some(done),
                 },
@@ -1378,18 +1377,6 @@ pub struct ResidentRequest {
     pub cwd: String,
     /// Where the package's artifacts come from, while the stream is open.
     pub resolver: Rc<dyn ArtifactResolver>,
-    /// Other artifacts the invocation may install, each with its location,
-    /// such as the downloads of a release the backend chose
-    /// (`crates/runner-command-packages/src/cache.rs`).
-    pub attached: Vec<AttachedArtifact>,
-}
-
-/// An artifact a user stream may install beside its package's own, and
-/// where it is downloaded from.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AttachedArtifact {
-    pub artifact: PackageArtifact,
-    pub location: ArtifactLocation,
 }
 
 /// How a user stream's invocation completed.

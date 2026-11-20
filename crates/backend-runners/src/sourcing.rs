@@ -82,10 +82,7 @@ impl Sourcing {
             .await
             .map_err(|reason| format!("{}: {reason}", wanted.file))?;
         let checked = bytes.clone();
-        let expected = Digest {
-            size: wanted.artifact.size,
-            sha256: wanted.artifact.sha256.clone(),
-        };
+        let expected = Digest::sha256(wanted.artifact.size, wanted.artifact.sha256.clone());
         let encoded = wanted.encoded;
         tokio::task::spawn_blocking(move || {
             if encoded {

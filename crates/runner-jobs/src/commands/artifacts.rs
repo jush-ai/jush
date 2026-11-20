@@ -4,8 +4,8 @@
 
 use crate::commands::contexts::Contexts;
 use crate::connection::ConnectionHandle;
-use jush_command_protocol::PackageArtifact;
-use jush_runner_command_packages::{ArtifactResolver, ArtifactSource, RuntimeError};
+use jush_shared_artifacts::Digest;
+use jush_runner_command_packages::{ArtifactResolver, ArtifactSource, RuntimeError, located_by};
 use jush_runner_protocol::wire;
 use futures_util::future::BoxFuture;
 use tokio_util::sync::CancellationToken;
@@ -25,12 +25,13 @@ impl JobArtifacts {
 impl ArtifactResolver for JobArtifacts {
     fn resolve<'a>(
         &'a self,
-        artifact: &'a PackageArtifact,
+        artifact: &'a Digest,
         cancel: &'a CancellationToken,
     ) -> BoxFuture<'a, Result<ArtifactSource, RuntimeError>> {
         Box::pin(async move {
+            let sha256 = located_by(artifact)?;
             loop {
-                let context = self.contexts.carrying(&artifact.sha256).ok_or_else(|| {
+                let context = self.contexts.carrying(&sha256).ok_or_else(|| {
                     RuntimeError::Location("no live job authorizes this artifact".into())
                 })?;
                 let owner = wire::ArtifactOwner::Job(wire::JobArtifactOwner {
@@ -43,7 +44,7 @@ impl ArtifactResolver for JobArtifacts {
                     // A shared download can select another still-live
                     // authorized job.
                     _ = context.cancel.cancelled() => continue,
-                    location = context.connection.locate(owner, artifact.sha256.clone()) => {
+                    location = context.connection.locate(owner, sha256.clone()) => {
                         return ArtifactSource::from_location(location?);
                     }
                 }
@@ -68,7 +69,7 @@ impl StreamArtifacts {
 impl ArtifactResolver for StreamArtifacts {
     fn resolve<'a>(
         &'a self,
-        artifact: &'a PackageArtifact,
+        artifact: &'a Digest,
         cancel: &'a CancellationToken,
     ) -> BoxFuture<'a, Result<ArtifactSource, RuntimeError>> {
         Box::pin(async move {
@@ -77,7 +78,7 @@ impl ArtifactResolver for StreamArtifacts {
             });
             tokio::select! {
                 _ = cancel.cancelled() => Err(RuntimeError::Cancelled),
-                location = self.connection.locate(owner, artifact.sha256.clone()) => {
+                location = self.connection.locate(owner, located_by(artifact)?) => {
                     ArtifactSource::from_location(location?)
                 }
             }
@@ -102,14 +103,14 @@ impl ProgramArtifacts {
 impl ArtifactResolver for ProgramArtifacts {
     fn resolve<'a>(
         &'a self,
-        artifact: &'a PackageArtifact,
+        artifact: &'a Digest,
         cancel: &'a CancellationToken,
     ) -> BoxFuture<'a, Result<ArtifactSource, RuntimeError>> {
         Box::pin(async move {
             let owner = wire::ArtifactOwner::Programs(wire::ProgramsArtifactOwner { next: self.next });
             tokio::select! {
                 _ = cancel.cancelled() => Err(RuntimeError::Cancelled),
-                location = self.connection.locate(owner, artifact.sha256.clone()) => {
+                location = self.connection.locate(owner, located_by(artifact)?) => {
                     ArtifactSource::from_location(location?)
                 }
             }
