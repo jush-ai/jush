@@ -76,7 +76,7 @@ pub struct ConversationRecord {
     /// How many of those the user has not read yet: none has been
     /// acknowledged since it was raised (`mark_conversation_read`).
     pub unread_permission_requests: u64,
-    /// Whether it has a schedule, which the sidebar marks.
+    /// Whether it has a schedule, so its entry reads its schedules only then.
     pub scheduled: bool,
     /// The browser profile it names, whose Chrome its browser shares with
     /// every conversation that names it on the device; none for a profile

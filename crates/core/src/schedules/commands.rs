@@ -9,13 +9,13 @@
 use std::rc::{Rc, Weak};
 
 use jush_core_device_access::device_commands::conversation_of;
-use jush_device_interface::{Call, GroupBuilder, LeafBuilder, RpcError, RpcPort, TypedRpc};
+use jush_device_interface::{Call, GroupBuilder, LeafBuilder, RpcError, RpcInvocation, RpcPort, TypedRpc};
 use jush_shared_types::{
     ScheduleId, Timestamp,
     output::{Cell, Fields, Table, warning},
 };
 use jush_web_api_protocol::schedules::{
-    FirstOrLast, HolidayPlace, IfBusy, MonthDay, Repeat, RepeatUnit, RunState, ScheduleDto,
+    AgentTurn, FirstOrLast, HolidayPlace, IfBusy, MonthDay, Repeat, RepeatUnit, RunState, ScheduleDto,
     SchedulePatch, Task, Timing, Trigger, WeekOfMonth, Weekday,
 };
 use jush_web_api_protocol::ids::ConversationId;
@@ -351,13 +351,10 @@ async fn print_shown(
 async fn show(core: Rc<Core>, call: Call<IdArgs>, port: RpcPort) -> Result<u8, RpcError> {
     let id = id_of(&call.args.id)?;
     let conversation = conversation_of(&call.invocation)?;
-    let schedule = core
-        .schedule_list(&conversation)
-        .await
-        .map_err(failed)?
-        .into_iter()
-        .find(|schedule| schedule.id == id)
-        .ok_or_else(|| failed(format!("{id}: this conversation has no schedule of that id")))?;
+    let schedule = core.schedule(&conversation, &id).await.map_err(|error| match error {
+        ScheduleError::NotFound => failed(format!("{id}: this conversation has no schedule of that id")),
+        other => refused(other),
+    })?;
     print_shown(&core, &port, &call.invocation.path.join(" "), call.invocation.json, schedule, None).await
 }
 
@@ -764,13 +761,22 @@ async fn user_zone(core: &Core) -> Result<String, RpcError> {
     Ok(reported.locale.time_zone)
 }
 
+/// The agent's turn whose command `invocation` is; none for a job no agent
+/// started, or one recorded before jobs kept their turn.
+fn agent_turn(invocation: &RpcInvocation) -> Option<AgentTurn> {
+    let caller = invocation.caller.as_ref()?;
+    Some(AgentTurn {
+        node: caller.node.clone(),
+        turn: caller.turn.clone()?,
+    })
+}
+
 async fn create(core: Rc<Core>, call: Call<PartsArgs>, port: RpcPort) -> Result<u8, RpcError> {
     let conversation = conversation_of(&call.invocation)?;
     let zone = user_zone(&core).await?;
-    let mut patch = patch(&core, call.args, zone, None, TaskOps::default()).await?;
-    // The user's grant is the confirmation: it is on at once.
-    patch.paused = Some(false);
-    let (schedule, secret) = core.create_schedule(&conversation, patch).await.map_err(refused)?;
+    let patch = patch(&core, call.args, zone, None, TaskOps::default()).await?;
+    let by = agent_turn(&call.invocation);
+    let (schedule, secret) = core.create_schedule(&conversation, patch, by).await.map_err(refused)?;
     print_shown(&core, &port, &call.invocation.path.join(" "), call.invocation.json, schedule, secret).await
 }
 
@@ -794,14 +800,15 @@ async fn edit(core: Rc<Core>, call: Call<EditArgs>, port: RpcPort) -> Result<u8,
     if patch == SchedulePatch::default() && !new_secret {
         return Err(failed("nothing to change: give an option, or the message on stdin"));
     }
-    let (schedule, secret) = core.change_schedule(&conversation, &id, patch, new_secret).await.map_err(refused)?;
+    let by = agent_turn(&call.invocation);
+    let (schedule, secret) = core.change_schedule(&conversation, &id, patch, new_secret, by).await.map_err(refused)?;
     print_shown(&core, &port, &call.invocation.path.join(" "), call.invocation.json, schedule, secret).await
 }
 
 async fn run(core: Rc<Core>, call: Call<RunArgs>, port: RpcPort) -> Result<u8, RpcError> {
     let conversation = conversation_of(&call.invocation)?;
     let id = id_of(&call.args.id)?;
-    let schedule = core.run_schedule_now(&conversation, &id, call.args.task).await.map_err(refused)?;
+    let (schedule, _) = core.run_schedule_now(&conversation, &id, call.args.task).await.map_err(refused)?;
     port.stdout(format!("Started a run of \u{201c}{}\u{201d}.\n", schedule.name)).await?;
     Ok(0)
 }

@@ -11,9 +11,10 @@
 //!   answer, worded as the notice of a wake words them ([`turn_end`]).
 
 use jush_agent_session::{EndedTurn, TurnOutcome};
-use jush_core_store::schedules::{RunCause, StoredSchedule};
+use jush_core_store::schedules::StoredSchedule;
 use jush_shared_types::Timestamp;
 use jush_web_api_protocol::ids::ConversationId;
+use jush_web_api_protocol::schedules::RunCause;
 
 use super::hooks::Call;
 
@@ -140,7 +141,7 @@ pub(crate) fn text(schedule: &StoredSchedule, prompt: &str, cause: RunCause, at:
     let time = clock(schedule, at);
     let why = match (cause, extra) {
         (RunCause::Time, _) => format!("at {time}"),
-        (RunCause::Now, _) => format!("run by the agent at {time}"),
+        (RunCause::Now, _) => format!("run on request at {time}"),
         (RunCause::Change, _) => format!("its command's output changed at {time}"),
         (RunCause::Url, Extra::Calls { calls, .. }) if calls.len() > 1 => {
             format!("its URL was called {} times, last at {time}", calls.len())

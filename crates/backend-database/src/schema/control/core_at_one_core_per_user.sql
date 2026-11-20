@@ -251,7 +251,11 @@ CREATE TABLE schedules (
   watch_exit       INTEGER,
   watch_checked_at INTEGER,
   created_at       INTEGER NOT NULL,
-  updated_at       INTEGER NOT NULL
+  updated_at       INTEGER NOT NULL,
+  created_node     TEXT,
+  created_turn     TEXT,
+  edited_node      TEXT,
+  edited_turn      TEXT
 ) STRICT;
 
 CREATE INDEX schedules_by_conversation ON schedules (conversation_id, created_at);

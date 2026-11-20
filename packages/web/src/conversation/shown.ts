@@ -43,7 +43,7 @@ export function sidebarRow(
     unread: conversation.unread,
     needsYou: conversation.needsYou,
     device: resources.conversationDevice(conversation.target),
-    scheduled: conversation.scheduled,
+    scheduled: conversation.schedules.length > 0,
     worktree: conversation.worktree,
   }
 }
