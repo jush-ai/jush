@@ -26,7 +26,8 @@ use jush_backend_page_sync::SyncRegistry;
 use jush_plugin_host::{Registry, RegistryError};
 use jush_provider_registry::registry::ProviderRegistry;
 use jush_provider_registry::catalog_cache::ModelCatalogCache;
-use jush_provider_claude_code::releases::ClaudeReleases;
+use jush_provider_claude_code::releases::ClaudeDistribution;
+use jush_provider_subscription_cli::FollowedReleases;
 use jush_provider_registry::families::FamilyRegistry;
 use jush_provider_registry::vendors::VendorCatalog;
 use jush_backend_providers::vault::entries::{VaultReseal, SeededAccount, Vault};
@@ -429,9 +430,13 @@ impl Services {
                 announced.mark_everyone(&jush_backend_page_sync::Part::Providers);
             }
         });
-        let claude_releases =
-            ClaudeReleases::new(&providers.claude_releases, edge.clone(), clock.clone())
-                .map_err(ServicesError::Http)?;
+        let claude_releases = FollowedReleases::new(
+            &jush_provider_claude_code::CLI,
+            ClaudeDistribution::new(&providers.claude_releases),
+            edge.clone(),
+            clock.clone(),
+        )
+        .map_err(ServicesError::Http)?;
         let cli_releases = CliReleaseReaders::default()
             .with(&jush_provider_claude_code::CLI, Arc::new(claude_releases));
         let store: Arc<dyn RegistryStore> = Arc::new(vault.clone());
