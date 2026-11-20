@@ -18,7 +18,7 @@ mod videos;
 use std::sync::Arc;
 
 use jush_provider_common::{
-    Capabilities, InferenceRequest, OfferedModel, Provider, ProviderHttp, ProviderRun, ProviderRuntime,
+    InferenceRequest, OfferedModel, Provider, ProviderHttp, ProviderRun, ProviderRuntime,
     RequestLimits, ToolResultKinds, RuntimeEnv, RuntimeError, Secret, read_http_failure,
     audio::AudioMaker,
     images::ImageMaker,
@@ -123,10 +123,6 @@ impl GoogleProvider {
 }
 
 impl Provider for GoogleProvider {
-    fn capabilities(&self) -> Capabilities {
-        Capabilities::default()
-    }
-
     /// Whether the vendor accepts the entry's key shows on the first
     /// request.
     fn auth_status(&self) -> BoxFuture<'_, AuthState> {

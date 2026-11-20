@@ -5,7 +5,7 @@
 //!
 //! The policy:
 //!
-//! - It allows the Claude Code machine public destinations, replies to
+//! - It allows the Subscriptions machine public destinations, replies to
 //!   established connections and the configured resolver on TCP and UDP
 //!   port 53.
 //! - It allows a Cloud what the network rules allow, which the backend names
@@ -189,8 +189,8 @@ mod linux {
             Self { pool, dns, nft, resolver }
         }
 
-        /// The resolvers a sandbox's `/etc/resolv.conf` names. The Claude
-        /// Code machine asks them; a Cloud's questions to them, as to any
+        /// The resolvers a sandbox's `/etc/resolv.conf` names. The
+        /// Subscriptions machine asks them; a Cloud's questions to them, as to any
         /// other address, reach its gateway's resolver.
         pub fn dns(&self) -> &[Ipv4Addr] {
             &self.dns

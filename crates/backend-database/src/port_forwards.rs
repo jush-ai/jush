@@ -98,7 +98,7 @@ fn by_id(
 }
 
 /// Whether `device` is one of `user`'s devices: a device they paired or their
-/// Cloud, never the Claude Code machine.
+/// Cloud, never the Subscriptions machine.
 pub(crate) fn is_device(transaction: &Transaction<'_>, user: &UserId, device: &DeviceId) -> Result<bool, StorageError> {
     Ok(transaction.query_row(
         "SELECT EXISTS (SELECT 1 FROM devices WHERE id = ?1 AND user_id = ?2

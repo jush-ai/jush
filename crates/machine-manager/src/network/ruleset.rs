@@ -7,7 +7,7 @@
 //! workload can neither replace the rules nor send as another sandbox, and
 //! `clouds`, the Clouds' alone, which the network rules the master's policy
 //! gives (`crates/machine-manager-protocol/src/network.rs`) apply to; the
-//! Claude Code machine reaches the internet alone.
+//! Subscriptions machine reaches the internet alone.
 //!
 //! A Cloud's every DNS question, to whatever address, is redirected to the
 //! manager's resolver on its slot's gateway (`super::resolver`), which adds
@@ -22,8 +22,8 @@
 //! The table is installed whole whenever the manager reconciles, with the pair
 //! of every sandbox that runs and the names' addresses that have not expired,
 //! in the same transaction, since a reconcile keeps those sandboxes running.
-//! For example, a backend that restarts sends `reconcile` while the Claude Code
-//! machine runs a request: without its pair the new table would drop every
+//! For example, a backend that restarts sends `reconcile` while the
+//! Subscriptions machine runs a request: without its pair the new table would drop every
 //! packet the Cloud sends, and the request would wait on DNS that never
 //! answers while the Cloud looks healthy.
 //!
@@ -124,7 +124,7 @@ const DENIED: [(Ipv4Addr, u32); 13] = [
     (Ipv4Addr::new(240, 0, 0, 0), 4),
 ];
 
-/// What sandboxes reach: the Claude Code machine the resolvers and public
+/// What sandboxes reach: the Subscriptions machine the resolvers and public
 /// destinations, a Cloud its gateway's resolver and what the rules and the
 /// names' addresses allow. The backend is none of them: a Cloud reaches it
 /// through its runner socket (`crates/backend-http/src/lib.rs`).
@@ -502,7 +502,7 @@ fn named_set(name: &'static str, kind: SetTypeValue<'static>) -> NfListObject<'s
 fn sets_of(machine: SandboxMachine) -> &'static [&'static str] {
     match machine {
         SandboxMachine::Cloud => &[SLOTS, CLOUDS],
-        SandboxMachine::ClaudeCode => &[SLOTS],
+        SandboxMachine::Subscriptions => &[SLOTS],
     }
 }
 

@@ -167,14 +167,14 @@ pub struct WakeParams {
 }
 
 /// Which managed machine a sandbox runs
-/// (`crates/backend-cloud/src/lib.rs`): a user's Cloud, or the Claude
-/// Code machine, which has a memory limit of its own and keeps only its
+/// (`crates/backend-cloud/src/lib.rs`): a user's Cloud, or the
+/// Subscriptions machine, which has a memory limit of its own and keeps only its
 /// current generation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SandboxMachine {
     Cloud,
-    ClaudeCode,
+    Subscriptions,
 }
 
 /// Stop execution, save storage and release runtime resources.

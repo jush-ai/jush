@@ -9,7 +9,7 @@ mod stream;
 use std::sync::Arc;
 
 use jush_provider_common::{
-    Capabilities, InferenceRequest, OfferedModel, Provider, ProviderHttp, ProviderRun, ProviderRuntime,
+    InferenceRequest, OfferedModel, Provider, ProviderHttp, ProviderRun, ProviderRuntime,
     ModelWires, RequestLimits, ToolResultKinds, RuntimeEnv, RuntimeError, Secret, endpoint_url, read_http_failure,
 };
 use jush_shared_types::{
@@ -98,10 +98,6 @@ impl AnthropicProvider {
 }
 
 impl Provider for AnthropicProvider {
-    fn capabilities(&self) -> Capabilities {
-        Capabilities::default()
-    }
-
     /// Whether the vendor accepts the entry's key, or its lack of one,
     /// shows on the first request.
     fn auth_status(&self) -> BoxFuture<'_, AuthState> {

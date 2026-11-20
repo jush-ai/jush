@@ -207,9 +207,9 @@ impl Release {
                     .map(String::from)
                     .collect(),
             },
-            Executable::Claude => Self::Package {
-                id: jush_command_package_claude_code_protocol::PACKAGE,
-                operations: jush_command_package_claude_code_protocol::Operation::ALL
+            Executable::SubscriptionCli => Self::Package {
+                id: jush_command_package_subscription_cli_protocol::PACKAGE,
+                operations: jush_command_package_subscription_cli_protocol::Operation::ALL
                     .map(|operation| operation.name().to_owned())
                     .to_vec(),
             },

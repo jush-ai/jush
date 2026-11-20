@@ -3,7 +3,7 @@
 //! A running Cloud has two:
 //!
 //! - Its idle watch stops it once no conversation using it has been active for
-//!   the idle window. For the Claude Code machine, it stops it once no work has
+//!   the idle window. For the Subscriptions machine, it stops it once no work has
 //!   held it.
 //! - Its maintenance loop saves it every checkpoint interval and stops it at
 //!   its lifetime cap.
@@ -57,11 +57,11 @@ impl dyn CloudShard {
     }
 
     /// The conversations using the machine, with their roles: none for the
-    /// Claude Code machine, whose work holds its gate instead.
+    /// Subscriptions machine, whose work holds its gate instead.
     async fn uses_of(&self, machine: &Machine) -> Result<Vec<(ConversationId, Role)>, String> {
         match machine.kind() {
             ManagedMachine::Cloud => self.cloud_uses().await.map_err(|error| error.to_string()),
-            ManagedMachine::ClaudeCode => Ok(Vec::new()),
+            ManagedMachine::Subscriptions => Ok(Vec::new()),
         }
     }
 
@@ -178,8 +178,8 @@ impl dyn CloudShard {
                 return;
             }
         };
-        // Work in flight on the Claude Code machine holds its gate.
-        let working = machine.kind() == ManagedMachine::ClaudeCode && machine.gate.state().demand > 0;
+        // Work in flight on the Subscriptions machine holds its gate.
+        let working = machine.kind() == ManagedMachine::Subscriptions && machine.gate.state().demand > 0;
         if working || uses.iter().any(|(id, _)| self.attended(id)) {
             return;
         }

@@ -1120,7 +1120,7 @@
     "doneActive": "已登录。此账户现在是 {vendor} 的当前账户。",
     "doneKept": "已登录。{vendor} 会继续使用其当前账户。",
     "failedHint": "登录未完成。",
-    "waitingMachine": "正在等待 Claude Code 的机器连接…",
+    "waitingMachine": "正在等待订阅机器连接…",
     "installing": "正在安装命令行工具…",
     "startingTool": "正在启动命令行工具…",
     "contacting": "正在联系 {vendor}…",

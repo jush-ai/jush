@@ -20,8 +20,10 @@ testing = []
 jush-shared-types = { path = "../shared-types" }
 jush-provider-common = { path = "../provider-common" }
 # The releases it reads and the package that installs them.
-jush-command-package-claude-code-protocol = { path = "../command-package-claude-code-protocol" }
+jush-command-package-subscription-cli-protocol = { path = "../command-package-subscription-cli-protocol" }
 jush-device-interface = { path = "../device-interface" }
+# The placement its processes start through, and what every CLI shares.
+jush-provider-subscription-cli = { path = "../provider-subscription-cli" }
 # The build version the SDK MCP server names.
 jush-shared-artifacts = { path = "../shared-artifacts" }
 async-stream = "0.3"

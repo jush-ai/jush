@@ -12,7 +12,7 @@ mod audio;
 use std::sync::Arc;
 
 use jush_provider_common::{
-    Capabilities, Provider, ProviderRuntime, RuntimeEnv, RuntimeError, Secret, audio::AudioMaker, read_http_failure,
+    Provider, ProviderRuntime, RuntimeEnv, RuntimeError, Secret, audio::AudioMaker, read_http_failure,
 };
 use jush_shared_types::{AuthState, Clock, ProviderErrorDiagnostics, ProviderFailureFacts, RuntimeState, Timestamp};
 use futures_util::future::BoxFuture;
@@ -49,10 +49,6 @@ impl ElevenLabsProvider {
 }
 
 impl Provider for ElevenLabsProvider {
-    fn capabilities(&self) -> Capabilities {
-        Capabilities::default()
-    }
-
     /// Whether ElevenLabs accepts the key shows when its models are read,
     /// as Test Connection does.
     fn auth_status(&self) -> BoxFuture<'_, AuthState> {

@@ -65,19 +65,19 @@ use crate::client::MachinesError;
 pub(crate) fn sandbox_machine(device: &DeviceRecord) -> SandboxMachine {
     match device.machine.unwrap_or(ManagedMachine::Cloud) {
         ManagedMachine::Cloud => SandboxMachine::Cloud,
-        ManagedMachine::ClaudeCode => SandboxMachine::ClaudeCode,
+        ManagedMachine::Subscriptions => SandboxMachine::Subscriptions,
     }
 }
 
 /// The capacities the backend names for the disks of `device`, a managed
 /// machine: its account's Cloud storage, and always the default for the
-/// Claude Code machine.
+/// Subscriptions machine.
 pub(crate) async fn capacity(
     control: &ControlService,
     device: &DeviceRecord,
 ) -> Result<Capacity, StorageError> {
     let storage = match device.machine.unwrap_or(ManagedMachine::Cloud) {
-        ManagedMachine::ClaudeCode => CloudStorage::DEFAULT,
+        ManagedMachine::Subscriptions => CloudStorage::DEFAULT,
         ManagedMachine::Cloud => control
             .cloud_storage(device.user.clone())
             .await?
@@ -157,12 +157,12 @@ pub struct CloudAdmission {
 pub(crate) type Transition = Shared<LocalBoxFuture<'static, Result<(), CloudError>>>;
 
 /// The user's managed machines, in the user's shard: the Cloud, and for the
-/// master the Claude Code machine, each made on the first need, and whether
+/// master the Subscriptions machine, each made on the first need, and whether
 /// the shard is closing them.
 #[derive(Default)]
 pub struct Cloud {
     machine: RefCell<Option<Rc<Machine>>>,
-    claude_code: RefCell<Option<Rc<Machine>>>,
+    subscriptions: RefCell<Option<Rc<Machine>>>,
     closed: Cell<bool>,
 }
 
@@ -176,13 +176,13 @@ impl Cloud {
     fn slot(&self, kind: ManagedMachine) -> &RefCell<Option<Rc<Machine>>> {
         match kind {
             ManagedMachine::Cloud => &self.machine,
-            ManagedMachine::ClaudeCode => &self.claude_code,
+            ManagedMachine::Subscriptions => &self.subscriptions,
         }
     }
 
     /// Every managed machine the shard made.
     pub(crate) fn machines(&self) -> Vec<Rc<Machine>> {
-        [self.machine(), self.claude_code.borrow().clone()]
+        [self.machine(), self.subscriptions.borrow().clone()]
             .into_iter()
             .flatten()
             .collect()
@@ -219,8 +219,8 @@ pub(crate) struct Machine {
     deaths: RefCell<VecDeque<Instant>>,
     /// Why the last boot, save or reset failed, until a boot succeeds.
     pub(crate) error: RefCell<Option<String>>,
-    /// The user's pages, which show the Cloud's state; none for the Claude
-    /// Code machine, which no page shows.
+    /// The user's pages, which show the Cloud's state; none for the
+    /// Subscriptions machine, which no page shows.
     marks: Option<UserMarks>,
 }
 
@@ -436,7 +436,7 @@ impl Machine {
 }
 
 impl dyn CloudShard {
-    /// The managed machine of `device`, the user's Cloud or the Claude Code
+    /// The managed machine of `device`, the user's Cloud or the Subscriptions
     /// machine, made on the first need with the latest reset its records
     /// hold.
     pub(crate) async fn cloud_machine(
@@ -657,7 +657,7 @@ impl dyn CloudShard {
             connected = tokio::time::timeout(connection, self.devices().until_online(device)) => {
                 let name = match machine.kind() {
                     ManagedMachine::Cloud => "Your Cloud",
-                    ManagedMachine::ClaudeCode => "Claude Code’s machine",
+                    ManagedMachine::Subscriptions => "The Subscriptions machine",
                 };
                 connected.map_err(|_| CloudError::Failed(format!(
                     "{name} didn’t start. Its runner didn’t connect in {} seconds.",

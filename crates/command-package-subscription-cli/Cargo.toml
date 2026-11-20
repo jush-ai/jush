@@ -1,5 +1,5 @@
 [package]
-name = "jush-claude-code"
+name = "jush-subscription-cli"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -12,13 +12,13 @@ doctest = false
 bench = false
 
 [[bin]]
-name = "jush-claude-code"
+name = "jush-subscription-cli"
 path = "src/main.rs"
 test = false
 
 [dependencies]
 bytes.workspace = true
-jush-command-package-claude-code-protocol = { path = "../command-package-claude-code-protocol" }
+jush-command-package-subscription-cli-protocol = { path = "../command-package-subscription-cli-protocol" }
 jush-command-protocol = { path = "../command-protocol" }
 jush-command-sdk = { path = "../command-sdk" }
 jush-shared-cli = { path = "../shared-cli", features = ["device-allocator"] }

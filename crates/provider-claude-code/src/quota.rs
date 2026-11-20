@@ -40,7 +40,9 @@ use crate::cli;
 use crate::input::{self, ControlRequest, Input};
 use crate::live::{Handle, Tail, exit_message};
 use crate::output::{ControlResponseBody, Line};
-use crate::placement::{AccountMachine, AccountWork, CliWork, Placed, Placement};
+use jush_provider_subscription_cli::{AccountMachine, AccountWork, CliWork, Placed, Placement};
+
+use crate::{CLI, MachineState};
 
 /// How long a probe waits for the CLI's answer, such as one held behind a
 /// lock a killed process left (`crates/provider-claude-code/src/account.rs`).
@@ -59,11 +61,13 @@ pub(crate) struct ClaudeQuota {
     /// The machine the probe's process runs on; none for a provider built
     /// without one, which cannot probe.
     pub(crate) machine: Option<Arc<dyn AccountMachine>>,
+    /// What the family keeps of the machine, whose flags a probe fetches.
+    pub(crate) state: Arc<MachineState>,
     /// The provider entry the probe is work of.
     pub(crate) entry: String,
 }
 
-/// When each account's feature flags were last fetched on the Claude Code
+/// When each account's feature flags were last fetched on the Subscriptions
 /// machine, by a process of the account with the CLI's traffic on: its sign-in
 /// or its usage probe. It is kept by the account's id, which names its
 /// directory there, for every provider of the account.
@@ -105,7 +109,7 @@ impl QuotaSource for ClaudeQuota {
 
 
     /// The CLI's `get_usage` answer, in a process of the account's directory on
-    /// the Claude Code machine.
+    /// the Subscriptions machine.
     ///
     /// It holds its `rate_limits`, the vendor's usage object, and its
     /// `subscription_type`, the plan. A sign-in an earlier release kept in the
@@ -113,7 +117,7 @@ impl QuotaSource for ClaudeQuota {
     fn probe(&self) -> BoxFuture<'_, Result<ProbeReading, QuotaError>> {
         Box::pin(async move {
             let machine = self.machine.clone().ok_or_else(|| {
-                QuotaError::Unavailable("Claude Code's machine is not available".into())
+                QuotaError::Unavailable("The Subscriptions machine is not available".into())
             })?;
             let account = self
                 .auth
@@ -121,7 +125,7 @@ impl QuotaSource for ClaudeQuota {
                 .await
                 .map_err(|failure| failure.quota_error())?;
             if let CliWork::Account { account, .. } = &account.work {
-                machine.state().flags.refreshed(account);
+                self.state.flags.refreshed(account);
             }
             let (answer, answered) = oneshot::channel();
             let work = account.work;
@@ -133,7 +137,7 @@ impl QuotaSource for ClaudeQuota {
                 })
             });
             machine
-                .run(self.entry.clone(), probe)
+                .run(&CLI, self.entry.clone(), probe)
                 .await
                 .map_err(|error| QuotaError::Unavailable(error.0))?;
             let usage = answered.await.unwrap_or_else(|_| {

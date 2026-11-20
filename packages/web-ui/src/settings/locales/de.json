@@ -1120,7 +1120,7 @@
     "doneActive": "Angemeldet. Dieses Konto ist jetzt für {vendor} aktiv.",
     "doneKept": "Angemeldet. {vendor} verwendet weiter sein aktives Konto.",
     "failedHint": "Die Anmeldung wurde nicht abgeschlossen.",
-    "waitingMachine": "Warten auf die Verbindung des Rechners von Claude Code …",
+    "waitingMachine": "Warten auf die Verbindung des Abonnement-Rechners …",
     "installing": "Befehlszeilentool wird installiert …",
     "startingTool": "Befehlszeilentool wird gestartet …",
     "contacting": "Verbindung zu {vendor} …",

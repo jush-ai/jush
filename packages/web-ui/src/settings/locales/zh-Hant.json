@@ -1120,7 +1120,7 @@
     "doneActive": "已登入。{vendor} 現在使用此帳號。",
     "doneKept": "已登入。{vendor} 會繼續使用目前的帳號。",
     "failedHint": "登入未完成。",
-    "waitingMachine": "正在等待 Claude Code 的機器連線…",
+    "waitingMachine": "正在等待訂閱機器連線…",
     "installing": "正在安裝命令列工具…",
     "startingTool": "正在啟動命令列工具…",
     "contacting": "正在連線到 {vendor}…",

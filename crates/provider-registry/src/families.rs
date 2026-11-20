@@ -27,6 +27,7 @@
 //! reported instead of silently doing nothing.
 
 use std::collections::BTreeMap;
+use std::rc::Rc;
 use std::sync::Arc;
 
 use jush_provider_common::credentials::{CredentialPool, SubscriptionAccounts};
@@ -35,7 +36,8 @@ use jush_provider_common::models_dev::ModelsDevClient;
 use jush_provider_common::media::MediaModelInfo;
 use jush_provider_common::audio::AudioMaker;
 use jush_provider_common::quota::QuotaSnapshotStore;
-use jush_provider_common::{Provider, Secret};
+use jush_provider_common::{Provider, ProviderRuntime, Secret};
+use jush_provider_subscription_cli::{Cli, Placement};
 use jush_shared_types::{AudioShape, CacheTtl, Clock, ImageShape, VideoShape, WireApi};
 use jush_web_api_protocol::providers::CredentialKind;
 use url::Url;
@@ -67,6 +69,23 @@ pub trait ProviderFamily: Send + Sync + 'static {
     /// socket to another server.
     fn connects_through(&self) -> bool {
         true
+    }
+
+    /// The subscription's CLI the family's requests run as a process on the
+    /// Subscriptions machine; none for a family whose requests are HTTP.
+    fn cli(&self) -> Option<&'static Cli> {
+        None
+    }
+
+    /// A session's runtime of `provider`, which the family built, whose CLI
+    /// processes start through `placement`; none for a family that runs no
+    /// CLI.
+    fn process_runtime(
+        &self,
+        _provider: Arc<dyn Provider>,
+        _placement: Rc<dyn Placement>,
+    ) -> Option<Box<dyn ProviderRuntime>> {
+        None
     }
 
     /// The prompt cache lifetimes an API-key entry of the family knows on

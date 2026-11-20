@@ -56,6 +56,7 @@ jush-provider-minimax = { path = "../provider-minimax" }
 jush-provider-grok-build = { path = "../provider-grok-build" }
 jush-provider-openai-api = { path = "../provider-openai-api" }
 jush-provider-relay = { path = "../provider-relay" }
+jush-provider-subscription-cli = { path = "../provider-subscription-cli" }
 jush-web-api-protocol = { path = "../web-api-protocol" }
 # The management socket's name and default (`crates/server/src/main.rs`), and
 # the record of a server update's steps.

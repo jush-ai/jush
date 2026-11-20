@@ -4,7 +4,7 @@
 //!
 //! - `target`: its files and commands are on the Cloud.
 //! - `attached`: the Cloud is an extra device.
-//! - `provider`: the conversation names the Claude Code machine, never the
+//! - `provider`: the conversation names the Subscriptions machine, never the
 //!   user's Cloud, and the work on that machine holds it instead.
 //!
 //! Every role keeps the Cloud awake while the conversation works. An idle stop

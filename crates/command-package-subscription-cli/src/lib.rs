@@ -1,9 +1,11 @@
-//! The `jush.claude-code` command package: Jush's own verified copy of the
-//! Claude Code CLI on the machine that runs it, which the runner installs.
+//! The `jush.subscription-cli` command package: Jush's own verified copy of
+//! each subscription's CLI, such as Claude Code, on the machine that runs it,
+//! which the runner installs.
 //!
-//! It is a package of its own. The runner knows nothing about Claude Code, and
+//! It is a package of its own. The runner knows nothing about any CLI, and
 //! removing the package and the backend's use of it leaves the rest of Jush as
-//! it was.
+//! it was. The package knows no CLI either: a release record names the CLI,
+//! and each CLI's versions are a line of their own in the runner's cache.
 //!
 //! # Rules
 //!
@@ -11,8 +13,9 @@
 //!   through the runner's cache. There is no fallback to another version,
 //!   location or executable.
 //! - The package picks the platform from the machine, not from the runner's own
-//!   target, because a runner built for musl runs on glibc machines and the
-//!   CLI's `linux-*` and `linux-*-musl` builds are not interchangeable. A
+//!   target, because a runner built for musl runs on glibc machines and a
+//!   CLI's `linux-*` and `linux-*-musl` builds are not interchangeable. The
+//!   platform keys are Jush's, which the backend reads each vendor's into. A
 //!   platform the release does not carry is `unsupported_platform`, never
 //!   another platform's build.
 //! - It reads no pointers and chooses no versions: the backend builds the
@@ -28,14 +31,14 @@ pub mod release;
 use std::{future::Future, pin::Pin};
 
 use bytes::Bytes;
-use jush_command_package_claude_code_protocol::{Failure, Installed, Operation, Reply};
+use jush_command_package_subscription_cli_protocol::{Failure, Installed, Operation, Reply, Status};
 use jush_command_protocol::{CommandError, Completion, Invocation};
 use jush_command_sdk::{Artifacts, Handler, Input, InvocationContext, ResidentError};
 use serde::Serialize;
 use tokio::sync::watch;
 use tokio_util::sync::CancellationToken;
 
-use install::EnsureError;
+use install::OperationError;
 
 /// The most bytes of input read: the input is held whole in memory, and a
 /// release record is only a few hundred bytes for each platform.
@@ -43,13 +46,13 @@ const MAX_INPUT_BYTES: usize = 64 * 1024;
 
 /// The resident holds no conversation state, so the trait's empty conversation
 /// status and its `close` stand.
-pub struct JushClaude {
+pub struct JushSubscriptionCli {
     /// The resident's artifacts source, which it takes before it admits a
     /// call.
     artifacts: watch::Sender<Option<Artifacts>>,
 }
 
-impl Default for JushClaude {
+impl Default for JushSubscriptionCli {
     fn default() -> Self {
         Self {
             artifacts: watch::Sender::new(None),
@@ -57,7 +60,7 @@ impl Default for JushClaude {
     }
 }
 
-impl Handler for JushClaude {
+impl Handler for JushSubscriptionCli {
     type Metadata = Invocation;
 
     fn artifacts(&self, artifacts: Artifacts) {
@@ -87,8 +90,8 @@ impl Handler for JushClaude {
                 return Err(ResidentError::UnknownOperation(request.operation));
             };
             let result = match artifacts {
-                None => Err(EnsureError::InstallFailed(
-                    "jush-claude-code has no artifacts source".into(),
+                None => Err(OperationError::InstallFailed(
+                    "jush-subscription-cli has no artifacts source".into(),
                 )),
                 Some(artifacts) => match operation {
                     Operation::Ensure => {
@@ -96,7 +99,9 @@ impl Handler for JushClaude {
                             .await
                             .and_then(document)
                     }
-                    Operation::Status => install::status(&artifacts).await.and_then(document),
+                    Operation::Status => status(&artifacts, input, &cancellation)
+                        .await
+                        .and_then(document),
                 },
             };
             let (body, completion) = match result {
@@ -140,42 +145,53 @@ async fn ensure(
     invocation: &str,
     input: Input,
     cancel: &CancellationToken,
-) -> Result<Installed, EnsureError> {
-    let input = read_input(input, cancel).await?;
+) -> Result<Installed, OperationError> {
+    let input = read_input(input, cancel, OperationError::InvalidRelease).await?;
     let release = install::release(&input)?;
     tokio::select! {
-        _ = cancel.cancelled() => Err(EnsureError::Cancelled),
+        _ = cancel.cancelled() => Err(OperationError::Cancelled),
         installed = install::ensure(artifacts, invocation, &release) => installed,
     }
 }
 
-/// Read the invocation's input to its end, refusing more than `MAX_INPUT_BYTES`.
-async fn read_input(mut input: Input, cancel: &CancellationToken) -> Result<Vec<u8>, EnsureError> {
+async fn status(
+    artifacts: &Artifacts,
+    input: Input,
+    cancel: &CancellationToken,
+) -> Result<Status, OperationError> {
+    let input = read_input(input, cancel, OperationError::InvalidRequest).await?;
+    let request = install::status_request(&input)?;
+    install::status(artifacts, &request.cli).await
+}
+
+/// Read the invocation's input to its end, refusing more than
+/// `MAX_INPUT_BYTES`; `invalid` says why the input is refused.
+async fn read_input(
+    mut input: Input,
+    cancel: &CancellationToken,
+    invalid: fn(String) -> OperationError,
+) -> Result<Vec<u8>, OperationError> {
     let mut bytes = Vec::new();
     loop {
         let chunk = tokio::select! {
-            _ = cancel.cancelled() => return Err(EnsureError::Cancelled),
+            _ = cancel.cancelled() => return Err(OperationError::Cancelled),
             chunk = input.next() => chunk,
         };
         match chunk {
             Ok(Some(chunk)) if bytes.len() + chunk.len() <= MAX_INPUT_BYTES => {
                 bytes.extend_from_slice(&chunk);
             }
-            Ok(Some(_)) => {
-                return Err(EnsureError::InvalidRelease(format!(
-                    "input exceeds {MAX_INPUT_BYTES} bytes"
-                )));
-            }
+            Ok(Some(_)) => return Err(invalid(format!("input exceeds {MAX_INPUT_BYTES} bytes"))),
             Ok(None) => return Ok(bytes),
-            Err(ResidentError::Cancelled) => return Err(EnsureError::Cancelled),
-            Err(error) => return Err(EnsureError::InvalidRelease(error.to_string())),
+            Err(ResidentError::Cancelled) => return Err(OperationError::Cancelled),
+            Err(error) => return Err(invalid(error.to_string())),
         }
     }
 }
 
-fn document<T: Serialize>(answer: T) -> Result<Vec<u8>, EnsureError> {
+fn document<T: Serialize>(answer: T) -> Result<Vec<u8>, OperationError> {
     serde_json::to_vec(&Reply::Done(answer))
-        .map_err(|error| EnsureError::InstallFailed(error.to_string()))
+        .map_err(|error| OperationError::InstallFailed(error.to_string()))
 }
 
 fn line(mut body: Vec<u8>) -> Bytes {

@@ -18,7 +18,7 @@ mod videos;
 use std::sync::Arc;
 
 use jush_provider_common::{
-    Capabilities, CatalogError, Provider, ProviderRuntime, RuntimeEnv, RuntimeError, Secret,
+    CatalogError, Provider, ProviderRuntime, RuntimeEnv, RuntimeError, Secret,
     audio::AudioMaker,
     credentials::SubscriptionAccounts,
     images::ImageMaker,
@@ -102,10 +102,6 @@ impl ArkProvider {
 }
 
 impl Provider for ArkProvider {
-    fn capabilities(&self) -> Capabilities {
-        self.text.as_ref().map_or_else(Capabilities::default, |text| text.capabilities())
-    }
-
     /// Whether Ark accepts the key shows on the first request, as Test
     /// Connection's.
     fn auth_status(&self) -> BoxFuture<'_, AuthState> {
@@ -229,10 +225,6 @@ impl SpeechProvider {
 }
 
 impl Provider for SpeechProvider {
-    fn capabilities(&self) -> Capabilities {
-        Capabilities::default()
-    }
-
     /// Whether ByteDance accepts the key shows on the first request, as
     /// Test Connection's.
     fn auth_status(&self) -> BoxFuture<'_, AuthState> {

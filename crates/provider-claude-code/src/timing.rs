@@ -20,7 +20,7 @@ use jush_provider_common::ProviderEvent;
 use tokio::time::Instant;
 use tracing::Span;
 
-use crate::placement::StartSteps;
+use jush_provider_subscription_cli::StartSteps;
 
 /// Which process a run took.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -60,7 +60,7 @@ use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 use tracing::Instrument as _;
 
-use crate::conversation::claude_cli::{ClaudeCli, ClaudeMachine};
+use crate::conversation::subscription_cli::{SubscriptionCli, SubscriptionsMachine};
 use crate::conversation::project_files::ProjectFiles;
 use crate::conversation::notifications::Notifications;
 use crate::conversation::restart_resume::RestartResumes;
@@ -148,9 +148,9 @@ pub struct Shard {
     idle_watches: ConversationWatches,
     /// The collections of the user's blob namespace.
     blob_collection: BlobCollection,
-    /// The user's Claude Code CLI work, which runs on the Claude Code
-    /// machine.
-    claude_cli: ClaudeCli,
+    /// The user's work of the subscriptions' CLIs, which runs on the
+    /// Subscriptions machine.
+    subscription_cli: SubscriptionCli,
     /// An instance of every plugin for the user.
     plugins: UserPlugins,
     /// What the shard remembers of its devices' plugin directories.
@@ -262,7 +262,7 @@ impl Shard {
             cloud: Cloud::default(),
             idle_watches: ConversationWatches::default(),
             blob_collection: BlobCollection::default(),
-            claude_cli: ClaudeCli::default(),
+            subscription_cli: SubscriptionCli::default(),
             plugins,
             plugin_installs: PluginInstalls::default(),
             permission_revisions: jush_backend_page_sync::Revisions::default(),
@@ -294,8 +294,8 @@ impl Shard {
             .expect("a shard's method runs while the shard lives")
     }
 
-    pub(crate) fn claude_cli(&self) -> &ClaudeCli {
-        &self.claude_cli
+    pub(crate) fn subscription_cli(&self) -> &SubscriptionCli {
+        &self.subscription_cli
     }
 
     pub(crate) fn schedules(&self) -> &crate::schedules::Schedules {
@@ -359,10 +359,10 @@ impl Shard {
         &self.tasks
     }
 
-    /// The Claude Code machine, through the master's shard; none in a
+    /// The Subscriptions machine, through the master's shard; none in a
     /// backend whose shards never started.
-    pub(crate) fn claude_machine(&self) -> Option<ClaudeMachine> {
-        self.services().claude_machine.get()
+    pub(crate) fn subscriptions_machine(&self) -> Option<SubscriptionsMachine> {
+        self.services().subscriptions_machine.get()
     }
 
     /// Whether the shard is closing and starts no new work.
@@ -776,12 +776,12 @@ impl ShardPool {
         let shards = Shards {
             queues: queues.into(),
         };
-        // The master's shard holds the Claude Code machine, which every
+        // The master's shard holds the Subscriptions machine, which every
         // shard and the providers' sign-ins and probes reach through it
         // (`crates/backend-cloud/src/lib.rs`).
-        let machine = ClaudeMachine::new(shards.clone(), shared.control.clone());
-        if !shared.claude_machine.set(machine) {
-            tracing::error!(event = "claude_code_machine.set_twice", "the Claude Code machine was set twice; the first is kept");
+        let machine = SubscriptionsMachine::new(shards.clone(), shared.control.clone());
+        if !shared.subscriptions_machine.set(machine) {
+            tracing::error!(event = "subscriptions_machine.set_twice", "the Subscriptions machine was set twice; the first is kept");
         }
         // A provider entry's request through one of its owner's devices goes
         // through the owner's shard (`crates/backend-user-shard/src/shard/device_requests.rs`).

@@ -18,6 +18,7 @@
 use jush_provider_common::media_catalog::MediaCatalog;
 use jush_provider_common::Searches;
 use std::collections::HashMap;
+use std::rc::Rc;
 use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 
 use jush_provider_common::credentials::{CredentialPool, SubscriptionAccounts};
@@ -26,7 +27,8 @@ use jush_provider_common::media::{MediaMaker, MediaModelInfo};
 use jush_provider_common::audio::AudioMaker;
 use jush_provider_common::videos::VideoMaker;
 use jush_provider_common::quota::{ProbeAsk, QuotaError};
-use jush_provider_common::{DeviceRoute, ModelWires, Provider, ProviderHttp};
+use jush_provider_common::{DeviceRoute, ModelWires, Provider, ProviderHttp, ProviderRuntime};
+use jush_provider_subscription_cli::{Cli, Placement};
 use jush_shared_types::{AudioShape, CacheTtl, Clock, MediaKind, MediaShapes, Metered, Model, Rotation};
 use jush_web_api_protocol::ids::{CredentialId, ProviderId};
 use jush_provider_common::models_dev::ModelsDevError;
@@ -55,6 +57,9 @@ pub enum RegistryError {
     /// The entry names a family this backend does not register.
     #[error("the provider family {0} is not available")]
     UnknownFamily(String),
+    /// A runtime over a placement was asked of a family that runs no CLI.
+    #[error("the provider family {0} runs no process Jush places")]
+    NoProcess(String),
     #[error(transparent)]
     Family(#[from] FamilyError),
     /// An API-key entry without its key: nothing is sent until the user
@@ -591,22 +596,27 @@ impl ProviderRegistry {
         }
     }
 
-    /// Whether `entry`'s provider runs its CLI as a process on a machine.
-    pub async fn runs_a_process(&self, entry: &ProviderEntry) -> Result<bool, RegistryError> {
-        Ok(self.provider_for(entry).await?.capabilities().cli_package.is_some())
+    /// The subscription's CLI `entry`'s provider runs as a process on the
+    /// Subscriptions machine; none for one whose requests are HTTP, or of a
+    /// family the backend does not have.
+    pub fn cli(&self, entry: &ProviderEntry) -> Option<&'static Cli> {
+        self.family(&entry.family).ok()?.cli()
     }
 
-    /// A provider of `entry` for `account` of its own, built without the
-    /// cache, as a session's runtime of a provider that runs a process has
-    /// one.
-    pub async fn own_provider(
+    /// A session's runtime of a provider of `entry` for `account` of its own,
+    /// built without the cache, whose CLI processes start through
+    /// `placement`.
+    pub async fn process_runtime(
         &self,
         entry: &ProviderEntry,
         account: Option<&CredentialId>,
-    ) -> Result<Arc<dyn Provider>, RegistryError> {
+        placement: Rc<dyn Placement>,
+    ) -> Result<Box<dyn ProviderRuntime>, RegistryError> {
         let family = self.family(&entry.family)?;
         let args = self.entry_args(entry, account, self.model_wires(entry).await).await?;
-        Ok(family.provider(args)?)
+        family
+            .process_runtime(family.provider(args)?, placement)
+            .ok_or_else(|| RegistryError::NoProcess(entry.family.clone()))
     }
 
     /// Forgets the entry's provider and catalog after its configuration or

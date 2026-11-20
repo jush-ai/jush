@@ -30,9 +30,10 @@ use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
 use crate::Shared;
-use crate::idle::{self, Closing, Idle, Seat};
+use crate::idle;
+use jush_provider_subscription_cli::{Closing, Idle, Seat};
 use crate::live::{LiveCli, ProcessKey, Written};
-use crate::placement::Placement;
+use jush_provider_subscription_cli::Placement;
 use crate::timing::Took;
 
 /// What the runtime asks of a prepared process's task.

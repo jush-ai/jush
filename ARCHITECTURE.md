@@ -24,7 +24,7 @@ runner (crates/runner, runner-*)    machine manager (crates/machine-manager)
    | command invocations                v
    v                                 Cloud sandbox
 command programs (command-package-*): jush-file, jush-browser,
-jush-fetch, jush-mobile, jush-claude-code
+jush-fetch, jush-mobile, jush-subscription-cli
 ```
 
 Each program's inside is drawn in its entry comment. The following table lists
@@ -190,7 +190,7 @@ Code lives in these directories:
     also holds its Chrome driver, `command-chrome/`.
 -   What no single plugin owns stays a directory of its own: the plugin
     framework (`plugin-interface`, `plugin-host`, `runner-command-packages`,
-    `plugin-sdk`), the provider's `command-package-claude-code`, and the media
+    `plugin-sdk`), the subscription providers' `command-package-subscription-cli`, and the media
     library the image, video and audio plugins share (`plugin-media`).
 -   The other TypeScript packages live in `packages/`.
 -   Vendored crates live in `vendor/<upstream>/<crate>/`.
@@ -398,7 +398,7 @@ command-package-fetch-protocol -> shared-types
 command-package-browser-protocol -> shared-types, live-view-protocol, shared-recording-protocol
 command-package-mobile-protocol -> shared-types, live-view-protocol, shared-recording-protocol
 live-view-protocol -> shared-types
-command-package-claude-code-protocol -> none
+command-package-subscription-cli-protocol -> none
 runner-protocol -> command-protocol, command-declarations, device-paths, shared-types
 machine-manager-protocol -> command-protocol, runner-protocol, shared-types
 supervisor-protocol -> none
@@ -422,8 +422,9 @@ provider-minimax -> shared-types, provider-common
 provider-codex -> shared-types, provider-common, shared-artifacts
 provider-grok-build -> shared-types, provider-common
 provider-relay -> shared-types, provider-common
-provider-claude-code -> command-package-claude-code-protocol, shared-types, provider-common, device-interface, shared-artifacts
-provider-registry -> shared-types, provider-common, provider-anthropic-api, provider-openai-api, web-api-protocol
+provider-subscription-cli -> command-package-subscription-cli-protocol, shared-types, device-interface
+provider-claude-code -> command-package-subscription-cli-protocol, shared-types, provider-common, device-interface, shared-artifacts, provider-subscription-cli
+provider-registry -> shared-types, provider-common, provider-anthropic-api, provider-openai-api, web-api-protocol, provider-subscription-cli
 device-paths -> none
 device-interface -> command-protocol, command-declarations, device-paths, shared-types
 agent-store -> conversation-lane-protocol, command-protocol, shared-types, provider-common, device-interface, device-paths
@@ -464,18 +465,18 @@ backend-idle-watch -> shared-gates
 backend-cloud -> backend-idle-watch, backend-providers, backend-runners, backend-database, backend-page-sync, shared-gates, runner-client, machine-manager-protocol, runner-protocol, device-interface, web-api-protocol, provider-registry
 backend-permissions -> command-declarations, shared-types, device-interface, backend-database, backend-page-sync, web-api-protocol
 backend-device-access -> agent-store, agent-tools, backend-cloud, backend-blobs, backend-runners, backend-database, command-protocol, command-declarations, shared-types, shared-gates, runner-client, runner-protocol, device-interface, web-api-protocol, plugin-interface, device-paths
-backend-user-shard -> agent-server, conversation-lane-protocol, agent-session, agent-store, agent-tools, agent-transcript, backend-accounts, backend-cloud, backend-device-access, backend-idle-watch, backend-blobs, backend-permissions, plugin-host, backend-providers, backend-runners, backend-database, backend-page-sync, command-package-claude-code-protocol, command-protocol, command-declarations, shared-artifacts, shared-types, shared-gates, plugin-interface, runner-client, machine-manager-protocol, provider-common, provider-claude-code, runner-protocol, device-interface, web-api-protocol, provider-registry, provider-relay, device-paths
-backend-http -> conversation-lane-protocol, agent-store, shared-artifacts, backend-accounts, backend-cloud, backend-device-access, backend-blobs, backend-providers, backend-runners, backend-user-shard, backend-database, backend-page-sync, command-protocol, shared-types, runner-client, provider-common, runner-protocol, shared-lanes, device-interface, web-api-protocol, backend-permissions, plugin-host, plugin-interface, provider-registry, provider-relay
-backend -> backend-accounts, backend-blobs, backend-cloud, backend-database, backend-device-access, backend-http, backend-providers, backend-runners, backend-user-shard, command-declarations, command-package-browser-protocol, plugin-browser, plugin-changes, plugin-file, plugin-file-browser, plugin-interface, plugin-mobile, provider-anthropic-api, provider-claude-code, provider-codex, provider-bytedance, provider-common, provider-elevenlabs, provider-minimax, provider-google, provider-grok-build, provider-openai-api, runner-protocol, shared-artifacts, shared-cli, shared-gates, shared-types, web-api-protocol, plugin-skills, plugin-web, plugin-image, plugin-video, plugin-audio, plugin-widget, provider-registry, provider-relay
+backend-user-shard -> agent-server, conversation-lane-protocol, agent-session, agent-store, agent-tools, agent-transcript, backend-accounts, backend-cloud, backend-device-access, backend-idle-watch, backend-blobs, backend-permissions, plugin-host, backend-providers, backend-runners, backend-database, backend-page-sync, command-package-subscription-cli-protocol, command-protocol, command-declarations, shared-artifacts, shared-types, shared-gates, plugin-interface, runner-client, machine-manager-protocol, provider-common, provider-claude-code, runner-protocol, device-interface, web-api-protocol, provider-registry, provider-relay, device-paths, provider-subscription-cli
+backend-http -> conversation-lane-protocol, agent-store, shared-artifacts, backend-accounts, backend-cloud, backend-device-access, backend-blobs, backend-providers, backend-runners, backend-user-shard, backend-database, backend-page-sync, command-protocol, shared-types, runner-client, provider-common, runner-protocol, shared-lanes, device-interface, web-api-protocol, backend-permissions, plugin-host, plugin-interface, provider-registry, provider-relay, provider-subscription-cli
+backend -> backend-accounts, backend-blobs, backend-cloud, backend-database, backend-device-access, backend-http, backend-providers, backend-runners, backend-user-shard, command-declarations, command-package-browser-protocol, plugin-browser, plugin-changes, plugin-file, plugin-file-browser, plugin-interface, plugin-mobile, provider-anthropic-api, provider-claude-code, provider-codex, provider-bytedance, provider-common, provider-elevenlabs, provider-minimax, provider-google, provider-grok-build, provider-openai-api, runner-protocol, shared-artifacts, shared-cli, shared-gates, shared-types, web-api-protocol, plugin-skills, plugin-web, plugin-image, plugin-video, plugin-audio, plugin-widget, provider-registry, provider-relay, provider-subscription-cli
 machine-manager -> shared-artifacts, shared-cli, shared-processes, shared-types, machine-manager-protocol, runner-protocol, supervisor-protocol
 server -> backend-database, machine-manager-protocol, runner-protocol, shared-artifacts, shared-cli, shared-processes, shared-types, supervisor-protocol, web-api-protocol
 runner -> command-protocol, command-sdk, runner-direct, runner-device, runner-jobs, runner-process, runner-protocol, runner-command-packages, runner-shell, shared-artifacts, shared-cli, shared-recording-protocol
 command-package-file -> shared-artifacts, command-protocol, command-sdk, shared-types, command-package-file-protocol, shared-gates, shared-cli
 command-package-fetch -> command-protocol, command-sdk, command-package-fetch-protocol, shared-cli, shared-types, shared-artifacts
 command-package-browser -> command-package-browser-chrome, command-package-browser-protocol, command-protocol, command-sdk, shared-cli, shared-openh264, shared-recording, shared-recording-protocol
-command-package-claude-code -> command-package-claude-code-protocol, command-protocol, command-sdk, shared-cli
+command-package-subscription-cli -> command-package-subscription-cli-protocol, command-protocol, command-sdk, shared-cli
 command-package-mobile -> command-package-mobile-protocol, command-protocol, command-sdk, live-view, live-view-protocol, shared-artifacts, shared-cli, shared-h264, shared-openh264, shared-recording, shared-recording-protocol, shared-types
-xtask -> conversation-lane-protocol, shared-artifacts, command-package-browser-protocol, command-package-mobile-protocol, live-view-protocol, command-package-claude-code-protocol, command-protocol, shared-types, command-package-file-protocol, command-package-fetch-protocol, machine-manager-protocol, runner-protocol, shared-lanes, web-api-protocol, backend, provider-registry, provider-common, plugin-interface, plugin-widget
+xtask -> conversation-lane-protocol, shared-artifacts, command-package-browser-protocol, command-package-mobile-protocol, live-view-protocol, command-package-subscription-cli-protocol, command-protocol, shared-types, command-package-file-protocol, command-package-fetch-protocol, machine-manager-protocol, runner-protocol, shared-lanes, web-api-protocol, backend, provider-registry, provider-common, plugin-interface, plugin-widget
 ```
 
 ### TypeScript packages

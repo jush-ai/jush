@@ -380,11 +380,11 @@ export interface SettingsProviderAccount {
   quotaAt?: string | null
 }
 
-/** The CLI a process provider starts, which Jush installs and updates on Claude Code's machine. */
+/** The CLI a process provider starts, which Jush installs and updates on the Subscriptions machine. */
 export interface SettingsProviderCli {
   /** The vendor's newest version, or why it could not be read. */
   newest: { version: string } | { error: string }
-  /** The last install on Claude Code's machine, which adding an account starts. */
+  /** The last install on the Subscriptions machine, which adding an account starts. */
   install:
     | { state: 'installing'; download: DownloadProgress | null }
     | { state: 'installed' }
@@ -601,7 +601,7 @@ export interface SettingsModelEditor {
 
 /**
  * What a sign-in waits for before it has a link or a code to show
- * (`crates/provider-claude-code/src/account.rs`): the vendor, Claude Code's machine,
+ * (`crates/provider-claude-code/src/account.rs`): the vendor, the Subscriptions machine,
  * the command-line tool's install on it, or its start.
  */
 export type ProviderLoginStage = 'preparing' | 'waiting_for_machine' | 'installing' | 'starting' | 'waiting_for_user'

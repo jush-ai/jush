@@ -21,7 +21,7 @@ use jush_web_api_protocol::providers::TestResult;
 use futures_util::StreamExt;
 use tokio_util::sync::CancellationToken;
 
-use super::claude_cli::{CrossPlacement, ProcessWork};
+use super::subscription_cli::{CrossPlacement, ProcessWork};
 use crate::shard::Shard;
 use crate::shard::media::vendor_refusal;
 
@@ -69,7 +69,7 @@ impl Shard {
 
     /// Tests `provider`, the entry's provider for `account` or for its
     /// active account without one, with the entry's model `model_id`. A
-    /// provider that runs a process runs it on the Claude Code machine. `cancel`
+    /// provider that runs a process runs it on the Subscriptions machine. `cancel`
     /// ends the test when the requester leaves.
     pub async fn test_provider(
         &self,
@@ -107,7 +107,7 @@ impl Shard {
         // The model the catalog lists is also the configured one, when the
         // entry configures its list.
         let selection = model.selection(entry.id.as_str(), None, None);
-        let runtime = if provider.capabilities().cli_package.is_some() {
+        let runtime = if provider_registry.cli(&entry).is_some() {
             let work = ProcessWork::Account(entry.id.clone());
             let account = account.as_ref().or(entry.active());
             CrossPlacement::runtime(Rc::downgrade(&self.this()), provider_registry, &entry, account, work).await

@@ -44,7 +44,6 @@ environment it receives:
 ```rust
 /// One provider entry, shared by every user and request of the entry.
 pub trait Provider: Any + Send + Sync {
-    fn capabilities(&self) -> Capabilities;              // { cli_package: Option<&'static str> }
     fn auth_status(&self) -> BoxFuture<'_, AuthState>;
     fn runtime_state(&self) -> RuntimeState;
     /// A fresh read of the provider's directory; the backend's catalog cache is the cache.
@@ -65,13 +64,18 @@ The following table says what your provider does in each method:
 
 | Method | What your provider does |
 |---|---|
-| `capabilities` | Names `cli_package`, the command package of its CLI, only when its requests run that CLI as a process; the backend then builds the runtime over a placement that starts the process (`crates/provider-claude-code/src/placement.rs`) |
 | `auth_status`, `runtime_state` | Says whether the credential is present and usable, and whether the provider can run. Reading either never makes an inference request |
 | `list_models` | Reads the vendor's model directory on each call and keeps no cache: the backend's catalog cache (`crates/provider-registry/src/catalog_cache.rs`) is the only one |
 | `read_failure` | Reads your vendor's own fields out of a stored failure record ([Report failures](#report-failures)) |
 | `quota` | Returns your quota when the vendor reports one ([Optional: quota](#optional-quota)) |
 | `accounts` | Returns the account operations of a subscription family ([Credentials](#credentials)) |
 | `runtime` | Builds a runtime for one session, on the calling thread, with the shard's client in `env`; a provider whose runtime starts a process refuses, because only the backend chooses the machine |
+
+A provider whose requests run a subscription's CLI as a process on the
+Subscriptions machine, as Claude Code's do, says so through its family:
+`ProviderFamily::cli` names the CLI, and `ProviderFamily::process_runtime`
+builds a session's runtime over the placement that starts the process
+(`crates/provider-subscription-cli/src/placement.rs`).
 
 Keep what runtimes share (configuration, authentication, quota, the catalog
 client) in one `Arc` that the provider and all its runtimes hold.

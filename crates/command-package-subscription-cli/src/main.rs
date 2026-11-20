@@ -9,11 +9,11 @@ async fn main() {
     jush_command_sdk::Launch::from_process();
     // Events go to standard error as lines of the log, which the runner keeps
     // as they are.
-    jush_command_sdk::log_to_stderr("claude_code");
+    jush_command_sdk::log_to_stderr("subscription_cli");
     let result =
-        jush_command_sdk::serve_stdio(Arc::new(jush_claude_code::JushClaude::default())).await;
+        jush_command_sdk::serve_stdio(Arc::new(jush_subscription_cli::JushSubscriptionCli::default())).await;
     if let Err(error) = result {
-        tracing::error!(event = "claude_code_resident.exited", %error, "the resident ended with an error");
+        tracing::error!(event = "subscription_cli_resident.exited", %error, "the resident ended with an error");
         std::process::exit(1);
     }
     // The executable owns synchronous Windows stdio workers; HTTP/2 has drained.

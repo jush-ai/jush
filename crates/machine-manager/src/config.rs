@@ -138,11 +138,11 @@ struct Cli {
     /// The memory limit of one sandbox, in MiB, with the limits on.
     #[arg(long, env = "JUSH_MANAGED_MEM_MIB", value_name = "JUSH_MANAGED_MEM_MIB", default_value = "2048", value_parser = decimal::<NonZeroU32>)]
     mem_mib: NonZeroU32,
-    /// The memory limit of the Claude Code machine's sandbox, in MiB, with
+    /// The memory limit of the Subscriptions machine's sandbox, in MiB, with
     /// the limits on: every user's CLI processes share it
     /// (`crates/backend-cloud/src/lib.rs`).
-    #[arg(long, env = "JUSH_MANAGED_CLAUDE_CODE_MEM_MIB", value_name = "JUSH_MANAGED_CLAUDE_CODE_MEM_MIB", default_value = "4096", value_parser = decimal::<NonZeroU32>)]
-    claude_code_mem_mib: NonZeroU32,
+    #[arg(long, env = "JUSH_MANAGED_SUBSCRIPTIONS_MEM_MIB", value_name = "JUSH_MANAGED_SUBSCRIPTIONS_MEM_MIB", default_value = "4096", value_parser = decimal::<NonZeroU32>)]
+    subscriptions_mem_mib: NonZeroU32,
     /// The IPv4 pool the sandboxes' networks come from.
     #[arg(long, env = "JUSH_MANAGED_SUBNET", value_name = "JUSH_MANAGED_SUBNET", default_value = "172.30.0.0/16", value_parser = subnet)]
     subnet: Ipv4Net,
@@ -260,18 +260,18 @@ pub struct Config {
 pub struct Limits {
     pub cpus: NonZeroU32,
     pub memory_mib: NonZeroU32,
-    /// The Claude Code machine's memory limit.
-    pub claude_code_memory_mib: NonZeroU32,
+    /// The Subscriptions machine's memory limit.
+    pub subscriptions_memory_mib: NonZeroU32,
 }
 
 impl Limits {
-    /// The limits of a sandbox of `machine`: the Claude Code machine's
+    /// The limits of a sandbox of `machine`: the Subscriptions machine's
     /// memory is its own setting.
     pub fn of(self, machine: SandboxMachine) -> Self {
         match machine {
             SandboxMachine::Cloud => self,
-            SandboxMachine::ClaudeCode => Self {
-                memory_mib: self.claude_code_memory_mib,
+            SandboxMachine::Subscriptions => Self {
+                memory_mib: self.subscriptions_memory_mib,
                 ..self
             },
         }
@@ -351,14 +351,14 @@ impl Invocation {
             Switch::On => Some(Limits {
                 cpus: cli.cpus,
                 memory_mib: cli.mem_mib,
-                claude_code_memory_mib: cli.claude_code_mem_mib,
+                subscriptions_memory_mib: cli.subscriptions_mem_mib,
             }),
             Switch::Off => {
                 // A budget nothing would apply is refused, not ignored.
                 for (id, variable) in [
                     ("cpus", "JUSH_MANAGED_CPUS"),
                     ("mem_mib", "JUSH_MANAGED_MEM_MIB"),
-                    ("claude_code_mem_mib", "JUSH_MANAGED_CLAUDE_CODE_MEM_MIB"),
+                    ("subscriptions_mem_mib", "JUSH_MANAGED_SUBSCRIPTIONS_MEM_MIB"),
                 ] {
                     if matches.value_source(id) != Some(ValueSource::DefaultValue) {
                         return Err(ConfigError::LimitsOff(variable));

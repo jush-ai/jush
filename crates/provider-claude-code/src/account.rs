@@ -1,5 +1,5 @@
 //! A Claude Code account: its record holds only its public metadata, since the
-//! CLI keeps its sign-in in the account's directory on the Claude Code machine
+//! CLI keeps its sign-in in the account's directory on the Subscriptions machine
 //! and renews it there.
 //!
 //! The provider names the account a process uses, marks it signed out when the
@@ -40,7 +40,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::FAMILY;
 use crate::files::SignIn;
-use crate::placement::{CliWork, Handover};
+use jush_provider_subscription_cli::{CliWork, Handover};
 
 /// The sign-in an earlier release kept sealed in an account's record.
 ///

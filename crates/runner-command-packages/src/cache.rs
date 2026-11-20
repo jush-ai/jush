@@ -925,27 +925,39 @@ impl ArtifactCache {
         Ok(records)
     }
 
-    /// `record` as the product's names now say it, written back once: a
-    /// record from before the product took the name Jush names its package
-    /// `demi.<name>`, and its path where the installation was, which a move
-    /// to `~/.jush` or a Cloud's home of `/home/jush` changed. The path is
-    /// taken from the entry's digest on, under this cache's root. It goes
-    /// with the other migrations when the history starts again at the first
-    /// formal release.
+    /// `record` as the product's names now say it, written back once:
+    ///
+    /// - A record from before the product took the name Jush names its
+    ///   package `demi.<name>`, and its path where the installation was,
+    ///   which a move to `~/.jush` or a Cloud's home of `/home/jush` changed.
+    ///   The path is taken from the entry's digest on, under this cache's
+    ///   root.
+    /// - A record from before one package installed every subscription's CLI
+    ///   names that package `jush.claude-code`, so the CLI it holds is found
+    ///   in its line as `jush.subscription-cli` lists it.
+    ///
+    /// It goes with the other migrations when the history starts again at the
+    /// first formal release.
     async fn renamed(&self, file: &Path, sha256: &str, mut record: LineRecord) -> LineRecord {
-        let Some(name) = record.package.strip_prefix("demi.") else {
+        let moved = record.package.strip_prefix("demi.").map(str::to_owned);
+        if moved.is_none() && record.package != "jush.claude-code" {
             return record;
-        };
-        record.package = format!("jush.{name}");
-        let mut parts = record.path.components();
-        if parts.by_ref().any(|part| part.as_os_str() == sha256) {
-            // A file's entry ends at its digest, and joining an empty rest
-            // would end its path with a separator.
-            let rest = parts.as_path();
-            record.path = match rest.as_os_str().is_empty() {
-                true => self.root.join(sha256),
-                false => self.root.join(sha256).join(rest),
-            };
+        }
+        if let Some(name) = moved {
+            record.package = format!("jush.{name}");
+            let mut parts = record.path.components();
+            if parts.by_ref().any(|part| part.as_os_str() == sha256) {
+                // A file's entry ends at its digest, and joining an empty rest
+                // would end its path with a separator.
+                let rest = parts.as_path();
+                record.path = match rest.as_os_str().is_empty() {
+                    true => self.root.join(sha256),
+                    false => self.root.join(sha256).join(rest),
+                };
+            }
+        }
+        if record.package == "jush.claude-code" {
+            record.package = "jush.subscription-cli".into();
         }
         let publication = Publication {
             mode: Mode::Replace,

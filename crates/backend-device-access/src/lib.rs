@@ -61,7 +61,7 @@
 //!   wakes a Cloud, since a log is read when its device runs again and showing a
 //!   version is no reason to wake one.
 //! - Machine access is for work that needs the machine itself, such as creating
-//!   a Cloud project's directory or a provider's process on the Claude Code
+//!   a Cloud project's directory or a provider's process on the Subscriptions
 //!   machine.
 //!
 //! The state this protects lives in the user's shard because one shard holds

@@ -72,7 +72,7 @@ pub use client::{
     DeviceAnswer, DeviceRefusal, DeviceRequest, DeviceRoute, ProviderHttp, RequestBuilder, SendError,
 };
 pub use contract::{
-    AccountSwitch, Ahead, CallEvent, CallOutcome, Capabilities, CatalogError, EntriesOf, InferenceItem, InferenceRequest,
+    AccountSwitch, Ahead, CallEvent, CallOutcome, CatalogError, EntriesOf, InferenceItem, InferenceRequest,
     MediaBytes, Medium, OfferedModel, OpaqueStep, PromptCache, Provider, ProviderEvent, ProviderRun, ProviderRuntime, RequestBlock, RequestLimits,
     RequestPurpose, ResultPart, RuntimeEnv, Searches, RuntimeError, ToolCall, ToolDefinition, ToolResultKinds, UserPart, VendorCall,
     offers,

@@ -31,7 +31,7 @@ const SIGNATURE_TAG: &str = "grok-build:";
 use std::sync::Arc;
 
 use jush_provider_common::{
-    Capabilities, CatalogError, InferenceRequest, Provider, ProviderRun, ProviderRuntime,
+    CatalogError, InferenceRequest, Provider, ProviderRun, ProviderRuntime,
     RequestLimits, Searches, ToolResultKinds, RuntimeEnv, RuntimeError,
     credentials::{Accounts, CredentialPool, SubscriptionAccounts},
     images::ImageMaker,
@@ -171,10 +171,6 @@ impl GrokProvider {
 }
 
 impl Provider for GrokProvider {
-    fn capabilities(&self) -> Capabilities {
-        Capabilities::default()
-    }
-
     /// The account's sign-in as stored; reading it never refreshes and never
     /// infers.
     fn auth_status(&self) -> BoxFuture<'_, AuthState> {

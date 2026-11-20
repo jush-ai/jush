@@ -60,12 +60,12 @@
 //!   socket never establishes that an operation failed: the backend asks, or
 //!   reconciles, before it retries.
 //!
-//! # The Claude Code machine
+//! # The Subscriptions machine
 //!
 //! Besides each user's Cloud the manager keeps one more machine, where every
-//! CLI process of the Claude Code provider runs, for every user. It holds each
-//! account's sign-in in a directory of its own, so the one copy of a sign-in
-//! lives where no user has a shell.
+//! process of a subscription's CLI, such as Claude Code's, runs, for every
+//! user. It holds each account's sign-in in a directory of its own, so the
+//! one copy of a sign-in lives where no user has a shell.
 //!
 //! It is a Cloud in every mechanism here: the same image, a sandbox with its
 //! runner, a home kept across stop and wake, the idle rule, checkpoints, the
@@ -85,7 +85,7 @@
 //! master's:
 //!
 //! - Each request, login and probe holds a lease for its whole life. An agent's
-//!   action that infers with Claude Code holds one from its first request to
+//!   action that infers with a subscription's CLI holds one from its first request to
 //!   its end, so a turn whose CLI waits fifteen minutes on a shell tool keeps
 //!   the machine awake although no byte flows.
 //! - With no lease and no operation for an idle window, the machine stops. Its

@@ -1,6 +1,6 @@
 //! The Claude sign-in (`crates/provider-claude-code/src/account.rs`).
 //!
-//! Jush runs the CLI's own login on the Claude Code machine, in a new
+//! Jush runs the CLI's own login on the Subscriptions machine, in a new
 //! configuration directory, shows the user the link the CLI prints, and writes
 //! the code the user pastes to the CLI's input.
 //!
@@ -30,11 +30,12 @@ use reqwest::Url;
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 
+use crate::{CLI, MachineState};
 use crate::account::{identity_key, label};
 use crate::cli;
 use crate::files::{CONFIG, ConfigFile};
 use crate::live::{Handle, Tail, exit_message};
-use crate::placement::{
+use jush_provider_subscription_cli::{
     AccountMachine, AccountWork, CliWork, ConfigDir, Placed, Placement, StartStage,
 };
 
@@ -55,6 +56,8 @@ enum Shown {
 /// machine, as of a provider built for inference, cannot sign in.
 pub(crate) struct ClaudeKit {
     pub(crate) machine: Option<Arc<dyn AccountMachine>>,
+    /// What the family keeps of the machine, whose flags a sign-in fetches.
+    pub(crate) state: Arc<MachineState>,
     /// The entry the sign-in is for, or the login that is to make it.
     pub(crate) entry: String,
     /// The entry's accounts, which name the directory a sign-in's account
@@ -76,6 +79,7 @@ impl AccountKit for ClaudeKit {
         let machine = self.machine.clone()?;
         Some(Box::pin(sign_in(
             machine,
+            self.state.clone(),
             self.entry.clone(),
             self.pool.clone(),
             io,
@@ -87,7 +91,7 @@ impl AccountKit for ClaudeKit {
     fn forget<'a>(&'a self, id: &'a str) -> BoxFuture<'a, Result<(), AccountsError>> {
         Box::pin(async move {
             let machine = self.machine.clone().ok_or_else(|| {
-                AccountsError::Unavailable("Claude Code's machine is not available".into())
+                AccountsError::Unavailable("The Subscriptions machine is not available".into())
             })?;
             machine
                 .remove_account(id.to_owned())
@@ -105,6 +109,7 @@ impl AccountKit for ClaudeKit {
 /// the sign-in's directory went.
 async fn sign_in(
     machine: Arc<dyn AccountMachine>,
+    state: Arc<MachineState>,
     entry: String,
     pool: Arc<dyn CredentialPool>,
     io: LoginIo<'_>,
@@ -126,7 +131,7 @@ async fn sign_in(
             let _ = answer.send(signed_in);
         })
     });
-    let ran = machine.run(entry, work);
+    let ran = machine.run(&CLI, entry, work);
     tokio::pin!(ran);
     let mut link_url = None;
     let mut show = |next: Shown| match next {
@@ -174,7 +179,7 @@ async fn sign_in(
         ))
     })?;
     // The CLI fetched the account's feature flags as it signed in.
-    machine.state().flags.refreshed(&id);
+    state.flags.refreshed(&id);
     Ok(account)
 }
 

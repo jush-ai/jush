@@ -17,10 +17,10 @@
 //! responses. A conversation selects a provider entry and a model, and never
 //! holds a copy of the entry's credentials.
 //!
-//! HTTP inference runs in the backend. Claude Code, the one provider that needs
-//! a process, runs its CLI on the Claude Code machine, whatever the
-//! conversation's execution target is, and that CLI keeps its own sign-in
-//! there:
+//! HTTP inference runs in the backend. A provider that needs a process, such
+//! as Claude Code, runs its subscription's CLI on the Subscriptions machine,
+//! whatever the conversation's execution target is, and that CLI keeps its
+//! own sign-in there:
 //!
 //! ```text
 //! backend-providers          provider-registry        provider-* crates
@@ -32,10 +32,10 @@
 //! | usage  meter        |                                        | runtime,
 //! +----------+----------+                                        v one per
 //!            | wraps each runtime              HTTPS to the vendor  session
-//!            v                                 API; for claude-code, device
+//!            v                                 API; for a CLI, device
 //!     metered runtime ---------------------->  process IO to the CLI on
-//!                                              the Claude Code machine
-//! * none for Claude Code: the CLI keeps its sign-in on that machine
+//!                                              the Subscriptions machine
+//! * none for a CLI's account: the CLI keeps its sign-in on that machine
 //! ```
 //!
 //! The crate knows no conversations, devices or Cloud.

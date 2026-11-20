@@ -315,10 +315,7 @@ impl ProviderRegistry {
         CatalogProvider {
             provider_id: entry.id.clone(),
             display_name: entry.label.clone(),
-            cli_package: provider
-                .as_ref()
-                .ok()
-                .and_then(|provider| provider.capabilities().cli_package.map(str::to_owned)),
+            cli_name: self.cli(entry).map(|cli| cli.name.to_owned()),
             models,
             // The media service fills them, which knows the media catalog.
             image_models: Vec::new(),

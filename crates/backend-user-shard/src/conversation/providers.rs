@@ -39,7 +39,7 @@ use futures_util::future::LocalBoxFuture;
 use futures_util::StreamExt as _;
 use tracing::Instrument as _;
 
-use crate::conversation::claude_cli::{CrossPlacement, ProcessWork};
+use crate::conversation::subscription_cli::{CrossPlacement, ProcessWork};
 use crate::services::Services;
 use crate::shard::Shard;
 use jush_backend_device_access::conversation_of;
@@ -847,15 +847,15 @@ impl ConversationRuntime {
                 .await
                 .map_err(|error| refused(error.to_string(), None))?,
         };
-        self.prepares_ahead = provider.capabilities().cli_package.is_some();
+        self.prepares_ahead = provider_registry.cli(entry).is_some();
         let kept = self.current.as_ref().is_some_and(|current| {
             Arc::ptr_eq(&current.provider, &provider) && current.model == selection.model.id
         });
         if !kept {
-            // A provider that runs a process gets it on the Claude Code
+            // A provider that runs a process gets it on the Subscriptions
             // machine, whatever the conversation's target
-            // (`crates/provider-claude-code/src/placement.rs`).
-            let runtime = if provider.capabilities().cli_package.is_some() {
+            // (`crates/provider-subscription-cli/src/placement.rs`).
+            let runtime = if provider_registry.cli(entry).is_some() {
                 let work = match &scope.work {
                     Work::Conversation(conversation) => ProcessWork::Conversation(conversation.clone()),
                     Work::Lent { .. } => ProcessWork::Account(entry.id.clone()),

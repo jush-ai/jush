@@ -109,10 +109,10 @@ pub struct DeviceRecord {
 
 impl DeviceRecord {
     /// Whether the device is one of `user`'s devices: theirs, and not the
-    /// Claude Code machine, which is in no user's devices though its record
+    /// Subscriptions machine, which is in no user's devices though its record
     /// is the master's (`crates/backend-cloud/src/lib.rs`).
     pub fn is_device_of(&self, user: &UserId) -> bool {
-        self.user == *user && self.machine != Some(ManagedMachine::ClaudeCode)
+        self.user == *user && self.machine != Some(ManagedMachine::Subscriptions)
     }
 
     /// How its runner and `other`'s may talk (`crates/runner-direct/src/pairs.rs`):
@@ -135,12 +135,12 @@ impl DeviceRecord {
 }
 
 /// A managed device's machine (`crates/backend-cloud/src/lib.rs`): each
-/// user's Cloud, or the Claude Code machine, whose record belongs to the
+/// user's Cloud, or the Subscriptions machine, whose record belongs to the
 /// instance's master and which is in no user's devices.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ManagedMachine {
     Cloud,
-    ClaudeCode,
+    Subscriptions,
 }
 
 impl ManagedMachine {
@@ -148,14 +148,14 @@ impl ManagedMachine {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Cloud => "cloud",
-            Self::ClaudeCode => "claude_code",
+            Self::Subscriptions => "subscriptions",
         }
     }
 
     fn parse(text: &str) -> Result<Self, String> {
         match text {
             "cloud" => Ok(Self::Cloud),
-            "claude_code" => Ok(Self::ClaudeCode),
+            "subscriptions" => Ok(Self::Subscriptions),
             other => Err(format!("unknown managed machine {other}")),
         }
     }
@@ -164,7 +164,7 @@ impl ManagedMachine {
     fn name(self) -> &'static str {
         match self {
             Self::Cloud => CLOUD_NAME,
-            Self::ClaudeCode => CLAUDE_CODE_NAME,
+            Self::Subscriptions => SUBSCRIPTIONS_NAME,
         }
     }
 }
@@ -206,8 +206,8 @@ const DEVICE_COLUMNS: &str =
 
 /// The name and platform of the one device a user's Cloud is.
 pub const CLOUD_NAME: &str = "Cloud";
-/// The name of the Claude Code machine's record, which no page shows.
-const CLAUDE_CODE_NAME: &str = "Claude Code";
+/// The name of the Subscriptions machine's record, which no page shows.
+const SUBSCRIPTIONS_NAME: &str = "Subscriptions";
 const CLOUD_PLATFORM: RunnerPlatform = RunnerPlatform::Linux;
 
 impl ControlService {
@@ -336,7 +336,7 @@ impl ControlService {
     }
 
     /// The user's managed device of `machine`, made on its first use: the
-    /// Cloud of any user, the Claude Code machine of the master. The partial
+    /// Cloud of any user, the Subscriptions machine of the master. The partial
     /// unique index admits one of each per user, so concurrent first uses
     /// find the same one. Its token is issued when it boots.
     pub async fn managed_machine_or_create(

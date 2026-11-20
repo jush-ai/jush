@@ -157,7 +157,7 @@ jobs:
           - group: commands
             # jush-mobile's iOS helper is built on the aarch64-apple-darwin
             # job, with that runner's Xcode (`crates/plugin-mobile/command/src/ios/mod.rs`).
-            packages: --package jush-file --package jush-fetch --package jush-browser --package jush-claude-code --package jush-mobile
+            packages: --package jush-file --package jush-fetch --package jush-browser --package jush-subscription-cli --package jush-mobile
     defaults:
       run:
         shell: bash

@@ -33,6 +33,7 @@ jush-runner-client = { path = "../runner-client", features = ["edge"] }
 jush-provider-common = { path = "../provider-common" }
 jush-provider-registry = { path = "../provider-registry" }
 jush-provider-relay = { path = "../provider-relay" }
+jush-provider-subscription-cli = { path = "../provider-subscription-cli" }
 jush-runner-protocol = { path = "../runner-protocol" }
 jush-shared-lanes = { path = "../shared-lanes" }
 jush-device-interface = { path = "../device-interface" }

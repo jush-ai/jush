@@ -1120,7 +1120,7 @@
     "doneActive": "로그인했습니다. 이 계정이 이제 {vendor}의 활성 계정입니다.",
     "doneKept": "로그인했습니다. {vendor}에서는 현재 활성 계정이 계속 사용됩니다.",
     "failedHint": "로그인이 완료되지 않았습니다.",
-    "waitingMachine": "Claude Code 머신 연결을 기다리는 중…",
+    "waitingMachine": "구독 머신 연결을 기다리는 중…",
     "installing": "명령줄 도구를 설치하는 중…",
     "startingTool": "명령줄 도구를 시작하는 중…",
     "contacting": "{vendor}에 연결하는 중…",

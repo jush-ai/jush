@@ -1,19 +1,18 @@
-//! Where the CLI runs: the backend chooses the machine and readies Jush's CLI
-//! there, and the provider builds the spawn request from what the placement
-//! found.
+//! Where a subscription's CLI runs: the backend chooses the machine and
+//! readies Jush's copy of the CLI there, and the provider builds the spawn
+//! request from what the placement found.
 //!
 //! Every process of an account runs in that account's one directory, the CLI's
-//! configuration directory, and writes its session into a directory of its own
-//! under it, which goes when the process does. A sign-in runs in a new
-//! directory, which becomes the account's when it succeeds. Account work that
-//! belongs to no conversation, a sign-in or a usage probe, reaches the machine
-//! through an [`AccountMachine`], from any thread.
+//! configuration directory, and keeps what is its own, such as its session, in
+//! a directory of its own under it, which goes when the process does. A sign-in
+//! runs in a new directory, which becomes the account's when it succeeds.
+//! Account work that belongs to no conversation, a sign-in or a usage probe,
+//! reaches the machine through an [`AccountMachine`], from any thread.
 //!
-//! The CLI runs on the Claude Code machine, always (one gVisor sandbox that
-//! belongs to no user and in which nobody has a shell), whatever the
-//! conversation's execution target is. So each account's sign-in lives in one
-//! directory, and the CLI has one install to keep and one platform to be right
-//! on.
+//! The CLI runs on the Subscriptions machine, always (one sandbox that belongs
+//! to no user and in which nobody has a shell), whatever the conversation's
+//! execution target is. So each account's sign-in lives in one directory, and
+//! each CLI has one install to keep and one platform to be right on.
 //!
 //! A placement is that one rule in one place: what needs a provider's process
 //! says what the work is, and does not know why it got that machine. The
@@ -21,17 +20,15 @@
 //! work left goes idle and stops with its processes, and the next request wakes
 //! it and resumes the session.
 //!
-//! A process provider cannot build its runtime from the provider alone, since
-//! only the backend chooses the machine. So `Provider::runtime` refuses
-//! (`PlacementRequired`), and the backend's placement, the user shard's
-//! Claude Code part, asks the registry for a provider of the entry's own,
-//! tells it as this crate's [`ClaudeCodeProvider`] by its `Any`, and builds
-//! the runtime over the placement. The registry and the families' trait know
-//! no placement:
+//! A CLI provider cannot build its runtime from the provider alone, since only
+//! the backend chooses the machine. So `Provider::runtime` refuses
+//! (`PlacementRequired`), and the backend's placement asks the registry for
+//! the runtime of a provider of the entry's own over the placement, which the
+//! provider's family builds, since only the family knows its provider's type:
 //!
 //! ```text
-//! backend (user's shard)                      this crate
-//!   registry's own provider --as Any-->       provider + placement = runtime
+//! backend (user's shard)                      the CLI's provider
+//!   registry: own provider + placement ---->  family builds the runtime
 //!   Placement::start <------ a run needs a process
 //!     wake or admit the machine, ensure the CLI, hand over an earlier sign-in
 //!     spawn request built by the provider; device process interface starts it
@@ -55,9 +52,8 @@ use jush_shared_types::DownloadProgress;
 use futures_util::future::{BoxFuture, LocalBoxFuture};
 use tokio_util::sync::CancellationToken;
 
+use crate::Cli;
 use crate::idle::IdleProcesses;
-use crate::mcp::ClientProtocol;
-use crate::quota::FlagRefreshes;
 
 /// Where a new CLI process runs on the machine the placement chose.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -70,17 +66,17 @@ pub struct CliSite {
     /// its sign-in is, or a sign-in's new directory; private to the
     /// machine's user, outside every project.
     pub config_dir: String,
-    /// The name of the process's own directory under the configuration
-    /// directory's `projects`, which holds its session and goes with it
-    /// (`CLAUDE_CODE_PROJECT_DIR_NAME`).
+    /// The name of the process's own directory in the configuration
+    /// directory's [`Cli::process_parent`], which holds what is the process's
+    /// own, such as its session, and goes with it.
     pub process_dir: String,
     /// What the machine tells a process there of itself.
     pub system: CliSystem,
 }
 
-/// What the CLI reads of its machine to describe its environment, which
-/// the session it resumes holds so that it describes none
-/// (`crates/provider-claude-code/src/session.rs`).
+/// What a CLI reads of its machine to describe its environment, which a
+/// session it resumes may hold so that it describes none, as Claude Code's
+/// does (`crates/provider-claude-code/src/session.rs`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CliSystem {
     /// The kernel's name, as `uname -s` prints it, such as `Linux`.
@@ -108,12 +104,13 @@ pub struct CliStart {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CliWork {
     Account {
-        /// The account's id, which names its directory.
+        /// The account's id, which names its directory. Ids are unique across
+        /// families, so every CLI's accounts share one parent directory.
         account: String,
         /// The sign-in an earlier release kept in the account's record, as the
         /// CLI's own files, to write into the account's directory before the
-        /// process starts unless the directory holds a sign-in already
-        /// (`crates/provider-claude-code/src/account.rs`).
+        /// process starts unless the directory holds a sign-in already, as
+        /// Claude Code's has (`crates/provider-claude-code/src/account.rs`).
         handover: Option<Handover>,
     },
     Login,
@@ -131,7 +128,8 @@ pub struct Handover {
 }
 
 /// Why a CLI process could not be started: the machine could not be reached,
-/// Jush's CLI could not be installed there, or the device refused the start.
+/// Jush's copy of the CLI could not be installed there, or the device refused
+/// the start.
 ///
 /// The message says why, with the version when an install failed, and is the
 /// request's failure as it is.
@@ -139,15 +137,15 @@ pub struct Handover {
 #[error("{0}")]
 pub struct StartError(pub String);
 
-/// What a start waits for, in its order, which a sign-in shows its user
-/// (`crates/provider-claude-code/src/account.rs`). A start reports each stage as
-/// it reaches it, `Install` only when the machine has no CLI.
+/// What a start waits for, in its order, which a sign-in shows its user. A
+/// start reports each stage as it reaches it, `Install` only when the machine
+/// has no copy of the CLI.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StartStage {
     /// The machine: its access acquired, a stopped one woken, a runner
     /// that reconnects awaited.
     Machine,
-    /// Jush's CLI installed on the machine.
+    /// Jush's copy of the CLI installed on the machine.
     Install,
     /// How far the CLI's download came while it installs, as the machine's
     /// runner reports it.
@@ -175,15 +173,15 @@ impl WorkLease {
     }
 }
 
-/// Starts the CLI processes of a runtime, a sign-in or a usage probe, on a
-/// machine the placement chooses. It lives on the shard of the user whose
+/// Starts the processes of one CLI for a runtime, a sign-in or a usage probe,
+/// on a machine the placement chooses. It lives on the shard of the user whose
 /// work it serves.
 pub trait Placement {
     /// Starts a new CLI process for `work`.
     ///
-    /// 1. The placement readies the machine, Jush's CLI, the configuration
-    ///    directory (the account's, with its handover, or a sign-in's new one)
-    ///    and the process's own directory under it.
+    /// 1. The placement readies the machine, Jush's copy of the CLI, the
+    ///    configuration directory (the account's, with its handover, or a
+    ///    sign-in's new one) and the process's own directory under it.
     /// 2. `start` says what to start at the site it found.
     /// 3. The placement writes its files into the process's directory and
     ///    starts its request on the machine's device.
@@ -202,7 +200,7 @@ pub trait Placement {
     fn work(&self) -> WorkLease;
 
     /// The idle processes of the placement's machine, which every placement
-    /// of that machine shares (`crates/provider-claude-code/src/idle.rs`).
+    /// of that machine shares, of every CLI.
     fn idle(&self) -> Arc<IdleProcesses>;
 }
 
@@ -215,13 +213,13 @@ pub struct Placed {
 }
 
 /// How long each step of a start took on the placement's machine, which a
-/// run's span carries (`crates/provider-claude-code/src/prepared.rs`).
+/// run's span carries.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct StartSteps {
     /// Waking or admitting the machine.
     pub admit: Duration,
-    /// Finding Jush's CLI there, installing it first when the machine has
-    /// none.
+    /// Finding Jush's copy of the CLI there, installing it first when the
+    /// machine has none.
     pub executable: Duration,
     /// Making the run directory and the process's configuration directory.
     pub directories: Duration,
@@ -254,8 +252,7 @@ pub trait ConfigDir {
     ///
     /// No process of the account starts meanwhile, every one it has is closed
     /// and awaited, and its directory, when it has one, is replaced by this
-    /// one. A start that waited starts in the new one
-    /// (`crates/provider-claude-code/src/account.rs`). Dropping the future
+    /// one. A start that waited starts in the new one. Dropping the future
     /// before the directory is replaced gives the adoption up, and the
     /// sign-in's directory goes. An account's process has nothing to adopt.
     fn adopt<'a>(self: Box<Self>, account: &'a str) -> LocalBoxFuture<'a, Result<(), DeviceError>>;
@@ -267,37 +264,25 @@ pub trait ConfigDir {
 pub type AccountWork =
     Box<dyn FnOnce(Rc<dyn Placement>, CancellationToken) -> LocalBoxFuture<'static, ()> + Send>;
 
-/// The machine account work runs on, the Claude Code machine,
-/// as the backend gives it to a sign-in
-/// and a usage probe from any thread.
+/// The machine account work runs on, the Subscriptions machine, as the backend
+/// gives it to a sign-in and a usage probe from any thread.
 pub trait AccountMachine: Send + Sync {
-    /// Runs `work` for the provider entry `entry`, or the login that is to make
-    /// it, where the machine is reached, and answers once it ended.
+    /// Runs `work` of the CLI `cli` for the provider entry `entry`, or the
+    /// login that is to make it, where the machine is reached, and answers
+    /// once it ended.
     ///
     /// Dropping the answer fires the token `work` received; `work` runs to its
     /// end either way.
-    fn run(&self, entry: String, work: AccountWork) -> BoxFuture<'static, Result<(), StartError>>;
+    fn run(
+        &self,
+        cli: &'static Cli,
+        entry: String,
+        work: AccountWork,
+    ) -> BoxFuture<'static, Result<(), StartError>>;
 
     /// Deletes the directory of the removed account `account`.
     ///
     /// No process of it starts meanwhile, every one it has is closed and
-    /// awaited first, and a start that waited fails with the removal
-    /// (`crates/provider-claude-code/src/account.rs`).
+    /// awaited first, and a start that waited fails with the removal.
     fn remove_account(&self, account: String) -> BoxFuture<'static, Result<(), StartError>>;
-
-    /// What the provider keeps of the machine for every provider of every
-    /// account.
-    fn state(&self) -> &MachineState;
-}
-
-/// What the provider keeps of the Claude Code machine across its providers,
-/// since each session's runtime builds a provider of its own.
-#[derive(Default)]
-pub struct MachineState {
-    /// When each account's feature flags were last fetched there
-    /// (`crates/provider-claude-code/src/quota.rs`).
-    pub(crate) flags: FlagRefreshes,
-    /// The MCP protocol version the machine's CLI asks for
-    /// (`crates/provider-claude-code/src/mcp.rs`).
-    pub(crate) mcp_protocol: ClientProtocol,
 }

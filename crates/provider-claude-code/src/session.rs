@@ -47,7 +47,7 @@ use uuid::Uuid;
 
 use crate::input::{MCP_SERVER, Message};
 use crate::{RECORD_OWNER, WEB_SEARCH, mcp};
-use crate::placement::CliSystem;
+use jush_provider_subscription_cli::CliSystem;
 
 /// The key of a reference to a block's medium in an entry kept on the
 /// block, in place of the medium's base64. Kept blocks hold it, so it keeps

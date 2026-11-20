@@ -19,13 +19,17 @@ use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
-use jush_command_package_claude_code_protocol::{Artifact, Release, is_version};
+use jush_command_package_subscription_cli_protocol::{Artifact, Release, is_version};
 use jush_provider_common::kept::KeptRead;
+use jush_provider_subscription_cli::{CliReleases, ReleaseError};
 use jush_shared_types::Clock;
 use jiff::SignedDuration;
+use futures_util::future::BoxFuture;
 use serde::Deserialize;
 use tokio::runtime::Handle;
 use url::Url;
+
+use crate::CLI;
 
 /// The vendor's official distribution.
 pub const DEFAULT_RELEASES_URL: &str = "https://downloads.claude.ai/claude-code-releases";
@@ -35,12 +39,6 @@ const LATEST_TTL: SignedDuration = SignedDuration::from_hours(6);
 
 /// How long one read of the distribution may take.
 const READ_TIMEOUT: Duration = Duration::from_secs(15);
-
-/// Why the newest release could not be read, in words that complete
-/// "Claude Code could not be installed: …".
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[error("{0}")]
-pub struct ReleaseError(String);
 
 /// A version's `manifest.json`: each platform's executable name, SHA-256
 /// and byte size. Fields Jush does not read are ignored.
@@ -92,18 +90,21 @@ impl ClaudeReleases {
         })))
     }
 
+}
+
+impl CliReleases for ClaudeReleases {
     /// The vendor's newest release: the one read within six hours, or a new
     /// read. `refresh` reads the pointer again unless a read finished after
     /// the call began.
-    pub async fn latest(&self, refresh: bool) -> Result<Release, ReleaseError> {
-        self.0.latest(refresh).await
+    fn latest(&self, refresh: bool) -> BoxFuture<'_, Result<Release, ReleaseError>> {
+        Box::pin(self.0.latest(refresh))
     }
 
     /// The newest release read within six hours, without waiting. Without
     /// one, as after the backend starts, it answers none and reads the
     /// pointer in the background, unless a read is under way, for a later
     /// call to answer with.
-    pub fn believed(&self) -> Option<Release> {
+    fn believed(&self) -> Option<Release> {
         let distribution = self.0.clone();
         // The read ends within `READ_TIMEOUT`; the edge's runtime ending at
         // shutdown drops it before. A failed read is read again by a later
@@ -168,6 +169,7 @@ impl Distribution {
             })
             .collect();
         let release = Release {
+            cli: CLI.name.to_owned(),
             version: manifest.version,
             platforms,
         };

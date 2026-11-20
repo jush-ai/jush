@@ -33,7 +33,7 @@
 //! - Refreshes rely on the versioned replace of the credential pool.
 //! - The vendor's windows describe the account and not a user. Per-user
 //!   consumption is the usage ledger's.
-//! - A Claude Code sign-in stays on the Claude Code machine.
+//! - A Claude Code sign-in stays on the Subscriptions machine.
 
 use std::sync::Arc;
 

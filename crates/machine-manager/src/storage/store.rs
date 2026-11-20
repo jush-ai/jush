@@ -68,7 +68,7 @@ pub enum Retention {
     /// turns out damaged: a user's Cloud, and a save the manager makes on
     /// its own, which names no machine.
     Previous,
-    /// The new generation alone: the Claude Code machine, whose contents
+    /// The new generation alone: the Subscriptions machine, whose contents
     /// are downloaded or signed in again.
     Current,
 }
@@ -78,7 +78,7 @@ impl Retention {
     pub fn of(machine: SandboxMachine) -> Self {
         match machine {
             SandboxMachine::Cloud => Self::Previous,
-            SandboxMachine::ClaudeCode => Self::Current,
+            SandboxMachine::Subscriptions => Self::Current,
         }
     }
 }
