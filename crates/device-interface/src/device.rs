@@ -476,12 +476,29 @@ pub enum ProcessEnd {
     Lost(String),
 }
 
+/// The status a shell reports for a process a signal ended: 130 for a stop
+/// (`SIGTERM` or `SIGKILL`), as for an interrupt, and 128 for any other.
+pub fn signal_status(signal: &str) -> i32 {
+    if matches!(signal, "SIGTERM" | "SIGKILL") { 130 } else { 128 }
+}
+
 /// Why a process could not start.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SpawnError {
     pub kind: SpawnErrorKind,
     /// The device's words about it, when it has some.
     pub detail: Option<String>,
+}
+
+impl fmt::Display for SpawnError {
+    /// The error as a shell that could not run a script reports it: the
+    /// device's words for one of no known kind, else bash's.
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match (&self.kind, &self.detail) {
+            (SpawnErrorKind::Other, Some(detail)) => formatter.write_str(detail),
+            _ => write!(formatter, "bash: {}", self.kind),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

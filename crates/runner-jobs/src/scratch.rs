@@ -1,7 +1,8 @@
 //! Each conversation's scratch directory, for the files only the agent needs (a
 //! screenshot it looks at, a probe script): `<scratch root>/<first 12 digits
 //! of the conversation's id>/` ([`scratch_name`]), made at the conversation's
-//! first job on the device.
+//! first job on the device. Work that serves no conversation, such as a
+//! provider account's or a program's script on the device, has none.
 //!
 //! It shows in no pill and no Change view, and it is still there an hour later,
 //! which `/tmp` does not promise. The runner picks the scratch root: a

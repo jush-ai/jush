@@ -580,7 +580,8 @@ impl RemoteJob {
                             break;
                         }
                         // A runner that leaves its jobs drops their input,
-                        // which the next one carries on.
+                        // which their shells end as its connections close
+                        // (`server.rs`).
                         None => {
                             if !session.leaving.load(Ordering::SeqCst) {
                                 session.send(&ToShell::InputEnd);

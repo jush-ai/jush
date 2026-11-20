@@ -230,6 +230,8 @@ pub fn web() -> Vec<Root> {
         sends::<devices::ChangeDevice>(),
         receives::<devices::RevokedDevice>(),
         receives::<devices::DeviceElevation>(),
+        sends::<devices::DeviceExec>(),
+        receives::<devices::DeviceExecResult>(),
         sends::<diagnostics::PageLog>(),
         receives::<cloud::CloudStatus>(),
         sends::<cloud::CloudReset>(),

@@ -36,6 +36,9 @@
 //! terminal's paused output does. It holds the job's exit until a runner has
 //! it, and ends once its job's work is gone too.
 //!
+//! The job's input is another matter: the runner relays it from a pipe only
+//! that runner reads, so the input ends when that runner's connection does.
+//!
 //! # The contract on the wire
 //!
 //! Frames on the socket carry the job shell contract
