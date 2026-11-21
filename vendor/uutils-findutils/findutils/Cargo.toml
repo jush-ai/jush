@@ -135,7 +135,7 @@ version = "1.12"
 version = "2.0.12"
 
 [dependencies.uucore]
-version = "0.12.0"
+version = "0.13.0"
 features = [
     "entries",
     "fs",
@@ -234,6 +234,7 @@ panic = "abort"
 [package.metadata.jush]
 maintainer = "jush-runner"
 patches = [
+    "uucore 0.13, the version the runner and the other utilities link, in place of 0.12: one copy of it, whose uucore::context the patches here use",
     "The walk starts from the root resolved against the shell job's working directory and shows paths as the command named them",
     "WalkEntry's file kind checks are the context_* ones, as uucore::context's are",
     "The walk checks the invocation's cancellation at each entry, so a find that prints nothing stops at its next entry",

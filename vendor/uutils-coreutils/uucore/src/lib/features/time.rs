@@ -25,14 +25,16 @@ fn format_zoned<W: Write>(out: &mut W, zoned: Zoned, fmt: &str) -> UResult<()> {
         .map_err(|x| USimpleError::new(1, x.to_string()))
 }
 
-/// Convert a SystemTime` to a number of seconds since UNIX_EPOCH
+/// Convert a [`SystemTime`] to a number of seconds since [`UNIX_EPOCH`]
+#[must_use]
+#[inline]
 pub fn system_time_to_sec(time: SystemTime) -> (i64, u32) {
-    if time > UNIX_EPOCH {
-        let d = time.duration_since(UNIX_EPOCH).unwrap();
-        (d.as_secs() as i64, d.subsec_nanos())
-    } else {
-        let d = UNIX_EPOCH.duration_since(time).unwrap();
-        (-(d.as_secs() as i64), d.subsec_nanos())
+    match time.duration_since(UNIX_EPOCH) {
+        Ok(d) => (d.as_secs() as i64, d.subsec_nanos()),
+        Err(e) => {
+            let d = e.duration();
+            (-(d.as_secs() as i64), d.subsec_nanos())
+        }
     }
 }
 
@@ -94,31 +96,31 @@ mod tests {
     // Test epoch SystemTime get printed correctly at UTC0, with 2 simple formats.
     #[test]
     fn test_simple_system_time() {
-        unsafe { crate::context::env::set_var("TZ", "UTC0") };
+        temp_env::with_var("TZ", Some("UTC0"), || {
+            let time = UNIX_EPOCH;
+            let mut out = Vec::new();
+            format_system_time(
+                &mut out,
+                time,
+                "%Y-%m-%d %H:%M",
+                FormatSystemTimeFallback::Integer,
+            )
+            .expect("Formatting error.");
+            assert_eq!(String::from_utf8(out).unwrap(), "1970-01-01 00:00");
 
-        let time = UNIX_EPOCH;
-        let mut out = Vec::new();
-        format_system_time(
-            &mut out,
-            time,
-            "%Y-%m-%d %H:%M",
-            FormatSystemTimeFallback::Integer,
-        )
-        .expect("Formatting error.");
-        assert_eq!(String::from_utf8(out).unwrap(), "1970-01-01 00:00");
-
-        let mut out = Vec::new();
-        format_system_time(
-            &mut out,
-            time,
-            "%Y-%m-%d %H:%M:%S.%N %z",
-            FormatSystemTimeFallback::Integer,
-        )
-        .expect("Formatting error.");
-        assert_eq!(
-            String::from_utf8(out).unwrap(),
-            "1970-01-01 00:00:00.000000000 +0000"
-        );
+            let mut out = Vec::new();
+            format_system_time(
+                &mut out,
+                time,
+                "%Y-%m-%d %H:%M:%S.%N %z",
+                FormatSystemTimeFallback::Integer,
+            )
+            .expect("Formatting error.");
+            assert_eq!(
+                String::from_utf8(out).unwrap(),
+                "1970-01-01 00:00:00.000000000 +0000"
+            );
+        });
     }
 
     // Test that very large (positive or negative) lead to just the timestamp being printed.

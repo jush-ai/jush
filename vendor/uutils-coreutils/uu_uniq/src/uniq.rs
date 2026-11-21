@@ -16,12 +16,14 @@ use std::num::IntErrorKind;
 use uucore::display::Quotable;
 use uucore::error::{FromIo, UError, UResult, USimpleError};
 use uucore::format_usage;
+use uucore::io::InputReader;
 use uucore::parser::shortcut_value_parser::ShortcutValueParser;
 use uucore::posix::{OBSOLETE, posix_version};
 use uucore::translate;
 
 pub mod options {
     pub static ALL_REPEATED: &str = "all-repeated";
+    pub static ALL_REPEATED_SHORT: &str = "all-repeated-short";
     pub static CHECK_CHARS: &str = "check-chars";
     pub static COUNT: &str = "count";
     pub static IGNORE_CASE: &str = "ignore-case";
@@ -84,7 +86,11 @@ impl Uniq {
         let mut next_meta = LineMeta::default();
         let mut line_out = Vec::with_capacity(1024);
 
-        while Self::read_line(&mut reader, &mut next_buf, line_terminator)? {
+        let read_result = loop {
+            match Self::read_line(&mut reader, &mut next_buf, line_terminator) {
+                Ok(true) => {}
+                result => break result.map(|_| ()),
+            }
             self.build_meta(&next_buf, &mut next_meta);
 
             if self.keys_are_equal(&current_buf, &current_meta, &next_buf, &next_meta) {
@@ -119,9 +125,14 @@ impl Uniq {
                 group_count = 1;
             }
             next_buf.clear();
-        }
+        };
 
-        if (group_count == 1 && !self.repeats_only) || (group_count > 1 && !self.uniques_only) {
+        // Counts and filtering require the group to end; a read error does not end it.
+        let can_write_pending_line =
+            read_result.is_ok() || !(self.show_counts || self.repeats_only || self.uniques_only);
+        let group_matches_filter =
+            (group_count == 1 && !self.repeats_only) || (group_count > 1 && !self.uniques_only);
+        if can_write_pending_line && group_matches_filter {
             self.write_line(
                 writer,
                 &mut line_out,
@@ -141,7 +152,7 @@ impl Uniq {
         writer
             .flush()
             .map_err_context(|| translate!("uniq-error-write-error"))?;
-        Ok(())
+        read_result
     }
 
     fn get_line_terminator(&self) -> u8 {
@@ -177,15 +188,17 @@ impl Uniq {
 
     fn skip_fields_offset(&self, line: &[u8]) -> usize {
         if let Some(skip_fields) = self.skip_fields {
+            // Fields end at a blank or a newline; \r and \f are ordinary bytes.
+            let is_blank = |byte: u8| matches!(byte, b' ' | b'\t' | b'\n');
             let mut idx = 0;
             for _ in 0..skip_fields {
-                while idx < line.len() && line[idx].is_ascii_whitespace() {
+                while idx < line.len() && is_blank(line[idx]) {
                     idx += 1;
                 }
                 if idx >= line.len() {
                     return line.len();
                 }
-                while idx < line.len() && !line[idx].is_ascii_whitespace() {
+                while idx < line.len() && !is_blank(line[idx]) {
                     idx += 1;
                 }
                 if idx >= line.len() {
@@ -377,6 +390,7 @@ fn handle_obsolete(args: impl uucore::Args) -> (Vec<OsString>, Option<usize>, Op
     let mut skip_chars_old = None;
     let mut preceding_long_opt_req_value = false;
     let mut preceding_short_opt_req_value = false;
+    let mut after_double_dash = false;
 
     let filtered_args = args
         .filter_map(|os_slice| {
@@ -386,6 +400,7 @@ fn handle_obsolete(args: impl uucore::Args) -> (Vec<OsString>, Option<usize>, Op
                 &mut skip_chars_old,
                 &mut preceding_long_opt_req_value,
                 &mut preceding_short_opt_req_value,
+                &mut after_double_dash,
             )
         })
         .collect();
@@ -405,9 +420,19 @@ fn filter_args(
     skip_chars_old: &mut Option<String>,
     preceding_long_opt_req_value: &mut bool,
     preceding_short_opt_req_value: &mut bool,
+    after_double_dash: &mut bool,
 ) -> Option<OsString> {
     let filter: Option<OsString>;
     if let Some(slice) = os_slice.to_str() {
+        if *after_double_dash {
+            // Past `--` everything is an operand, so `uniq -- -1` names a file
+            // rather than skipping a field.
+            return Some(OsString::from(slice));
+        }
+        if slice == "--" {
+            *after_double_dash = true;
+            return Some(OsString::from(slice));
+        }
         if should_extract_obs_skip_fields(
             slice,
             *preceding_long_opt_req_value,
@@ -618,6 +643,8 @@ fn handle_extract_obs_skip_chars(
 /// Unfortunately these overrides are necessary, since several GNU tests
 /// for `uniq` hardcode and require the exact wording of the error message
 /// and it is not compatible with how Clap formats and displays those error messages.
+#[cold]
+#[inline(never)]
 fn map_clap_errors(clap_error: Error) -> Box<dyn UError> {
     let footer = translate!("uniq-error-try-help");
     let override_arg_conflict = translate!("uniq-error-group-mutually-exclusive") + "\n" + &footer;
@@ -679,12 +706,12 @@ pub fn uumain(args: impl uucore::Args) -> UResult<()> {
     let skip_fields_modern: Option<usize> = opt_parsed(options::SKIP_FIELDS, &matches)?;
     let skip_chars_modern: Option<usize> = opt_parsed(options::SKIP_CHARS, &matches)?;
 
+    let all_repeated =
+        matches.contains_id(options::ALL_REPEATED) || matches.get_flag(options::ALL_REPEATED_SHORT);
     let uniq = Uniq {
-        repeats_only: matches.get_flag(options::REPEATED)
-            || matches.contains_id(options::ALL_REPEATED),
+        repeats_only: matches.get_flag(options::REPEATED) || all_repeated,
         uniques_only: matches.get_flag(options::UNIQUE),
-        all_repeated: matches.contains_id(options::ALL_REPEATED)
-            || matches.contains_id(options::GROUP),
+        all_repeated: all_repeated || matches.contains_id(options::GROUP),
         delimiters: get_delimiter(&matches),
         show_counts: matches.get_flag(options::COUNT),
         skip_fields: skip_fields_modern.or(skip_fields_old),
@@ -719,8 +746,14 @@ pub fn uu_app() -> Command {
         .after_help(translate!("uniq-after-help"));
     uucore::clap_localization::configure_localized_command(cmd)
         .arg(
-            Arg::new(options::ALL_REPEATED)
+            Arg::new(options::ALL_REPEATED_SHORT)
                 .short('D')
+                .help(translate!("uniq-help-all-repeated-short"))
+                .action(ArgAction::SetTrue)
+                .overrides_with(options::ALL_REPEATED),
+        )
+        .arg(
+            Arg::new(options::ALL_REPEATED)
                 .long(options::ALL_REPEATED)
                 .value_parser(ShortcutValueParser::new(["none", "prepend", "separate"]))
                 .help(translate!("uniq-help-all-repeated"))
@@ -729,7 +762,7 @@ pub fn uu_app() -> Command {
                 .default_missing_value("none")
                 .require_equals(true)
                 // Let the final occurrence select the delimiter method.
-                .overrides_with(options::ALL_REPEATED),
+                .overrides_with_all([options::ALL_REPEATED, options::ALL_REPEATED_SHORT]),
         )
         .arg(
             Arg::new(options::GROUP)
@@ -745,6 +778,7 @@ pub fn uu_app() -> Command {
                 .conflicts_with_all([
                     options::REPEATED,
                     options::ALL_REPEATED,
+                    options::ALL_REPEATED_SHORT,
                     options::UNIQUE,
                     options::COUNT,
                 ]),
@@ -836,13 +870,13 @@ fn get_delimiter(matches: &ArgMatches) -> Delimiters {
 }
 
 // None or "-" means stdin.
-fn open_input_file(in_file_name: Option<&OsStr>) -> UResult<Box<dyn BufRead>> {
+fn open_input_file(in_file_name: Option<&OsStr>) -> UResult<InputReader> {
     Ok(match in_file_name {
         Some(path) if path != "-" => {
             let in_file = File::open(path).map_err_context(|| path.maybe_quote().to_string())?;
-            Box::new(BufReader::with_capacity(OUTPUT_BUFFER_CAPACITY, in_file))
+            InputReader::File(BufReader::with_capacity(OUTPUT_BUFFER_CAPACITY, in_file))
         }
-        _ => Box::new(stdin().lock()),
+        _ => InputReader::Stdin(stdin().lock()),
     })
 }
 

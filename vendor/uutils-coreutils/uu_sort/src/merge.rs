@@ -12,50 +12,77 @@
 //! from the previous read of the file. The channel back from the sorter to the reader has two purposes: To allow the reader
 //! to reuse memory allocations and to tell the reader which file to read from next.
 
-use uucore::context::PathExt as _;
-use {std::cmp::Ordering, std::collections::BinaryHeap, std::ffi::OsStr, std::ffi::OsString, uucore::context::fs, uucore::context::fs::File, uucore::context::io::BufWriter, uucore::context::io::Read, uucore::context::io::Write, std::iter, std::path::Path, std::path::PathBuf, uucore::context::process::Child, uucore::context::process::ChildStdin, uucore::context::process::ChildStdout, uucore::context::process::Command, uucore::context::process::Stdio, std::rc::Rc, std::sync::mpsc::Receiver, std::sync::mpsc::Sender, std::sync::mpsc::SyncSender, std::sync::mpsc::TryRecvError, std::sync::mpsc::channel, std::sync::mpsc::sync_channel, uucore::context::thread, uucore::context::thread::JoinHandle};
+use std::{
+    cmp::Ordering,
+    collections::BinaryHeap,
+    ffi::{OsStr, OsString},
+    iter,
+    path::Path,
+    rc::Rc,
+    sync::mpsc::{Receiver, Sender, SyncSender, TryRecvError, channel, sync_channel},
+};
+use uucore::context::fs::File;
+use uucore::context::io::{BufWriter, Read, Write};
+use uucore::context::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
+use uucore::context::thread::{self, JoinHandle};
 
 use uucore::error::{FromIo, UResult};
+use uucore::fs::FileInformation;
 
 use crate::{
     GlobalSettings, Output, SortError,
     chunks::{self, Chunk, RecycledChunk},
-    compare_by, current_open_fd_count, fd_soft_limit, open,
-    tmp_dir::TmpDirWrapper,
+    current_open_fd_count, fd_soft_limit, merge_compare, open,
+    tmp_dir::{TmpDirWrapper, TmpPath},
 };
 
 /// If the output file occurs in the input files as well, copy the contents of the output file
-/// and replace its occurrences in the inputs with that copy.
+/// and replace its occurrences in the inputs with that copy, which is returned.
 fn replace_output_file_in_input_files(
     files: &mut [OsString],
     output: Option<&OsStr>,
     tmp_dir: &mut TmpDirWrapper,
-) -> UResult<()> {
-    let mut copy: Option<PathBuf> = None;
-    if let Some(Ok(output_path)) = output.map(|path| Path::new(path).context_canonicalize()) {
+) -> UResult<Option<TmpPath>> {
+    let mut copy: Option<TmpPath> = None;
+    if let Some(output_path) = output.map(Path::new)
+        && let Ok(output_info) = FileInformation::from_path(output_path, true)
+    {
         for file in files {
-            if Path::new(file)
-                .context_canonicalize()
-                .is_ok_and(|file_path| file_path == output_path)
+            // Different hard links have different canonical paths but still
+            // share the file that will be truncated when output begins.
+            if FileInformation::from_path(Path::new(file), true)
+                .is_ok_and(|input_info| input_info == output_info)
             {
                 if let Some(copy) = &copy {
-                    *file = copy.clone().into_os_string();
+                    *file = copy.path().into();
                 } else {
                     // Write through the descriptor `next_file` just opened rather
                     // than `fs::copy`, which would put the source's permission bits
                     // on the temporary file and undo the 0600 it was created with.
                     let (mut copy_file, copy_path) = tmp_dir.next_file()?;
-                    let mut source = File::open(&output_path)
+                    let mut source = File::open(output_path)
                         .map_err(|error| SortError::OpenTmpFileFailed { error })?;
                     uucore::context::io::copy(&mut source, &mut copy_file)
                         .map_err(|error| SortError::OpenTmpFileFailed { error })?;
-                    *file = copy_path.clone().into_os_string();
+                    *file = copy_path.path().into();
                     copy = Some(copy_path);
                 }
             }
         }
     }
-    Ok(())
+    Ok(copy)
+}
+
+/// Open the merge input `file`. `copy` is the copy of the output file returned by
+/// [`replace_output_file_in_input_files`].
+fn open_input(file: &OsStr, copy: Option<&TmpPath>) -> UResult<Box<dyn Read + Send>> {
+    match copy {
+        Some(copy) if Path::new(file) == copy.path() => Ok(Box::new(
+            copy.open()
+                .map_err(|error| SortError::OpenTmpFileFailed { error })?,
+        )),
+        _ => open(file),
+    }
 }
 
 /// Determine the effective merge batch size, enforcing a minimum and respecting the
@@ -95,10 +122,10 @@ pub fn merge(
     output: Output,
     tmp_dir: &mut TmpDirWrapper,
 ) -> UResult<()> {
-    replace_output_file_in_input_files(files, output.as_output_name(), tmp_dir)?;
+    let copy = replace_output_file_in_input_files(files, output.as_output_name(), tmp_dir)?;
     let files = files
         .iter()
-        .map(|file| open(file).map(|file| PlainMergeInput { inner: file }));
+        .map(|file| open_input(file, copy.as_ref()).map(|inner| PlainMergeInput { inner }));
     if settings.compress_prog.is_none() {
         merge_with_file_limit::<_, _, WriteablePlainTmpFile>(files, settings, output, tmp_dir)
     } else {
@@ -112,7 +139,7 @@ pub fn merge_with_file_limit<
     F: ExactSizeIterator<Item = UResult<M>>,
     Tmp: WriteableTmpFile + 'static,
 >(
-    files: F,
+    mut files: F,
     settings: &GlobalSettings,
     output: Output,
     tmp_dir: &mut TmpDirWrapper,
@@ -125,28 +152,13 @@ pub fn merge_with_file_limit<
         merger?.write_all(settings, output)
     } else {
         let mut temporary_files = vec![];
-        let mut batch = Vec::with_capacity(batch_size);
-        for file in files {
-            batch.push(file);
-            if batch.len() >= batch_size {
-                assert_eq!(batch.len(), batch_size);
-                let merger = merge_without_limit(batch.into_iter(), settings)?;
-                batch = Vec::with_capacity(batch_size);
-
-                let mut tmp_file =
-                    Tmp::create(tmp_dir.next_file()?, settings.compress_prog.as_deref())?;
-                merger.write_all_to(settings, tmp_file.as_write())?;
-                temporary_files.push(tmp_file.finished_writing()?);
-            }
-        }
-        // Merge any remaining files that didn't get merged in a full batch above.
-        if !batch.is_empty() {
-            assert!(batch.len() < batch_size);
-            let merger = merge_without_limit(batch.into_iter(), settings)?;
-
+        while files.len() > 0 {
+            // Create the output before opening this batch's inputs, so that
+            // creating it doesn't compete with them for file descriptors.
             let mut tmp_file =
                 Tmp::create(tmp_dir.next_file()?, settings.compress_prog.as_deref())?;
-            merger.write_all_to(settings, tmp_file.as_write())?;
+            let merger = merge_without_limit(files.by_ref().take(batch_size), settings)?;
+            merger.write_all_to(settings, tmp_file.as_write(), || "write failed".into())?;
             temporary_files.push(tmp_file.finished_writing()?);
         }
         merge_with_file_limit::<_, _, Tmp>(
@@ -196,7 +208,13 @@ fn merge_without_limit<M: MergeInput + 'static, F: Iterator<Item = UResult<M>>>(
     }
 
     let reader_join_handle = thread::spawn({
-        let settings = settings.clone();
+        // The merge comparator (`merge_compare`) compares whole-line locale keys lazily
+        // with the ICU collator, so the reader does not need to precompute per-line sort
+        // keys. Disabling `fast_locale_collation` here turns `Line::create` into a no-op
+        // for that (whole-line, default) mode and avoids the dominant cost of merging
+        // already-sorted input. Other modes are unaffected (the flag is already false).
+        let mut settings = settings.clone();
+        settings.precomputed.fast_locale_collation = false;
         move || {
             reader(
                 &request_receiver,
@@ -287,14 +305,16 @@ impl PartialEq for MergeableFile<'_> {
 impl Eq for MergeableFile<'_> {}
 
 impl PartialOrd for MergeableFile<'_> {
+    #[inline]
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
 impl Ord for MergeableFile<'_> {
+    #[inline]
     fn cmp(&self, other: &Self) -> Ordering {
-        let mut cmp = compare_by(
+        let mut cmp = merge_compare(
             &self.current_chunk.lines()[self.line_idx],
             &other.current_chunk.lines()[other.line_idx],
             self.settings,
@@ -331,16 +351,21 @@ struct FileMerger<'a> {
 impl FileMerger<'_> {
     /// Write the merged contents to the output file.
     fn write_all(self, settings: &GlobalSettings, output: Output) -> UResult<()> {
+        let ctx = output.write_failed_context();
         let mut out = output.into_write()?;
-        self.write_all_to(settings, &mut out)
+        self.write_all_to(settings, &mut out, &ctx)?;
+        out.flush().map_err_context(ctx)
     }
 
-    fn write_all_to(mut self, settings: &GlobalSettings, out: &mut impl Write) -> UResult<()> {
+    /// Write the merged contents to `out`, reporting write errors with `ctx`.
+    fn write_all_to(
+        mut self,
+        settings: &GlobalSettings,
+        out: &mut impl Write,
+        ctx: impl FnOnce() -> String,
+    ) -> UResult<()> {
         let write_result = loop {
-            match self
-                .write_next(out, settings)
-                .map_err_context(|| "write failed".into())
-            {
+            match self.write_next(out, settings) {
                 Ok(true) => (),
                 Ok(false) => break Ok(()),
                 Err(error) => {
@@ -375,7 +400,7 @@ impl FileMerger<'_> {
         let reader_result = reader_join_handle.join().unwrap();
         // A write failure is what the user needs to hear about; the reader hitting an error
         // on the way down is secondary.
-        write_result.and(reader_result)
+        write_result.map_err_context(ctx).and(reader_result)
     }
 
     fn write_next(
@@ -395,7 +420,7 @@ impl FileMerger<'_> {
                 if settings.unique
                     && let Some(prev) = &prev
                 {
-                    let cmp = compare_by(
+                    let cmp = merge_compare(
                         &prev.chunk.lines()[prev.line_idx],
                         current_line,
                         settings,
@@ -454,7 +479,7 @@ fn check_child_success(mut child: Child, program: &str) -> UResult<()> {
 pub trait WriteableTmpFile: Sized {
     type Closed: ClosedTmpFile;
     type InnerWrite: Write;
-    fn create(file: (File, PathBuf), compress_prog: Option<&str>) -> UResult<Self>;
+    fn create(file: (File, TmpPath), compress_prog: Option<&str>) -> UResult<Self>;
     /// Closes the temporary file.
     fn finished_writing(self) -> UResult<Self::Closed>;
     fn as_write(&mut self) -> &mut Self::InnerWrite;
@@ -475,21 +500,21 @@ pub trait MergeInput: Send {
 }
 
 pub struct WriteablePlainTmpFile {
-    path: PathBuf,
+    path: TmpPath,
     file: BufWriter<File>,
 }
 pub struct ClosedPlainTmpFile {
-    path: PathBuf,
+    path: TmpPath,
 }
 pub struct PlainTmpMergeInput {
-    path: PathBuf,
+    path: TmpPath,
     file: File,
 }
 impl WriteableTmpFile for WriteablePlainTmpFile {
     type Closed = ClosedPlainTmpFile;
     type InnerWrite = BufWriter<File>;
 
-    fn create((file, path): (File, PathBuf), _: Option<&str>) -> UResult<Self> {
+    fn create((file, path): (File, TmpPath), _: Option<&str>) -> UResult<Self> {
         Ok(Self {
             file: BufWriter::new(file),
             path,
@@ -508,7 +533,10 @@ impl ClosedTmpFile for ClosedPlainTmpFile {
     type Reopened = PlainTmpMergeInput;
     fn reopen(self) -> UResult<Self::Reopened> {
         Ok(PlainTmpMergeInput {
-            file: File::open(&self.path).map_err(|error| SortError::OpenTmpFileFailed { error })?,
+            file: self
+                .path
+                .open()
+                .map_err(|error| SortError::OpenTmpFileFailed { error })?,
             path: self.path,
         })
     }
@@ -520,7 +548,9 @@ impl MergeInput for PlainTmpMergeInput {
         // we ignore failures to delete the temporary file,
         // because there is a race at the end of the execution and the whole
         // temporary directory might already be gone.
-        let _ = fs::remove_file(self.path);
+        // Close the file first: removing it briefly takes another descriptor.
+        drop(self.file);
+        self.path.remove();
         Ok(())
     }
 
@@ -530,17 +560,17 @@ impl MergeInput for PlainTmpMergeInput {
 }
 
 pub struct WriteableCompressedTmpFile {
-    path: PathBuf,
+    path: TmpPath,
     compress_prog: String,
     child: Child,
     child_stdin: BufWriter<ChildStdin>,
 }
 pub struct ClosedCompressedTmpFile {
-    path: PathBuf,
+    path: TmpPath,
     compress_prog: String,
 }
 pub struct CompressedTmpMergeInput {
-    path: PathBuf,
+    path: TmpPath,
     compress_prog: String,
     child: Child,
     child_stdout: ChildStdout,
@@ -549,7 +579,7 @@ impl WriteableTmpFile for WriteableCompressedTmpFile {
     type Closed = ClosedCompressedTmpFile;
     type InnerWrite = BufWriter<ChildStdin>;
 
-    fn create((file, path): (File, PathBuf), compress_prog: Option<&str>) -> UResult<Self> {
+    fn create((file, path): (File, TmpPath), compress_prog: Option<&str>) -> UResult<Self> {
         let compress_prog = compress_prog.unwrap();
         let mut command = Command::new(compress_prog);
         command.stdin(Stdio::piped()).stdout(file);
@@ -587,8 +617,10 @@ impl ClosedTmpFile for ClosedCompressedTmpFile {
     fn reopen(self) -> UResult<Self::Reopened> {
         let mut command = Command::new(&self.compress_prog);
         // mirroring what is done for ClosedPlainTmpFile
-        let file =
-            File::open(&self.path).map_err(|error| SortError::OpenTmpFileFailed { error })?;
+        let file = self
+            .path
+            .open()
+            .map_err(|error| SortError::OpenTmpFileFailed { error })?;
         command.stdin(file).stdout(Stdio::piped()).arg("-d");
         let mut child = command
             .spawn()
@@ -613,7 +645,7 @@ impl MergeInput for CompressedTmpMergeInput {
         #[allow(clippy::drop_non_drop)]
         drop(self.child_stdout);
         check_child_success(self.child, &self.compress_prog)?;
-        let _ = fs::remove_file(self.path);
+        self.path.remove();
         Ok(())
     }
 
@@ -638,6 +670,7 @@ impl<R: Read + Send> MergeInput for PlainMergeInput<R> {
 #[cfg(all(test, unix))]
 mod tests {
     use super::*;
+    use uucore::context::fs;
     use std::os::unix::fs::PermissionsExt;
 
     /// When the output file is also an input it is copied to a temporary file
@@ -662,5 +695,54 @@ mod tests {
             0o600
         );
         assert_eq!(fs::read(copy).unwrap(), b"a\n");
+    }
+
+    /// The copy of the output file is only read while it is the file sort
+    /// created: once the temporary directory's path leads elsewhere, the file
+    /// found at its name there is not read.
+    #[test]
+    #[cfg(not(target_os = "redox"))]
+    fn output_copy_is_not_read_through_a_replaced_tmp_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let other = tempfile::tempdir().unwrap();
+        fs::write(other.path().join("0"), b"other\n").unwrap();
+        let out = dir.path().join("out");
+        fs::write(&out, b"a\n").unwrap();
+
+        let mut tmp_dir = TmpDirWrapper::new(dir.path().to_owned());
+        let mut files = vec![out.clone().into_os_string()];
+        let copy =
+            replace_output_file_in_input_files(&mut files, Some(out.as_os_str()), &mut tmp_dir)
+                .unwrap();
+        let tmp = copy.as_ref().unwrap().path().parent().unwrap();
+        fs::rename(tmp, dir.path().join("moved")).unwrap();
+        std::os::unix::fs::symlink(other.path(), tmp).unwrap();
+
+        assert!(open_input(&files[0], copy.as_ref()).is_err());
+    }
+
+    /// A temporary file that is being merged when the directory's path is made
+    /// to lead elsewhere: removing it afterwards leaves the file of the same
+    /// name there alone.
+    #[test]
+    #[cfg(not(target_os = "redox"))]
+    fn finished_input_is_not_removed_through_a_replaced_tmp_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let other = tempfile::tempdir().unwrap();
+        fs::write(other.path().join("0"), b"other\n").unwrap();
+
+        let mut tmp_dir = TmpDirWrapper::new(dir.path().to_owned());
+        let input = WriteablePlainTmpFile::create(tmp_dir.next_file().unwrap(), None)
+            .unwrap()
+            .finished_writing()
+            .unwrap()
+            .reopen()
+            .unwrap();
+        let tmp = input.path.path().parent().unwrap().to_owned();
+        fs::rename(&tmp, dir.path().join("moved")).unwrap();
+        std::os::unix::fs::symlink(other.path(), &tmp).unwrap();
+        input.finished_reading().unwrap();
+
+        assert_eq!(fs::read(other.path().join("0")).unwrap(), b"other\n");
     }
 }

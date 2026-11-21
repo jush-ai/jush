@@ -4,6 +4,7 @@
 // file that was distributed with this source code.
 
 //! Heuristics for determining buffer size for external sorting.
+
 use uucore::context::FileKindExt as _;
 use std::ffi::OsString;
 

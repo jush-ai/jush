@@ -33,8 +33,12 @@ use crate::context::FileKindExt as _;
 use crate::context::PathExt as _;
 use crate::features::tty::Teletype;
 
+use std::collections::HashMap;
+use std::fmt::{self, Display, Formatter};
 use std::hash::Hash;
-use {std::collections::HashMap, std::fmt, std::fmt::Display, std::fmt::Formatter, crate::context::fs, crate::context::io, std::path::PathBuf, std::rc::Rc};
+use crate::context::{fs, io};
+use std::path::PathBuf;
+use std::rc::Rc;
 
 use walkdir::{DirEntry, WalkDir};
 
@@ -143,7 +147,7 @@ impl ProcessInformation {
     ///
     /// # Error
     ///
-    /// If the files in path cannot be parsed into [ProcessInformation],
+    /// If the files in path cannot be parsed into [`ProcessInformation`],
     /// it almost caused by wrong filesystem structure.
     ///
     /// - [The /proc Filesystem](https://docs.kernel.org/filesystems/proc.html#process-specific-subdirectories)
@@ -222,7 +226,7 @@ impl ProcessInformation {
         Rc::clone(&result)
     }
 
-    /// Fetch start time from [ProcessInformation::cached_stat]
+    /// Fetch start time from [`ProcessInformation::cached_stat`]
     ///
     /// - [The /proc Filesystem: Table 1-4](https://docs.kernel.org/filesystems/proc.html#id10)
     pub fn start_time(&mut self) -> Result<u64, io::Error> {
@@ -281,13 +285,13 @@ impl ProcessInformation {
         self.get_uid_or_gid_field(UidGid::Gid, 1)
     }
 
-    /// Fetch run state from [ProcessInformation::cached_stat]
+    /// Fetch run state from [`ProcessInformation::cached_stat`]
     ///
     /// - [The /proc Filesystem: Table 1-4](https://docs.kernel.org/filesystems/proc.html#id10)
     ///
     /// # Error
     ///
-    /// If parsing failed, this function will return [io::ErrorKind::InvalidInput]
+    /// If parsing failed, this function will return [`io::ErrorKind::InvalidInput`]
     pub fn run_state(&mut self) -> Result<RunState, io::Error> {
         RunState::try_from(self.stat().get(2).unwrap().as_str())
     }
@@ -295,9 +299,9 @@ impl ProcessInformation {
     /// This function will scan the `/proc/<pid>/fd` directory
     ///
     /// If the process does not belong to any terminal and mismatched permission,
-    /// the result will contain [TerminalType::Unknown].
+    /// the result will contain [`TerminalType::Unknown`].
     ///
-    /// Otherwise [TerminalType::Unknown] does not appear in the result.
+    /// Otherwise [`TerminalType::Unknown`] does not appear in the result.
     pub fn tty(&self) -> Teletype {
         let path = PathBuf::from(format!("/proc/{}/fd", self.pid));
 
@@ -329,7 +333,7 @@ impl ProcessInformation {
                 .follow_links(false)
                 .into_iter()
                 .flatten()
-                .flat_map(|it| {
+                .filter_map(|it| {
                     it.path()
                         .file_name()
                         .and_then(|it| it.to_str())
@@ -407,7 +411,8 @@ pub fn walk_process() -> impl Iterator<Item = ProcessInformation> {
 mod tests {
     use super::*;
     use crate::features::tty::Teletype;
-    use {std::collections::HashSet, std::str::FromStr};
+    use std::collections::HashSet;
+    use std::str::FromStr;
 
     #[test]
     fn test_run_state_conversion() {
@@ -475,7 +480,7 @@ mod tests {
 
     #[test]
     fn test_thread_ids() {
-        let main_tid = unsafe { libc::gettid() };
+        let main_tid = rustix::thread::gettid().as_raw_pid();
         std::thread::spawn(move || {
             let mut pid_entry = ProcessInformation::try_new(
                 PathBuf::from_str(&format!("/proc/{}", current_pid())).unwrap(),
@@ -485,7 +490,7 @@ mod tests {
 
             assert!(thread_ids.contains(&(main_tid as usize)));
 
-            let new_thread_tid = unsafe { libc::gettid() };
+            let new_thread_tid = rustix::thread::gettid().as_raw_pid();
             assert!(thread_ids.contains(&(new_thread_tid as usize)));
         })
         .join()

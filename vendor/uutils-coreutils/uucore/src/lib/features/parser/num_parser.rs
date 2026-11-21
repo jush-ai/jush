@@ -3,19 +3,18 @@
 // For the full copyright and license information, please view the LICENSE
 // file that was distributed with this source code.
 
-//! Utilities for parsing numbers in various formats
-
 // spell-checker:ignore powf copysign prec ilog inity infinit infs bigdecimal extendedbigdecimal biguint underflowed muls
 
-use bigdecimal::{
-    BigDecimal,
-    num_bigint::{BigInt, BigUint, Sign},
-};
-use num_traits::Signed;
-use num_traits::ToPrimitive;
-use num_traits::Zero;
+//! Utilities for parsing numbers in various formats
+
+use bigdecimal::BigDecimal;
+use bigdecimal::num_bigint::{BigInt, BigUint, Sign};
+use num_traits::{Signed, ToPrimitive, Zero};
 
 use crate::extendedbigdecimal::ExtendedBigDecimal;
+
+// 2^-30 seconds < 1 ns.
+const SUBNANOSECOND_BINARY_EXPONENT: i32 = -30;
 
 /// Base for number parsing
 #[derive(Clone, Copy, PartialEq)]
@@ -276,7 +275,7 @@ impl ExtendedParser for f64 {
 }
 
 impl ExtendedParser for ExtendedBigDecimal {
-    /// Parse a number as an ExtendedBigDecimal
+    /// Parse a number as an [`ExtendedBigDecimal`]
     fn extended_parse(input: &str) -> Result<Self, ExtendedParserError<Self>> {
         parse(input, ParseTarget::Decimal, &[])
     }
@@ -359,8 +358,20 @@ fn parse_special_value(
                 special = -special;
             }
 
+            let mut rest = &input[str.len()..];
+            // A NaN may carry a payload of letters, digits and '_' in parentheses; it is ignored.
+            if matches!(ebd, ExtendedBigDecimal::Nan)
+                && let Some((payload, after)) =
+                    rest.strip_prefix('(').and_then(|r| r.split_once(')'))
+                && payload
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b == b'_')
+            {
+                rest = after;
+            }
+
             // "infs" is a valid duration, so parse suffix multiplier in the original input string, but ignore the multiplier.
-            let (_, rest) = parse_suffix_multiplier(&input[str.len()..], allowed_suffixes);
+            let (_, rest) = parse_suffix_multiplier(rest, allowed_suffixes);
 
             return if rest.is_empty() {
                 Ok(special)
@@ -545,9 +556,20 @@ pub(crate) fn parse(
     let (mul, rest) = parse_suffix_multiplier(rest, allowed_suffixes);
 
     let digits = digits.unwrap() * mul;
+    let exponent = exponent.unwrap_or_default();
 
-    let ebd_result =
-        construct_extended_big_decimal(digits, negative, base, scale, exponent.unwrap_or_default());
+    // Bound a hex duration before constructing its denominator, accounting for
+    // the suffix multiplier and binary exponent.
+    let ebd_result = if target == ParseTarget::Duration
+        && base == Base::Hexadecimal
+        && !digits.is_zero()
+        && BigInt::from(digits.bits()) + &exponent - BigInt::from(scale) * 4
+            <= BigInt::from(SUBNANOSECOND_BINARY_EXPONENT)
+    {
+        Err(make_error(false, negative))
+    } else {
+        construct_extended_big_decimal(digits, negative, base, scale, exponent)
+    };
 
     // Return what has been parsed so far. If there are extra characters, mark the
     // parsing as a partial match.
@@ -736,6 +758,12 @@ mod tests {
         assert!(f64::extended_parse("nan").unwrap().is_sign_positive());
         assert!(f64::extended_parse("NAN").unwrap().is_nan());
         assert!(f64::extended_parse("NAN").unwrap().is_sign_positive());
+        assert!(f64::extended_parse("nan(Ab_1)").unwrap().is_nan());
+        assert!(f64::extended_parse("-nan()").unwrap().is_sign_negative());
+        assert!(matches!(
+            f64::extended_parse("nan(a-b)"),
+            Err(ExtendedParserError::PartialMatch(n, rest)) if n.is_nan() && rest == "(a-b)"
+        ));
         assert_eq!(
             f64::extended_parse("-infinit"),
             Err(ExtendedParserError::PartialMatch(

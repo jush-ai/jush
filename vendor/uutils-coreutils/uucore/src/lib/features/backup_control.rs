@@ -3,6 +3,8 @@
 // For the full copyright and license information, please view the LICENSE
 // file that was distributed with this source code.
 
+// spell-checker:ignore backupopt
+
 //! Implement GNU-style backup functionality.
 //!
 //! This module implements the backup functionality as described in the [GNU
@@ -80,15 +82,15 @@
 //! }
 //! ```
 
-// spell-checker:ignore backupopt
-
-use crate::{
-    display::Quotable,
-    error::{UError, UResult},
-    fs::FileInformation,
-};
+use crate::display::Quotable;
+use crate::error::{UError, UResult};
+use crate::fs::FileInformation;
+use crate::translate;
 use clap::ArgMatches;
-use {crate::context::env, std::error::Error, std::ffi::OsStr, std::ffi::OsString, std::fmt::Debug, std::fmt::Display, crate::context::fs, std::path::Path, std::path::PathBuf};
+use crate::context::{env, fs};
+use std::ffi::{OsStr, OsString};
+use std::fmt::Debug;
+use std::path::{Path, PathBuf};
 
 pub static BACKUP_CONTROL_VALUES: &[&str] = &[
     "simple", "never", "numbered", "t", "existing", "nil", "none", "off",
@@ -104,8 +106,8 @@ the VERSION_CONTROL environment variable.  Here are the values:
   existing, nil   numbered if numbered backups exist, simple otherwise
   simple, never   always make simple backups";
 
-static VALID_ARGS_HELP: &str = "Valid arguments are:
-  - 'none', 'off'
+/// The values `--backup` accepts; they are option values, so they are not translated.
+static VALID_ARGS_LIST: &str = "  - 'none', 'off'
   - 'simple', 'never'
   - 'existing', 'nil'
   - 'numbered', 't'";
@@ -133,60 +135,31 @@ pub enum BackupMode {
 ///
 /// Errors are currently raised by [`determine_backup_mode`] only. All errors
 /// are implemented as [`UError`] for uniform handling across utilities.
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, thiserror::Error)]
 pub enum BackupError {
     /// An invalid argument (e.g. 'foo') was given as backup type. First
     /// parameter is the argument, second is the arguments origin (CLI or
     /// ENV-var)
+    #[error(
+        "{}\n{}\n{VALID_ARGS_LIST}",
+        translate!("backup-error-invalid-argument", "arg" => .0.quote(), "origin" => .1),
+        translate!("backup-valid-arguments")
+    )]
     InvalidArgument(String, String),
     /// An ambiguous argument (e.g. 'n') was given as backup type. First
     /// parameter is the argument, second is the arguments origin (CLI or
     /// ENV-var)
+    #[error(
+        "{}\n{}\n{VALID_ARGS_LIST}",
+        translate!("backup-error-ambiguous-argument", "arg" => .0.quote(), "origin" => .1),
+        translate!("backup-valid-arguments")
+    )]
     AmbiguousArgument(String, String),
-    /// Currently unused
-    BackupImpossible(),
-    // BackupFailed(PathBuf, PathBuf, crate::context::io::Error),
 }
 
 impl UError for BackupError {
-    fn code(&self) -> i32 {
-        match self {
-            Self::BackupImpossible() => 2,
-            _ => 1,
-        }
-    }
-
     fn usage(&self) -> bool {
-        // Suggested by clippy.
-        matches!(
-            self,
-            Self::InvalidArgument(_, _) | Self::AmbiguousArgument(_, _)
-        )
-    }
-}
-
-impl Error for BackupError {}
-
-impl Display for BackupError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::InvalidArgument(arg, origin) => write!(
-                f,
-                "invalid argument {} for '{origin}'\n{VALID_ARGS_HELP}",
-                arg.quote(),
-            ),
-            Self::AmbiguousArgument(arg, origin) => write!(
-                f,
-                "ambiguous argument {} for '{origin}'\n{VALID_ARGS_HELP}",
-                arg.quote(),
-            ),
-            Self::BackupImpossible() => write!(f, "cannot create backup"),
-            // Placeholder for later
-            // Self::BackupFailed(from, to, e) => Display::fmt(
-            //     &uio_error!(e, "failed to backup {} to {}", from.quote(), to.quote()),
-            //     f
-            // ),
-        }
+        true
     }
 }
 
@@ -239,7 +212,7 @@ pub mod arguments {
 /// In order of precedence, this function obtains the backup suffix
 ///
 /// 1. From the '-S' or '--suffix' CLI argument, if present
-/// 2. From the "SIMPLE_BACKUP_SUFFIX" environment variable, if present
+/// 2. From the `SIMPLE_BACKUP_SUFFIX` environment variable, if present
 /// 3. By using the default '~' if none of the others apply, or if they are empty or contain slashes
 ///
 /// This function directly takes [`ArgMatches`] as argument and looks for
@@ -342,14 +315,20 @@ pub fn determine_backup_mode(env_ctl: Option<String>, matches: &ArgMatches) -> U
         // is used but method is not specified, then the value of the
         // VERSION_CONTROL environment variable is used. And if VERSION_CONTROL
         // is not set, the default backup type is 'existing'.
-        if let Some(method) = matches.get_one::<String>(arguments::OPT_BACKUP) {
+        // An empty value (`--backup=`) behaves like a bare `--backup`: the value
+        // of `VERSION_CONTROL` decides, falling back to 'existing'.
+        if let Some(method) = matches
+            .get_one::<String>(arguments::OPT_BACKUP)
+            .filter(|method| !method.is_empty())
+        {
             // Second argument is for the error string that is returned.
             match_method(method, "backup type")
         } else if let Some(method) = env_ctl {
             // Second argument is for the error string that is returned.
             match_method(&method, "$VERSION_CONTROL")
         } else {
-            // Default if no argument is provided to '--backup'
+            // Default if no argument is provided to '--backup', or it is given
+            // without a value
             Ok(BackupMode::Existing)
         }
     } else if matches.get_flag(arguments::OPT_BACKUP_NO_ARG) {
@@ -550,6 +529,14 @@ mod tests {
     use super::*;
     use clap::Command;
 
+    /// The error messages go through `translate!`, which needs the English
+    /// strings loaded to give back more than the message key.
+    fn load_english_messages() {
+        temp_env::with_var("LANG", Some("en_US.UTF-8"), || {
+            let _ = crate::locale::setup_localization("mv");
+        });
+    }
+
     fn make_app() -> Command {
         Command::new("command")
             .arg(arguments::backup())
@@ -581,6 +568,22 @@ mod tests {
         assert_eq!(result, BackupMode::Existing);
     }
 
+    // --backup= (empty value) behaves like a bare --backup
+    #[test]
+    fn test_backup_mode_long_with_empty_arg() {
+        let matches = make_app().get_matches_from(vec!["command", "--backup="]);
+        let result = determine_backup_mode(None, &matches).unwrap();
+        assert_eq!(result, BackupMode::Existing);
+    }
+
+    // --backup= (empty value) still consults VERSION_CONTROL
+    #[test]
+    fn test_backup_mode_long_with_empty_arg_and_env() {
+        let matches = make_app().get_matches_from(vec!["command", "--backup="]);
+        let result = determine_backup_mode(Some("numbered".into()), &matches).unwrap();
+        assert_eq!(result, BackupMode::Numbered);
+    }
+
     // --backup can be passed with an argument only
     #[test]
     fn test_backup_mode_long_with_args() {
@@ -592,6 +595,7 @@ mod tests {
     // --backup errors on invalid argument
     #[test]
     fn test_backup_mode_long_with_args_invalid() {
+        load_english_messages();
         let matches = make_app().get_matches_from(vec!["command", "--backup=foobar"]);
         let result = determine_backup_mode(None, &matches);
         assert!(result.is_err());
@@ -602,6 +606,7 @@ mod tests {
     // --backup errors on ambiguous argument
     #[test]
     fn test_backup_mode_long_with_args_ambiguous() {
+        load_english_messages();
         let matches = make_app().get_matches_from(vec!["command", "--backup=n"]);
         let result = determine_backup_mode(None, &matches);
         assert!(result.is_err());
@@ -636,6 +641,7 @@ mod tests {
     // --backup errors on invalid VERSION_CONTROL env var
     #[test]
     fn test_backup_mode_long_with_env_var_invalid() {
+        load_english_messages();
         let matches = make_app().get_matches_from(vec!["command", "--backup"]);
         let result = determine_backup_mode(Some("foobar".into()), &matches);
         assert!(result.is_err());
@@ -646,6 +652,7 @@ mod tests {
     // --backup errors on ambiguous VERSION_CONTROL env var
     #[test]
     fn test_backup_mode_long_with_env_var_ambiguous() {
+        load_english_messages();
         let matches = make_app().get_matches_from(vec!["command", "--backup"]);
         let result = determine_backup_mode(Some("n".into()), &matches);
         assert!(result.is_err());

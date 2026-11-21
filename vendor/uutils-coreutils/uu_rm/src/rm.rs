@@ -5,6 +5,8 @@
 
 // spell-checker:ignore (path) eacces inacc rm-r4 unlinkat fstatat rootlink
 
+#![cfg(any(unix, windows, target_os = "wasi"))]
+
 use uucore::context::FileKindExt as _;
 use uucore::context::PathExt as _;
 use clap::builder::{PossibleValue, ValueParser};
@@ -21,7 +23,6 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::MAIN_SEPARATOR;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
-use thiserror::Error;
 use uucore::display::Quotable;
 use uucore::error::{FromIo, UError, UResult, USimpleError, strip_errno};
 use uucore::parser::shortcut_value_parser::ShortcutValueParser;
@@ -33,7 +34,7 @@ mod platform;
 #[cfg(all(unix, not(target_os = "redox")))]
 use platform::{safe_remove_dir_recursive, safe_remove_empty_dir, safe_remove_file};
 
-#[derive(Debug, Error)]
+#[derive(Debug, thiserror::Error)]
 enum RmError {
     #[error("{}", translate!("rm-error-missing-operand", "util_name" => uucore::execution_phrase()))]
     MissingOperand,
@@ -132,8 +133,8 @@ fn remove_dir_with_feedback(path: &Path, options: &Options) -> bool {
     }
 }
 
-#[derive(Eq, PartialEq, Clone, Copy)]
 /// Enum, determining when the `rm` will prompt the user about the file deletion
+#[derive(Eq, PartialEq, Clone, Copy)]
 pub enum InteractiveMode {
     /// Never prompt
     Never,
@@ -197,9 +198,9 @@ pub struct Options {
     pub verbose: bool,
     /// `-g`, `--progress`
     pub progress: bool,
-    #[doc(hidden)]
     /// `---presume-input-tty`
     /// Always use `None`; GNU flag for testing use only
+    #[doc(hidden)]
     pub __presume_input_tty: Option<bool>,
 }
 
@@ -264,22 +265,26 @@ pub fn uumain(args: impl uucore::Args) -> UResult<()> {
         return Err(1.into());
     }
 
-    if files.is_empty() && !force_flag {
-        // Still check by hand and not use clap
-        // Because "rm -f" is a thing
-        return Err(RmError::MissingOperand.into());
-    }
-
     // If -f(--force) is before any -i (or variants) we want prompts else no prompts
     let force_prompt_never = force_flag && {
         let force_index = matches.index_of(OPT_FORCE).unwrap_or(0);
-        ![OPT_PROMPT_ALWAYS, OPT_PROMPT_ONCE, OPT_INTERACTIVE]
-            .iter()
-            .any(|flag| {
-                matches.value_source(flag) == Some(ValueSource::CommandLine)
-                    && matches.index_of(flag).unwrap_or(0) > force_index
-            })
+        let is_later = |flag: &str| {
+            matches.value_source(flag) == Some(ValueSource::CommandLine)
+                && matches.index_of(flag).unwrap_or(0) > force_index
+        };
+        // `--interactive=never` does not cancel an earlier `-f`.
+        let interactive_cancels_force = is_later(OPT_INTERACTIVE)
+            && matches
+                .get_one::<String>(OPT_INTERACTIVE)
+                .is_some_and(|mode| mode != "never");
+        !is_later(OPT_PROMPT_ALWAYS) && !is_later(OPT_PROMPT_ONCE) && !interactive_cancels_force
     };
+
+    if files.is_empty() && !force_prompt_never {
+        // Still check by hand and not use clap.
+        // Because "rm -f" is a thing, but a later -i/-I/--interactive cancels it.
+        return Err(RmError::MissingOperand.into());
+    }
 
     let preserve_root = !matches.get_flag(OPT_NO_PRESERVE_ROOT);
     let preserve_root_all = matches
@@ -361,7 +366,7 @@ fn handle_parse_error(e: clap::Error, args: &[OsString]) -> Box<dyn UError> {
         // The path is shell-escaped (quoted only if needed), the file name is
         // always quoted, matching GNU's two quoting styles.
         let path = locale_aware_escape_name(file, QuotingStyle::SHELL_ESCAPE);
-        let quoted = locale_aware_escape_name(file, QuotingStyle::SHELL_ESCAPE_QUOTE);
+        let quoted = locale_aware_escape_name(file, QuotingStyle::SHELL_ESCAPE_ALWAYS);
         let _ = writeln!(
             io::stderr(),
             "{}",
@@ -567,7 +572,9 @@ fn count_files_in_directory(p: &Path) -> u64 {
         entries
             .flatten()
             .map(|entry| match entry.file_type() {
-                Ok(ft) if ft.context_is_dir() => count_files_in_directory(&entry.path()),
+                Ok(ft) if ft.context_is_dir() && !ft.context_is_symlink() => {
+                    count_files_in_directory(&entry.path())
+                }
                 Ok(_) => 1,
                 Err(_) => 0,
             })
@@ -702,7 +709,14 @@ fn remove_dir_recursive(
     // a directory and we don't want to recurse. In particular, this
     // avoids an infinite recursion in the case of a link to the current
     // directory, like `ln -s . link`.
-    if !path.context_is_dir() || path.context_is_symlink() {
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(e) => return show_removal_error(e, path),
+    };
+    if is_symlink_dir(&metadata) {
+        return remove_dir(path, options, progress_bar);
+    }
+    if !metadata.context_is_dir() || metadata.file_type().context_is_symlink() {
         return remove_file(path, options, progress_bar);
     }
 
@@ -827,7 +841,7 @@ fn show_preserve_root_error(path: &Path) {
         show_error!(
             "{}",
             translate!("rm-error-dangerous-recursive-operation-same-as-root",
-            "path" => path.display())
+            "path" => path.quote())
         );
     }
     show_error!("{}", RmError::UseNoPreserveRoot);

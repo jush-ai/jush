@@ -3,9 +3,14 @@
 // For the full copyright and license information, please view the LICENSE
 // file that was distributed with this source code.
 
-// cSpell:disable
+// spell-checker:disable
 
 //! Provides color handling for `ls` and other utilities.
+
+// The color database below is derived from the dircolors database:
+// Copyright (C) 1996-2022 Free Software Foundation, Inc.
+// Copying and distribution of this file, with or without modification,
+// are permitted provided the copyright notice and this notice are preserved.
 
 /// The keywords COLOR, OPTIONS, and EIGHTBIT (honored by the
 /// slackware version of dircolors) are recognized but ignored.

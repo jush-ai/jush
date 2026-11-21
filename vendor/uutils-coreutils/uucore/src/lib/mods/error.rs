@@ -3,6 +3,8 @@
 // For the full copyright and license information, please view the LICENSE
 // file that was distributed with this source code.
 
+// spell-checker:ignore uioerror rustdoc
+
 //! All utils return exit with an exit code. Usually, the following scheme is used:
 //! * `0`: succeeded
 //! * `1`: minor problems
@@ -53,9 +55,10 @@
 //! * Using [`ExitCode`] is not recommended but can be useful for converting utils to use
 //!   [`UResult`].
 
-// spell-checker:ignore uioerror rustdoc
-
-use {std::cell::Cell, std::error::Error, std::fmt::Display, std::fmt::Formatter, crate::context::io::Write};
+use std::cell::Cell;
+use std::error::Error;
+use std::fmt::{Display, Formatter};
+use crate::context::io::Write;
 
 thread_local! { static EXIT_CODE: Cell<i32> = const { Cell::new(0) }; }
 
@@ -86,6 +89,15 @@ pub fn get_exit_code() -> i32 {
 /// ```
 pub fn set_exit_code(code: i32) {
     EXIT_CODE.with(|value| value.set(code));
+}
+
+/// Print `<util>: <prefix><msg>` to stderr, used by [`crate::show!`] and friends.
+///
+/// stderr is unbuffered, so the line is formatted first and written at once.
+#[doc(hidden)]
+pub fn print_diagnostic(prefix: &str, msg: std::fmt::Arguments<'_>) {
+    let line = format!("{}: {prefix}{msg}\n", crate::util_name());
+    let _ = crate::context::io::stderr().write_all(line.as_bytes());
 }
 
 /// Result type that should be returned by all utils.
@@ -279,6 +291,8 @@ pub struct USimpleError {
 
 impl USimpleError {
     /// Create a new `USimpleError` with a given exit code and message.
+    #[cold]
+    #[inline(never)]
     #[allow(clippy::new_ret_no_self)]
     pub fn new<S: Into<String>>(code: i32, message: S) -> Box<dyn UError> {
         Box::new(Self {
@@ -313,8 +327,10 @@ pub struct UUsageError {
 }
 
 impl UUsageError {
-    #[allow(clippy::new_ret_no_self)]
     /// Create a new `UUsageError` with a given exit code and message.
+    #[cold]
+    #[inline(never)]
+    #[allow(clippy::new_ret_no_self)]
     pub fn new<S: Into<String>>(code: i32, message: S) -> Box<dyn UError> {
         Box::new(Self {
             code,
@@ -346,8 +362,8 @@ impl UError for UUsageError {
 /// The messages displayed by [`UIoError`] should match the error messages displayed by GNU
 /// coreutils.
 ///
-/// There are two ways to construct this type: with [`UIoError::new`] or by calling the
-/// [`FromIo::map_err_context`] method on a [`crate::context::io::Result`] or [`crate::context::io::Error`].
+/// This type is constructed by calling the [`FromIo::map_err_context`] method on a
+/// [`crate::context::io::Result`] or [`crate::context::io::Error`].
 /// ```
 /// use uucore::{
 ///     display::Quotable,
@@ -357,14 +373,6 @@ impl UError for UUsageError {
 /// use std::path::Path;
 /// let path = Path::new("test.txt");
 ///
-/// // Manual construction
-/// let e: Box<dyn UError> = UIoError::new(
-///     crate::context::io::ErrorKind::NotFound,
-///     format!("cannot access {}", path.quote())
-/// );
-/// let res: UResult<()> = Err(e.into());
-///
-/// // Converting from an `crate::context::io::Error`.
 /// let res: UResult<File> = File::open(path).map_err_context(|| format!("cannot access {}", path.quote()));
 /// ```
 #[derive(Debug)]
@@ -374,8 +382,8 @@ pub struct UIoError {
 }
 
 impl UIoError {
-    #[allow(clippy::new_ret_no_self)]
     /// Create a new `UIoError` with a given exit code and message.
+    #[allow(clippy::new_ret_no_self)]
     pub fn new<S: Into<String>>(kind: crate::context::io::ErrorKind, context: S) -> Box<dyn UError> {
         Box::new(Self {
             context: Some(context.into()),
@@ -403,7 +411,12 @@ impl Display for UIoError {
 /// error of the operating system, without its error number, or the error's
 /// own message.
 pub fn io_message(error: &crate::context::io::Error) -> String {
-    use crate::context::io::ErrorKind::*;
+    use crate::context::io::ErrorKind::{
+        AddrInUse, AddrNotAvailable, AlreadyExists, BrokenPipe, ConnectionAborted,
+        ConnectionRefused, ConnectionReset, Interrupted, InvalidData, InvalidInput,
+        IsADirectory, NotConnected, NotFound, PermissionDenied, TimedOut, UnexpectedEof,
+        WouldBlock, WriteZero,
+    };
 
     if error.raw_os_error().is_some() {
         // These are errors that come directly from the OS.
@@ -411,6 +424,14 @@ pub fn io_message(error: &crate::context::io::Error) -> String {
         // and we want to strip the "(os error X)" suffix.
         match error.kind() {
             NotFound => "No such file or directory",
+            // Rust maps both EACCES and EPERM to PermissionDenied. GNU
+            // prints "Operation not permitted" for EPERM (e.g. touch on a
+            // writable file owned by someone else) and "Permission denied"
+            // for EACCES. Prefer the errno when available (#15020).
+            #[cfg(unix)]
+            PermissionDenied if error.raw_os_error() == Some(nix::errno::Errno::EPERM as i32) => {
+                "Operation not permitted"
+            }
             PermissionDenied => "Permission denied",
             ConnectionRefused => "Connection refused",
             ConnectionReset => "Connection reset",
@@ -419,7 +440,9 @@ pub fn io_message(error: &crate::context::io::Error) -> String {
             AddrInUse => "Address in use",
             AddrNotAvailable => "Address not available",
             BrokenPipe => "Broken pipe",
-            AlreadyExists => "Already exists",
+            // strerror(EEXIST); GNU prints "File exists", not the Rust
+            // ErrorKind name.
+            AlreadyExists => "File exists",
             WouldBlock => "Would block",
             InvalidInput => "Invalid input",
             InvalidData => "Invalid data",
@@ -575,73 +598,6 @@ impl From<nix::Error> for Box<dyn UError> {
     }
 }
 
-/// Shorthand to construct [`UIoError`]-instances.
-///
-/// This macro serves as a convenience call to quickly construct instances of
-/// [`UIoError`]. It takes:
-///
-/// - An instance of [`crate::context::io::Error`]
-/// - A `format!`-compatible string and
-/// - An arbitrary number of arguments to the format string
-///
-/// In exactly this order. It is equivalent to the more verbose code seen in the
-/// example.
-///
-/// # Examples
-///
-/// ```
-/// use uucore::error::UIoError;
-/// use uucore::uio_error;
-///
-/// let io_err = crate::context::io::Error::new(
-///     crate::context::io::ErrorKind::PermissionDenied, "fix me please!"
-/// );
-///
-/// let uio_err = UIoError::new(
-///     io_err.kind(),
-///     format!("Error code: {}", 2)
-/// );
-///
-/// let other_uio_err = uio_error!(io_err, "Error code: {}", 2);
-///
-/// // prints "fix me please!: Permission denied"
-/// crate::context_println!("{uio_err}");
-/// // prints "Error code: 2: Permission denied"
-/// crate::context_println!("{other_uio_err}");
-/// ```
-///
-/// The [`std::fmt::Display`] impl of [`UIoError`] will then ensure that an
-/// appropriate error message relating to the actual error kind of the
-/// [`crate::context::io::Error`] is appended to whatever error message is defined in
-/// addition (as secondary argument).
-///
-/// If you want to show only the error message for the [`crate::context::io::ErrorKind`]
-/// that's contained in [`UIoError`], pass the second argument as empty string:
-///
-/// ```
-/// use uucore::error::UIoError;
-/// use uucore::uio_error;
-///
-/// let io_err = crate::context::io::Error::new(
-///     crate::context::io::ErrorKind::PermissionDenied, "fix me please!"
-/// );
-///
-/// let other_uio_err = uio_error!(io_err, "");
-///
-/// // prints: ": Permission denied"
-/// crate::context_println!("{other_uio_err}");
-/// ```
-//#[macro_use]
-#[macro_export]
-macro_rules! uio_error(
-    ($err:expr, $($args:tt)+) => ({
-        UIoError::new(
-            $err.kind(),
-            format!($($args)+)
-        )
-    })
-);
-
 /// A special error type that does not print any message when returned from
 /// `uumain`. Especially useful for porting utilities to using [`UResult`].
 ///
@@ -660,8 +616,10 @@ macro_rules! uio_error(
 pub struct ExitCode(pub i32);
 
 impl ExitCode {
-    #[allow(clippy::new_ret_no_self)]
     /// Create a new `ExitCode` with a given exit code.
+    #[cold]
+    #[inline(never)]
+    #[allow(clippy::new_ret_no_self)]
     pub fn new(code: i32) -> Box<dyn UError> {
         Box::new(Self(code))
     }
@@ -820,7 +778,7 @@ impl Display for ClapErrorWrapper {
             self.print_failed.set(true);
             // Try to display this error to stderr, but ignore if that fails too
             // since we're already in an error state.
-            let _ = writeln!(crate::context::io::stderr(), "{}: {print_fail}", crate::util_name());
+            print_diagnostic("", format_args!("{print_fail}"));
             // Mirror GNU behavior: when failing to print help or version, exit with error code.
             // This avoids silent failures when stdout is full or closed.
             set_exit_code(1);
@@ -878,6 +836,13 @@ mod tests {
         assert_eq!(
             "test: Permission denied",
             Err::<(), nix::Error>(Errno::EACCES)
+                .map_err_context(|| String::from("test"))
+                .unwrap_err()
+                .to_string()
+        );
+        assert_eq!(
+            "test: Operation not permitted",
+            Err::<(), nix::Error>(Errno::EPERM)
                 .map_err_context(|| String::from("test"))
                 .unwrap_err()
                 .to_string()

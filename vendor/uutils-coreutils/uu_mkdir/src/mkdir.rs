@@ -3,7 +3,7 @@
 // For the full copyright and license information, please view the LICENSE
 // file that was distributed with this source code.
 
-// spell-checker:ignore (ToDO) ugoa cmode RAII
+// spell-checker:ignore (ToDO) ugoa cmode
 
 use uucore::context::FileKindExt as _;
 use uucore::context::PathExt as _;
@@ -15,12 +15,13 @@ use uucore::context::io::{Write, stdout};
 use std::path::{Path, PathBuf};
 #[cfg(not(windows))]
 use uucore::error::ExitCode;
-use uucore::error::{UResult, USimpleError};
+use uucore::error::{FromIo, UResult, USimpleError};
 #[cfg(not(windows))]
 use uucore::mode;
-use uucore::translate;
+use uucore::quoting_style::locale_aware_c_single_escape;
 use uucore::{display::Quotable, fs::dir_strip_dot_for_creation};
 use uucore::{format_usage, show_if_err};
+use uucore::{translate, translate_text};
 
 static DEFAULT_PERM: u32 = 0o777;
 
@@ -76,7 +77,11 @@ fn get_mode(matches: &ArgMatches, diag_args: Option<&[OsString]>) -> UResult<Opt
                 // The diagnostic is already on stderr; exit quietly.
                 ExitCode::new(1)
             } else {
-                USimpleError::new(1, err.to_string())
+                let quoted_mode = locale_aware_c_single_escape(m);
+                USimpleError::new(
+                    1,
+                    translate!("mkdir-error-invalid-mode", "mode" => quoted_mode),
+                )
             }
         })
 }
@@ -187,7 +192,7 @@ fn exec(dirs: ValuesRef<OsString>, config: &Config) {
 /// * `recursive` --- create parent directories for the `path`, if they do not
 ///   exist.
 /// * `mode` --- file mode for the directories (not implemented on windows).
-/// * `verbose` --- print a message for each printed directory.
+/// * `verbose` --- print a message for each created directory.
 ///
 /// ## Trailing dot
 ///
@@ -211,14 +216,7 @@ pub fn mkdir(path: &Path, config: &Config) -> UResult<()> {
 // Create a directory at the given path.
 // Uses iterative approach instead of recursion to avoid stack overflow with deep nesting.
 fn create_dir(path: &Path, is_parent: bool, config: &Config) -> UResult<()> {
-    let path_exists = path.context_exists();
-    if path_exists && !config.recursive {
-        return Err(USimpleError::new(
-            1,
-            translate!("mkdir-error-file-exists", "path" => path.maybe_quote()),
-        ));
-    }
-    if path == Path::new("") {
+    if path.as_os_str().is_empty() {
         return Ok(());
     }
 
@@ -227,24 +225,21 @@ fn create_dir(path: &Path, is_parent: bool, config: &Config) -> UResult<()> {
     if config.recursive {
         // Pre-allocate approximate capacity to avoid reallocations
         let mut dirs_to_create = Vec::with_capacity(16);
-        let mut current = path;
 
         // First pass: collect all parent directories
-        while let Some(parent) = current.parent() {
-            if parent == Path::new("") {
-                break;
-            }
-            dirs_to_create.push(parent);
-            current = parent;
-        }
+        dirs_to_create.extend(
+            path.ancestors()
+                .skip(1)
+                .take_while(|path| !path.as_os_str().is_empty()),
+        );
 
         // Second pass: create directories from root to leaf
         // Only create those that don't exist
-        for dir in dirs_to_create.iter().rev() {
-            if !dir.context_exists() {
-                create_single_dir(dir, true, config)?;
-            }
-        }
+        dirs_to_create
+            .iter()
+            .rev()
+            .filter(|dir| !dir.context_exists())
+            .try_for_each(|dir| create_single_dir(dir, true, config))?;
     }
 
     // Create the target directory
@@ -254,13 +249,9 @@ fn create_dir(path: &Path, is_parent: bool, config: &Config) -> UResult<()> {
 /// Create with restrictive permissions, then apply the invocation's exact mode.
 /// No utility may mutate the shared process umask.
 #[cfg(unix)]
-fn create_dir_with_mode(
-    path: &Path,
-    mode: u32,
-    shaped_umask: rustix::fs::Mode,
-) -> uucore::context::io::Result<()> {
+fn create_dir_with_mode(path: &Path, mode: u32, shaped_umask: u32) -> uucore::context::io::Result<()> {
     use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
-    let mode = mode & !(shaped_umask.bits() as u32);
+    let mode = mode & !shaped_umask;
     uucore::context::fs::DirBuilder::new().mode(mode).create(path)?;
     uucore::context::fs::set_permissions(path, uucore::context::fs::Permissions::from_mode(mode))
 }
@@ -276,8 +267,7 @@ fn create_dir_with_mode(path: &Path, _mode: u32, _shaped_umask: u32) -> uucore::
 fn create_single_dir(path: &Path, is_parent: bool, config: &Config) -> UResult<()> {
     #[cfg(unix)]
     let (mkdir_mode, shaped_umask) = {
-        let mode_bits = |x: u32| rustix::fs::Mode::from_bits_truncate(x as rustix::fs::RawMode);
-        let umask_bits = mode_bits(mode::get_umask());
+        let umask = mode::get_umask();
         if is_parent {
             // Parent directories are never affected by -m (matches GNU behavior).
             // We pass 0o777 as the mode and shape the umask so it cannot block
@@ -285,13 +275,13 @@ fn create_single_dir(path: &Path, is_parent: bool, config: &Config) -> UResult<(
             // write into the parent to create children. All other umask bits are
             // preserved so the kernel applies them — and any default ACL on the
             // grandparent — through the normal mkdir(2) path.
-            (DEFAULT_PERM, umask_bits & !mode_bits(0o300))
+            (DEFAULT_PERM, umask & !0o300)
         } else {
             match config.mode {
                 // Explicit -m: shape umask so it cannot block explicitly requested bits.
-                Some(m) => (m, umask_bits & !mode_bits(m)),
+                Some(m) => (m, umask & !m),
                 // No -m: leave umask fully intact; kernel applies umask + ACL naturally.
-                None => (DEFAULT_PERM, umask_bits),
+                None => (DEFAULT_PERM, umask),
             }
         }
     };
@@ -349,9 +339,8 @@ fn create_single_dir(path: &Path, is_parent: bool, config: &Config) -> UResult<(
             }
             Ok(())
         }
-        Err(e) => Err(USimpleError::new(
-            1,
-            translate!("mkdir-error-cannot-create-directory", "path" => path.display(), "error" => uucore::error::strip_errno(&e)),
-        )),
+        Err(e) => Err(e.map_err_context(|| {
+            translate_text!("mkdir-error-cannot-create-directory", "path" => locale_aware_c_single_escape(path))
+        })),
     }
 }

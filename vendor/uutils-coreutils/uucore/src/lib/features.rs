@@ -3,9 +3,9 @@
 // For the full copyright and license information, please view the LICENSE
 // file that was distributed with this source code.
 
-// features ~ feature-gated modules (core/bundler file)
-//
 // spell-checker:ignore (features) extendedbigdecimal logind
+
+// features ~ feature-gated modules (core/bundler file)
 
 #[cfg(feature = "backup-control")]
 pub mod backup_control;
@@ -36,7 +36,7 @@ pub mod extendedbigdecimal;
 pub mod fast_inc;
 #[cfg(feature = "format")]
 pub mod format;
-#[cfg(feature = "fs")]
+#[cfg(all(feature = "fs", any(unix, windows, target_os = "wasi")))]
 pub mod fs;
 #[cfg(feature = "fsext")]
 pub mod fsext;
@@ -46,6 +46,8 @@ pub mod i18n;
 pub mod lines;
 #[cfg(feature = "mode")]
 pub mod mode;
+#[cfg(feature = "numeric-str-cmp")]
+pub mod numeric_str_cmp;
 #[cfg(any(
     feature = "parser",
     feature = "parser-num",
@@ -84,16 +86,22 @@ pub mod proc_info;
 pub mod process;
 #[cfg(all(unix, feature = "safe-copy"))]
 pub mod safe_copy;
-#[cfg(all(
-    feature = "safe-traversal",
-    unix,
-    not(any(target_os = "aix", target_os = "hurd", target_os = "redox"))
-))]
+#[cfg(all(feature = "safe-traversal", unix, not(target_os = "redox")))]
 pub mod safe_traversal;
 #[cfg(all(target_os = "linux", feature = "tty"))]
 pub mod tty;
 
-#[cfg(all(unix, feature = "fsxattr"))]
+#[cfg(all(
+    feature = "fsxattr",
+    any(
+        target_os = "freebsd",
+        target_os = "hurd",
+        target_os = "linux",
+        target_os = "android",
+        target_os = "macos",
+        target_os = "netbsd"
+    )
+))]
 pub mod fsxattr;
 #[cfg(feature = "hardware")]
 pub mod hardware;
@@ -108,6 +116,7 @@ pub mod selinux;
         target_os = "android",
         target_os = "cygwin",
         target_os = "freebsd",
+        target_os = "haiku",
         target_os = "hurd",
         target_os = "illumos",
         target_os = "linux",
@@ -120,7 +129,7 @@ pub mod selinux;
 pub mod signals;
 #[cfg(all(feature = "smack", target_os = "linux"))]
 pub mod smack;
-#[cfg(feature = "feat_systemd_logind")]
+#[cfg(all(feature = "systemd_logind", target_os = "linux"))]
 pub mod systemd_logind;
 #[cfg(all(
     feature = "utmpx",

@@ -41,8 +41,8 @@ impl<'a> BufferedOutput<'a> {
         Ok(Self { inner, buf })
     }
 
-    pub(crate) fn discard_cache(&self, offset: u64, len: u64) {
-        self.inner.discard_cache(offset, len);
+    pub(crate) fn discard_cache(&self, offset: u64, len: u64) -> uucore::context::io::Result<()> {
+        self.inner.discard_cache(offset, len)
     }
 
     /// Flush the partial block stored in the internal buffer.
@@ -58,9 +58,9 @@ impl<'a> BufferedOutput<'a> {
         self.inner.sync()
     }
 
-    /// Truncate the underlying file to the current stream position, if possible.
-    pub(crate) fn truncate(&mut self) -> uucore::context::io::Result<()> {
-        self.inner.dst.truncate()
+    /// Grow a sparse output file up to the current stream position.
+    pub(crate) fn extend_sparse(&mut self) -> uucore::context::io::Result<()> {
+        self.inner.dst.extend_sparse()
     }
 
     /// Write the given bytes one block at a time.
@@ -69,6 +69,8 @@ impl<'a> BufferedOutput<'a> {
     /// buffered until enough bytes have been provided to complete a
     /// block. The returned [`WriteStat`] object will include the
     /// number of blocks written during execution of this function.
+    // See `BlockWriter::write_blocks`.
+    #[inline(always)]
     pub(crate) fn write_blocks(&mut self, buf: &[u8]) -> uucore::context::io::Result<WriteStat> {
         // Split the incoming buffer into two parts: the bytes to write
         // and the bytes to buffer for next time.

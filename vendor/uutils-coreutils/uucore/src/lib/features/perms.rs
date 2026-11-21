@@ -3,9 +3,9 @@
 // For the full copyright and license information, please view the LICENSE
 // file that was distributed with this source code.
 
-//! Common functions to manage permissions
-
 // spell-checker:ignore (jargon) TOCTOU fchownat fchown
+
+//! Common functions to manage permissions
 
 use crate::context::FileKindExt as _;
 use crate::context::PathExt as _;
@@ -14,11 +14,8 @@ use crate::error::{UResult, USimpleError, strip_errno};
 pub use crate::features::entries;
 use crate::{show_error, translate};
 
-use thiserror::Error;
-
 use clap::{Arg, ArgMatches, Command};
 
-use libc::{gid_t, uid_t};
 use options::traverse;
 #[cfg(target_os = "linux")]
 use std::collections::HashSet;
@@ -29,23 +26,18 @@ use walkdir::WalkDir;
 
 #[cfg(target_os = "linux")]
 use crate::features::fs::FileInformation;
-use crate::features::fs::path_is_root_dir;
+use crate::features::fs::{metadata_is_root_dir, path_is_root_dir};
 #[cfg(target_os = "linux")]
-use crate::features::safe_traversal::{DirFd, SymlinkBehavior};
+use crate::features::safe_traversal::{DirFd, FileInfo, SymlinkBehavior};
 
-use std::ffi::CString;
 use crate::context::fs::Metadata;
-use crate::context::io::Error as IOError;
-use crate::context::io::Result as IOResult;
 use std::os::unix::fs::MetadataExt;
-
-use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
 
-#[derive(Debug, Error)]
+#[derive(Debug, thiserror::Error)]
 enum PermsError {
     #[error("{}: {}", translate!("common-write-error"), strip_errno(.0))]
-    Write(IOError),
+    Write(crate::context::io::Error),
 }
 
 /// The various level of verbosity
@@ -72,24 +64,6 @@ impl Default for Verbosity {
     }
 }
 
-/// Actually perform the change of owner on a path
-fn chown<P: AsRef<Path>>(path: P, uid: uid_t, gid: gid_t, follow: bool) -> IOResult<()> {
-    let path = crate::context::resolve(path);
-    let s = CString::new(path.as_os_str().as_bytes()).unwrap();
-    let ret = unsafe {
-        if follow {
-            libc::chown(s.as_ptr(), uid, gid)
-        } else {
-            libc::lchown(s.as_ptr(), uid, gid)
-        }
-    };
-    if ret == 0 {
-        Ok(())
-    } else {
-        Err(IOError::last_os_error())
-    }
-}
-
 /// Perform the change of owner on a path
 /// with the various options
 /// and error messages management
@@ -106,7 +80,13 @@ pub fn wrap_chown<P: AsRef<Path>>(
     let path = path.as_ref();
     let mut out: String = String::new();
 
-    if let Err(e) = chown(path, dest_uid, dest_gid, follow) {
+    let resolved = crate::context::resolve(path);
+    let res = if follow {
+        std::os::unix::fs::chown(&resolved, Some(dest_uid), Some(dest_gid))
+    } else {
+        std::os::unix::fs::lchown(&resolved, Some(dest_uid), Some(dest_gid))
+    };
+    if let Err(e) = res {
         match verbosity.level {
             VerbosityLevel::Silent => (),
             level => {
@@ -230,13 +210,13 @@ pub fn check_root(path: &Path, would_recurse_symlink: bool) -> bool {
 ///
 /// Prohibit further traversal only if:
 ///     (--preserve-root and -R present) &&
-///     (path *is* "/" by (st_dev, st_ino), so a bind mount of "/" counts too) &&
+///     (path *is* "/" by (`st_dev`, `st_ino`), so a bind mount of "/" counts too) &&
 ///     (
 ///         (path is a symlink && would traverse/recurse this symlink) ||
 ///         (path is not a symlink)
 ///     )
 /// The first clause is checked by the caller, the second and third here.
-/// The caller has to evaluate -P/-H/-L into 'would_recurse_symlink'.
+/// The caller has to evaluate -P/-H/-L into `would_recurse_symlink`.
 fn is_root(path: &Path, would_traverse_symlink: bool) -> bool {
     // Compare by (st_dev, st_ino), not name: a bind mount of "/" is an ordinary
     // directory whose path never resolves to "/", so the old syntactic "looks
@@ -248,7 +228,11 @@ fn is_root(path: &Path, would_traverse_symlink: bool) -> bool {
     if !path_is_root_dir(path, would_traverse_symlink) {
         return false;
     }
+    report_root(path);
+    true
+}
 
+fn report_root(path: &Path) {
     if path.as_os_str() == "/" {
         show_error!("it is dangerous to operate recursively on '/'");
     } else {
@@ -258,7 +242,16 @@ fn is_root(path: &Path, would_traverse_symlink: bool) -> bool {
         );
     }
     show_error!("use --no-preserve-root to override this failsafe");
-    true
+}
+
+/// Whether `dir_fd` refers to the very object `meta` describes.
+///
+/// A pathname can be re-pointed between the stat and the open, so comparing
+/// (device, inode) is what detects the swap. The descriptor cannot be re-pointed after.
+#[cfg(target_os = "linux")]
+fn fd_is(dir_fd: &DirFd, meta: &Metadata) -> crate::context::io::Result<bool> {
+    let opened = FileInfo::from_stat(&dir_fd.fstat()?);
+    Ok(opened == FileInfo::new(meta.dev(), meta.ino()))
 }
 
 pub fn get_metadata(file: &Path, follow: bool) -> crate::context::io::Result<Metadata> {
@@ -300,29 +293,66 @@ impl ChownExecutor {
             return 1;
         };
 
+        // `meta` pins the descent below, so a later swap cannot slip "/" past; the
+        // path lookup still catches a symlink to "/", which `meta` did not follow.
         if self.recursive
             && self.preserve_root
-            && is_root(path, self.traverse_symlinks != TraverseSymlinks::None)
+            && (path_is_root_dir(path, self.traverse_symlinks != TraverseSymlinks::None)
+                || metadata_is_root_dir(&meta))
         {
+            report_root(path);
             // Fail-fast, do not attempt to recurse.
             return 1;
         }
 
+        // Resolve the operand once. `--from`, `--preserve-root` and the
+        // directory-vs-file classification were all decided on `meta`; re-opening the
+        // pathname would let a swap apply those decisions to a different object.
+        #[cfg(target_os = "linux")]
+        // We cannot check path.is_dir() here, as this would resolve symlinks
+        let operand_fd = if meta.context_is_dir() {
+            match DirFd::open(path, SymlinkBehavior::Follow) {
+                Ok(dir_fd) => match fd_is(&dir_fd, &meta) {
+                    Ok(true) => Some(dir_fd),
+                    Ok(false) => {
+                        if self.verbosity.level != VerbosityLevel::Silent {
+                            show_error!(
+                                "{}",
+                                translate!("perms-cannot-access-replaced", "file" => path.quote())
+                            );
+                        }
+                        return 1;
+                    }
+                    Err(e) => {
+                        if self.verbosity.level != VerbosityLevel::Silent {
+                            show_error!(
+                                "{}",
+                                translate!("perms-cannot-access", "file" => path.quote(), "error" => strip_errno(&e))
+                            );
+                        }
+                        return 1;
+                    }
+                },
+                Err(_e) => {
+                    // Don't show error here - let safe_dive_into handle directory traversal
+                    // errors. This prevents duplicate error messages.
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
         let ret = if self.matched(meta.uid(), meta.gid()) {
             // Use safe syscalls for root directory to prevent TOCTOU attacks on Linux
             #[cfg(target_os = "linux")]
-            // We cannot check path.context_is_dir() here, as this would resolve symlinks
             let chown_result = if meta.context_is_dir() {
-                // For directories on Linux, use safe traversal from the start
-                match DirFd::open(path, SymlinkBehavior::Follow) {
-                    Ok(dir_fd) => self
-                        .safe_chown_dir(&dir_fd, path, &meta)
+                match operand_fd.as_ref() {
+                    Some(dir_fd) => self
+                        .safe_chown_dir(dir_fd, path, &meta)
                         .map(|_| String::new()),
-                    Err(_e) => {
-                        // Don't show error here - let safe_dive_into handle directory traversal errors
-                        // This prevents duplicate error messages
-                        Ok(String::new())
-                    }
+                    // The open failed; safe_dive_into reports it.
+                    None => Ok(String::new()),
                 }
             } else {
                 // For non-directories (files, symlinks), use the regular wrap_chown method
@@ -374,7 +404,7 @@ impl ChownExecutor {
         if self.recursive {
             #[cfg(target_os = "linux")]
             {
-                ret | self.safe_dive_into(&root)
+                ret | self.safe_dive_into(&root, &meta, operand_fd)
             }
             #[cfg(not(target_os = "linux"))]
             {
@@ -434,25 +464,40 @@ impl ChownExecutor {
         Ok(())
     }
 
+    /// `operand_fd` is the descriptor `traverse` opened and verified against `meta`.
     #[cfg(target_os = "linux")]
-    fn safe_dive_into<P: AsRef<Path>>(&self, root: P) -> i32 {
+    fn safe_dive_into<P: AsRef<Path>>(
+        &self,
+        root: P,
+        meta: &Metadata,
+        operand_fd: Option<DirFd>,
+    ) -> i32 {
         let root = root.as_ref();
 
-        // Don't traverse into symlinks if configured not to
-        if self.traverse_symlinks == TraverseSymlinks::None && root.context_is_symlink() {
+        // Classify from `meta`, not a fresh lookup: `meta` already honours the
+        // dereference policy, and asking again is what would let the operand be swapped.
+        if !meta.context_is_dir() {
+            // No children to visit, matching WalkDir's min_depth(1).
             return 0;
         }
 
-        // Only try to traverse if the root is actually a directory
-        // This matches WalkDir's behavior with min_depth(1) - if root is not a directory,
-        // there are no children to traverse, so we return early with success
-        if !root.context_is_dir() {
-            return 0;
-        }
-
-        // Open directory with safe traversal
-        let Some(dir_fd) = self.try_open_dir(root) else {
-            return 1;
+        let dir_fd = if let Some(dir_fd) = operand_fd {
+            dir_fd
+        } else {
+            // The open in `traverse` failed; report it here, once.
+            let Some(dir_fd) = self.try_open_dir(root) else {
+                return 1;
+            };
+            if !fd_is(&dir_fd, meta).unwrap_or(false) {
+                if self.verbosity.level != VerbosityLevel::Silent {
+                    show_error!(
+                        "{}",
+                        translate!("perms-cannot-access-replaced", "file" => root.quote())
+                    );
+                }
+                return 1;
+            }
+            dir_fd
         };
 
         let mut ancestors = HashSet::new();
@@ -507,7 +552,10 @@ impl ChownExecutor {
                 Err(e) => {
                     *ret = 1;
                     if self.verbosity.level != VerbosityLevel::Silent {
-                        show_error!("cannot access {}: {}", entry_path.quote(), strip_errno(&e));
+                        show_error!(
+                            "{}",
+                            translate!("perms-cannot-access", "file" => entry_path.quote(), "error" => strip_errno(&e))
+                        );
                     }
                     continue;
                 }
@@ -574,9 +622,8 @@ impl ChownExecutor {
                         *ret = 1;
                         if self.verbosity.level != VerbosityLevel::Silent {
                             show_error!(
-                                "cannot access {}: {}",
-                                entry_path.quote(),
-                                strip_errno(&e)
+                                "{}",
+                                translate!("perms-cannot-access", "file" => entry_path.quote(), "error" => strip_errno(&e))
                             );
                         }
                     }
@@ -617,13 +664,16 @@ impl ChownExecutor {
                     ret = 1;
                     if let Some(path) = e.path() {
                         show_error!(
-                            "cannot access {}: {}",
-                            shown(path).quote(),
-                            if let Some(error) = e.io_error() {
-                                strip_errno(error)
-                            } else {
-                                "Too many levels of symbolic links".into()
-                            }
+                            "{}",
+                            translate!(
+                                "perms-cannot-access",
+                                "file" => shown(path).quote(),
+                                "error" => if let Some(error) = e.io_error() {
+                                    strip_errno(error)
+                                } else {
+                                    translate!("error-too-many-symlink-levels")
+                                }
+                            )
                         );
                     } else {
                         show_error!("{e}");
@@ -693,9 +743,19 @@ impl ChownExecutor {
         get_metadata(path, follow)
             .inspect_err(|e| {
                 if self.verbosity.level != VerbosityLevel::Silent {
+                    // Like GNU, only say "dereference" when the operand itself
+                    // exists and is a symlink whose target can't be reached.
+                    let dangling_symlink = follow
+                        && path
+                            .context_symlink_metadata()
+                            .is_ok_and(|m| m.file_type().context_is_symlink());
                     show_error!(
                         "cannot {} {}: {}",
-                        if follow { "dereference" } else { "access" },
+                        if dangling_symlink {
+                            "dereference"
+                        } else {
+                            "access"
+                        },
                         path.quote(),
                         strip_errno(e)
                     );
@@ -705,7 +765,7 @@ impl ChownExecutor {
     }
 
     #[inline]
-    fn matched(&self, uid: uid_t, gid: gid_t) -> bool {
+    fn matched(&self, uid: u32, gid: u32) -> bool {
         match self.filter {
             IfFrom::All => true,
             IfFrom::User(u) => u == uid,
@@ -750,7 +810,10 @@ impl ChownExecutor {
         DirFd::open(path, SymlinkBehavior::Follow)
             .map_err(|e| {
                 if self.verbosity.level != VerbosityLevel::Silent {
-                    show_error!("cannot access {}: {}", path.quote(), strip_errno(&e));
+                    show_error!(
+                        "{}",
+                        translate!("perms-cannot-access", "file" => path.quote(), "error" => strip_errno(&e))
+                    );
                 }
             })
             .ok()
@@ -1034,6 +1097,32 @@ mod tests {
     use std::path::{Component, PathBuf};
     #[cfg(unix)]
     use tempfile::tempdir;
+
+    /// `fd_is` must accept the directory that was stat'd and reject anything else.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_fd_is_identifies_the_stated_directory() {
+        let temp_dir = tempdir().unwrap();
+        let dir = temp_dir.path().join("dir");
+        let other = temp_dir.path().join("other");
+        std::fs::create_dir(&dir).unwrap();
+        std::fs::create_dir(&other).unwrap();
+
+        let meta = std::fs::metadata(&dir).unwrap();
+        let dir_fd = DirFd::open(&dir, SymlinkBehavior::Follow).unwrap();
+        assert!(fd_is(&dir_fd, &meta).unwrap());
+
+        // Same pathname, different object underneath: the descriptor no longer matches
+        // the metadata every decision was made on.
+        let other_fd = DirFd::open(&other, SymlinkBehavior::Follow).unwrap();
+        assert!(!fd_is(&other_fd, &meta).unwrap());
+
+        // A symlink to the directory resolves to the same object, so it must match:
+        // following the operand is legitimate when it is what was classified.
+        unix::fs::symlink(&dir, temp_dir.path().join("link")).unwrap();
+        let link_fd = DirFd::open(&temp_dir.path().join("link"), SymlinkBehavior::Follow).unwrap();
+        assert!(fd_is(&link_fd, &meta).unwrap());
+    }
 
     #[test]
     fn test_empty_string() {

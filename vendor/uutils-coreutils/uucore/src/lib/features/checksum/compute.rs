@@ -18,7 +18,7 @@ use crate::error::{FromIo, UResult, USimpleError};
 use crate::line_ending::LineEnding;
 use crate::quoting_style::locale_aware_shell_escape;
 use crate::sum::DigestOutput;
-use crate::{show, translate};
+use crate::{show, translate_text};
 
 /// Use the same buffer size as GNU when reading a file to create a checksum
 /// from it: 32 KiB.
@@ -38,6 +38,11 @@ pub struct ChecksumComputeOptions {
 
     /// Whether to finish lines with '\n' or '\0'.
     pub line_ending: LineEnding,
+
+    /// Whether any file operand was given on the command line. GNU prints the
+    /// file name for an explicit "-" in legacy output, but not for the implicit
+    /// stdin used when no operand is provided.
+    pub has_file_operands: bool,
 }
 
 /// Whether to write the digest as hexadecimal or encoded in base64.
@@ -82,7 +87,13 @@ impl OutputFormat {
     }
 
     /// Find the correct output format for cksum.
-    pub fn from_cksum(algo: AlgoKind, tag: bool, binary: bool, raw: bool, base64: bool) -> Self {
+    pub fn from_cksum(
+        algo: AlgoKind,
+        tag: bool,
+        reading_mode: ReadingMode,
+        raw: bool,
+        digest_format: DigestFormat,
+    ) -> Self {
         // Raw output format takes precedence over anything else.
         if raw {
             return Self::Raw;
@@ -93,21 +104,10 @@ impl OutputFormat {
             return Self::Legacy;
         }
 
-        let digest_format = if base64 {
-            DigestFormat::Base64
-        } else {
-            DigestFormat::Hexadecimal
-        };
-
         // After that, decide between tagged and untagged output
         if tag {
             Self::Tagged(digest_format)
         } else {
-            let reading_mode = if binary {
-                ReadingMode::Binary
-            } else {
-                ReadingMode::Text
-            };
             Self::Untagged(digest_format, reading_mode)
         }
     }
@@ -171,8 +171,9 @@ fn write_legacy_checksum(
         (algo, output) => unreachable!("Bug: Invalid legacy checksum ({algo:?}, {output:?})"),
     }
 
-    // Print the filename after a space if not stdin
-    if escaped_filename != "-" {
+    // Print the filename after a space if a file operand was given explicitly
+    // (GNU prints "-" for an explicit "-", but omits it for implicit stdin).
+    if options.has_file_operands {
         write!(w, " ")?;
         w.write_all(escaped_filename.as_bytes())?;
     }
@@ -258,7 +259,7 @@ where
                 if filepath.context_is_dir() {
                     show!(USimpleError::new(
                         1,
-                        translate!(
+                        translate_text!(
                             "error-is-a-directory",
                             "file" => locale_aware_shell_escape(filepath)
                         )
@@ -288,8 +289,13 @@ where
 
         // Always compute the "binary" version of the digest, i.e. on Windows,
         // never handle CRLFs specifically.
-        let (digest_output, sz) = digest_reader(&mut digest, &mut file, ReadingMode::Binary)
-            .map_err_context(|| translate!("checksum-error-failed-to-read-input"))?;
+        let (digest_output, sz) = match digest_reader(&mut digest, &mut file, ReadingMode::Binary) {
+            Ok(result) => result,
+            Err(err) => {
+                show!(err.map_err_context(|| locale_aware_shell_escape(filename)));
+                continue;
+            }
+        };
 
         // Encodes the sum if df is Base64, leaves as-is otherwise.
         let encode_sum = |sum: DigestOutput, df: DigestFormat| {
@@ -306,7 +312,7 @@ where
                 digest_output
                     .write_raw(&mut w)
                     .map_err(ChecksumError::Write)?;
-                return Ok(());
+                break;
             }
             OutputFormat::Legacy => {
                 write_legacy_checksum(&mut w, &options, filename, &digest_output, sz)
@@ -332,8 +338,7 @@ where
         write!(w, "{}", options.line_ending).map_err(ChecksumError::Write)?;
     }
 
-    if options.line_ending != LineEnding::Newline {
-        w.flush().map_err(ChecksumError::Write)?;
-    }
+    // The drop of the writer ignores a flush error.
+    w.flush().map_err(ChecksumError::Write)?;
     Ok(())
 }

@@ -4,7 +4,9 @@
 // file that was distributed with this source code.
 
 //! Set of functions to parsing TTY
-use {std::fmt, std::fmt::Display, std::fmt::Formatter, std::path::PathBuf};
+
+use std::fmt::{self, Display, Formatter};
+use std::path::PathBuf;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Teletype {
