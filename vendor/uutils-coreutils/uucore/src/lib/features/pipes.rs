@@ -5,23 +5,26 @@
 
 //! Zero-copy-related functions.
 
-use crate::io::{RawReader, RawWriter};
+use crate::io::{RawReader, RawWriter, ReadWriteError};
 use rustix::pipe::{SpliceFlags, fcntl_setpipe_size};
-use {
-    crate::context::io::PipeReader, crate::context::io::PipeWriter, crate::context::io::Read,
-    crate::context::io::Write, std::os::fd::AsFd,
-};
+use crate::context::io::{PipeReader, PipeWriter, Read, Write};
+use std::cell::Cell;
+use std::os::fd::AsFd;
 pub const MAX_ROOTLESS_PIPE_SIZE: usize = 1024 * 1024;
 const KERNEL_DEFAULT_PIPE_SIZE: usize = 64 * 1024;
 
-/// A type allows to
-/// - check that zero-copy succeed by ?.is_ok()
-/// - check that zero-copy failed, but read/write fallback succeed by ?.is_err()
-/// - catch the read/write fallback's error by ? or let Err(e)
-///
-/// use rustix::io::Result for functions without read/write fallback
 type PipeRes = crate::context::io::Result<Result<(), ()>>;
 
+thread_local! {
+    /// Cache empty pipe pair to avoid calling `pipe2` at each copy.
+    static PIPE_CACHE: Cell<Option<(PipeReader, PipeWriter)>> = const { Cell::new(None) };
+}
+
+/// A type allows to
+/// - check that zero-copy succeed by `?.is_ok()`
+/// - check that zero-copy failed, but read/write fallback succeed by `?.is_err()`
+/// - catch the read/write fallback's error by ? or let Err(e)
+///
 /// Whether the zero-copy paths run: not in an invocation under its owner's
 /// control (`crate::context::control`), whose reads and writes go through
 /// the context for its cancellation. A caller asks before it grows a pipe it
@@ -33,10 +36,13 @@ pub fn zero_copy() -> bool {
     crate::context::control().is_none()
 }
 
+/// use `rustix::io::Result` for functions without read/write fallback
+type SpliceRes = Result<Result<(), ()>, ReadWriteError>;
+
 /// return pipe and try to extend its size
-/// SIZE_REQUIRED should be true if you want to fail when changing pipe size failed
+/// `SIZE_REQUIRED` should be true if you want to fail when changing pipe size failed
 /// e.g. writing size to pipe should not hang
-/// SIZE_REQUIRED=false allows to continue unbuffered splice I/O with default pipe size even if fcntl failed
+/// `SIZE_REQUIRED=false` allows to continue unbuffered splice I/O with default pipe size even if fcntl failed
 ///
 /// used for resolving the limitation for splice: one of a input or output should be pipe
 #[inline]
@@ -57,7 +63,7 @@ pub fn pipe<const SIZE_REQUIRED: bool>() -> crate::context::io::Result<(PipeRead
 /// of successfully moved bytes.
 ///
 /// splice fails if both of `source` and `target` are not pipe. Consider using
-/// splice_unbounded_broker or splice_unbounded_auto in the case.
+/// `splice_unbounded_broker` or `splice_unbounded_auto` in the case.
 #[inline]
 pub fn splice(source: &impl AsFd, target: &impl AsFd, len: usize) -> rustix::io::Result<usize> {
     crate::context::check_cancelled();
@@ -69,6 +75,8 @@ pub fn splice(source: &impl AsFd, target: &impl AsFd, len: usize) -> rustix::io:
 }
 
 /// splice `len` bytes from `pipe` into `dest`.
+///
+/// On error, `pipe` may still hold bytes that were not written: don't reuse it.
 #[inline]
 pub fn drain_pipe(pipe: &PipeReader, dest: &impl AsFd, len: usize) -> PipeRes {
     debug_assert!(len <= MAX_ROOTLESS_PIPE_SIZE, "unexpected RAM usage");
@@ -95,13 +103,12 @@ pub fn drain_pipe(pipe: &PipeReader, dest: &impl AsFd, len: usize) -> PipeRes {
 /// throughput is better than direct splice for the case one of in/output is pipe by unknown reason
 /// This includes read ahead and optimization for stdout's pipe size
 #[inline]
-pub fn splice_unbounded_auto(source: &impl AsFd, dest: &mut impl AsFd) -> PipeRes {
+pub fn splice_unbounded_auto(source: &impl AsFd, dest: &mut impl AsFd) -> SpliceRes {
     if !zero_copy() {
         // The caller's read/write fallback, into `dest` as it is.
         return Ok(Err(()));
     }
-    // A broker belongs to one transfer; sharing it mixes concurrent invocations.
-    let Ok((pipe_rd, pipe_wr)) = pipe::<false>() else {
+    let Ok((pipe_rd, pipe_wr)) = PIPE_CACHE.take().map_or_else(pipe::<false>, Ok) else {
         return Ok(Err(()));
     };
 
@@ -112,56 +119,66 @@ pub fn splice_unbounded_auto(source: &impl AsFd, dest: &mut impl AsFd) -> PipeRe
     // pre-generate page caches for splice
     let _ = rustix::fs::fadvise(source, 0, None, rustix::fs::Advice::Sequential);
     // 1st error is used to detect missing support for splice
-    match splice(&source, &pipe_wr, MAX_ROOTLESS_PIPE_SIZE) {
-        Ok(0) => return Ok(Ok(())),
+    let res = match splice(&source, &pipe_wr, MAX_ROOTLESS_PIPE_SIZE) {
+        Ok(0) => Ok(()),
         Ok(n) => {
-            if drain_pipe(&pipe_rd, dest, n)?.is_err() {
-                return Ok(Err(()));
+            if drain_pipe(&pipe_rd, dest, n)
+                .map_err(ReadWriteError::Write)?
+                .is_err()
+            {
+                Err(())
+            } else {
+                // GNU cat catches all strace injections for 2nd+ splice
+                while let mut n @ 1.. = splice(&source, &pipe_wr, MAX_ROOTLESS_PIPE_SIZE)
+                    .map_err(|error| ReadWriteError::Read(error.into()))?
+                {
+                    while n > 0 {
+                        n -= splice(&pipe_rd, dest, n)
+                            .map_err(|error| ReadWriteError::Write(error.into()))?;
+                    }
+                }
+                Ok(())
             }
         }
-        Err(_) => return Ok(Err(())),
-    }
-    // GNU cat catches all strace injections for 2nd+ splice
-    while let mut n @ 1.. = splice(&source, &pipe_wr, MAX_ROOTLESS_PIPE_SIZE)? {
-        while n > 0 {
-            n -= splice(&pipe_rd, dest, n)?;
-        }
-    }
-    Ok(Ok(()))
+        Err(_) => Err(()),
+    };
+    // pipe is empty. Then we can reuse it at next splice.
+    PIPE_CACHE.set(Some((pipe_rd, pipe_wr)));
+    Ok(res)
 }
 
 /// splice `n` bytes with read/write fallback
 /// return actually sent bytes
 #[inline]
-pub fn send_n_bytes(
-    input: impl AsFd,
-    target: impl AsFd,
-    n: u64,
-) -> crate::context::io::Result<u64> {
+pub fn send_n_bytes(input: impl AsFd, target: impl AsFd, n: u64) -> crate::context::io::Result<u64> {
     if !zero_copy() {
         return crate::context::io::copy(&mut RawReader(input).take(n), &mut RawWriter(target));
     }
-    let pipe_size = MAX_ROOTLESS_PIPE_SIZE.min(n as usize);
+    let pipe_size = n.min(MAX_ROOTLESS_PIPE_SIZE as u64) as usize;
+    let resize = pipe_size > KERNEL_DEFAULT_PIPE_SIZE;
     // improve throughput if output is pipe
     // expected that input is already extended if it is coming from splice
-    if pipe_size > KERNEL_DEFAULT_PIPE_SIZE {
+    if resize {
         let _ = fcntl_setpipe_size(&target, pipe_size);
     }
-    let Some((broker_r, broker_w)) = (|| {
-        // use crate::context::io::pipe to avoid unnecessary fcntl
+    let Some((broker_r, broker_w)) = PIPE_CACHE.take().or_else(|| {
+        // use crate::context::io::pipe to avoid fcntl when it is not useful
         let pair = crate::context::io::pipe().ok()?;
-        if pipe_size > KERNEL_DEFAULT_PIPE_SIZE {
+        if resize {
             let _ = fcntl_setpipe_size(&pair.0, pipe_size);
         }
         Some(pair)
-    })() else {
+    }) else {
         return crate::context::io::copy(&mut RawReader(input).take(n), &mut RawWriter(target));
     };
     let mut n = n;
     let mut bytes_written: u64 = 0;
     while n > 0 {
-        match splice(&input, &broker_w, n as usize) {
-            Ok(0) => return Ok(bytes_written),
+        match splice(&input, &broker_w, usize::try_from(n).unwrap_or(usize::MAX)) {
+            Ok(0) => {
+                PIPE_CACHE.set(Some((broker_r, broker_w)));
+                return Ok(bytes_written);
+            }
             Ok(s) => {
                 n -= s as u64;
                 bytes_written += s as u64;
@@ -172,6 +189,8 @@ pub fn send_n_bytes(
             Err(_) => break,
         }
     }
+    // pipe is empty. Then we can reuse it at next splice.
+    PIPE_CACHE.set(Some((broker_r, broker_w)));
     // remove buffering from this fallback by RawReader, or order of output would be wrong with multiple input
     bytes_written +=
         crate::context::io::copy(&mut RawReader(input).take(n), &mut RawWriter(target))?;

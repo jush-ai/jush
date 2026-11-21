@@ -107,7 +107,7 @@ version = "0.16.1"
 features = ["terminal_size"]
 
 [dependencies.uucore]
-version = "0.12.0"
+version = "0.13.0"
 features = ["libc"]
 
 [dev-dependencies.assert_fs]
@@ -144,7 +144,7 @@ default-features = false
 version = "3.10.1"
 
 [dev-dependencies.uucore]
-version = "0.12.0"
+version = "0.13.0"
 features = [
     "diagnostics",
     "libc",
@@ -226,6 +226,7 @@ strip = true
 maintainer = "jush-runner"
 patches = [
     "fancy-regex 0.19, the version the runner links, in place of 0.18",
+    "uucore 0.13, the version the runner and the other utilities link, in place of 0.12: one copy of it, whose uucore::context the patches here use",
     "Paths resolve against the shell job's working directory, and an in-place edit is recorded as the job's edit (`crates/command-sdk/src/edits.rs`)",
     "-i reads an attached suffix as GNU's getopt does, `-i.bak` and `-ni.bak` back up with .bak, and `-i` alone backs up nothing; upstream's optional value took the script after `-i` as the suffix, and clap's require_equals alone refused `-i.bak` (attached_in_place, which takes the place of upstream's gnu_in_place_args, since it also reads macOS's forms)",
     "On macOS the options of its own sed are read: the operand after a bare `-i` is BSD's suffix when it is empty (`sed -i '' s/a/b/ f`), or starts with `.` and enough operands follow for the script and a file (`sed -i .bak s/a/b/ f`, `sed -e X -i .bak f`), while `sed -e X -i .env` still edits .env; `-I` is `-i`; and `-l` is BSD's line-buffered output, a flag without a value",

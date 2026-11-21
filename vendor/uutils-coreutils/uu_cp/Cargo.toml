@@ -11,9 +11,9 @@
 
 [package]
 edition = "2024"
-rust-version = "1.88.0"
+rust-version = "1.89"
 name = "uu_cp"
-version = "0.12.0"
+version = "0.13.0"
 build = false
 autolib = false
 autobins = false
@@ -72,19 +72,18 @@ version = "0.17.0"
 version = "0.18.0"
 
 [dependencies.libc]
-version = "0.2.186"
+version = "0.2.191"
 
 [dependencies.thiserror]
 version = "2.0.3"
 
 [dependencies.uucore]
-version = "0.12.0"
+version = "0.13.0"
 features = [
     "backup-control",
     "buf-copy",
     "entries",
     "fs",
-    "fsxattr",
     "parser",
     "perms",
     "mode",
@@ -103,8 +102,12 @@ package = "codspeed-divan-compat"
 version = "3.15.0"
 
 [dev-dependencies.uucore]
-version = "0.12.0"
+version = "0.13.0"
 features = ["benchmark"]
+
+[target.'cfg(any(target_os = "freebsd", target_os = "hurd", target_os = "linux", target_os = "macos", target_os = "netbsd"))'.dependencies.uucore]
+version = "0.13.0"
+features = ["fsxattr"]
 
 [target.'cfg(any(target_os = "linux", target_os = "android"))'.dependencies.selinux]
 version = "0.6"
@@ -121,7 +124,7 @@ features = ["fs"]
 default-features = false
 
 [target."cfg(windows)".dependencies.windows-sys]
-version = "0.61.0"
+version = ">=0.60, <0.62"
 features = [
     "Win32_Foundation",
     "Win32_Storage_FileSystem",
@@ -129,19 +132,14 @@ features = [
 default-features = false
 
 [lints.clippy]
+assert_is_empty = "allow"
 cargo_common_metadata = "allow"
 cast_lossless = "allow"
 cast_possible_truncation = "allow"
 cast_possible_wrap = "allow"
 cast_precision_loss = "allow"
 cast_sign_loss = "allow"
-doc_link_with_quotes = "allow"
-doc_markdown = "allow"
-enum_glob_use = "allow"
-flat_map_option = "allow"
 float_cmp = "allow"
-fn_params_excessive_bools = "allow"
-format_push_string = "allow"
 from_iter_instead_of_collect = "allow"
 ignored_unit_patterns = "allow"
 implicit_hasher = "allow"
@@ -157,7 +155,6 @@ should_panic_without_expect = "allow"
 similar_names = "allow"
 struct_excessive_bools = "allow"
 too_many_lines = "allow"
-unnested_or_patterns = "allow"
 unused_self = "allow"
 use_self = "warn"
 
@@ -188,6 +185,7 @@ check-cfg = [
     "cfg(pgo_training)",
     'cfg(target_os, values("cygwin"))',
     "cfg(wasi_runner)",
+    "cfg(wasip2_runner)",
 ]
 
 [package.metadata.jush]
@@ -201,7 +199,7 @@ patches = [
     "A recursive copy checks the invocation's cancellation at each entry of its walk",
     "A source that cannot be read is worded as GNU's, cannot stat 'x': No such file or directory, by the error's kind; upstream matched the system's message, which on Windows printed the bare message and (os error 2)",
     "A recursive copy names each source as the user gave its root, below it joined with uucore::context::join, and each target joined the same way, where it printed the root resolved against the working directory",
-    "-s with a relative source makes a link only in the current directory, elsewhere reporting <link>: can make relative symbolic links only in current directory and going on with status 1, as GNU's cp does; upstream linked to the relative source from anywhere",
+    "-s with a relative source outside the current directory is CpError::RelativeSymlink, so cp -R reports <link>: can make relative symbolic links only in current directory for that entry and goes on with status 1, as GNU's cp does, where upstream's error ends the copy",
     "On macOS the options of its own cp are read: -X and -N are accepted and ignored, -S is a flag without a value, `cp -R src/ dst` copies what is in src when dst is a directory, and -n exits 1 for a file it skipped",
     "The destination of each copy, and a backup, is recorded as an edit around the whole copy, as the bytes move by descriptors the context does not see; the context's own record of a cp's opens and writes is off (uucore::context::edit)",
     "On Windows a source that is a device, such as the null device, is not sparse where upstream failed reading its attributes with `Incorrect function`, so cp /dev/null x makes an empty x",

@@ -3,13 +3,14 @@
 // For the full copyright and license information, please view the LICENSE
 // file that was distributed with this source code.
 
-//! Set of functions to parse modes
-
 // spell-checker:ignore (vars) fperm srwx
 
-use std::fmt::{self, Display};
+//! Set of functions to parse modes
+
+use std::ffi::OsString;
 use std::ops::Range;
 
+use crate::quoting_style::escape_control_chars;
 use crate::translate;
 
 /// A mode string that does not parse, and the part of it that is at fault.
@@ -17,7 +18,8 @@ use crate::translate;
 /// `span` is a byte range inside the mode string that was handed to the parser,
 /// so that a caller can point a caret at the one clause — often the one
 /// character — that broke it.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("{message}")]
 pub struct ModeError {
     pub message: String,
     pub span: Range<usize>,
@@ -72,18 +74,58 @@ impl ModeError {
     /// the caller should fall back to the plain one-line message.
     pub fn render_mode_value(
         &self,
-        args: &[std::ffi::OsString],
+        args: &[OsString],
         mode: &str,
         clause_start: usize,
         message: &str,
     ) -> bool {
         let (label, help) = self.describe();
-        crate::diagnostics::Snapshot::new(args).render_option_value(
-            mode,
-            Some('m'),
-            Some("mode"),
-            self.clause_span(clause_start),
-            message,
+        let snapshot = crate::diagnostics::Snapshot::new(args);
+        let range = self.clause_span(clause_start);
+        if !mode.chars().any(char::is_control) && !message.chars().any(char::is_control) {
+            return snapshot.render_option_value(
+                mode,
+                Some('m'),
+                Some("mode"),
+                range,
+                message,
+                label.as_deref(),
+                help.as_deref(),
+            );
+        }
+
+        let Some(index) = snapshot.index_of_value(mode, Some('m'), Some("mode")) else {
+            return false;
+        };
+        let (Some(prefix), Some(fault), Some(suffix)) = (
+            mode.get(..range.start),
+            mode.get(range.clone()),
+            mode.get(range.end..),
+        ) else {
+            return false;
+        };
+        let escaped_prefix = escape_control_chars(prefix);
+        let escaped_fault = escape_control_chars(fault);
+        let escaped_mode = format!(
+            "{escaped_prefix}{escaped_fault}{}",
+            escape_control_chars(suffix)
+        );
+        let escaped_range = escaped_prefix.len()..escaped_prefix.len() + escaped_fault.len();
+
+        let Some(arg) = args[index].to_str() else {
+            return false;
+        };
+        let Some(arg_prefix) = arg.strip_suffix(mode) else {
+            return false;
+        };
+        let mut escaped_args = args.to_vec();
+        escaped_args[index] = format!("{arg_prefix}{escaped_mode}").into();
+
+        crate::diagnostics::Snapshot::new(&escaped_args).render_inside_at(
+            index,
+            &escaped_mode,
+            escaped_range,
+            &escape_control_chars(message),
             label.as_deref(),
             help.as_deref(),
         )
@@ -108,7 +150,7 @@ impl ModeError {
     /// fall back to the plain one-line message.
     pub fn render_at(
         &self,
-        args: &[std::ffi::OsString],
+        args: &[OsString],
         index: usize,
         mode: &str,
         clause_start: usize,
@@ -150,27 +192,17 @@ impl ModeError {
     }
 }
 
-impl Display for ModeError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.message)
-    }
-}
-
-impl std::error::Error for ModeError {}
-
 pub fn parse_numeric(fperm: u32, mode: &str, considering_dir: bool) -> Result<u32, ModeError> {
     let original = mode;
     let (op, pos) = parse_op(mode).map_or_else(|_| (None, 0), |(op, pos)| (Some(op), pos));
-    let digits = mode[pos..].trim();
-    let mode = digits;
+    let mode = &mode[pos..];
     let change = if mode.is_empty() {
         0
     } else {
-        let at = original.len() - original.trim_end().len();
         u32::from_str_radix(mode, 8).map_err(|e| {
             ModeError::new(
                 e.to_string(),
-                pos..original.len() - at,
+                pos..original.len(),
                 ModeErrorKind::InvalidNumber,
             )
         })?
@@ -326,12 +358,11 @@ pub fn parse_chmod(
 
     // Split by commas and process each mode part sequentially
     let mut offset = 0;
-    for raw_part in mode_string.split(',') {
-        let start = offset + (raw_part.len() - raw_part.trim_start().len());
+    for mode_part in mode_string.split(',') {
+        let start = offset;
         // Past the part and the comma that followed it.
-        offset += raw_part.len() + 1;
+        offset += mode_part.len() + 1;
 
-        let mode_part = raw_part.trim();
         if mode_part.is_empty() {
             continue;
         }
@@ -356,11 +387,21 @@ pub fn get_umask() -> u32 {
     crate::context::umask()
 }
 
+/// Run an operation with `mask` as the invocation's umask.
+///
+/// The previous umask is restored when the operation returns or unwinds.
+/// Inside `operation`, [`get_umask`] returns `mask`, and `with_umask` can be
+/// called again. The process's umask is its embedding owner's and is never
+/// changed: what the utility creates through `crate::context` has `mask`
+/// taken from its mode, and the process's umask beneath it.
+pub fn with_umask<T>(mask: u32, operation: impl FnOnce() -> T) -> T {
+    crate::context::with_umask(mask, operation)
+}
+
 #[cfg(test)]
 mod tests {
 
-    use super::parse;
-    use super::parse_chmod;
+    use super::{parse, parse_chmod};
 
     #[test]
     fn test_chmod_symbolic_modes() {
@@ -424,10 +465,22 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_comma_separated_with_spaces() {
-        // Comma-separated with spaces (should be trimmed)
-        assert_eq!(parse("u+rw, g+rw, o+r", false, 0).unwrap(), 0o664);
-        assert_eq!(parse(" u+x , g+x ", false, 0).unwrap(), 0o110);
+    fn test_parse_rejects_whitespace() {
+        for mode in [
+            " 644",
+            "644 ",
+            "+ 644",
+            "   ",
+            "u+rw, g+rw, o+r",
+            " u+x , g+x ",
+            "u+x, +755",
+            "u+x, ,g+w",
+        ] {
+            assert!(
+                parse(mode, false, 0).is_err(),
+                "{mode:?} should be rejected"
+            );
+        }
     }
 
     #[test]
@@ -441,7 +494,6 @@ mod tests {
     fn test_parse_empty_string() {
         // Empty string should return 0
         assert_eq!(parse("", false, 0).unwrap(), 0);
-        assert_eq!(parse("   ", false, 0).unwrap(), 0);
         assert_eq!(parse(",,", false, 0).unwrap(), 0);
     }
 
@@ -494,5 +546,58 @@ mod tests {
 
         // First add user write, then set to 755 (should override)
         assert_eq!(parse("u+w,755", false, 0).unwrap(), 0o755);
+    }
+
+    /// Reads the umask without going through the helpers under test.
+    #[cfg(unix)]
+    fn raw_umask() -> u32 {
+        let mask = rustix::process::umask(rustix::fs::Mode::empty());
+        rustix::process::umask(mask);
+        mask.bits() as u32
+    }
+
+    /// Runs `operation` in an invocation whose umask is `umask`, its streams
+    /// the null device.
+    #[cfg(unix)]
+    fn in_invocation<T>(umask: u32, operation: impl FnOnce() -> T) -> T {
+        let null = || {
+            let file = std::fs::File::options()
+                .read(true)
+                .write(true)
+                .open("/dev/null")
+                .unwrap();
+            std::sync::Arc::new(file)
+        };
+        let context = crate::context::Context {
+            name: "test",
+            control: None,
+            umask,
+            cwd: std::env::temp_dir(),
+            env: Default::default(),
+            descriptors: Default::default(),
+            stdin: null(),
+            stdout: null(),
+            stderr: null(),
+        };
+        crate::context::with(context, operation)
+    }
+
+    /// One test, as `raw_umask` changes the process's umask for a moment and
+    /// another test reading it at once would see that.
+    #[cfg(unix)]
+    #[test]
+    fn test_with_umask_sets_the_invocations_mask_and_leaves_the_process_mask() {
+        let process = raw_umask();
+        in_invocation(0o022, || {
+            assert_eq!(super::with_umask(0o027, super::get_umask), 0o027);
+            assert_eq!(super::get_umask(), 0o022);
+            super::with_umask(0o027, || {
+                assert_eq!(super::get_umask(), 0o027);
+                assert_eq!(super::with_umask(0o077, super::get_umask), 0o077);
+                assert_eq!(super::get_umask(), 0o027);
+                assert_eq!(raw_umask(), process);
+            });
+            assert_eq!(super::get_umask(), 0o022);
+        });
     }
 }

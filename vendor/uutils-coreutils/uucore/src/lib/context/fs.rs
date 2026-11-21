@@ -108,12 +108,12 @@ impl Seek for &File {
 }
 
 /// The options, what they write (a bit each for write, append, truncate,
-/// create and create_new), and whether the utility gave a mode.
+/// create and create_new), and the mode the utility gave, if any.
 #[derive(Clone, Debug)]
 pub struct OpenOptions(
     std::fs::OpenOptions,
     u8,
-    #[cfg_attr(not(unix), expect(dead_code, reason = "only Unix gives a created file a mode"))] bool,
+    #[cfg_attr(not(unix), expect(dead_code, reason = "only Unix gives a created file a mode"))] Option<u32>,
 );
 impl Default for OpenOptions {
     fn default() -> Self {
@@ -122,7 +122,7 @@ impl Default for OpenOptions {
 }
 impl OpenOptions {
     pub fn new() -> Self {
-        Self(std::fs::OpenOptions::new(), 0, false)
+        Self(std::fs::OpenOptions::new(), 0, None)
     }
     pub fn read(&mut self, enabled: bool) -> &mut Self {
         self.0.read(enabled);
@@ -163,9 +163,7 @@ impl OpenOptions {
         #[allow(unused_mut, reason = "only Unix has a umask")]
         let mut options = self.0.clone();
         #[cfg(unix)]
-        if !self.2
-            && let Some(mode) = super::creation_mode(0o666)
-        {
+        if let Some(mode) = super::creation_mode(self.2.unwrap_or(0o666)) {
             std::os::unix::fs::OpenOptionsExt::mode(&mut options, mode);
         }
         match super::control() {
@@ -203,7 +201,7 @@ impl DirBuilder {
         let mut builder = std::fs::DirBuilder::new();
         builder.recursive(self.recursive);
         #[cfg(unix)]
-        if let Some(mode) = self.mode.or_else(|| super::creation_mode(0o777)) {
+        if let Some(mode) = super::creation_mode(self.mode.unwrap_or(0o777)).or(self.mode) {
             std::os::unix::fs::DirBuilderExt::mode(&mut builder, mode);
         }
         builder.create(super::resolve(path))
@@ -432,7 +430,7 @@ mod unix {
     impl OpenOptionsExt for OpenOptions {
         fn mode(&mut self, mode: u32) -> &mut Self {
             self.0.mode(mode);
-            self.2 = true;
+            self.2 = Some(mode);
             self
         }
         fn custom_flags(&mut self, flags: i32) -> &mut Self {

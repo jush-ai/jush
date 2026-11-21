@@ -3,6 +3,8 @@
 // For the full copyright and license information, please view the LICENSE
 // file that was distributed with this source code.
 
+// spell-checker:ignore KMGTPEZYRQ
+
 //! Parser for signed numeric arguments used by head, tail, and similar utilities.
 //!
 //! These utilities accept arguments like `-5`, `+10`, `-100K` where the leading
@@ -70,7 +72,7 @@ impl SignedNum {
     }
 }
 
-/// Parse a signed numeric argument, clamping to u64::MAX on overflow.
+/// Parse a signed numeric argument, clamping to [`u64::MAX`] on overflow.
 ///
 /// This function parses strings like "10", "+5K", "-100M" where:
 /// - The optional leading `+` or `-` indicates direction/behavior

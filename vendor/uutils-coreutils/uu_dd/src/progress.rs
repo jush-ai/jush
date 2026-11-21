@@ -448,17 +448,15 @@ pub(crate) fn gen_prog_updater(
 
 #[cfg(test)]
 mod tests {
-    use uucore::context::env;
     use uucore::context::io::Cursor;
     use std::time::Duration;
     use uucore::locale::setup_localization;
 
     use super::{ProgUpdate, ReadStat, WriteStat};
     fn init() {
-        unsafe {
-            env::set_var("LANG", "C");
-        }
-        let _ = setup_localization("dd");
+        temp_env::with_var("LANG", Some("C"), || {
+            let _ = setup_localization("dd");
+        });
     }
 
     fn prog_update_write(n: u128) -> ProgUpdate {

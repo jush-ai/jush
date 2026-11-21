@@ -119,7 +119,8 @@ pub fn uu_app() -> Command {
                 .short('m')
                 .long(options::MODE)
                 .help(translate!("mkfifo-help-mode"))
-                .value_name("MODE"),
+                .value_name("MODE")
+                .allow_hyphen_values(true),
         )
         .arg(
             Arg::new(options::SECURITY_CONTEXT)
@@ -146,8 +147,8 @@ pub fn uu_app() -> Command {
 }
 
 // `rustix::fs::mkfifoat` is unavailable on Apple targets, so fall back to
-// libc's path-based `mkfifo` there. Both rely on the caller having cleared
-// the umask so the requested mode is applied atomically (see issue #10020).
+// libc's path-based `mkfifo` there. Both then set the exact mode, since the
+// process's umask is the embedding owner's and stays as it is.
 #[cfg(not(target_vendor = "apple"))]
 fn create_fifo(path: &str, mode: u32) -> uucore::context::io::Result<()> {
     use rustix::fs;

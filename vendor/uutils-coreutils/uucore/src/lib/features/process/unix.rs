@@ -71,16 +71,14 @@ impl ChildExt for Child {
     }
 
     fn wait_or_timeout(&mut self, timeout: Duration, ignore_term: bool) -> io::Result<TimeoutRet> {
-        if timeout == Duration::from_micros(0) {
-            return self.wait().map(TimeoutRet::Exited);
-        }
         // .try_wait() doesn't drop stdin, so we do it manually
         drop(self.stdin.take());
 
         // Waits continuously whenever we receive an external SIGCHLD or
         // we SIGTERM when we are ignoring them.
         let start = Instant::now();
-        let mut remaining = timeout;
+        // Zero disables the timer, but signals must still be handled.
+        let mut remaining = (!timeout.is_zero()).then_some(timeout);
         let mut timer = Timer::new()?;
         loop {
             match timer.timed_sigwait(remaining) {
@@ -94,7 +92,9 @@ impl ChildExt for Child {
                 Ok(Some(signal)) => break Ok(TimeoutRet::Interrupted(signal as usize)),
                 Err(e) => break Err(e),
             }
-            remaining = timeout.saturating_sub(start.elapsed());
+            if remaining.is_some() {
+                remaining = Some(timeout.saturating_sub(start.elapsed()));
+            }
         }
     }
 }
@@ -124,7 +124,7 @@ pub fn unblock_signal(signal: RixSignal) -> io::Result<()> {
     set.thread_unblock().map_err(Into::into)
 }
 
-/// Ensures there is no overflow on time_t operations. Some BSDs (notably XNU)
+/// Ensures there is no overflow on `time_t` operations. Some BSDs (notably XNU)
 /// will return EINVAL otherwise; POSIX only defines it up to 10e8, so we cap
 /// it on all targets we do not trust to support the full integer range.
 #[cfg(not(any(target_os = "fuchsia", target_os = "haiku")))]
@@ -139,6 +139,7 @@ const MAX_KTIME_T: Duration = if cfg!(target_os = "linux") {
 /// fallback since it was removed in that same spec.
 #[cfg(not(any(
     target_vendor = "apple",
+    target_os = "dragonfly",
     target_os = "fuchsia",
     target_os = "haiku",
     target_os = "openbsd",
@@ -187,16 +188,15 @@ mod timer {
 
         pub(super) fn arm(&mut self, timeout: Duration) -> Result<(), io::Error> {
             let timeout = timeout.min(MAX_KTIME_T).max(Duration::from_micros(1));
-            let time = libc::itimerspec {
-                it_interval: libc::timespec {
-                    tv_sec: 0,
-                    tv_nsec: 0,
-                },
-                it_value: libc::timespec {
-                    tv_sec: timeout.as_secs() as _,
-                    tv_nsec: timeout.subsec_nanos() as _,
-                },
+            // `timespec` has private padding members on time64 targets, so its
+            // fields cannot be listed in a struct literal; start from the
+            // zeroed default and fill in the ones we care about.
+            let mut time = libc::itimerspec {
+                it_interval: libc::timespec::default(),
+                it_value: libc::timespec::default(),
             };
+            time.it_value.tv_sec = timeout.as_secs() as _;
+            time.it_value.tv_nsec = timeout.subsec_nanos() as _;
 
             // SAFETY: All values are properly initialized.
             if unsafe { libc::timer_settime(self.0, 0, &raw const time, null_mut()) } == -1 {
@@ -266,8 +266,13 @@ mod timer {
 }
 
 /// Sets up a timer on SIGALRM for platforms that do not support POSIX.1-2008
-/// realtime clock extensions. Notably, Darwin, OpenBSD, and Windows.
-#[cfg(any(target_vendor = "apple", target_os = "openbsd", windows))]
+/// realtime clock extensions.
+#[cfg(any(
+    target_vendor = "apple",
+    target_os = "dragonfly",
+    target_os = "openbsd",
+    windows
+))]
 mod timer {
     use super::MAX_KTIME_T;
     use nix::errno::Errno;
@@ -307,8 +312,10 @@ mod timer {
 
 #[cfg(not(any(target_os = "fuchsia", target_os = "haiku")))]
 impl Timer {
-    fn timed_sigwait(&mut self, timeout: Duration) -> io::Result<Option<Signal>> {
-        self.arm(timeout)?;
+    fn timed_sigwait(&mut self, timeout: Option<Duration>) -> io::Result<Option<Signal>> {
+        if let Some(timeout) = timeout {
+            self.arm(timeout)?;
+        }
 
         let set = timeout_signal_set();
         let mut sig = 0;

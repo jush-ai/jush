@@ -8,14 +8,15 @@
 
 use std::cmp::Ordering;
 use uucore::context::io::Read;
+use std::iter;
 
 use itertools::Itertools;
 use uucore::error::UResult;
 
-use crate::Output;
 use crate::chunks::{self, Chunk};
 use crate::tmp_dir::TmpDirWrapper;
 use crate::{GlobalSettings, compare_by, print_sorted, sort_by};
+use crate::{Line, Output};
 
 /// Sort files by reading all input into memory, sorting in a single thread, and outputting directly.
 pub fn ext_sort(
@@ -31,11 +32,19 @@ pub fn ext_sort(
     // moderately sized inputs; very large files may cause OOM.
     let mut input = Vec::new();
     for file in files {
+        // Without a separator the last line of one file merges with the first line of the next.
+        if !input.is_empty() && input.last() != Some(&separator) {
+            input.push(separator);
+        }
         file?.read_to_end(&mut input)?;
     }
+
     if input.is_empty() {
+        // empty files are sorted to empty like in coreutils
+        print_sorted(iter::empty::<&Line<'_>>(), settings, output)?;
         return Ok(());
     }
+
     let mut chunk = Chunk::try_new(input, |buffer| {
         Ok::<_, Box<dyn uucore::error::UError>>(chunks::parse_into_chunk(
             buffer, separator, settings,

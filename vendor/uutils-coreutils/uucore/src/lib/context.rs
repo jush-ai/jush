@@ -721,10 +721,34 @@ pub fn umask() -> u32 {
     CURRENT.with(|current| current.borrow().as_ref().expect("utility context").umask)
 }
 
-/// The mode a file or directory the utility creates gets when it asks for no
-/// mode of its own: `base` less the invocation's umask. The utility's process
-/// may be shared, so its own umask is not the invocation's; it still applies
-/// beneath this one.
+/// Runs `operation` with `mask` as the invocation's umask, and gives the
+/// invocation its own back when the operation returns or unwinds. The
+/// process's umask is its embedding owner's and stays as it is.
+pub fn with_umask<T>(mask: u32, operation: impl FnOnce() -> T) -> T {
+    struct Restore(u32);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            CURRENT.with(|current| {
+                if let Some(context) = current.borrow_mut().as_mut() {
+                    context.umask = self.0;
+                }
+            });
+        }
+    }
+    let previous = CURRENT.with(|current| {
+        let mut current = current.borrow_mut();
+        let context = current.as_mut().expect("utility context");
+        std::mem::replace(&mut context.umask, mask & 0o777)
+    });
+    let _restore = Restore(previous);
+    operation()
+}
+
+/// The mode a file or directory the utility creates gets: `base`, the mode it
+/// asks for or the default, less the invocation's umask, as the system takes a
+/// process's umask from the mode it is given. The utility's process may be
+/// shared, so its own umask is not the invocation's; it still applies beneath
+/// this one.
 #[cfg(unix)]
 pub(crate) fn creation_mode(base: u32) -> Option<u32> {
     CURRENT.with(|current| current.borrow().as_ref().map(|context| base & !context.umask))

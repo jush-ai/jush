@@ -3,10 +3,26 @@
 // For the full copyright and license information, please view the LICENSE
 // file that was distributed with this source code.
 
-//! library ~ (core/bundler file)
-// #![deny(missing_docs)] //TODO: enable this
-//
 // spell-checker:ignore sigaction SIGBUS SIGSEGV extendedbigdecimal myutil logind
+
+//! library ~ (core/bundler file)
+
+// #![deny(missing_docs)] //TODO: enable this
+#![cfg_attr(
+    any(
+        target_os = "android",
+        target_os = "haiku",
+        target_os = "illumos",
+        all(target_os = "linux", target_env = "ohos"),
+        target_os = "openbsd",
+        target_os = "solaris",
+        all(target_os = "windows", target_env = "gnu", not(target_abi = "llvm"))
+    ),
+    allow(
+        clippy::missing_const_for_thread_local,
+        reason = "https://github.com/rust-lang/rust-clippy/issues/13422"
+    )
+)]
 
 // * feature-gated external crates (re-shared as public internal modules)
 #[cfg(feature = "libc")]
@@ -23,16 +39,9 @@ mod mods; // core cross-platform modules
 pub use uucore_procs::*;
 
 // * cross-platform modules
-pub use crate::mods::clap_localization;
-pub use crate::mods::display;
-pub use crate::mods::error;
-#[cfg(feature = "fs")]
+#[cfg(all(feature = "fs", any(unix, windows, target_os = "wasi")))]
 pub use crate::mods::io;
-pub use crate::mods::line_ending;
-pub use crate::mods::locale;
-pub use crate::mods::os;
-pub use crate::mods::panic;
-pub use crate::mods::posix;
+pub use crate::mods::{clap_localization, display, error, line_ending, locale, os, panic, posix};
 
 // * feature-gated modules
 #[cfg(feature = "backup-control")]
@@ -41,12 +50,10 @@ pub use crate::features::backup_control;
 pub use crate::features::benchmark;
 #[cfg(feature = "buf-copy")]
 pub use crate::features::buf_copy;
-pub use crate::features::char_width;
 #[cfg(feature = "checksum")]
 pub use crate::features::checksum;
 #[cfg(feature = "colors")]
 pub use crate::features::colors;
-pub use crate::features::diagnostics;
 #[cfg(feature = "encoding")]
 pub use crate::features::encoding;
 #[cfg(feature = "extendedbigdecimal")]
@@ -55,7 +62,7 @@ pub use crate::features::extendedbigdecimal;
 pub use crate::features::fast_inc;
 #[cfg(feature = "format")]
 pub use crate::features::format;
-#[cfg(feature = "fs")]
+#[cfg(all(feature = "fs", any(unix, windows, target_os = "wasi")))]
 pub use crate::features::fs;
 #[cfg(feature = "hardware")]
 pub use crate::features::hardware;
@@ -65,6 +72,8 @@ pub use crate::features::i18n;
 pub use crate::features::lines;
 #[cfg(feature = "mode")]
 pub use crate::features::mode;
+#[cfg(feature = "numeric-str-cmp")]
+pub use crate::features::numeric_str_cmp;
 #[cfg(any(
     feature = "parser",
     feature = "parser-num",
@@ -80,7 +89,7 @@ pub use crate::features::ranges;
 pub use crate::features::ringbuffer;
 #[cfg(feature = "sum")]
 pub use crate::features::sum;
-#[cfg(feature = "feat_systemd_logind")]
+#[cfg(all(feature = "systemd_logind", target_os = "linux"))]
 pub use crate::features::systemd_logind;
 #[cfg(feature = "time")]
 pub use crate::features::time;
@@ -90,6 +99,7 @@ pub use crate::features::update_control;
 pub use crate::features::uptime;
 #[cfg(feature = "version-cmp")]
 pub use crate::features::version_cmp;
+pub use crate::features::{char_width, diagnostics};
 
 // * (platform-specific) feature-gated modules
 // ** unix-only
@@ -103,11 +113,7 @@ pub use crate::features::pipes;
 pub use crate::features::process;
 #[cfg(all(unix, feature = "safe-copy"))]
 pub use crate::features::safe_copy;
-#[cfg(all(
-    feature = "safe-traversal",
-    unix,
-    not(any(target_os = "aix", target_os = "hurd", target_os = "redox"))
-))]
+#[cfg(all(feature = "safe-traversal", unix, not(target_os = "redox")))]
 pub use crate::features::safe_traversal;
 #[cfg(all(
     feature = "signals",
@@ -118,6 +124,7 @@ pub use crate::features::safe_traversal;
         target_os = "android",
         target_os = "cygwin",
         target_os = "freebsd",
+        target_os = "haiku",
         target_os = "hurd",
         target_os = "illumos",
         target_os = "linux",
@@ -146,7 +153,17 @@ pub use crate::features::wide;
 #[cfg(feature = "fsext")]
 pub use crate::features::fsext;
 
-#[cfg(all(unix, feature = "fsxattr"))]
+#[cfg(all(
+    feature = "fsxattr",
+    any(
+        target_os = "freebsd",
+        target_os = "hurd",
+        target_os = "linux",
+        target_os = "android",
+        target_os = "macos",
+        target_os = "netbsd"
+    )
+))]
 pub use crate::features::fsxattr;
 
 #[cfg(all(feature = "selinux", any(target_os = "linux", target_os = "android")))]
@@ -166,14 +183,14 @@ use nix::sys::signal::{
 use std::borrow::Cow;
 use std::ffi::{OsStr, OsString};
 use context::io::{BufRead, BufReader};
-use std::iter;
 #[cfg(unix)]
 use std::os::unix::ffi::{OsStrExt, OsStringExt};
 #[cfg(all(target_os = "wasi", target_env = "p1"))]
 use std::os::wasi::ffi::{OsStrExt, OsStringExt};
-use std::str;
 use std::str::Utf8Chunk;
-use std::sync::{LazyLock, atomic::Ordering};
+use std::sync::LazyLock;
+use std::sync::atomic::Ordering;
+use std::{iter, str};
 
 /// Disables the custom signal handlers installed by Rust for stack-overflow handling. With those custom signal handlers processes ignore the first SIGBUS and SIGSEGV signal they receive.
 /// See <https://github.com/rust-lang/rust/blob/8ac1525e091d3db28e67adcbbd6db1e1deaa37fb/src/libstd/sys/unix/stack_overflow.rs#L71-L92> for details.
@@ -430,14 +447,14 @@ pub trait Args: Iterator<Item = OsString> + Sized {
 impl<T: Iterator<Item = OsString> + Sized> Args for T {}
 
 /// Returns an iterator over the command line arguments as `OsString`s.
-/// args_os() can be expensive to call
+/// [`args_os()`] can be expensive to call
 pub fn args_os() -> impl Iterator<Item = OsString> {
     ARGV.iter().cloned()
 }
 
 /// Returns an iterator over the command line arguments as `OsString`s, filtering out empty arguments.
 /// This is useful for handling cases where extra whitespace or empty arguments are present.
-/// args_os_filtered() can be expensive to call
+/// [`args_os_filtered()`] can be expensive to call
 pub fn args_os_filtered() -> impl Iterator<Item = OsString> {
     ARGV.iter().filter(|arg| !arg.is_empty()).cloned()
 }
@@ -448,22 +465,15 @@ pub fn read_yes() -> bool {
     context::io::stdin().read_line(&mut s).is_ok() && matches!(s.chars().next(), Some('y' | 'Y'))
 }
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
+#[error("{}", translate!(
+    "error-non-utf8-os-str",
+    "input" => os_display::Quotable::quote(.input_lossy_string.as_str())
+))]
 pub struct NonUtf8OsStrError {
     input_lossy_string: String,
 }
 
-impl std::fmt::Display for NonUtf8OsStrError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        use os_display::Quotable;
-        let quoted = self.input_lossy_string.quote();
-        f.write_fmt(format_args!(
-            "invalid UTF-8 input {quoted} encountered when converting to bytes on a platform that doesn't expose byte arguments",
-        ))
-    }
-}
-
-impl std::error::Error for NonUtf8OsStrError {}
 impl error::UError for NonUtf8OsStrError {}
 
 /// Converts an `OsStr` to a UTF-8 `&[u8]`.
@@ -723,7 +733,7 @@ mod tests {
         ]
     }
 
-    #[cfg(any(unix, target_os = "redox"))]
+    #[cfg(unix)]
     fn test_invalid_utf8_args_lossy(os_str: &OsStr) {
         // assert our string is invalid utf8
         assert!(os_str.to_os_string().into_string().is_err());
@@ -742,7 +752,7 @@ mod tests {
         );
     }
 
-    #[cfg(any(unix, target_os = "redox"))]
+    #[cfg(unix)]
     fn test_invalid_utf8_args_ignore(os_str: &OsStr) {
         // assert our string is invalid utf8
         assert!(os_str.to_os_string().into_string().is_err());
@@ -767,7 +777,7 @@ mod tests {
         let _ = test_vec.into_iter().collect_lossy();
     }
 
-    #[cfg(any(unix, target_os = "redox"))]
+    #[cfg(unix)]
     #[test]
     fn invalid_utf8_args_unix() {
         use std::os::unix::ffi::OsStrExt;
