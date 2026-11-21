@@ -1019,6 +1019,10 @@
       "body": "使用多個訂閱帳號或在帳號之間輪換，可能違反供應商的服務條款，風險由你自行承擔。",
       "once": "Jush 不會再次詢問。"
     },
+    "thirdParty": {
+      "title": "新增 {name} 帳號？",
+      "body": "{name} 的服務條款禁止透過 Jush 等第三方軟體使用它，這樣使用的帳號可能會被停用。風險由你自行承擔。"
+    },
     "connected": "「{account}」已連線",
     "testFailed": "「{account}」測試失敗",
     "addModelFailed": "無法新增模型",

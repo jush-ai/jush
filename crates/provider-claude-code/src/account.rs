@@ -74,7 +74,7 @@ pub(crate) fn label(account_id: &str, email: Option<&str>) -> AccountLabel {
 }
 
 /// What tells the account of `account_id` apart from an entry's others.
-pub(crate) fn identity_key(account_id: &str) -> String {
+fn identity_key(account_id: &str) -> String {
     format!("account:{account_id}")
 }
 

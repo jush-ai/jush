@@ -269,8 +269,14 @@ export function provider(
     media: { image: { shape: null, enabled: true }, video: { shape: null, enabled: true }, audio: { shape: null, enabled: true } },
     search: gallerySearch(partial.family),
     logo: providerLogo({ kind: partial.kind, providerType: partial.family, vendorId: partial.vendorId ?? null }),
-    // As the backend's families say: Claude Code's CLI makes its requests on another machine.
-    ...(partial.kind === 'subscription' ? { connectsThrough: partial.family !== 'claude-code' } : {}),
+    // As the backend's families say: Claude Code's and Antigravity's CLIs make their requests
+    // on another machine, and Antigravity's terms forbid it through third-party software.
+    ...(partial.kind === 'subscription'
+      ? {
+          connectsThrough: partial.family !== 'claude-code' && partial.family !== 'antigravity',
+          forbidsThirdParty: partial.family === 'antigravity',
+        }
+      : {}),
     ...partial,
   }
   return 'cacheTtl' in partial ? entry : { ...entry, cacheTtl: galleryCacheTtl(entry) }
@@ -800,6 +806,44 @@ export function mockProviders(): MockProvider[] {
         ],
       }
     ),
+    provider({
+      id: 'antigravity', name: 'Antigravity', kind: 'subscription', family: 'antigravity',
+      // Its catalog is what a new session of the account offers, each model with the thinking
+      // levels Google gives it; it takes images and no other file.
+      catalogFetched: ago(6 * MINUTE),
+      // Google reports the account's limits by group of models, each group's 5-hour and weekly
+      // windows; a group of one model has only a weekly one.
+      accounts: [
+        {
+          id: 'ag1',
+          label: 'alex@example.com',
+          plan: 'Google AI Pro',
+          active: true,
+          quotaAt: ago(3 * MINUTE),
+          quota: [
+            { id: 'gemini-weekly', name: windowNamed('limit', WEEK_SECONDS, 'Gemini'), used: 9, max: 100, resetsAt: ahead(4 * DAY) },
+            { id: 'gemini-5h', name: windowNamed('limit', 5 * HOUR_SECONDS, 'Gemini'), used: 18, max: 100, resetsAt: ahead(2 * HOUR + 10 * MINUTE) },
+            { id: '3p-weekly', name: windowNamed('limit', WEEK_SECONDS, 'Claude and GPT'), used: 22, max: 100, resetsAt: ahead(6 * DAY) },
+            { id: '3p-5h', name: windowNamed('limit', 5 * HOUR_SECONDS, 'Claude and GPT'), used: 40, max: 100, resetsAt: ahead(4 * HOUR) },
+            { id: 'gemini-argon-weekly', name: windowNamed('limit', WEEK_SECONDS, 'Gemini 4 Argon'), used: 0, max: 100, resetsAt: ahead(7 * DAY) },
+          ],
+        },
+      ],
+      models: [
+        model({
+          id: 'gemini-4-neon', name: 'Gemini 4 Neon', contextWindow: 1_048_576, outputLimit: 65_536, tools: true,
+          extensions: ['.png', '.jpg', '.jpeg', '.gif', '.webp'], efforts: ['low', 'medium', 'high', 'xhigh'],
+        }),
+        model({
+          id: 'gemini-3.8-flash', name: 'Gemini 3.8 Flash', contextWindow: 1_048_576, outputLimit: 65_536, tools: true,
+          extensions: ['.png', '.jpg', '.jpeg', '.gif', '.webp'], efforts: ['low', 'medium', 'high'],
+        }),
+        model({
+          id: 'claude-sonnet-5-5', name: 'Claude Sonnet 5.5', contextWindow: 200_000, outputLimit: 64_000, tools: true,
+          extensions: ['.png', '.jpg', '.jpeg', '.gif', '.webp'], efforts: ['low', 'medium', 'high'],
+        }),
+      ],
+    }),
     provider({
       id: 'anthropic', name: 'Anthropic', kind: 'api_key', family: 'anthropic', vendorId: 'anthropic',
       baseUrl: 'https://api.anthropic.com', wireApi: 'anthropic-messages', apiKey: '', keyConfigured: true, testedIn: '412 ms',

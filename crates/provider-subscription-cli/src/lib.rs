@@ -6,25 +6,45 @@
 //! - [`Cli`] says what differs between CLIs as the machine runs them, and
 //!   [`CliReleases`] reads a vendor's releases into the release record the
 //!   `jush.subscription-cli` package installs
-//!   (`crates/command-package-subscription-cli/src/lib.rs`).
+//!   (`crates/command-package-subscription-cli/src/lib.rs`), following the
+//!   newest as [`FollowedReleases`] does (`releases.rs`).
 //! - [`Placement`] starts a CLI's processes on the machine the backend
 //!   chooses, and [`AccountMachine`] reaches it for account work
 //!   (`placement.rs`).
 //! - [`IdleProcesses`] holds the idle processes of the machine, of every CLI
-//!   (`idle.rs`).
+//!   (`idle.rs`), and [`probe`] runs a process of an account that answers
+//!   one question (`probe.rs`).
+//! - [`CliKit`] signs an account in through its CLI's own login, the same
+//!   for every CLI but in what [`CliLogin`] says (`login.rs`), and
+//!   [`HeldProcess`] holds a process a provider started (`process.rs`).
+//! - [`ToolServer`] is Jush's MCP server for one process, through which the
+//!   model's tool calls reach the agent (`tools.rs`).
 //!
-//! The crate knows no CLI and no vendor, and runs nothing itself: the backend
-//! implements the placement and each CLI's provider builds what it starts.
+//! The crate knows no CLI and no vendor. The backend implements the
+//! placement, and each CLI's provider builds what it starts; the crate runs
+//! only a sign-in's process, which a [`CliLogin`] describes.
 
 mod idle;
+mod login;
 mod placement;
+mod probe;
+mod process;
+mod releases;
+mod tools;
 
 use futures_util::future::{BoxFuture, LocalBoxFuture, Shared};
 use jush_command_package_subscription_cli_protocol::Release;
 use jush_device_interface::{ProcessControl, ProcessEnd, Signal};
 use std::time::Duration;
 
-pub use idle::{Closing, IDLE_FOR, Idle, IdleProcesses, Seat};
+pub use idle::{
+    Closing, IDLE_FOR, Idle, IdleProcesses, Kept, KeptProcess, ProcessSlot, Seat, log_unused,
+};
+pub use login::{CliKit, CliLogin};
+pub use probe::{PROBE_LIMIT, Probed, Question, Unanswered, probe};
+pub use process::{HeldProcess, Tail, exit_message};
+pub use releases::{Distribution, Fetch, FollowedReleases};
+pub use tools::{ToolEvent, ToolServer, tool_result, unsent_text};
 pub use placement::{
     AccountMachine, AccountWork, CliSite, CliStart, CliStarter, CliSystem, CliWork, ConfigDir,
     Handover, Placed, Placement, StartError, StartStage, StartSteps, WorkLease,

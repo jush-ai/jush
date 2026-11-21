@@ -75,7 +75,7 @@ const PROGRAM: &str = "program";
 use crate::{
     askers::{Askers, Asking},
     ArtifactResolver, ResidentBackend, RuntimeError,
-    cache::{ArtifactCache, Downloading, Wanted},
+    cache::{ArtifactCache, Downloading, Wanted, digest_of},
     invocations::{Invocations, Invoking, ResidentArtifacts},
     process::ResidentProcess,
 };
@@ -268,14 +268,14 @@ impl ResidentHandle {
             let Some(artifact) = descriptor.targets.get(host_target()) else {
                 continue;
             };
-            release.insert(artifact.sha256.clone());
             let wanted = Wanted {
                 package: &descriptor.id,
                 name: PROGRAM,
                 version: &descriptor.version,
-                artifact: artifact.clone(),
+                digest: digest_of(artifact),
                 form: &ArtifactForm::File,
             };
+            release.insert(wanted.key());
             let placed = if ahead {
                 self.cache.prefetch(&wanted, resolver.clone(), cancel).await
             } else {
@@ -296,16 +296,11 @@ impl ResidentHandle {
     }
 
     /// Registers `invocation`, which the caller starts in a resident of
-    /// `package` for the work `resolver` locates artifacts for, until the
-    /// returned guard drops: the artifacts the program asks for during it
-    /// are located for that work (`crates/command-protocol/src/artifacts.rs`).
-    pub fn invoking(
-        &self,
-        invocation: &str,
-        package: &str,
-        resolver: Arc<dyn ArtifactResolver>,
-    ) -> Invoking {
-        self.invocations.register(invocation, package, resolver)
+    /// `package`, until the returned guard drops: the artifacts the program
+    /// asks for during it are installed for it, and an install it waits for
+    /// ends with it (`crates/command-protocol/src/artifacts.rs`).
+    pub fn invoking(&self, invocation: &str, package: &str) -> Invoking {
+        self.invocations.register(invocation, package)
     }
 
     /// A lease that keeps the resident of `digest` alive until it drops,
@@ -977,18 +972,18 @@ async fn live(
 ) {
     let descriptor = start.descriptor;
     let began = std::time::Instant::now();
-    let _held = cache.holds().hold(&start.artifact.sha256);
+    let wanted = Wanted {
+        package: &descriptor.id,
+        name: PROGRAM,
+        version: &descriptor.version,
+        digest: digest_of(start.artifact),
+        form: &ArtifactForm::File,
+    };
+    let _held = cache.holds().hold(&wanted.key());
     // How long the executable took to be had, which the start's line splits
     // from the process's own start.
     let mut install_ms = 0u64;
     let started = async {
-        let wanted = Wanted {
-            package: &descriptor.id,
-            name: PROGRAM,
-            version: &descriptor.version,
-            artifact: start.artifact.clone(),
-            form: &ArtifactForm::File,
-        };
         state.send_replace(State::Starting(Some(Installing::default())));
         let progress = |progress| {
             state.send_modify(|state| {

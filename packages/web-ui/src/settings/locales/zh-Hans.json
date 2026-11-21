@@ -1019,6 +1019,10 @@
       "body": "使用多个订阅账户或在账户之间轮换，可能违反供应商的服务条款，风险由你自行承担。",
       "once": "Jush 不会再次询问。"
     },
+    "thirdParty": {
+      "title": "添加 {name} 账户？",
+      "body": "{name} 的服务条款禁止通过 Jush 等第三方软件使用它，这样使用的账户可能会被停用。风险由你自行承担。"
+    },
     "connected": "“{account}”已连接",
     "testFailed": "“{account}”测试失败",
     "addModelFailed": "无法添加模型",

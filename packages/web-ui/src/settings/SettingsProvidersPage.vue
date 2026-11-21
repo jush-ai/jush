@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { formError, type ShownError } from '../infra/errors'
-import { computed, reactive, ref, watch, type Component } from 'vue'
+import { computed, nextTick, reactive, ref, watch, type Component } from 'vue'
 import { createReusableTemplate } from '@vueuse/core'
 import { effortLabel } from './efforts'
 import { t as uiText } from '../locales/text'
@@ -478,11 +478,36 @@ function continuePastWarning(): void {
 }
 
 function addAccount(provider: SettingsProviderEntry): void {
-  if (provider.accounts.length === 0) {
-    emit('signIn', provider)
+  afterTermsNotice(provider, () => {
+    if (provider.accounts.length === 0) {
+      emit('signIn', provider)
+      return
+    }
+    afterWarning(() => emit('signIn', provider))
+  })
+}
+
+// The notice of a vendor whose terms forbid its subscription through third-party
+// software, before each account added to it: what Continue goes on with, which
+// Cancel drops. It keeps the vendor's name while the dialog closes.
+const termsNotice = ref<{ name: string; then: () => void } | null>(null)
+const termsNoticeOpen = ref(false)
+
+function afterTermsNotice(provider: SettingsProviderEntry, then: () => void): void {
+  if (!provider.forbidsThirdParty) {
+    then()
     return
   }
-  afterWarning(() => emit('signIn', provider))
+  termsNotice.value = { name: provider.name, then }
+  termsNoticeOpen.value = true
+}
+
+// What follows opens once the notice has given the focus back to Add Account, so a
+// dialog that follows, the warning about several accounts, gives it back there too.
+async function continuePastTermsNotice(): Promise<void> {
+  termsNoticeOpen.value = false
+  await nextTick()
+  termsNotice.value?.then()
 }
 
 function chooseRotation(provider: SettingsProviderEntry, rotation: SettingsRotation): void {
@@ -2115,6 +2140,16 @@ a vendor entry's switch and its vendor's
     >
       <p>{{ t('providers.warning.body') }}</p>
       <p>{{ t('providers.warning.once') }}</p>
+    </ConfirmDialog>
+    <ConfirmDialog
+      :is-open="termsNoticeOpen"
+      :overlay-store="overlayStore"
+      :title="t('providers.thirdParty.title', { name: termsNotice?.name ?? '' })"
+      :action="uiText('common.continue')"
+      :on-confirm="continuePastTermsNotice"
+      @close="termsNoticeOpen = false"
+    >
+      <p>{{ t('providers.thirdParty.body', { name: termsNotice?.name ?? '' }) }}</p>
     </ConfirmDialog>
     <ModelDialog
       v-if="modelEditor"

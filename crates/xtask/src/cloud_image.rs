@@ -199,7 +199,7 @@ async fn package(
         os: Os::Linux,
         architecture,
         rootfs: RootfsArchive {
-            sha256: digest.sha256.clone(),
+            sha256: digest.hash.hex().to_owned(),
             size: digest.size,
             file: RootfsFile::TarZst,
         },
@@ -230,7 +230,7 @@ async fn package(
     // The base version names the manifest's bytes as published.
     let published =
         jush_shared_artifacts::digest(&output.join(IMAGE_MANIFEST), u64::MAX, cancel).await?;
-    Ok(published.sha256)
+    Ok(published.hash.hex().to_owned())
 }
 
 /// The runner release the manifest of `runners` names, and its executable
@@ -370,10 +370,7 @@ async fn install_decoded(
     destination: &Path,
 ) -> Result<(), Error> {
     let encoded = tokio::fs::read(source).await.map_err(at(source))?;
-    let expected = Digest {
-        size: artifact.size,
-        sha256: artifact.sha256.clone(),
-    };
+    let expected = Digest::sha256(artifact.size, artifact.sha256.clone());
     let decoded = tokio::task::spawn_blocking(move || {
         jush_shared_artifacts::decode_blocking(&encoded, &expected)
     })
@@ -416,7 +413,7 @@ async fn measure(path: &Path, cancel: &CancellationToken) -> Result<PackageArtif
         .await
         .map_err(at(path))?;
     Ok(PackageArtifact {
-        sha256: digest.sha256,
+        sha256: digest.hash.hex().to_owned(),
         size: digest.size,
     })
 }

@@ -443,6 +443,12 @@ export interface SettingsProviderEntry {
    */
   connectsThrough?: boolean
   /**
+   * A subscription's: whether its vendor's terms forbid using it through
+   * third-party software, which Add Account says before the sign-in, each time.
+   * Absent, they don't.
+   */
+  forbidsThirdParty?: boolean
+  /**
    * The headers every request of an API key's entry carries. A compatible
    * API's are its user's, in their order, and `{conversation}` in a value is
    * the conversation's ID; a vendor's are each one its vendor documents, with

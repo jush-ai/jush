@@ -68,7 +68,7 @@ mod package;
 pub mod testing;
 
 pub use artifacts::{
-    ArtifactAnswer, ArtifactAnswered, ArtifactAsk, ArtifactForm, ArtifactInstall, ArtifactProgress,
+    ArtifactAnswer, ArtifactAnswered, ArtifactAsk, ArtifactForm, ArtifactHash, ArtifactInstall, ArtifactProgress,
     ArtifactReply, ArtifactRequest, ArtifactsInstalled, InstalledArtifact, megabytes,
 };
 pub use conversation::{ConversationRequest, ConversationStatus};
@@ -87,7 +87,7 @@ pub use messages::{MessageAnswer, PluginMessage};
 pub use numbers::{NumbersAnswer, NumbersRequest, ResidentSequence, StreamOpen};
 pub use package::{
     ArtifactLocation, ArtifactPath, ArtifactUrl, PackageArtifact, PackageDescriptor,
-    ResidentInfo, TARGETS, VERSION, canonical_digest, digest,
+    ResidentInfo, TARGETS, VERSION, canonical_digest, digest, download_url,
     host_target, is_digest, is_target, target, target_artifact, target_artifacts,
 };
 

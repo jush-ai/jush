@@ -26,7 +26,9 @@ use jush_backend_page_sync::SyncRegistry;
 use jush_plugin_host::{Registry, RegistryError};
 use jush_provider_registry::registry::ProviderRegistry;
 use jush_provider_registry::catalog_cache::ModelCatalogCache;
-use jush_provider_claude_code::releases::ClaudeReleases;
+use jush_provider_antigravity::releases::AgyDistribution;
+use jush_provider_claude_code::releases::ClaudeDistribution;
+use jush_provider_subscription_cli::FollowedReleases;
 use jush_provider_registry::families::FamilyRegistry;
 use jush_provider_registry::vendors::VendorCatalog;
 use jush_backend_providers::vault::entries::{VaultReseal, SeededAccount, Vault};
@@ -159,6 +161,8 @@ pub struct ProviderSetup {
     pub media_catalog: Arc<jush_provider_common::media_catalog::Catalog>,
     /// The Claude Code distribution.
     pub claude_releases: url::Url,
+    /// The Antigravity distribution.
+    pub antigravity_releases: url::Url,
     /// Where the Subscriptions machine is, which the master's shard puts there
     /// as it starts and every CLI's family reads too.
     pub subscriptions_machine: MachineSlot,
@@ -429,11 +433,23 @@ impl Services {
                 announced.mark_everyone(&jush_backend_page_sync::Part::Providers);
             }
         });
-        let claude_releases =
-            ClaudeReleases::new(&providers.claude_releases, edge.clone(), clock.clone())
-                .map_err(ServicesError::Http)?;
+        let claude_releases = FollowedReleases::new(
+            &jush_provider_claude_code::CLI,
+            ClaudeDistribution::new(&providers.claude_releases),
+            edge.clone(),
+            clock.clone(),
+        )
+        .map_err(ServicesError::Http)?;
+        let antigravity_releases = FollowedReleases::new(
+            &jush_provider_antigravity::CLI,
+            AgyDistribution::new(&providers.antigravity_releases),
+            edge.clone(),
+            clock.clone(),
+        )
+        .map_err(ServicesError::Http)?;
         let cli_releases = CliReleaseReaders::default()
-            .with(&jush_provider_claude_code::CLI, Arc::new(claude_releases));
+            .with(&jush_provider_claude_code::CLI, Arc::new(claude_releases))
+            .with(&jush_provider_antigravity::CLI, Arc::new(antigravity_releases));
         let store: Arc<dyn RegistryStore> = Arc::new(vault.clone());
         let provider_registry = ProviderRegistry::new(
             store.clone(),

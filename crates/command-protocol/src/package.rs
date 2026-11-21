@@ -179,7 +179,9 @@ impl ResidentInfo {
     }
 }
 
-pub(crate) fn download_url(value: &str, _: &()) -> garde::Result {
+/// A garde rule: the value is a URL an artifact downloads from, HTTP or HTTPS
+/// without credentials.
+pub fn download_url(value: &str, _: &()) -> garde::Result {
     let url = url::Url::parse(value).map_err(|error| garde::Error::new(error.to_string()))?;
     let web = matches!(url.scheme(), "http" | "https");
     if !web || !url.username().is_empty() || url.password().is_some() {
@@ -191,7 +193,7 @@ pub(crate) fn download_url(value: &str, _: &()) -> garde::Result {
 }
 
 /// Whether `value` is a SHA-256 digest in lowercase hexadecimal, the form of
-/// every artifact and descriptor identity.
+/// every descriptor identity and of every artifact Jush builds.
 pub fn is_digest(value: &str) -> bool {
     value.len() == 64
         && value

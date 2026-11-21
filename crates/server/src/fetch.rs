@@ -152,7 +152,7 @@ pub async fn fetch(
         let found = jush_shared_artifacts::digest(path, LARGEST, cancel)
             .await
             .map_err(io::Error::other)?;
-        if found.sha256 != expected {
+        if found.hash.sha256() != Some(expected) {
             return Err(io::Error::other(format!("{asset} does not match its SHA-256 in {SUMS}")));
         }
         let file = Counted {

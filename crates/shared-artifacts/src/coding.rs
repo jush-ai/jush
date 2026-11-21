@@ -59,13 +59,13 @@ pub fn encode_blocking(bytes: &[u8], effort: Effort) -> Result<Vec<u8>, Error> {
 }
 
 /// Checks that `encoded`, bytes in the content coding, decodes to bytes of
-/// `expected`'s size and SHA-256, as a runner's download will. Blocking.
+/// `expected`'s size and hash, as a runner's download will. Blocking.
 pub fn check_encoded_blocking(encoded: &[u8], expected: &Digest) -> Result<(), Error> {
     decode_into(encoded, expected, &mut std::io::sink())
 }
 
 /// `encoded`, bytes in the content coding, decoded, once they are bytes of
-/// `expected`'s size and SHA-256. Blocking.
+/// `expected`'s size and hash. Blocking.
 pub fn decode_blocking(encoded: &[u8], expected: &Digest) -> Result<Vec<u8>, Error> {
     let size = usize::try_from(expected.size).unwrap_or(usize::MAX);
     let mut decoded = Vec::with_capacity(size);

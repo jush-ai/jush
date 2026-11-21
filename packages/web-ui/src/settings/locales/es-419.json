@@ -1019,6 +1019,10 @@
       "body": "Usar más de una cuenta de suscripción, o rotar entre cuentas, puede infringir los Términos de servicio del proveedor. Lo haces bajo tu propio riesgo.",
       "once": "Jush no volverá a preguntar."
     },
+    "thirdParty": {
+      "title": "¿Agregar una cuenta de {name}?",
+      "body": "Los Términos de servicio de {name} prohíben usarlo mediante software de terceros como Jush, y una cuenta usada así puede ser suspendida. Lo haces bajo tu propio riesgo."
+    },
     "connected": "{account} conectada",
     "testFailed": "Falló la prueba de {account}",
     "addModelFailed": "No se pudo agregar el modelo",

@@ -60,7 +60,7 @@ pub use pipes::{
 };
 pub use session::{Beginning, DeviceSession};
 pub use remote_device::{
-    Admission, AttachedArtifact, DeviceLink, DirectoryFile, JobStart, Look, LookAt, ConditionalRead, OpenedRead, RemoteDevice, RemoteJob,
+    Admission, DeviceLink, DirectoryFile, JobStart, Look, LookAt, ConditionalRead, OpenedRead, RemoteDevice, RemoteJob,
     ResidentCallError, ResidentEnd, ResidentRequest, ResidentStream, byte_stream, collect_pipe, device_identity,
 };
 #[cfg(feature = "edge")]

@@ -18,6 +18,7 @@
 
 use std::{collections::BTreeMap, path::PathBuf};
 
+pub use jush_command_protocol::{ArtifactForm, ArtifactHash};
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de::DeserializeOwned};
 use serde_json::Value;
 
@@ -92,7 +93,7 @@ fn cli_version(value: &str, _: &()) -> garde::Result {
 }
 
 /// What `subscription-cli.ensure` reads from stdin: the CLI, one version of
-/// it and its official executable for each platform key. Every entry is
+/// it and its vendor's download for each platform key. Every entry is
 /// checked, not only this machine's.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, garde::Validate)]
 #[serde(deny_unknown_fields)]
@@ -116,17 +117,21 @@ impl Release {
     }
 }
 
-/// Where one platform's executable is, its byte size and its SHA-256 in
-/// lowercase hex.
+/// Where one platform's executable is, its byte size, the hash its vendor
+/// gives, and its form: the executable itself, or an archive and the
+/// executable inside it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, garde::Validate)]
 #[serde(deny_unknown_fields)]
 pub struct Artifact {
-    #[garde(url)]
+    #[garde(custom(jush_command_protocol::download_url))]
     pub url: String,
     #[garde(range(min = 1))]
     pub size: u64,
-    #[garde(pattern(r"^[a-f0-9]{64}$"))]
-    pub sha256: String,
+    #[serde(flatten)]
+    #[garde(dive)]
+    pub hash: ArtifactHash,
+    #[garde(dive)]
+    pub form: ArtifactForm,
 }
 
 /// One usable executable.

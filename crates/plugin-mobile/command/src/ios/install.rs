@@ -41,10 +41,7 @@ pub async fn helper() -> Result<PathBuf> {
         })?;
         let root = PathBuf::from(home).join("mobile");
         let archive = jush_shared_artifacts::Archive {
-            digest: jush_shared_artifacts::Digest {
-                size: ARCHIVE.len() as u64,
-                sha256: SHA256.to_owned(),
-            },
+            digest: jush_shared_artifacts::Digest::sha256(ARCHIVE.len() as u64, SHA256),
             entry: ENTRY.to_owned(),
         };
         let cancel = CancellationToken::new();

@@ -47,6 +47,7 @@ jush-shared-gates = { path = "../shared-gates" }
 jush-provider-common = { path = "../provider-common" }
 jush-provider-registry = { path = "../provider-registry" }
 jush-provider-anthropic-api = { path = "../provider-anthropic-api" }
+jush-provider-antigravity = { path = "../provider-antigravity" }
 jush-provider-claude-code = { path = "../provider-claude-code" }
 jush-provider-codex = { path = "../provider-codex" }
 jush-provider-google = { path = "../provider-google" }

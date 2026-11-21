@@ -124,6 +124,7 @@ export const useProviderSettings = defineStore('provider-settings', () => {
         : [{
             ...emptyProvider(subscription.providerType, subscription.name, 'subscription'),
             connectsThrough: subscription.connectsThrough,
+            forbidsThirdParty: subscription.forbidsThirdParty,
           }],
     )
     const subscriptions = configured.filter((provider) => provider.kind === 'subscription')

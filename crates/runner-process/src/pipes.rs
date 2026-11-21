@@ -341,10 +341,7 @@ impl PipeClient {
             headers: &headers,
             ..jush_shared_artifacts::Download::new(url.as_str())
         };
-        let expected = jush_shared_artifacts::Digest {
-            size: offer.size,
-            sha256: offer.sha256.clone(),
-        };
+        let expected = jush_shared_artifacts::Digest::sha256(offer.size, offer.sha256.clone());
         let written = async {
             let received = jush_shared_artifacts::download(&self.downloads, download, staging, cancel, |held, _| progress(held)).await?;
             received.verify(staging, &expected, output, cancel).await

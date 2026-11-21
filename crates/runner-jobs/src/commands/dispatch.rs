@@ -192,13 +192,11 @@ impl Dispatcher {
                     .get(&binding.descriptor_hash)
                     .ok_or_else(|| ResidentError::failed(DispatchError::MissingDescriptor))?;
                 let resolver = Arc::new(JobArtifacts::new(self.contexts.clone()));
-                // What the program asks for during the call is located for
-                // this job (`crates/command-protocol/src/artifacts.rs`).
-                let _invoking = self.residents.invoking(
-                    &invocation.request.invocation_id,
-                    &descriptor.id,
-                    resolver.clone(),
-                );
+                // What the program asks for during the call is installed for
+                // it (`crates/command-protocol/src/artifacts.rs`).
+                let _invoking = self
+                    .residents
+                    .invoking(&invocation.request.invocation_id, &descriptor.id);
                 // An install of the program that takes a while says so on
                 // the command's standard error, unless the command runs with
                 // `--json`, whose caller reads its standard error as one

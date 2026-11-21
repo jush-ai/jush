@@ -1019,6 +1019,10 @@
       "body": "Usar mais de uma conta de assinatura, ou alternar entre contas, pode violar os Termos de Serviço do provedor. Você faz isso por sua conta e risco.",
       "once": "O Jush não vai perguntar de novo."
     },
+    "thirdParty": {
+      "title": "Adicionar uma conta do {name}?",
+      "body": "Os Termos de Serviço do {name} proíbem usá-lo por meio de software de terceiros como o Jush, e uma conta usada assim pode ser suspensa. Você faz isso por sua conta e risco."
+    },
     "connected": "{account} conectada",
     "testFailed": "Falha no teste de {account}",
     "addModelFailed": "Não foi possível adicionar o modelo",

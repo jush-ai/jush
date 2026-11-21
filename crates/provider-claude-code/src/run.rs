@@ -56,10 +56,9 @@ use futures_util::stream::{self, Stream};
 
 use crate::{Shared, WEB_SEARCH};
 use crate::failure::read_failure;
-use crate::idle::Kept;
 use crate::live::{LiveCli, Next, Written};
 use crate::output::{self, Answered, ContentBlock, Line, Printed, StreamEvent, Streaming, TurnEnd};
-use jush_provider_subscription_cli::{Placement, WorkLease};
+use jush_provider_subscription_cli::{Placement, ProcessSlot};
 use crate::prepared::Prepared;
 use crate::timing::{self, RunTiming, Took};
 
@@ -70,21 +69,11 @@ const UNAUTHORIZED: u16 = 401;
 pub(crate) struct ClaudeCodeRuntime {
     shared: Arc<Shared>,
     placement: Rc<dyn Placement>,
-    /// The process kept from the last run, while the session's action that
-    /// ran it goes on.
-    live: Option<LiveCli>,
-    /// The process kept from the last run once its action ended, idle.
-    kept: Option<Kept>,
+    /// The process kept from the last run.
+    slot: ProcessSlot<LiveCli>,
     /// The process prepared for the next request; a runtime that keeps a
     /// process prepares none.
     prepared: Option<Prepared>,
-    /// The hold of the machine for the session's action that infers here, from
-    /// its first request to its end, across the tool calls between its
-    /// requests.
-    ///
-    /// A CLI that waits on a long tool therefore keeps its machine awake
-    /// (`crates/backend-cloud/src/lib.rs`).
-    action: Option<WorkLease>,
 }
 
 impl ClaudeCodeRuntime {
@@ -92,17 +81,9 @@ impl ClaudeCodeRuntime {
         Self {
             shared,
             placement,
-            live: None,
-            kept: None,
+            slot: ProcessSlot::default(),
             prepared: None,
-            action: None,
         }
-    }
-
-    /// The process kept from the last run, whether its action goes on or not;
-    /// none when there is none or its seat closed it.
-    fn take_kept(&mut self) -> Option<LiveCli> {
-        self.live.take().or_else(|| self.kept.take().and_then(Kept::take))
     }
 }
 
@@ -141,10 +122,7 @@ impl ProviderRuntime for ClaudeCodeRuntime {
 
     fn close(&mut self) -> LocalBoxFuture<'_, ()> {
         Box::pin(async {
-            self.action = None;
-            if let Some(live) = self.take_kept() {
-                live.close().await;
-            }
+            self.slot.close().await;
             if let Some(prepared) = self.prepared.take() {
                 prepared.close().await;
             }
@@ -154,10 +132,8 @@ impl ProviderRuntime for ClaudeCodeRuntime {
     /// The action ended, completed, failed or stopped: the machine is no
     /// longer held for it, and the process kept from its last run is idle.
     fn idle(&mut self) {
-        self.action = None;
-        if let Some(live) = self.live.take() {
-            self.kept = Some(Kept::seat(&self.shared, &*self.placement, live));
-        }
+        self.slot
+            .idle(&*self.placement, &self.shared.id, self.shared.auth.account().ok());
     }
 
     fn prepares_ahead(&self) -> bool {
@@ -181,11 +157,7 @@ impl ProviderRuntime for ClaudeCodeRuntime {
                 }
                 tokio::task::spawn_local(prepared.close());
             }
-            let continues = match (&self.live, &self.kept) {
-                (Some(live), _) => live.continues(&request),
-                (None, Some(kept)) => kept.continues(&request),
-                (None, None) => false,
-            };
+            let continues = self.slot.read(|live| live.continues(&request)).unwrap_or(false);
             let wanted = match ahead {
                 Ahead::Opened | Ahead::Chosen => !continues,
                 Ahead::Ended => false,
@@ -193,7 +165,7 @@ impl ProviderRuntime for ClaudeCodeRuntime {
             if !wanted {
                 return;
             }
-            if let Some(live) = self.take_kept() {
+            if let Some(live) = self.slot.take() {
                 tokio::task::spawn_local(live.close());
             }
             tracing::debug!(
@@ -245,11 +217,9 @@ fn run(
         let run_started = runtime.shared.clock.now();
         // The machine stays awake from the action's first request to its
         // end, however long its process waits on a tool's result.
-        if runtime.action.is_none() {
-            runtime.action = Some(runtime.placement.work());
-        }
+        runtime.slot.act(&*runtime.placement);
         {
-            let mut kept = runtime.take_kept().map(|live| (live, Took::Kept));
+            let mut kept = runtime.slot.take().map(|live| (live, Took::Kept));
             if let Some(prepared) = runtime.prepared.take() {
                 if prepared.serves(&request) {
                     match cancel.run_until_cancelled(prepared.take()).await {
@@ -390,7 +360,7 @@ fn run(
                             continue;
                         }
                         let events = live.hand_over(vec![call], &request);
-                        runtime.live = Some(live);
+                        runtime.slot.keep(live);
                         for event in events {
                             yield event;
                         }
@@ -541,7 +511,7 @@ fn run(
                             if !live.collecting.is_empty() {
                                 let batch = std::mem::take(&mut live.collecting);
                                 let events = live.hand_over(batch, &request);
-                                runtime.live = Some(live);
+                                runtime.slot.keep(live);
                                 for event in events {
                                     yield event;
                                 }
@@ -618,7 +588,7 @@ fn run(
                                 }
                                 let batch = std::mem::take(&mut live.collecting);
                                 let events = live.hand_over(batch, &request);
-                                runtime.live = Some(live);
+                                runtime.slot.keep(live);
                                 for event in events {
                                     yield event;
                                 }
@@ -702,7 +672,7 @@ fn run(
                                 continue;
                             }
                             TurnEnd::Answered => {
-                                runtime.live = Some(live);
+                                runtime.slot.keep(live);
                                 if let Some(lifetime) = lifetime {
                                     yield ProviderEvent::CacheLifetime(lifetime);
                                 }
@@ -732,7 +702,7 @@ fn run(
                                 if earlier {
                                     live.close().await;
                                 } else {
-                                    runtime.live = Some(live);
+                                    runtime.slot.keep(live);
                                 }
                                 yield ProviderEvent::Error(failure);
                             }

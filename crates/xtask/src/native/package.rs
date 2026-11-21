@@ -250,7 +250,7 @@ impl Built {
         self.targets.insert(
             target.to_owned(),
             PackageArtifact {
-                sha256: digest.sha256.clone(),
+                sha256: digest.hash.hex().to_owned(),
                 size: digest.size,
             },
         );
@@ -279,7 +279,7 @@ impl Built {
             .cloned()
             .collect();
         for executable in executables {
-            let source = cache.join(&executable.digest.sha256);
+            let source = cache.join(&executable.digest.hash.name());
             if !tokio::fs::try_exists(&source).await? {
                 compress(&executable.source, &source, effort).await?;
             }

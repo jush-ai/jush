@@ -1019,6 +1019,10 @@
       "body": "Die Verwendung mehrerer Abo-Konten oder das Wechseln zwischen Konten kann gegen die Nutzungsbedingungen des Anbieters verstoßen. Du tust dies auf eigenes Risiko.",
       "once": "Jush fragt nicht noch einmal."
     },
+    "thirdParty": {
+      "title": "{name}-Konto hinzufügen?",
+      "body": "Die Nutzungsbedingungen von {name} verbieten die Nutzung über Drittanbieter-Software wie Jush, und ein so genutztes Konto kann gesperrt werden. Du tust dies auf eigenes Risiko."
+    },
     "connected": "{account} verbunden",
     "testFailed": "Test von {account} fehlgeschlagen",
     "addModelFailed": "Modell konnte nicht hinzugefügt werden",

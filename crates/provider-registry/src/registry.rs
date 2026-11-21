@@ -656,6 +656,7 @@ impl ProviderRegistry {
             self.cache_ttl_presets(entry),
             self.vendor_headers(entry),
             self.families.connects_through(&entry.family),
+            self.families.forbids_third_party(&entry.family),
         );
         // An entry whose models its provider's directory lists, as a
         // borrowed one lists its lender's, is no compatible entry: neither

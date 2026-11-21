@@ -1019,6 +1019,10 @@
       "body": "Utiliser plusieurs comptes d’abonnement, ou alterner entre des comptes, peut enfreindre les conditions d’utilisation du fournisseur. Vous le faites à vos propres risques.",
       "once": "Jush ne vous le demandera plus."
     },
+    "thirdParty": {
+      "title": "Ajouter un compte {name} ?",
+      "body": "Les conditions d’utilisation de {name} interdisent de l’utiliser via un logiciel tiers comme Jush, et un compte utilisé ainsi peut être suspendu. Vous le faites à vos propres risques."
+    },
     "connected": "{account} connecté",
     "testFailed": "Échec du test de {account}",
     "addModelFailed": "Impossible d’ajouter le modèle",

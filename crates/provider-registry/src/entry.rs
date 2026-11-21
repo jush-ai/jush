@@ -248,6 +248,8 @@ impl ProviderEntry {
     /// - `offered` are the searches its vendor has.
     /// - `connects_through` is whether its family lets it connect through a
     ///   device.
+    /// - `forbids_third_party` is whether its vendor's terms forbid its
+    ///   subscription through third-party software.
     #[allow(clippy::too_many_arguments)]
     pub fn dto(
         &self,
@@ -258,6 +260,7 @@ impl ProviderEntry {
         cache_ttl_presets: Option<Vec<CacheTtl>>,
         vendor_headers: &[&str],
         connects_through: bool,
+        forbids_third_party: bool,
     ) -> ProviderDto {
         let config = match &self.credential {
             EntryCredential::ApiKey(config) => Some(config),
@@ -303,6 +306,7 @@ impl ProviderEntry {
             cache_ttl_presets,
             through_device: self.through_device.clone(),
             connects_through,
+            forbids_third_party,
             headers: match config {
                 Some(config) if !config.is_compatible() => vendor_headers
                     .iter()

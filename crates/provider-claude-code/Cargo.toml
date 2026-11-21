@@ -24,21 +24,16 @@ jush-command-package-subscription-cli-protocol = { path = "../command-package-su
 jush-device-interface = { path = "../device-interface" }
 # The placement its processes start through, and what every CLI shares.
 jush-provider-subscription-cli = { path = "../provider-subscription-cli" }
-# The build version the SDK MCP server names.
+# The build version its MCP handshake names.
 jush-shared-artifacts = { path = "../shared-artifacts" }
 async-stream = "0.3"
 base64.workspace = true
 bytes.workspace = true
-# The in-memory transport of the SDK MCP server: rmcp takes any sink and
-# stream of its messages, and these channels are both.
+# The channel that carries the CLI's standard output to the run.
 futures-channel = { version = "0.3", features = ["sink"] }
 futures-util.workspace = true
-# A release's manifest is validated as the package's protocol declares it.
-garde.workspace = true
 jiff.workspace = true
-reqwest = { workspace = true, features = ["rustls", "stream"] }
-# The SDK MCP server; `local` runs its service loop and handlers on the
-# user's shard, which is one thread.
+# The SDK MCP channel's messages.
 rmcp = { version = "3.4", default-features = false, features = ["local", "server"] }
 serde.workspace = true
 serde_json.workspace = true
