@@ -276,8 +276,21 @@ impl ProviderFamily for GoogleFamily {
             makes_images: settings.image_shape == Some(ImageShape::Gemini),
             makes_videos: settings.video_shape == Some(VideoShape::GeminiInteractions),
             makes_audio: settings.audio_shape == Some(AudioShape::Gemini),
+            models: settings.models,
         };
         Ok(Arc::new(GoogleProvider::new(config, args.clock)))
+    }
+
+    /// models.dev lists a Gemini model's thinking levels as its efforts, and
+    /// only for the models that take them.
+    fn effort_vendors(&self) -> &'static [&'static str] {
+        &["google"]
+    }
+
+    /// Google's records list the toggle on each Gemini model that turns its
+    /// thinking off, such as Gemini 2.5 Flash; Gemini 3 and later have none.
+    fn toggle_vendors(&self) -> &'static [&'static str] {
+        &["google"]
     }
 
     /// A Gemini API key makes images with `generateContent`.

@@ -18,7 +18,7 @@ mod videos;
 use std::sync::Arc;
 
 use jush_provider_common::{
-    InferenceRequest, OfferedModel, Provider, ProviderHttp, ProviderRun, ProviderRuntime,
+    InferenceRequest, ModelWires, OfferedModel, Provider, ProviderHttp, ProviderRun, ProviderRuntime,
     RequestLimits, ToolResultKinds, RuntimeEnv, RuntimeError, Secret, read_http_failure,
     audio::AudioMaker,
     images::ImageMaker,
@@ -57,6 +57,8 @@ pub struct GoogleConfig {
     /// Whether the key makes speech and music: an entry of the Gemini API
     /// vendor.
     pub makes_audio: bool,
+    /// How each of the entry's models takes a reasoning level.
+    pub models: ModelWires,
 }
 
 impl GoogleConfig {
@@ -82,6 +84,7 @@ struct Shared {
     api_key: Option<HeaderValue>,
     base_url: Url,
     clock: Arc<dyn Clock>,
+    models: ModelWires,
 }
 
 impl Shared {
@@ -113,6 +116,7 @@ impl GoogleProvider {
                 api_key: config.api_key.as_ref().map(Secret::header_value),
                 base_url,
                 clock,
+                models: config.models,
             }),
             key,
             images,

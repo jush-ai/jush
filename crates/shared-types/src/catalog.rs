@@ -97,7 +97,7 @@ pub struct ProviderModel {
     #[garde(skip)]
     pub supported_thinking_efforts: Option<Vec<String>>,
     /// Whether thinking can be turned off entirely; a transport that only
-    /// levels thinking says no.
+    /// levels thinking, or a model that always thinks, says no.
     #[serde(deserialize_with = "Option::deserialize")]
     #[schemars(with = "Nullable<bool>")]
     #[garde(skip)]
@@ -116,7 +116,8 @@ pub struct ProviderModel {
     #[schemars(with = "Nullable<ModelCost>")]
     #[garde(skip)]
     pub cost: Option<ModelCost>,
-    /// On the Messages API, how a reasoning level goes ([`ModelWire`]).
+    /// On the Messages API and Gemini's, how a reasoning level goes
+    /// ([`ModelWire`]).
     #[serde(default)]
     #[garde(skip)]
     pub thinking_form: ThinkingForm,

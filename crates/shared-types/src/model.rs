@@ -204,11 +204,12 @@ pub enum ThinkingSummary {
 serde_plain::derive_display_from_serialize!(ThinkingSummary);
 serde_plain::derive_fromstr_from_deserialize!(ThinkingSummary);
 
-/// How a model takes a reasoning level on the Messages API: `effort`, as
-/// Anthropic's adaptive thinking at the level, or `budget`, as the level's
-/// number of tokens. The variants carry no doc comments of their own, which
-/// would make the schema a union that `jush providers models` cannot take as
-/// an option.
+/// How a model takes a reasoning level on the Messages API and on Gemini's
+/// `generateContent`: `effort`, as the level itself (Anthropic's adaptive
+/// thinking at the level, Gemini's thinking level of its name), or
+/// `budget`, as the level's number of tokens. The variants carry no doc
+/// comments of their own, which would make the schema a union that
+/// `jush providers models` cannot take as an option.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ThinkingForm {
@@ -223,7 +224,7 @@ pub enum ThinkingForm {
 /// set them.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct ModelWire {
-    /// Messages: how a reasoning level goes.
+    /// Messages and Gemini: how a reasoning level goes.
     pub thinking_form: ThinkingForm,
     /// Chat Completions: the model's earlier thinking goes back as
     /// `reasoning_content`, and an empty one on each tool-call message without

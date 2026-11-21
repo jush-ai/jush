@@ -118,7 +118,7 @@ const OUTPUT: &str = "The output limit in tokens, at most the context window, or
 const EFFORTS: &str = "The thinking efforts, comma-separated, the default first, such as low,medium,high; none for a model without thinking.";
 const EXTENSIONS: &str = "The file types the model reads, comma-separated, such as png,jpg,pdf; none for no file, unknown when not known.";
 const FAST_TIER: &str = "The service tier that is the model's Fast, such as priority, or none.";
-const THINKING: &str = "A compatible API's model on the Messages API: how a thinking effort is sent, effort, as Anthropic's adaptive thinking, or budget, as a number of tokens. A vendor's model takes it from models.dev.";
+const THINKING: &str = "A compatible API's model on the Messages API or Gemini's: how a thinking effort is sent, effort, as the level itself (Anthropic's adaptive thinking, Gemini's thinking level), or budget, as a number of tokens. A vendor's model takes it from models.dev.";
 const INTERLEAVED_THINKING: &str = "A compatible API's model on Chat Completions: whether its earlier thinking goes back with each tool call, as DeepSeek and Kimi need, on or off. A vendor's model takes it from models.dev.";
 
 /// The input of `list`.

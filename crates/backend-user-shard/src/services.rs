@@ -413,7 +413,7 @@ impl Services {
             http.clone(),
             providers.models_dev_url,
             providers.clock.clone(),
-            &providers.families.effort_vendors(),
+            providers.families.vendor_reading(),
         );
         let shutdowns = jush_provider_registry::shutdowns::ModelShutdowns::new(
             http.clone(),
