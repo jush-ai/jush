@@ -8,9 +8,15 @@
 //!   which `agy` renews through the link, writing the account's file: every
 //!   process of the account shares one sign-in.
 //! - A session's processes run Jush's agent, a custom agent whose prompt is
-//!   the request's system prompt and whose one MCP server is Jush's
-//!   (`tools.rs`); the process that makes a session for its history to be
-//!   written into has the agent and no server (`history.rs`).
+//!   the request's system prompt, whose one MCP server is Jush's
+//!   (`tools.rs`) and whose one tool of `agy`'s reads back what `agy` saved
+//!   of a long tool result; the process that makes a session for its history
+//!   to be written into has the agent and no server (`history.rs`).
+//! - `agy` asks before every call it does not allow by itself, and Jush
+//!   allows only its own tools' (`live.rs`): the machine holds every
+//!   account's sign-in, which no model may read. The session's workspace,
+//!   whose files `agy` reads without asking, is a directory nothing creates,
+//!   so it holds none of the process's files.
 //! - A usage read runs `agy --print /usage`, which prints the account's usage
 //!   and ends (`quota.rs`).
 //! - No API key in the machine's environment reaches `agy`, so the account
@@ -34,13 +40,17 @@ use crate::CLI;
 use crate::account::SIGN_IN;
 use crate::tools;
 
-/// The name of Jush's agent, and of its file in the process's directory,
-/// where `agy` finds a workspace's custom agents.
+/// The name of Jush's agent, and of its file in the process's directory, its
+/// working directory, where `agy` finds the agent it starts with.
 const AGENT: &str = "jush";
 const AGENT_FILE: &str = ".agents/agents/jush.md";
 
 /// Where `agy` keeps its sessions' databases in its `HOME`.
 pub(crate) const CONVERSATIONS: &str = ".gemini/antigravity-cli/conversations";
+/// What the agent's prompt says of its one tool of `agy`'s, after the
+/// request's system prompt: without it the model reads the user's files with
+/// it, which Jush denies (measured).
+const READ_FILE: &str = "Your read_file tool reads only the files Antigravity saves on its own machine when a tool result is too long for it; read anything else with shell.";
 
 /// The request that starts `agy`'s own sign-in at `site`, in its new
 /// directory. It prints the link to sign in at and reads the code Google's
@@ -106,6 +116,11 @@ pub(crate) fn home(site: &CliSite) -> String {
     format!("{}/{}/{}", site.config_dir, CLI.process_parent, site.process_dir)
 }
 
+/// The workspace of the session the process `site` starts opens.
+pub(crate) fn workspace(site: &CliSite) -> String {
+    format!("{}/workspace", home(site))
+}
+
 /// `agy acp` at `site` with `args`, and the account's sign-in linked into its
 /// directory; `retained` keeps it between pieces of work.
 fn acp(site: &CliSite, args: Vec<String>, retained: bool) -> CliStart {
@@ -134,16 +149,18 @@ fn process(site: &CliSite, args: Vec<String>, retained: bool) -> CliStart {
     }
 }
 
-/// The arguments that run Jush's agent with no question asked before a tool
-/// call: the model's calls are Jush's to run.
+/// The arguments that run Jush's agent.
 fn agent_args() -> Vec<String> {
-    ["--agent", AGENT, "--dangerously-skip-permissions"]
-        .map(String::from)
-        .to_vec()
+    ["--agent", AGENT].map(String::from).to_vec()
 }
 
-/// Jush's agent: none of `agy`'s own tools, Jush's MCP server, never a
-/// subagent of another, and `system_prompt` as its prompt.
+/// Jush's agent: `agy`'s `view_file`, which the model calls `read_file`,
+/// Jush's MCP server, never a subagent of another, and `system_prompt` as its
+/// prompt, with what it says of `read_file`.
+///
+/// `agy` gives the model a tool's result up to 10,240 bytes, and saves a
+/// larger image or the whole of a longer text to a file of its own;
+/// `read_file` is the only way the model reads it.
 ///
 /// `excludeDefaultComponents` leaves out the parts `agy` adds to every
 /// agent's prompt, about 2,100 tokens a request (measured): its workspace,
@@ -151,10 +168,10 @@ fn agent_args() -> Vec<String> {
 /// directories and ways and contradict Jush's prompt.
 fn agent(system_prompt: &str) -> Bytes {
     let header = format!(
-        "---\nname: {AGENT}\ndescription: Jush's agent.\ntools: []\nmcpServers:\n  - name: {}\nmainAgent: true\nsubagent: false\nexcludeDefaultComponents: true\n---\n",
+        "---\nname: {AGENT}\ndescription: Jush's agent.\ntools: [view_file]\nmcpServers:\n  - name: {}\nmainAgent: true\nsubagent: false\nexcludeDefaultComponents: true\n---\n",
         tools::SERVER
     );
-    Bytes::from(header + system_prompt)
+    Bytes::from(format!("{header}{system_prompt}\n\n{READ_FILE}\n"))
 }
 
 /// The environment of a process whose `HOME` is `home`.

@@ -16,12 +16,21 @@
 //! its turn waits for the call's result, which the next run delivers. The
 //! prompt's answer ends the turn.
 //!
+//! A call of one of `agy`'s own tools, such as `read_file`, is `agy`'s to run:
+//! it arrives as `session/update`s, which the run reports as a vendor's step.
+//! Before a call `agy` does not allow by itself, `agy` asks Jush, which allows
+//! only a call of its own MCP server: `read_file` then reads only what `agy`
+//! saved of a result, which it reads without asking. `agy`'s other tools ask
+//! nothing and reach no file (measured). A denial ends the turn with no
+//! answer, which fails the run.
+//!
 //! A kept process goes on with a later request only where it continues what
 //! the process received, with the same system prompt: new user messages
 //! after a turn's end, or the result of the call it holds. `agy` takes input
 //! only between turns, so a steer that comes with a result is answered by a
 //! new process, whose history holds the result.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -34,21 +43,21 @@ use jush_device_interface::{Process, ProcessEnd};
 use jush_provider_common::openai_request::reasoning_effort;
 use jush_provider_common::quota::ProbeAsk;
 use jush_provider_common::{
-    InferenceItem, InferenceRequest, Medium, ProviderFailure, ResultPart, ToolCall, UserPart,
-    encode_body,
+    InferenceItem, InferenceRequest, Medium, OpaqueStep, ProviderFailure, ResultPart, ToolCall,
+    UserPart, encode_body,
 };
 use jush_provider_subscription_cli::{
     CliStarter, CliWork, HeldProcess, KeptProcess, Placed, Placement, Unanswered, exit_message,
     tool_result,
 };
-use jush_shared_types::Timestamp;
+use jush_shared_types::{OpaqueStatus, OpaqueView, Timestamp};
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 
 use crate::acp::{self, Line, Output, Refusal};
 use crate::failure::{self, Reported};
 use crate::start::{self, CONVERSATIONS};
-use crate::tools::{Channel, ChannelEvent};
+use crate::tools::{self, Channel, ChannelEvent};
 use crate::{CLI, Shared, history};
 
 /// How long the process that makes a session may take to end once its input
@@ -76,13 +85,45 @@ pub(crate) struct Live {
     /// The prompt in flight.
     prompting: Option<Prompting>,
     next_id: u64,
-    /// The tokens the session holds after its latest call, as `agy` reports
-    /// them.
+    /// The tokens the session holds after its latest model request, as `agy`
+    /// reports them.
     context: Option<u64>,
     /// Whether the piece being streamed is reasoning.
     thinking: bool,
     /// The failure `agy` reported in the turn's text.
     reported: Option<Reported>,
+    /// Whether Jush denied a call of the prompt in flight.
+    denied: bool,
+    /// The name and status of each of `agy`'s own calls of the prompt in
+    /// flight, by their ids, which an update of a call need not repeat.
+    steps: HashMap<String, (String, OpaqueStatus)>,
+    /// What `agy` reported of the latest turn when it ended.
+    turn: Option<TurnUsage>,
+}
+
+/// The tokens of a turn, summed over its model requests, as `agy` reports
+/// them when it ends.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct TurnUsage {
+    pub(crate) input: u64,
+    pub(crate) cache_read: u64,
+    pub(crate) cache_write: u64,
+    /// Thinking included (measured).
+    pub(crate) output: u64,
+}
+
+impl TurnUsage {
+    /// What a `session/prompt` answer reports, if anything.
+    fn of(result: &Value) -> Option<Self> {
+        let usage = result.get("usage")?;
+        let count = |key: &str| usage.get(key).and_then(Value::as_u64).unwrap_or(0);
+        Some(Self {
+            input: count("inputTokens"),
+            cache_read: count("cachedReadTokens"),
+            cache_write: count("cachedWriteTokens"),
+            output: count("outputTokens"),
+        })
+    }
 }
 
 /// What a run reads of the process next.
@@ -93,6 +134,8 @@ pub(crate) enum Next {
     Reasoning { opens: bool, text: String },
     /// The model called a tool, whose result the next run delivers.
     Called(ToolCall),
+    /// A call of `agy`'s own tool started or changed.
+    Step(OpaqueStep),
     /// The turn ended with the model's answer.
     Answered,
     /// The turn failed; the process is to be closed.
@@ -157,11 +200,14 @@ impl Live {
             context: None,
             thinking: false,
             reported: None,
+            denied: false,
+            steps: HashMap::new(),
+            turn: None,
         };
         let opened = acp::open(
             live.held.control(),
             &mut live.output,
-            &start::home(&site),
+            &start::workspace(&site),
             loaded.as_deref(),
         )
         .await;
@@ -247,6 +293,9 @@ impl Live {
         });
         self.thinking = false;
         self.reported = None;
+        self.denied = false;
+        self.steps.clear();
+        self.turn = None;
         Ok(())
     }
 
@@ -275,8 +324,15 @@ impl Live {
                     }
                 }
                 Line::Notification { .. } => {}
-                Line::Request { id, .. } => {
-                    if let Err(failure) = self.write(acp::refuse(id)).await {
+                Line::Request { id, method, params } => {
+                    let line = if method == "session/request_permission" {
+                        let (line, allowed) = acp::permission(id, &params, own_call(&params["toolCall"]));
+                        self.denied |= !allowed;
+                        line
+                    } else {
+                        acp::refuse(id)
+                    };
+                    if let Err(failure) = self.write(line).await {
                         return Next::Failed(failure);
                     }
                 }
@@ -318,10 +374,46 @@ impl Live {
                 self.context = update.get("used").and_then(Value::as_u64).or(self.context);
                 None
             }
-            // `agy`'s record of the MCP calls the channel brings, its title
-            // of the session, and the settings it offers.
+            "tool_call" | "tool_call_update" => {
+                let step = self.step(update)?;
+                self.thinking = false;
+                Some(Next::Step(step))
+            }
+            // `agy`'s title of the session and the settings it offers.
             _ => None,
         }
+    }
+
+    /// The step a call update of `agy`'s own tool says; none for a call of
+    /// Jush's MCP server, which the channel brings.
+    fn step(&mut self, update: &Value) -> Option<OpaqueStep> {
+        if own_call(update) {
+            return None;
+        }
+        let id = update.get("toolCallId")?.as_str()?.to_owned();
+        let known = self.steps.get(&id).cloned();
+        let name = match update.get("name").and_then(Value::as_str) {
+            Some(name) => name.to_owned(),
+            None => known.as_ref()?.0.clone(),
+        };
+        // An update names only what changed, so one without a status keeps
+        // the step's.
+        let status = match update.get("status").and_then(Value::as_str) {
+            Some("completed") => OpaqueStatus::Completed,
+            Some("failed") => OpaqueStatus::Failed,
+            Some(_) => OpaqueStatus::Running,
+            None => known.map_or(OpaqueStatus::Running, |(_, status)| status),
+        };
+        self.steps.insert(id.clone(), (name.clone(), status));
+        Some(OpaqueStep {
+            call_id: Some(id),
+            status,
+            view: OpaqueView::Other {
+                vendor: CLI.name.to_owned(),
+                name,
+            },
+            entries: Vec::new(),
+        })
     }
 
     /// The end of the turn, by the prompt's answer.
@@ -339,7 +431,12 @@ impl Live {
             Ok(result) => result,
             Err(refusal) => return Next::Failed(refused(shared, refusal).await),
         };
+        self.turn = TurnUsage::of(&result);
         match result.get("stopReason").and_then(Value::as_str) {
+            Some("end_turn") if self.denied => Next::Failed(failure(
+                "Antigravity ended the turn because Jush did not let its model read a file outside the tool results it saved."
+                    .to_owned(),
+            )),
             Some("end_turn") => Next::Answered,
             Some("max_tokens" | "max_turn_requests") => Next::Failed(ProviderFailure::ended_early(
                 jush_provider_common::EarlyEnd::OutputLimit,
@@ -358,9 +455,14 @@ impl Live {
         }
     }
 
-    /// The tokens the session holds after its latest call.
+    /// The tokens the session holds after its latest model request.
     pub(crate) fn context(&self) -> Option<u64> {
         self.context
+    }
+
+    /// What `agy` reported of the latest turn when it ended.
+    pub(crate) fn turn(&self) -> Option<TurnUsage> {
+        self.turn
     }
 
     /// Closes the process, SIGTERM first, and waits for its end.
@@ -446,7 +548,7 @@ async fn make_session(
     let mut held = HeldProcess::of(control, exit.clone(), Some(config));
     let mut output = Output::new(output);
     let made = async {
-        let opened = acp::open(held.control(), &mut output, &start::home(&site), None).await;
+        let opened = acp::open(held.control(), &mut output, &start::workspace(&site), None).await;
         let session = session_id(&answered(shared, opened).await?)?;
         held.control().close_stdin().await.map_err(|error| {
             ProviderFailure::no_answer(format!("Antigravity's input could not be written: {error}"))
@@ -469,6 +571,13 @@ async fn make_session(
     let items = request.items.clone();
     let filled = encode_body(CLI.name, move || history::fill(&database, &items[..input])).await?;
     Ok((session, filled.map_err(failure)?))
+}
+
+/// Whether `call`, a call as `agy` describes it, is of Jush's MCP server.
+fn own_call(call: &Value) -> bool {
+    call.get("name")
+        .and_then(Value::as_str)
+        .is_some_and(tools::is_server_tool)
 }
 
 /// A prompt in flight: its request's id, the model it runs, by Jush's id,

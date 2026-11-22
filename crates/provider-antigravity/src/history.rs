@@ -26,7 +26,7 @@ use jush_provider_subscription_cli::unsent_text;
 use rusqlite::{Connection, MAIN_DB};
 use serde_json::Value;
 
-use crate::tools::SERVER;
+use crate::tools;
 
 /// The step types and the status of a finished step.
 const USER_INPUT: u64 = 14;
@@ -114,7 +114,7 @@ fn steps(items: &[InferenceItem]) -> Vec<(u64, Vec<u8>)> {
             } => {
                 let call = Message::default()
                     .text(1, tool_use_id)
-                    .text(2, &format!("mcp_{SERVER}_{tool_name}"))
+                    .text(2, &tools::agy_name(tool_name))
                     .text(3, &input.to_string())
                     .0;
                 calls.insert(tool_use_id, (call.clone(), input));

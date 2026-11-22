@@ -11,10 +11,15 @@
 //! takes it, and takes a seat among its machine's idle processes, which may
 //! close it meanwhile (`crates/provider-subscription-cli/src/idle.rs`).
 //!
-//! `agy` reports a turn's tokens only at its end, summed over the turn's
-//! calls, and the tokens the session holds after each call. A run reports the
-//! latter as its usage's input: the context the next request carries, which
-//! the agent compacts by.
+//! `agy` reports each model request's tokens when it ends, input, cache and
+//! output together, and a turn's split into them only at the turn's end,
+//! summed over its requests. A run reports its last request's as its input:
+//! the context the next request carries, which the agent compacts by. The
+//! turn's last run also reports the turn's output, and splits its input as the
+//! turn's is split. The agent sums a turn's output and speed over its runs, so
+//! both are the turn's; the input the usage ledger counts misses the requests
+//! `agy` makes inside a run, such as one that reads a saved result, since
+//! counting two requests in one response would read as twice the context.
 
 use std::rc::Rc;
 use std::sync::Arc;
@@ -30,7 +35,7 @@ use jush_provider_common::{
 use jush_provider_subscription_cli::{Placement, ProcessSlot};
 use jush_shared_types::{Model, TokenUsage};
 
-use crate::live::{Live, Next};
+use crate::live::{Live, Next, TurnUsage};
 use crate::{CLI, Shared};
 
 /// A session's runtime.
@@ -130,15 +135,16 @@ fn run(runtime: &mut AgyRuntime, request: InferenceRequest) -> impl Stream<Item 
                     }
                     yield ProviderEvent::ThinkingDelta(text);
                 }
+                Next::Step(step) => yield ProviderEvent::Opaque(step),
                 Next::Called(call) => {
-                    let usage = usage(&live);
+                    let usage = usage(live.context(), None);
                     runtime.slot.keep(live);
                     yield ProviderEvent::ToolCall(call);
                     yield ProviderEvent::response(usage, CLI.name, &request.model_id);
                     return;
                 }
                 Next::Answered => {
-                    let usage = usage(&live);
+                    let usage = usage(live.context(), live.turn());
                     runtime.slot.keep(live);
                     yield ProviderEvent::response(usage, CLI.name, &request.model_id);
                     return;
@@ -157,11 +163,33 @@ fn run(runtime: &mut AgyRuntime, request: InferenceRequest) -> impl Stream<Item 
     }
 }
 
-/// The usage a run reports: the tokens the session holds after its latest
-/// call, as its input.
-fn usage(live: &Live) -> Option<TokenUsage> {
-    live.context().map(|held| TokenUsage {
-        input_tokens: held,
-        ..TokenUsage::default()
+/// The usage a run reports, whose tokens add up to `held`, the tokens of its
+/// last request, which the agent takes for the context: `held` as its input;
+/// for the turn's last run, which has `turn`, the turn's output, and the rest
+/// of `held` as input, split as the turn's input is.
+fn usage(held: Option<u64>, turn: Option<TurnUsage>) -> Option<TokenUsage> {
+    let held = held?;
+    let Some(turn) = turn else {
+        return Some(TokenUsage {
+            input_tokens: held,
+            ..TokenUsage::default()
+        });
+    };
+    let input = held - turn.output.min(held);
+    let total = turn.input + turn.cache_read + turn.cache_write;
+    let share = |part: u64| {
+        if total == 0 {
+            0
+        } else {
+            u64::try_from(u128::from(input) * u128::from(part) / u128::from(total)).unwrap_or(input)
+        }
+    };
+    let cache_read_tokens = share(turn.cache_read);
+    let cache_write_tokens = share(turn.cache_write);
+    Some(TokenUsage {
+        input_tokens: input - cache_read_tokens - cache_write_tokens,
+        output_tokens: turn.output,
+        cache_read_tokens,
+        cache_write_tokens,
     })
 }
