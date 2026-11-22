@@ -123,5 +123,5 @@ async fn printed(probed: Probed<'_>) -> Result<Vec<u8>, Unanswered> {
 /// how `agy` refused it or `initialize`.
 async fn new_session(probed: Probed<'_>) -> Result<Result<Value, Refusal>, Unanswered> {
     let mut output = Output::new(probed.output);
-    acp::open(probed.control, &mut output, &start::home(probed.site), None).await
+    acp::open(probed.control, &mut output, &start::workspace(probed.site), None).await
 }

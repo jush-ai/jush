@@ -147,11 +147,11 @@ pub(crate) enum Line {
     /// parameters.
     Notification { method: String, params: Value },
     /// A request of `agy`'s, which Jush answers.
-    Request { id: Value },
+    Request { id: Value, method: String, params: Value },
 }
 
-/// The `session/new` request, in the process's directory `cwd`: the session's
-/// MCP servers are the agent's.
+/// The `session/new` request, in the workspace `cwd`: the session's MCP
+/// servers are the agent's.
 fn new_session(id: u64, cwd: &str) -> Bytes {
     request(id, "session/new", json!({ "cwd": cwd, "mcpServers": [] }))
 }
@@ -203,7 +203,7 @@ pub(crate) async fn ask(
     loop {
         match output.line().await {
             Some(Line::Answer { id: answered, answer }) if answered == id => return Ok(answer),
-            Some(Line::Request { id }) => control.write_stdin(refuse(id)).await.map_err(written)?,
+            Some(Line::Request { id, .. }) => control.write_stdin(refuse(id)).await.map_err(written)?,
             Some(_) => {}
             None => return Err(Unanswered::Ended(output.stderr())),
         }
@@ -216,7 +216,7 @@ const INITIALIZE: u64 = 1;
 const SESSION: u64 = 2;
 pub(crate) const FIRST_FREE: u64 = 3;
 
-/// Opens a session in a new process whose directory is `cwd`: `initialize`,
+/// Opens a session whose workspace is `cwd` in a new process: `initialize`,
 /// then `session/load` of `load`, else `session/new`. What the session's
 /// request answered, or how `agy` refused either.
 pub(crate) async fn open(
@@ -235,14 +235,40 @@ pub(crate) async fn open(
     ask(control, output, SESSION, session).await
 }
 
-/// The answer that refuses `agy`'s request `id`: Jush offers no method, since
-/// it gave `agy` no file system, no terminal and no question to ask.
+/// The answer that refuses `agy`'s request `id`: Jush answers only a
+/// permission request (`permission`), since it gave `agy` no file system and
+/// no terminal.
 pub(crate) fn refuse(id: Value) -> Bytes {
     line(&json!({
         "jsonrpc": "2.0",
         "id": id,
         "error": { "code": -32601, "message": "Method not found" },
     }))
+}
+
+/// The answer to `session/request_permission` `id`, whose parameters are
+/// `params`, and whether it allows the call: the option of the kind that
+/// allows the call once, or denies it once. A request that offers no such
+/// option is refused, which `agy` takes as a denial.
+pub(crate) fn permission(id: Value, params: &Value, allow: bool) -> (Bytes, bool) {
+    let kind = if allow { "allow_once" } else { "reject_once" };
+    let option = params["options"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .find(|option| option["kind"] == kind)
+        .and_then(|option| option["optionId"].as_str());
+    match option {
+        Some(option) => {
+            let line = line(&json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "result": { "outcome": { "outcome": "selected", "optionId": option } },
+            }));
+            (line, allow)
+        }
+        None => (refuse(id), false),
+    }
 }
 
 fn line(message: &Value) -> Bytes {
@@ -292,7 +318,11 @@ impl Output {
                     continue;
                 };
                 let line = match (message.id, message.method) {
-                    (Some(id), Some(_)) => Line::Request { id },
+                    (Some(id), Some(method)) => Line::Request {
+                        id,
+                        method,
+                        params: message.params.unwrap_or(Value::Null),
+                    },
                     (None, Some(method)) => Line::Notification {
                         method,
                         params: message.params.unwrap_or(Value::Null),

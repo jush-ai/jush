@@ -39,6 +39,17 @@ use crate::acp::Lines;
 /// The MCP server's name in the agent and the configuration.
 pub(crate) const SERVER: &str = "jush";
 
+/// The name `agy` gives the model for the server's tool `tool`.
+pub(crate) fn agy_name(tool: &str) -> String {
+    format!("mcp_{SERVER}_{tool}")
+}
+
+/// Whether `name`, a tool's name as `agy` gives it, is one of the server's.
+pub(crate) fn is_server_tool(name: &str) -> bool {
+    name.strip_prefix(&agy_name(""))
+        .is_some_and(|tool| !tool.is_empty())
+}
+
 /// Where `agy` reads its MCP servers in its `HOME`.
 pub(crate) const CONFIG: &str = ".gemini/config/mcp_config.json";
 
