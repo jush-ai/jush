@@ -1,5 +1,5 @@
-//! A job's media: the images, videos and PDF documents `jush file view` hands
-//! to the job, whatever its stdout is.
+//! A job's media: the images, videos, audio and PDF documents `jush file
+//! view` hands to the job, whatever its stdout is.
 //!
 //! - They are kept in `media/<n>` of the job's directory, numbered from 1 in
 //!   arrival order, within [`JOB_MEDIA`] media and [`JOB_MEDIA_BYTES`]. A
@@ -211,6 +211,7 @@ fn kind(media_type: &str) -> &'static str {
     match media_type.split_once('/').map(|(kind, _)| kind) {
         Some("image") => "image",
         Some("video") => "video",
+        Some("audio") => "audio",
         _ => "document",
     }
 }

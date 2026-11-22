@@ -145,6 +145,7 @@
       "line": "{kind} nicht gespeichert: {reason}",
       "image": "Bild",
       "video": "Video",
+      "audio": "Audio",
       "document": "Dokument"
     },
     "shellFallback": "Shell-Befehl ausführen",

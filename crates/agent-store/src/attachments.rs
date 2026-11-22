@@ -57,8 +57,8 @@ pub fn snippet(bytes: &[u8]) -> String {
 }
 
 /// The media type an upload is recorded with: the one its bytes show when a
-/// model can read them natively, as an image, a video or a PDF, else the one
-/// it was sent with.
+/// model can read them natively, as an image, a video, a recording or a PDF,
+/// else the one it was sent with.
 pub fn upload_media_type(sent: &str, bytes: &[u8]) -> String {
     sniff_media_type(bytes).map_or_else(|| sent.to_owned(), str::to_owned)
 }
@@ -80,9 +80,10 @@ pub struct Upload<'a> {
 ///
 /// The blocks are, in order:
 ///
-/// 1. The medium a model reads natively, when the upload is an image, a video
-///    or a PDF. It references the upload's own blob, with its size in pixels,
-///    and its bytes come with the blocks, for the session to hold.
+/// 1. The medium a model reads natively, when the upload is an image, a
+///    video, a recording or a PDF. It references the upload's own blob, with
+///    its size in pixels, and its bytes come with the blocks, for the session
+///    to hold.
 /// 2. The file's record, with its opening when it is text.
 ///
 /// An image enters fitted. One that fitting changed references the fitted
@@ -133,6 +134,17 @@ pub async fn upload_blocks(
                     media_type: media.media_type.to_owned(),
                     width: size.map(|size| size.width),
                     height: size.map(|size| size.height),
+                },
+            })
+        }
+        Some(media) if media.kind == ModelMediaKind::Audio => {
+            held.hold(upload.sha256.clone(), upload.bytes.clone());
+            Some(UserContentBlock::Audio {
+                source: MediaSource::Ref {
+                    r#ref: upload.sha256.clone(),
+                    media_type: media.media_type.to_owned(),
+                    width: None,
+                    height: None,
                 },
             })
         }

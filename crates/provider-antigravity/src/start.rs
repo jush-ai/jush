@@ -15,8 +15,8 @@
 //! - `agy` asks before every call it does not allow by itself, and Jush
 //!   allows only its own tools' (`live.rs`): the machine holds every
 //!   account's sign-in, which no model may read. The session's workspace,
-//!   whose files `agy` reads without asking, is a directory nothing creates,
-//!   so it holds none of the process's files.
+//!   whose files `agy` reads without asking, holds only the media Jush gives
+//!   the model as files (`media.rs`), none of the process's own.
 //! - A usage read runs `agy --print /usage`, which prints the account's usage
 //!   and ends (`quota.rs`).
 //! - No API key in the machine's environment reaches `agy`, so the account
@@ -50,7 +50,7 @@ pub(crate) const CONVERSATIONS: &str = ".gemini/antigravity-cli/conversations";
 /// What the agent's prompt says of its one tool of `agy`'s, after the
 /// request's system prompt: without it the model reads the user's files with
 /// it, which Jush denies (measured).
-const READ_FILE: &str = "Your read_file tool reads only the files Antigravity saves on its own machine when a tool result is too long for it; read anything else with shell.";
+const READ_FILE: &str = "Your read_file tool reads only the files in your workspace and the files Antigravity saves on its own machine when a tool result is too long for it; read anything else with shell.";
 
 /// The request that starts `agy`'s own sign-in at `site`, in its new
 /// directory. It prints the link to sign in at and reads the code Google's

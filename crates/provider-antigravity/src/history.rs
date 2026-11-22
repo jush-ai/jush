@@ -22,7 +22,7 @@ use std::collections::HashMap;
 
 use bytes::Bytes;
 use jush_provider_common::{InferenceItem, Medium, ResultPart, UserPart};
-use jush_provider_subscription_cli::unsent_text;
+use jush_shared_types::ModelMediaKind;
 use rusqlite::{Connection, MAIN_DB};
 use serde_json::Value;
 
@@ -183,15 +183,17 @@ fn user_text(content: &[UserPart]) -> String {
 }
 
 /// A part of a user message as text: its text, or a medium named as a tool's
-/// result names one (`unsent_text`), or by its URL.
+/// result names one (`MediaBytes::unsent_text`), or by its URL.
 pub(crate) fn part_text(part: &UserPart) -> String {
     match part {
         UserPart::Text(text) => text.clone(),
-        UserPart::Image(Medium::Bytes(bytes)) | UserPart::Video(Medium::Bytes(bytes)) => {
-            unsent_text(bytes)
-        }
-        UserPart::Image(Medium::Url(url)) | UserPart::Video(Medium::Url(url)) => format!("[{url}]"),
-        UserPart::Document { bytes, .. } => unsent_text(bytes),
+        UserPart::Image(Medium::Bytes(bytes))
+        | UserPart::Video(Medium::Bytes(bytes))
+        | UserPart::Audio(bytes)
+        | UserPart::Document { bytes, .. } => bytes.unsent_text(),
+        UserPart::Image(Medium::Url(url)) => format!("[{url}]"),
+        // `agy` fetches no address; the model reads that it was not sent.
+        UserPart::Video(medium @ Medium::Url(_)) => medium.unsent_text(ModelMediaKind::Video),
     }
 }
 
@@ -201,9 +203,10 @@ fn result_text(output: &[ResultPart]) -> String {
         .iter()
         .map(|part| match part {
             ResultPart::Text(text) => text.clone(),
-            ResultPart::Image(bytes) | ResultPart::Video(bytes) | ResultPart::Document { bytes, .. } => {
-                unsent_text(bytes)
-            }
+            ResultPart::Image(bytes)
+            | ResultPart::Video(bytes)
+            | ResultPart::Audio(bytes)
+            | ResultPart::Document { bytes, .. } => bytes.unsent_text(),
         })
         .collect::<Vec<_>>()
         .join("\n")

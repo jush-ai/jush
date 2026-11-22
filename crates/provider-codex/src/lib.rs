@@ -30,7 +30,7 @@ use std::{
 
 use jush_provider_common::{
     CatalogError, InferenceRequest, Provider, ProviderRun, ProviderRuntime,
-    RequestLimits, Searches, ToolResultKinds, RuntimeEnv, RuntimeError,
+    RequestLimits, Searches, MediaKinds, RuntimeEnv, RuntimeError,
     credentials::{Accounts, CredentialPool, SubscriptionAccounts},
     images::ImageMaker,
     quota::{ProviderQuota, QuotaSnapshotStore},
@@ -318,10 +318,11 @@ impl ProviderRuntime for CodexRuntime {
     }
 
     fn request_limits(&self, _model: &Model) -> RequestLimits {
-        // Images inside `function_call_output.output`; the backend documents
-        // no file part (`crates/provider-common/src/contract.rs`).
+        // Images in a message and inside `function_call_output.output`; the
+        // backend documents no file part (`crates/provider-common/src/contract.rs`).
         RequestLimits {
-            tool_results: ToolResultKinds::IMAGES,
+            messages: MediaKinds::IMAGES,
+            tool_results: MediaKinds::IMAGES,
             ..RequestLimits::OPENAI
         }
     }

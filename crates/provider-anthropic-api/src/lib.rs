@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 use jush_provider_common::{
     InferenceRequest, OfferedModel, Provider, ProviderHttp, ProviderRun, ProviderRuntime,
-    ModelWires, RequestLimits, ToolResultKinds, RuntimeEnv, RuntimeError, Secret, endpoint_url, read_http_failure,
+    ModelWires, RequestLimits, MediaKinds, RuntimeEnv, RuntimeError, Secret, endpoint_url, read_http_failure,
 };
 use jush_shared_types::{
     AuthState, CacheTtl, Clock, Model, ProviderErrorDiagnostics, ProviderFailureFacts,
@@ -163,7 +163,7 @@ impl ProviderRuntime for AnthropicRuntime {
         // Images and documents inside `tool_result.content`
         // (`crates/provider-common/src/contract.rs`).
         RequestLimits {
-            tool_results: ToolResultKinds::IMAGES_AND_DOCUMENTS,
+            tool_results: MediaKinds::IMAGES_AND_DOCUMENTS,
             ..RequestLimits::anthropic_messages(model)
         }
     }

@@ -47,7 +47,7 @@ use async_stream::stream;
 use jush_provider_common::credentials::{AuthFailure, AuthReason};
 use jush_provider_common::{
     Ahead, CallEvent, CallOutcome, EarlyEnd, ErrorCode, InferenceRequest, ProviderEvent, ProviderFailure, ProviderRun,
-    ProviderRuntime, RequestLimits, ToolResultKinds, offers, quota::Observation,
+    ProviderRuntime, RequestLimits, MediaKinds, offers, quota::Observation,
 };
 use jush_shared_types::Model;
 use futures_util::StreamExt as _;
@@ -189,7 +189,7 @@ impl ProviderRuntime for ClaudeCodeRuntime {
         // a file of its own instead of giving it to the model
         // (`crates/provider-common/src/contract.rs`).
         RequestLimits {
-            tool_results: ToolResultKinds::IMAGES,
+            tool_results: MediaKinds::IMAGES,
             ..RequestLimits::anthropic_messages(model)
         }
     }

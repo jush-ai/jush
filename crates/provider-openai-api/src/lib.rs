@@ -23,7 +23,7 @@ use std::sync::Arc;
 
 use jush_provider_common::{
     InferenceRequest, OfferedModel, Provider, ProviderHttp, ProviderRun, ProviderRuntime,
-    ModelWires, RequestLimits, ToolResultKinds, RuntimeEnv, RuntimeError, Secret, endpoint_url, read_http_failure,
+    ModelWires, RequestLimits, MediaKinds, RuntimeEnv, RuntimeError, Secret, endpoint_url, read_http_failure,
     audio::AudioMaker,
     images::ImageMaker,
     media::MediaVendor,
@@ -264,7 +264,7 @@ impl ProviderRuntime for OpenAiRuntime {
         // Images and documents in a user message right after the call's
         // output, in both APIs (`crates/provider-common/src/contract.rs`).
         RequestLimits {
-            tool_results: ToolResultKinds::IMAGES_AND_DOCUMENTS,
+            tool_results: MediaKinds::IMAGES_AND_DOCUMENTS,
             ..RequestLimits::OPENAI
         }
     }

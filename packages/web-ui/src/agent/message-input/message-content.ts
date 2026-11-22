@@ -10,7 +10,7 @@ type TextBlock = { type: 'text'; text: string }
 const FILE: { type: 'file' } = { type: 'file' }
 
 function isMedia(block: { type: string } | undefined): boolean {
-  return block?.type === 'image' || block?.type === 'video' || block?.type === 'document'
+  return block?.type === 'image' || block?.type === 'video' || block?.type === 'audio' || block?.type === 'document'
 }
 
 /**

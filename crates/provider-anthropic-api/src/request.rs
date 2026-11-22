@@ -10,7 +10,7 @@ use jush_provider_common::{
     InferenceItem, InferenceRequest, MediaBytes, Medium, PromptCache, ResultPart, ToolDefinition,
     UserPart, json_body, thinking::effort_budget, wire::messages,
 };
-use jush_shared_types::{B64Bytes, ThinkingConfig, ThinkingForm, ThinkingSummary, is_blank};
+use jush_shared_types::{B64Bytes, ModelMediaKind, ThinkingConfig, ThinkingForm, ThinkingSummary, is_blank};
 use serde::Serialize;
 
 /// The prefix this provider puts on the signatures and redacted data it
@@ -481,8 +481,9 @@ fn own(tagged: &str) -> Option<&str> {
 }
 
 /// A message's content: text as text, images and PDFs inline, and an image
-/// by URL as a text that names it. The API has no video block, and the
-/// catalog marks video unsupported, so a video becomes a placeholder.
+/// by URL as a text that names it. The API has no video or audio block, and
+/// replay gives the model neither (`RequestLimits::anthropic_messages`), so
+/// one becomes a placeholder.
 fn user_content(content: &[UserPart]) -> Vec<Block<'_>> {
     content
         .iter()
@@ -490,8 +491,11 @@ fn user_content(content: &[UserPart]) -> Vec<Block<'_>> {
             UserPart::Text(text) => Block::Text {
                 text: Cow::Borrowed(text),
             },
-            UserPart::Video(_) => Block::Text {
-                text: Cow::Borrowed("[video]"),
+            UserPart::Video(medium) => Block::Text {
+                text: Cow::Owned(medium.unsent_text(ModelMediaKind::Video)),
+            },
+            UserPart::Audio(bytes) => Block::Text {
+                text: Cow::Owned(bytes.unsent_text()),
             },
             UserPart::Image(Medium::Bytes(bytes)) => Block::Image {
                 source: Base64::from(bytes),
@@ -510,7 +514,7 @@ fn user_content(content: &[UserPart]) -> Vec<Block<'_>> {
 /// A tool result's content: text, images and documents
 /// (`crates/provider-common/src/contract.rs`).
 ///
-/// A video becomes a placeholder that names its type.
+/// A video or a recording becomes a placeholder that names its type.
 fn tool_result_content(output: &[ResultPart]) -> Vec<ResultBlock<'_>> {
     output
         .iter()
@@ -518,8 +522,8 @@ fn tool_result_content(output: &[ResultPart]) -> Vec<ResultBlock<'_>> {
             ResultPart::Text(text) => ResultBlock::Text {
                 text: Cow::Borrowed(text),
             },
-            ResultPart::Video(bytes) => ResultBlock::Text {
-                text: Cow::Owned(format!("[video:{}]", bytes.media_type)),
+            ResultPart::Video(bytes) | ResultPart::Audio(bytes) => ResultBlock::Text {
+                text: Cow::Owned(bytes.unsent_text()),
             },
             ResultPart::Image(bytes) => ResultBlock::Image {
                 source: Base64::from(bytes),

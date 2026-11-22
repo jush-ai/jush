@@ -41,13 +41,14 @@ export function goneLine(part: GoneMedium): string {
 
 /**
  * What a call titled `name` shows of its result's media, in their order;
- * its text is the call's own, and a document shows only as its line in the
- * output.
+ * its text is the call's own, and a recording or a document shows only as
+ * its line in the output.
  */
 export function toolMedia(output: readonly ToolResultContentBlock[], name: string): ToolMedium[] {
   return output.flatMap((part): ToolMedium[] => {
     switch (part.type) {
       case 'text':
+      case 'audio':
       case 'document':
         return []
       case 'gone':

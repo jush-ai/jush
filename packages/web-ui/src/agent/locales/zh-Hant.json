@@ -145,6 +145,7 @@
       "line": "{kind}未儲存：{reason}",
       "image": "圖片",
       "video": "影片",
+      "audio": "音訊",
       "document": "文件"
     },
     "shellFallback": "執行 shell 指令",

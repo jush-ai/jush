@@ -321,9 +321,9 @@ fn own_signature(tagged: &str) -> Option<&str> {
         .filter(|signature| !signature.is_empty())
 }
 
-/// A message's content: text as text; images, videos and PDFs as inline
-/// data, a video with its audio track; an image or video by URL as file
-/// data.
+/// A message's content: text as text; images, videos, recordings and PDFs
+/// as inline data, a video with its audio track; an image or video by URL as
+/// file data.
 fn user_parts(content: &[UserPart]) -> Vec<Part<'_>> {
     content
         .iter()
@@ -333,7 +333,8 @@ fn user_parts(content: &[UserPart]) -> Vec<Part<'_>> {
             },
             UserPart::Document { bytes, .. }
             | UserPart::Image(Medium::Bytes(bytes))
-            | UserPart::Video(Medium::Bytes(bytes)) => inline(bytes),
+            | UserPart::Video(Medium::Bytes(bytes))
+            | UserPart::Audio(bytes) => inline(bytes),
             UserPart::Image(Medium::Url(url)) | UserPart::Video(Medium::Url(url)) => {
                 Part::FileData {
                     file_data: FileUri { file_uri: url },
@@ -353,7 +354,7 @@ fn inline<'a>(bytes: &MediaBytes) -> Part<'a> {
 }
 
 /// A tool's result: its text in the function response, which holds JSON
-/// only, and the images, videos and documents it returned as inline parts
+/// only, and the media it returned as inline parts
 /// beside it, so the model sees what a command showed.
 fn function_response<'a>(
     tool_use_id: &'a str,
@@ -364,7 +365,10 @@ fn function_response<'a>(
         .iter()
         .filter_map(|part| match part {
             ResultPart::Text(text) => Some(text.as_str()),
-            ResultPart::Image(_) | ResultPart::Video(_) | ResultPart::Document { .. } => None,
+            ResultPart::Image(_)
+            | ResultPart::Video(_)
+            | ResultPart::Audio(_)
+            | ResultPart::Document { .. } => None,
         })
         .collect::<Vec<_>>()
         .join("\n");
@@ -379,6 +383,7 @@ fn function_response<'a>(
         match part {
             ResultPart::Image(bytes)
             | ResultPart::Video(bytes)
+            | ResultPart::Audio(bytes)
             | ResultPart::Document { bytes, .. } => parts.push(inline(bytes)),
             ResultPart::Text(_) => {}
         }
@@ -386,8 +391,8 @@ fn function_response<'a>(
     parts
 }
 
-/// A tool's result as text for a call replayed as text: each image, video or
-/// document named by its media type.
+/// A tool's result as text for a call replayed as text: each medium named
+/// by its media type.
 fn output_text(output: &[ResultPart]) -> String {
     output
         .iter()
@@ -395,7 +400,8 @@ fn output_text(output: &[ResultPart]) -> String {
             ResultPart::Text(text) => text.clone(),
             ResultPart::Image(bytes)
             | ResultPart::Video(bytes)
-            | ResultPart::Document { bytes, .. } => format!("[{}]", bytes.media_type),
+            | ResultPart::Audio(bytes)
+            | ResultPart::Document { bytes, .. } => bytes.unsent_text(),
         })
         .collect::<Vec<_>>()
         .join("\n")

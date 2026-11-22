@@ -470,6 +470,7 @@ fn named(media: &MediaRef) -> (&'static str, &BlobRef) {
     match media {
         MediaRef::Image { r#ref, .. } => ("image", r#ref),
         MediaRef::Video { r#ref, .. } => ("video", r#ref),
+        MediaRef::Audio { r#ref, .. } => ("audio", r#ref),
         MediaRef::Document { r#ref, .. } => ("document", r#ref),
     }
 }
@@ -487,6 +488,9 @@ fn referenced_media(
             UserContentBlock::Video {
                 source: MediaSource::Ref { r#ref, .. },
             } => ("video", r#ref),
+            UserContentBlock::Audio {
+                source: MediaSource::Ref { r#ref, .. },
+            } => ("audio", r#ref),
             UserContentBlock::Document {
                 source: DocumentSource::Ref { r#ref, .. },
             } => ("document", r#ref),

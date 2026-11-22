@@ -44,7 +44,7 @@ pub use login::{CliKit, CliLogin};
 pub use probe::{PROBE_LIMIT, Probed, Question, Unanswered, probe};
 pub use process::{HeldProcess, Tail, exit_message};
 pub use releases::{Distribution, Fetch, FollowedReleases};
-pub use tools::{ToolEvent, ToolServer, tool_result, unsent_text};
+pub use tools::{ToolEvent, ToolServer, tool_result};
 pub use placement::{
     AccountMachine, AccountWork, CliSite, CliStart, CliStarter, CliSystem, CliWork, ConfigDir,
     Handover, Placed, Placement, StartError, StartStage, StartSteps, WorkLease,

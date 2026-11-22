@@ -107,6 +107,12 @@ pub enum UserContentBlock {
         #[garde(dive)]
         source: MediaSource,
     },
+    /// A recording the model reads natively, always by its bytes; only a
+    /// model whose catalog marks audio support receives one.
+    Audio {
+        #[garde(dive)]
+        source: MediaSource,
+    },
     /// A PDF the model reads natively.
     Document {
         #[garde(dive)]
@@ -335,6 +341,10 @@ pub enum ToolResultContentBlock {
         #[garde(dive)]
         source: ToolMediaSource,
     },
+    Audio {
+        #[garde(dive)]
+        source: ToolMediaSource,
+    },
     /// A PDF document the model viewed
     /// (`crates/plugin-file/command/src/files.rs`), named as its line names
     /// it.
@@ -342,7 +352,7 @@ pub enum ToolResultContentBlock {
         #[garde(dive)]
         source: DocumentSource,
     },
-    /// An image, a video or a document the result no longer holds, in its place: what
+    /// A medium the result no longer holds, in its place: what
     /// it was and why it is gone. The model reads it as one line of text.
     Gone {
         #[garde(skip)]
@@ -368,7 +378,7 @@ pub enum GoneCause {
     NotStored { error: String },
 }
 
-/// Where the bytes of a tool result's image or video are: in the
+/// Where the bytes of a tool result's image, video or recording are: in the
 /// conversation owner's blob namespace. A tagged enum of one variant, so a
 /// stored result keeps `{ "type": "ref", ... }`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, garde::Validate)]

@@ -14,7 +14,7 @@
 use std::borrow::Cow;
 
 use base64::{Engine, engine::general_purpose::STANDARD};
-use jush_shared_types::{ThinkingConfig, ThinkingSummary};
+use jush_shared_types::{ModelMediaKind, ThinkingConfig, ThinkingSummary};
 use serde::Serialize;
 
 use crate::{
@@ -415,10 +415,13 @@ fn push_tool_result<'a>(
             let mut parts: Vec<InputPart<'_>> = output
                 .iter()
                 .filter_map(|part| match part {
-                    ResultPart::Image(bytes) | ResultPart::Video(bytes) => {
-                        Some(InputPart::InputImage {
-                            image_url: Cow::Owned(data_url(bytes)),
-                            detail: "auto",
+                    ResultPart::Image(bytes) => Some(InputPart::InputImage {
+                        image_url: Cow::Owned(data_url(bytes)),
+                        detail: "auto",
+                    }),
+                    ResultPart::Video(bytes) | ResultPart::Audio(bytes) => {
+                        Some(InputPart::InputText {
+                            text: Cow::Owned(bytes.unsent_text()),
                         })
                     }
                     ResultPart::Document { bytes, file_name } => Some(InputPart::InputFile {
@@ -447,9 +450,10 @@ fn push_tool_result<'a>(
                 .iter()
                 .filter_map(|part| match part {
                     ResultPart::Text(text) => Some(text.as_str()),
-                    ResultPart::Image(_) | ResultPart::Video(_) | ResultPart::Document { .. } => {
-                        None
-                    }
+                    ResultPart::Image(_)
+                    | ResultPart::Video(_)
+                    | ResultPart::Audio(_)
+                    | ResultPart::Document { .. } => None,
                 })
                 .collect::<Vec<_>>()
                 .join("\n");
@@ -460,9 +464,10 @@ fn push_tool_result<'a>(
                         image_url: Cow::Owned(data_url(bytes)),
                         detail: "auto",
                     }),
-                    ResultPart::Text(_) | ResultPart::Video(_) | ResultPart::Document { .. } => {
-                        None
-                    }
+                    ResultPart::Text(_)
+                    | ResultPart::Video(_)
+                    | ResultPart::Audio(_)
+                    | ResultPart::Document { .. } => None,
                 })
                 .collect();
             let output = if images.is_empty() {
@@ -495,7 +500,7 @@ fn own_reasoning(signature: &str, tag: &str) -> Option<ReasoningItem> {
 }
 
 /// A user message's content as Responses parts: text as text, PDFs as
-/// files, images and videos as images.
+/// files, images as images.
 fn responses_user_parts(content: &[UserPart]) -> Vec<InputPart<'_>> {
     content
         .iter()
@@ -507,9 +512,15 @@ fn responses_user_parts(content: &[UserPart]) -> Vec<InputPart<'_>> {
                 filename: file_name,
                 file_data: data_url(bytes),
             },
-            UserPart::Image(medium) | UserPart::Video(medium) => InputPart::InputImage {
+            UserPart::Image(medium) => InputPart::InputImage {
                 image_url: media_url(medium),
                 detail: "auto",
+            },
+            UserPart::Video(medium) => InputPart::InputText {
+                text: Cow::Owned(medium.unsent_text(ModelMediaKind::Video)),
+            },
+            UserPart::Audio(bytes) => InputPart::InputText {
+                text: Cow::Owned(bytes.unsent_text()),
             },
         })
         .collect()
@@ -753,14 +764,18 @@ fn chat_user_content(content: &[UserPart]) -> ChatContent<'_> {
                     file_data: data_url(bytes),
                 },
             }),
-            UserPart::Image(medium) | UserPart::Video(medium) => {
-                parts.push(ChatPart::ImageUrl {
-                    image_url: ImageUrl {
-                        url: media_url(medium),
-                        detail: "auto",
-                    },
-                });
-            }
+            UserPart::Image(medium) => parts.push(ChatPart::ImageUrl {
+                image_url: ImageUrl {
+                    url: media_url(medium),
+                    detail: "auto",
+                },
+            }),
+            UserPart::Video(medium) => parts.push(ChatPart::Text {
+                text: Cow::Owned(medium.unsent_text(ModelMediaKind::Video)),
+            }),
+            UserPart::Audio(bytes) => parts.push(ChatPart::Text {
+                text: Cow::Owned(bytes.unsent_text()),
+            }),
         }
     }
     let texts: Option<Vec<&str>> = parts
@@ -776,8 +791,8 @@ fn chat_user_content(content: &[UserPart]) -> ChatContent<'_> {
     }
 }
 
-/// The images, videos and documents a tool returned, in a user message
-/// after the tool's output: a tool message is text only.
+/// The images and documents a tool returned, in a user message after the
+/// tool's output: a tool message is text only.
 fn push_tool_media<'a>(
     messages: &mut Vec<ChatMessage<'a>>,
     tool_use_id: &str,
@@ -786,11 +801,14 @@ fn push_tool_media<'a>(
     let mut parts: Vec<ChatPart<'_>> = output
         .iter()
         .filter_map(|part| match part {
-            ResultPart::Image(bytes) | ResultPart::Video(bytes) => Some(ChatPart::ImageUrl {
+            ResultPart::Image(bytes) => Some(ChatPart::ImageUrl {
                 image_url: ImageUrl {
                     url: Cow::Owned(data_url(bytes)),
                     detail: "auto",
                 },
+            }),
+            ResultPart::Video(bytes) | ResultPart::Audio(bytes) => Some(ChatPart::Text {
+                text: Cow::Owned(bytes.unsent_text()),
             }),
             ResultPart::Document { bytes, file_name } => Some(ChatPart::File {
                 file: FileData {
@@ -816,16 +834,17 @@ fn push_tool_media<'a>(
 }
 
 /// A tool's output as text, for formats without media in a tool's output:
-/// each image, video or document becomes a placeholder that names its type,
+/// each medium becomes a placeholder that names its type,
 /// such as `[image:image/png]`.
 pub fn tool_output_text(output: &[ResultPart]) -> String {
     output
         .iter()
         .map(|part| match part {
             ResultPart::Text(text) => text.clone(),
-            ResultPart::Image(bytes) => format!("[image:{}]", bytes.media_type),
-            ResultPart::Video(bytes) => format!("[video:{}]", bytes.media_type),
-            ResultPart::Document { bytes, .. } => format!("[document:{}]", bytes.media_type),
+            ResultPart::Image(bytes)
+            | ResultPart::Video(bytes)
+            | ResultPart::Audio(bytes)
+            | ResultPart::Document { bytes, .. } => bytes.unsent_text(),
         })
         .collect::<Vec<_>>()
         .join("\n")

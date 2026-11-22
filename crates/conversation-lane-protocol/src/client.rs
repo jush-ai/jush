@@ -446,6 +446,12 @@ pub enum MediaRef {
         #[garde(skip)]
         media_type: String,
     },
+    Audio {
+        #[garde(skip)]
+        r#ref: BlobRef,
+        #[garde(skip)]
+        media_type: String,
+    },
     Document {
         #[garde(skip)]
         r#ref: BlobRef,

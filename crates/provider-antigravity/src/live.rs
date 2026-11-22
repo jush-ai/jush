@@ -20,7 +20,8 @@
 //! it arrives as `session/update`s, which the run reports as a vendor's step.
 //! Before a call `agy` does not allow by itself, `agy` asks Jush, which allows
 //! only a call of its own MCP server: `read_file` then reads only what `agy`
-//! saved of a result, which it reads without asking. `agy`'s other tools ask
+//! saved of a result and the media Jush puts in the session's workspace
+//! (`media.rs`), which it reads without asking. `agy`'s other tools ask
 //! nothing and reach no file (measured). A denial ends the turn with no
 //! answer, which fails the run.
 //!
@@ -47,7 +48,7 @@ use jush_provider_common::{
     UserPart, encode_body,
 };
 use jush_provider_subscription_cli::{
-    CliStarter, CliWork, HeldProcess, KeptProcess, Placed, Placement, Unanswered, exit_message,
+    CliStarter, CliWork, ConfigDir, HeldProcess, KeptProcess, Placed, Placement, Unanswered, exit_message,
     tool_result,
 };
 use jush_shared_types::{OpaqueStatus, OpaqueView, Timestamp};
@@ -56,6 +57,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::acp::{self, Line, Output, Refusal};
 use crate::failure::{self, Reported};
+use crate::media;
 use crate::start::{self, CONVERSATIONS};
 use crate::tools::{self, Channel, ChannelEvent};
 use crate::{CLI, Shared, history};
@@ -71,6 +73,10 @@ pub(crate) struct Live {
     exit: SharedFuture<LocalBoxFuture<'static, ProcessEnd>>,
     output: Output,
     channel: Channel,
+    /// The process's directory, its `HOME`, on its machine.
+    home: String,
+    /// The media the process was given as files.
+    files: media::Files,
     /// `agy`'s id of the session.
     session: String,
     /// The conversation's session the process serves, which the logs name.
@@ -189,6 +195,8 @@ impl Live {
             exit,
             output: Output::new(output),
             channel: Channel::start(companion, request.tools.clone()),
+            home: start::home(&site),
+            files: media::Files::default(),
             session: String::new(),
             node: request.session_id.clone(),
             system_prompt: request.system_prompt.clone(),
@@ -256,8 +264,9 @@ impl Live {
             Some(call) => {
                 let (output, is_error) = result_of(&request.items, &call.tool_use_id)
                     .ok_or_else(|| failure(format!("The result of the call {} is missing", call.tool_use_id)))?;
+                let output = self.files.result(own_dir(&self.held)?, &self.home, output).await?;
                 self.channel
-                    .deliver(vec![(call.tool_use_id, tool_result(output, is_error))]);
+                    .deliver(vec![(call.tool_use_id, tool_result(&output, is_error))]);
                 Ok(())
             }
             None => self.prompt(shared, request).await,
@@ -281,7 +290,11 @@ impl Live {
             .skip(self.sent.len())
             .cloned()
             .collect();
-        let blocks: Vec<Value> = messages.iter().flat_map(|content| prompt_blocks(content)).collect();
+        let mut blocks: Vec<Value> = Vec::new();
+        for content in &messages {
+            let content = self.files.message(own_dir(&self.held)?, &self.home, content).await?;
+            blocks.extend(prompt_blocks(&content));
+        }
         let id = self.id();
         let line = acp::prompt(id, &self.session, blocks);
         self.write(line).await?;
@@ -573,6 +586,12 @@ async fn make_session(
     Ok((session, filled.map_err(failure)?))
 }
 
+/// The directory of the process `held`, which every turn's process has.
+fn own_dir(held: &HeldProcess) -> Result<&dyn ConfigDir, ProviderFailure> {
+    held.dir()
+        .ok_or_else(|| failure("Antigravity's process has no directory".to_owned()))
+}
+
 /// Whether `call`, a call as `agy` describes it, is of Jush's MCP server.
 fn own_call(call: &Value) -> bool {
     call.get("name")
@@ -708,7 +727,8 @@ fn agy_model(request: &InferenceRequest) -> String {
 }
 
 /// A user message as ACP content: text, and an image with its bytes; any
-/// other medium is named in text.
+/// other medium is named in text, a file in the workspace once it is one
+/// (`media.rs`).
 fn prompt_blocks(content: &[UserPart]) -> Vec<Value> {
     content
         .iter()

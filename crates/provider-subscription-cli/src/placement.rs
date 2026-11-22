@@ -259,6 +259,11 @@ pub trait ConfigDir {
     /// The file `name` the process wrote into its configuration directory.
     fn read<'a>(&'a self, name: &'a str) -> LocalBoxFuture<'a, Result<Bytes, DeviceError>>;
 
+    /// Writes `bytes` as the file `name`, a path in the directory written
+    /// with `/`, making its parents, such as a file the running process is
+    /// told to read.
+    fn write<'a>(&'a self, name: &'a str, bytes: Bytes) -> LocalBoxFuture<'a, Result<(), DeviceError>>;
+
     /// The standard output of `command` with `args`, run in the directory to
     /// its end; why it failed otherwise, such as its standard error. It is
     /// for a short command whose output is small, such as one that takes a

@@ -24,7 +24,7 @@ use std::ops::Range;
 
 use jush_agent_store::media::{Held, ModelView, missing_text};
 use jush_provider_common::{
-    InferenceItem, MediaBytes, Medium, RequestLimits, ResultPart, ToolDefinition, ToolResultKinds,
+    InferenceItem, MediaBytes, Medium, RequestLimits, ResultPart, ToolDefinition, MediaKinds,
     UserPart,
 };
 use jush_shared_types::{
@@ -259,8 +259,10 @@ pub struct RequestView<'a> {
     /// Half of the body limit, the most base64 one medium may take; none
     /// when the vendor documents no limit.
     half_body: Option<u64>,
+    /// The kinds of media the vendor's wire carries in a message.
+    messages: MediaKinds,
     /// The kinds of media the vendor's wire carries in a tool result.
-    tool_results: ToolResultKinds,
+    tool_results: MediaKinds,
 }
 
 impl<'a> RequestView<'a> {
@@ -277,6 +279,7 @@ impl<'a> RequestView<'a> {
             model,
             tools,
             half_body: limits.body_bytes.map(|bytes| bytes / 2),
+            messages: limits.messages,
             tool_results: limits.tool_results,
         }
     }
@@ -303,7 +306,9 @@ impl<'a> RequestView<'a> {
             .iter()
             .map(|part| match part {
                 ToolResultContentBlock::Text { text } => text.clone(),
-                ToolResultContentBlock::Image { source } | ToolResultContentBlock::Video { source } => {
+                ToolResultContentBlock::Image { source }
+                | ToolResultContentBlock::Video { source }
+                | ToolResultContentBlock::Audio { source } => {
                     let ToolMediaSource::Ref { media_type, .. } = source;
                     format!("[{media_type}]")
                 }
@@ -352,6 +357,13 @@ impl<'a> RequestView<'a> {
                     Err(text) => UserPart::Text(text),
                 }
             }
+            UserContentBlock::Audio { source } => {
+                match self.medium(ModelMediaKind::Audio, source) {
+                    Ok(Medium::Bytes(bytes)) => UserPart::Audio(bytes),
+                    Ok(Medium::Url(url)) => UserPart::Text(format!("[{url}]")),
+                    Err(text) => UserPart::Text(text),
+                }
+            }
             UserContentBlock::Document { source } => match self.document(source) {
                 Ok(bytes) => {
                     let DocumentSource::Ref { file_name, .. } = source;
@@ -365,9 +377,10 @@ impl<'a> RequestView<'a> {
         }
     }
 
-    /// A message's image or video: its URL, which names no type, since the
-    /// vendor fetches what it names, for a model that reads that kind of
-    /// medium at all; or its held bytes; or its text.
+    /// A message's image, video or recording: its URL, which names no type,
+    /// since the vendor fetches what it names, for a model that reads that
+    /// kind of medium at all, of an image or a video; or its held bytes; or
+    /// its text. Either needs a wire that carries the kind in a message.
     pub(crate) fn medium(
         &self,
         kind: ModelMediaKind,
@@ -375,23 +388,25 @@ impl<'a> RequestView<'a> {
     ) -> Result<Medium, String> {
         match source {
             MediaSource::Url { url } => {
-                let reads = match kind {
+                let accepted = match kind {
                     ModelMediaKind::Image => model_accepts_images(self.model),
                     ModelMediaKind::Video => model_accepts_video(self.model),
-                    // A document is never an address.
-                    ModelMediaKind::Document => false,
+                    // A recording and a document are never addresses.
+                    ModelMediaKind::Audio | ModelMediaKind::Document => false,
                 };
-                if reads {
-                    Ok(Medium::Url(url.clone()))
-                } else {
-                    Err(unsent(kind.name(), url, "the model does not accept it"))
+                match kind_refusal(self.messages.carries(kind), accepted) {
+                    None => Ok(Medium::Url(url.clone())),
+                    Some(reason) => Err(unsent(kind.name(), url, reason)),
                 }
             }
             MediaSource::Ref {
                 r#ref, media_type, ..
             } => {
-                let accepted = model_accepts_media_type(self.model, media_type);
-                self.bytes(kind.name(), r#ref, media_type, media_type, accepted)
+                let refused = kind_refusal(
+                    self.messages.carries(kind),
+                    model_accepts_media_type(self.model, media_type),
+                );
+                self.bytes(kind.name(), r#ref, media_type, media_type, refused)
                     .map(Medium::Bytes)
             }
         }
@@ -404,8 +419,11 @@ impl<'a> RequestView<'a> {
             media_type,
             file_name,
         } = source;
-        let accepted = accepts_document(self.model, media_type);
-        self.bytes("document", r#ref, media_type, file_name, accepted)
+        let refused = kind_refusal(
+            self.messages.carries(ModelMediaKind::Document),
+            accepts_document(self.model, media_type),
+        );
+        self.bytes("document", r#ref, media_type, file_name, refused)
     }
 
     /// Reports that arrived together as the model receives them: their text,
@@ -429,6 +447,7 @@ impl<'a> RequestView<'a> {
                     ResultPart::Text(text) => UserPart::Text(text),
                     ResultPart::Image(bytes) => UserPart::Image(Medium::Bytes(bytes)),
                     ResultPart::Video(bytes) => UserPart::Video(Medium::Bytes(bytes)),
+                    ResultPart::Audio(bytes) => UserPart::Audio(bytes),
                     ResultPart::Document { bytes, file_name } => {
                         UserPart::Document { bytes, file_name }
                     }
@@ -461,6 +480,12 @@ impl<'a> RequestView<'a> {
                     Err(text) => ResultPart::Text(text),
                 }
             }
+            ToolResultContentBlock::Audio { source } => {
+                match self.tool_medium(ModelMediaKind::Audio, source) {
+                    Ok(bytes) => ResultPart::Audio(bytes),
+                    Err(text) => ResultPart::Text(text),
+                }
+            }
             ToolResultContentBlock::Document { source } => match self.tool_document(source) {
                 Ok(bytes) => {
                     let DocumentSource::Ref { file_name, .. } = source;
@@ -486,12 +511,14 @@ impl<'a> RequestView<'a> {
             media_type,
             file_name,
         } = source;
-        let accepted = self.tool_results.carries(ModelMediaKind::Document)
-            && accepts_document(self.model, media_type);
-        self.bytes("document", r#ref, media_type, file_name, accepted)
+        let refused = kind_refusal(
+            self.tool_results.carries(ModelMediaKind::Document),
+            accepts_document(self.model, media_type),
+        );
+        self.bytes("document", r#ref, media_type, file_name, refused)
     }
 
-    /// A tool result's image or video: its held bytes, or its text when the
+    /// A tool result's image, video or recording: its held bytes, or its text when the
     /// request's model does not read it in a tool result
     /// (`crates/provider-common/src/contract.rs`).
     pub(crate) fn tool_medium(
@@ -502,29 +529,32 @@ impl<'a> RequestView<'a> {
         let ToolMediaSource::Ref {
             r#ref, media_type, ..
         } = source;
-        let accepted = self.tool_results.reads(self.model, media_type);
-        self.bytes(kind.name(), r#ref, media_type, media_type, accepted)
+        let refused = kind_refusal(
+            self.tool_results.carries(kind),
+            model_accepts_media_type(self.model, media_type),
+        );
+        self.bytes(kind.name(), r#ref, media_type, media_type, refused)
     }
 
     /// The bytes the session holds for the medium `blob` names, of
     /// `media_type`.
     ///
-    /// When its blob is missing, or when the model does not take it (`accepted`
-    /// says whether it reads the type), it is the text the medium reaches the
-    /// model as, with `name` naming it.
+    /// When its blob is missing, or when the request does not take it
+    /// (`refused` says why, [`kind_refusal`]), it is the text the medium
+    /// reaches the model as, with `name` naming it.
     fn bytes(
         &self,
         kind: &str,
         blob: &BlobRef,
         media_type: &str,
         name: &str,
-        accepted: bool,
+        refused: Option<&'static str>,
     ) -> Result<MediaBytes, String> {
         let data = match self.view.held(blob) {
             Held::Bytes(data) => data,
             Held::Missing => return Err(missing_text(kind)),
         };
-        if let Some(reason) = self.refusal(accepted, data) {
+        if let Some(reason) = refused.or_else(|| self.too_large(data)) {
             return Err(unsent(kind, name, reason));
         }
         Ok(MediaBytes {
@@ -533,14 +563,23 @@ impl<'a> RequestView<'a> {
         })
     }
 
-    /// Why a medium is not sent: its type is not `accepted`, or its bytes
-    /// take more than half of the body limit as base64.
-    fn refusal(&self, accepted: bool, data: &B64Bytes) -> Option<&'static str> {
-        if !accepted {
-            return Some("the model does not accept it");
-        }
+    /// Why a medium is not sent when the request takes its kind and type:
+    /// its bytes take more than half of the body limit as base64.
+    fn too_large(&self, data: &B64Bytes) -> Option<&'static str> {
         let too_large = self.half_body.is_some_and(|half| data.base64_len() > half);
         too_large.then_some("too large for the model's requests")
+    }
+}
+
+/// Why a request does not take a medium: its provider's wire does not
+/// `carry` the medium's kind there, or the model does not accept its type.
+fn kind_refusal(carried: bool, accepted: bool) -> Option<&'static str> {
+    if !carried {
+        Some("the provider does not carry it")
+    } else if !accepted {
+        Some("the model does not accept it")
+    } else {
+        None
     }
 }
 

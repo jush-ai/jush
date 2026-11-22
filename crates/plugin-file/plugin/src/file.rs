@@ -26,7 +26,7 @@ export function check(order) {
 }
 >>>>>>> REPLACE
 EOF
-`view` shows you an image, a video or a PDF.";
+`view` shows you an image, a video, audio or a PDF.";
 
 /// The help of `jush file edit`'s stdin: the blocks, with an example the
 /// model can copy. Its lines start at the margin, since a marker is a whole
@@ -64,13 +64,13 @@ EOF";
 pub(crate) fn file_group() -> GroupBuilder {
     GroupBuilder::new(
         "file",
-        "Edit and patch files, and view images, videos and PDFs.",
+        "Edit and patch files, and view images, videos, audio and PDFs.",
     )
     .index_entry(ENTRY)
     .leaf(
         leaf(
             "view",
-            "Show yourself images, videos and PDFs, in order: each path, or stdin for - or no path, so jush file view a.png b.png shows both and jush browser screenshot t1 | jush file view shows the screenshot. You see each one in the result that reports the command's end, whatever its stdout is, with the attachment_id a reply shows it to the user by.",
+            "Show yourself images, videos, audio and PDFs, in order: each path, or stdin for - or no path, so jush file view a.png b.png shows both and jush browser screenshot t1 | jush file view shows the screenshot. You see each one in the result that reports the command's end, whatever its stdout is, with the attachment_id a reply shows it to the user by.",
         )
         .input::<ViewArgs>()
         .positionals(["path"])
@@ -79,7 +79,7 @@ pub(crate) fn file_group() -> GroupBuilder {
         )
         .media()
         .failure_output(
-            "a line per path that cannot be shown, `jush file view: <path>: <reason>`, on stderr, such as a text file, bytes that are no image, video or PDF, a type this conversation's model does not read, or more than 16 MiB; the other paths are still shown, and the command exits 1",
+            "a line per path that cannot be shown, `jush file view: <path>: <reason>`, on stderr, such as a text file, bytes that are no image, video, audio or PDF, a type this conversation's model does not read, or more than 16 MiB; the other paths are still shown, and the command exits 1",
         ),
     )
     .leaf(

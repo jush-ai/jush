@@ -275,6 +275,7 @@ function sentEditContent(part: MessageEditContent): ClientContent {
       return { type: 'remote_file', deviceId: part.deviceId, path: part.path }
     case 'image':
     case 'video':
+    case 'audio':
       if (part.source.type !== 'ref') {
         throw new EditRejectedError({
           code: 'edit_media_not_stored',

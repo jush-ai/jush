@@ -61,7 +61,7 @@ pub enum FileError {
     Publication(#[from] jush_shared_artifacts::Error),
     #[error("a text file; read it with cat {0}")]
     Text(String),
-    #[error("not an image, a video or a PDF ({0} bytes)")]
+    #[error("not an image, a video, audio or a PDF ({0} bytes)")]
     NotMedia(u64),
     #[error("{:.1} MiB; a medium is at most 16 MiB", *.0 as f64 / (1024.0 * 1024.0))]
     TooLarge(u64),

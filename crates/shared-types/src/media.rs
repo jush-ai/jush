@@ -11,21 +11,25 @@ use serde::{Deserialize, Serialize};
 
 use crate::{FileExtension, Model, file_extension_support};
 
-/// Whether a model reads a medium as an image, a video or a document.
+/// Whether a model reads a medium as an image, a video, a recording or a
+/// document.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ModelMediaKind {
     Image,
     Video,
+    Audio,
     Document,
 }
 
 impl ModelMediaKind {
-    /// The word a text names the kind by: `image`, `video` or `document`.
+    /// The word a text names the kind by: `image`, `video`, `audio` or
+    /// `document`.
     pub fn name(self) -> &'static str {
         match self {
             Self::Image => "image",
             Self::Video => "video",
+            Self::Audio => "audio",
             Self::Document => "document",
         }
     }
@@ -41,7 +45,7 @@ pub struct ModelMediaType {
 }
 
 /// Every media type a model can receive natively.
-pub const MODEL_MEDIA_TYPES: [ModelMediaType; 9] = [
+pub const MODEL_MEDIA_TYPES: [ModelMediaType; 15] = [
     media("image/png", ModelMediaKind::Image, FileExtension::Png),
     media("image/jpeg", ModelMediaKind::Image, FileExtension::Jpeg),
     media("image/gif", ModelMediaKind::Image, FileExtension::Gif),
@@ -50,6 +54,12 @@ pub const MODEL_MEDIA_TYPES: [ModelMediaType; 9] = [
     media("video/x-m4v", ModelMediaKind::Video, FileExtension::M4v),
     media("video/quicktime", ModelMediaKind::Video, FileExtension::Mov),
     media("video/webm", ModelMediaKind::Video, FileExtension::Webm),
+    media("audio/mpeg", ModelMediaKind::Audio, FileExtension::Mp3),
+    media("audio/wav", ModelMediaKind::Audio, FileExtension::Wav),
+    media("audio/ogg", ModelMediaKind::Audio, FileExtension::Ogg),
+    media("audio/flac", ModelMediaKind::Audio, FileExtension::Flac),
+    media("audio/aiff", ModelMediaKind::Audio, FileExtension::Aiff),
+    media("audio/mp4", ModelMediaKind::Audio, FileExtension::M4a),
     media("application/pdf", ModelMediaKind::Document, FileExtension::Pdf),
 ];
 

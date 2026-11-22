@@ -615,7 +615,7 @@ fn written_as(item: &InferenceItem, written: &[Value], pending: &[Value]) -> Opt
 }
 
 /// A tool's result as the CLI gives the vendor one Jush sent it over MCP:
-/// text, images with their base64, and a video or a document named in text.
+/// text, images with their base64, and another medium named in text.
 fn result_content(output: &[ResultPart]) -> Vec<Value> {
     output
         .iter()
@@ -629,8 +629,10 @@ fn result_content(output: &[ResultPart]) -> Vec<Value> {
                     "data": STANDARD.encode(&bytes.data),
                 },
             }),
-            ResultPart::Video(bytes) | ResultPart::Document { bytes, .. } => {
-                json!({ "type": "text", "text": jush_provider_subscription_cli::unsent_text(bytes) })
+            ResultPart::Video(bytes)
+            | ResultPart::Audio(bytes)
+            | ResultPart::Document { bytes, .. } => {
+                json!({ "type": "text", "text": bytes.unsent_text() })
             }
         })
         .collect()
@@ -681,6 +683,7 @@ pub(crate) fn media<'a>(items: &'a [InferenceItem]) -> HashMap<String, &'a B64By
                     match part {
                         UserPart::Image(Medium::Bytes(bytes))
                         | UserPart::Video(Medium::Bytes(bytes))
+                        | UserPart::Audio(bytes)
                         | UserPart::Document { bytes, .. } => add(bytes),
                         UserPart::Text(_) | UserPart::Image(_) | UserPart::Video(_) => {}
                     }
@@ -689,7 +692,9 @@ pub(crate) fn media<'a>(items: &'a [InferenceItem]) -> HashMap<String, &'a B64By
             InferenceItem::ToolResult { output, .. } => {
                 for part in output {
                     match part {
-                        ResultPart::Image(bytes) | ResultPart::Video(bytes) => add(bytes),
+                        ResultPart::Image(bytes) | ResultPart::Video(bytes) | ResultPart::Audio(bytes) => {
+                            add(bytes)
+                        }
                         ResultPart::Text(_) | ResultPart::Document { .. } => {}
                     }
                 }
