@@ -99,7 +99,14 @@ fn maker(vendor: &str, origin: &Url) -> Option<Arc<dyn Provider>> {
     };
     Some(match vendor {
         "google" => Arc::new(GoogleProvider::new(
-            GoogleConfig { api_key: key(), base_url: at("v1beta"), makes_images: false, makes_videos: true, makes_audio: false },
+            GoogleConfig {
+                api_key: key(),
+                base_url: at("v1beta"),
+                makes_images: false,
+                makes_videos: true,
+                makes_audio: false,
+                models: ModelWires::default(),
+            },
             clock,
         )),
         "xai" => openai(vendor, true),

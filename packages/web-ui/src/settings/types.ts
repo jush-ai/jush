@@ -236,13 +236,13 @@ export interface SettingsModelDraft {
   /** Accepted attachment extensions, dot-prefixed. Empty means text only. */
   extensions: string[] | null
   fastTier: string | null
-  /** On the Messages API, how a reasoning level goes; absent is effort. */
+  /** On the Messages API and Gemini's, how a reasoning level goes; absent is effort. */
   thinkingForm?: SettingsThinkingForm
   /** On Chat Completions, whether earlier thinking goes back with each tool call; absent is off. */
   interleavedThinking?: boolean
 }
 
-/** How a reasoning level goes on the Messages API: as Anthropic's effort, or as a token budget. */
+/** How a reasoning level goes on the Messages API and Gemini's: as the level itself, or as a token budget. */
 export type SettingsThinkingForm = 'effort' | 'budget'
 
 /** The API format an endpoint speaks. */

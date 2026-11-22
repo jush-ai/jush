@@ -9,7 +9,7 @@ use jush_provider_common::{
     InferenceItem, InferenceRequest, MediaBytes, Medium, ResultPart, ToolDefinition, UserPart,
     json_body, openai_request::tool_arguments, thinking::effort_budget,
 };
-use jush_shared_types::{ThinkingConfig, is_blank};
+use jush_shared_types::{ThinkingConfig, ThinkingForm, is_blank};
 use serde::Serialize;
 
 use crate::SIGNATURE_TAG;
@@ -17,7 +17,7 @@ use crate::SIGNATURE_TAG;
 /// The JSON body of `request`. It makes no explicit cache: Gemini caches by
 /// prefix on its own, and an explicit cache is a stored resource with a storage
 /// price, a second copy of the history.
-pub(crate) fn encode(request: &InferenceRequest) -> Vec<u8> {
+pub(crate) fn encode(request: &InferenceRequest, form: ThinkingForm) -> Vec<u8> {
     let body = Body {
         contents: contents(&request.items),
         system_instruction: (!is_blank(&request.system_prompt)).then(|| SystemInstruction {
@@ -38,7 +38,7 @@ pub(crate) fn encode(request: &InferenceRequest) -> Vec<u8> {
         },
         generation_config: GenerationConfig {
             max_output_tokens: request.max_output_tokens().map(|limit| limit.get()),
-            thinking_config: thinking(request.thinking.as_ref()),
+            thinking_config: thinking(request.thinking.as_ref(), form),
         },
     };
     json_body(&body)
@@ -52,7 +52,7 @@ struct Body<'a> {
     system_instruction: Option<SystemInstruction<'a>>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     tools: Vec<Tools<'a>>,
-    generation_config: GenerationConfig,
+    generation_config: GenerationConfig<'a>,
 }
 
 #[derive(Serialize)]
@@ -90,47 +90,52 @@ impl<'a> From<&'a ToolDefinition> for FunctionDeclaration<'a> {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct GenerationConfig {
+struct GenerationConfig<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     max_output_tokens: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    thinking_config: Option<GeminiThinking>,
+    thinking_config: Option<GeminiThinking<'a>>,
 }
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct GeminiThinking {
+struct GeminiThinking<'a> {
     include_thoughts: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     thinking_budget: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    thinking_level: Option<&'a str>,
 }
 
-/// The thinking setting as Gemini's budget.
+/// The thinking setting as Gemini takes it.
 ///
+/// - An effort is the thinking level of that name, for a model whose form
+///   is an effort: Gemini 3 and later, which refuse a budget beyond their
+///   range and map one to a level they do not say. For a model whose form
+///   is a budget, such as Gemini 2.5, which refuses a level, it is the
+///   effort's budget.
 /// - A budget is as it is.
-/// - An effort goes through its ladder.
 /// - Thinking turned off is a budget of zero without thoughts.
 ///
 /// Thought summaries are asked for otherwise, because the model thinks, and
 /// bills for it, either way.
-fn thinking(config: Option<&ThinkingConfig>) -> Option<GeminiThinking> {
-    let budget = match config {
-        None => None,
-        Some(ThinkingConfig::Disabled {}) => {
-            return Some(GeminiThinking {
-                include_thoughts: false,
-                thinking_budget: Some(0),
-            });
-        }
-        Some(ThinkingConfig::Budget { budget_tokens }) => Some(*budget_tokens),
-        Some(ThinkingConfig::Adaptive { effort } | ThinkingConfig::Effort { effort, .. }) => {
-            Some(effort_budget(effort))
-        }
-    };
-    Some(GeminiThinking {
+fn thinking(config: Option<&ThinkingConfig>, form: ThinkingForm) -> Option<GeminiThinking<'_>> {
+    let thinking = |thinking_budget, thinking_level| GeminiThinking {
         include_thoughts: true,
-        thinking_budget: budget,
-    })
+        thinking_budget,
+        thinking_level,
+    };
+    match config? {
+        ThinkingConfig::Disabled {} => Some(GeminiThinking {
+            include_thoughts: false,
+            ..thinking(Some(0), None)
+        }),
+        ThinkingConfig::Budget { budget_tokens } => Some(thinking(Some(*budget_tokens), None)),
+        ThinkingConfig::Adaptive { effort } | ThinkingConfig::Effort { effort, .. } => match form {
+            ThinkingForm::Effort => Some(thinking(None, Some(effort))),
+            ThinkingForm::Budget => Some(thinking(Some(effort_budget(effort)), None)),
+        },
+    }
 }
 
 #[derive(Serialize)]

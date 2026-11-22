@@ -32,7 +32,7 @@ use std::sync::Arc;
 
 use jush_provider_common::credentials::{CredentialPool, SubscriptionAccounts};
 use jush_provider_common::{ModelWires, Searches};
-use jush_provider_common::models_dev::ModelsDevClient;
+use jush_provider_common::models_dev::{ModelsDevClient, VendorReading};
 use jush_provider_common::media::MediaModelInfo;
 use jush_provider_common::audio::AudioMaker;
 use jush_provider_common::quota::QuotaSnapshotStore;
@@ -132,6 +132,14 @@ pub trait ProviderFamily: Send + Sync + 'static {
     /// protocol where models.dev lists one; a model of any other vendor on
     /// it takes a budget. None by default.
     fn effort_vendors(&self) -> &'static [&'static str] {
+        &[]
+    }
+
+    /// The models.dev vendors whose records list a `toggle` reasoning option
+    /// for every model that can turn its thinking off, so a model without
+    /// one cannot; whether any other vendor's model can is unknown. None by
+    /// default: some vendors leave the option out of models that can.
+    fn toggle_vendors(&self) -> &'static [&'static str] {
         &[]
     }
 
@@ -350,9 +358,19 @@ impl FamilyRegistry {
             .map(|(name, _)| name.as_str())
     }
 
-    /// The vendors whose models take an effort on their family's protocol
-    /// ([`ProviderFamily::effort_vendors`]), of every family.
-    pub fn effort_vendors(&self) -> Vec<&'static str> {
-        self.families.values().flat_map(|family| family.effort_vendors().iter().copied()).collect()
+    /// How models.dev's vendors read, as every family says
+    /// ([`ProviderFamily::effort_vendors`],
+    /// [`ProviderFamily::toggle_vendors`]).
+    pub fn vendor_reading(&self) -> VendorReading {
+        let named = |vendors: fn(&dyn ProviderFamily) -> &'static [&'static str]| {
+            self.families
+                .values()
+                .flat_map(|family| vendors(family.as_ref()).iter().map(|vendor| (*vendor).to_owned()))
+                .collect()
+        };
+        VendorReading {
+            effort_vendors: named(|family| family.effort_vendors()),
+            toggle_vendors: named(|family| family.toggle_vendors()),
+        }
     }
 }

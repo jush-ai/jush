@@ -25,7 +25,7 @@ use std::sync::Arc;
 
 use jush_provider_registry::shutdowns::ModelShutdowns;
 use jush_provider_registry::vendors::VendorCatalog;
-use jush_provider_common::models_dev::ModelsDevClient;
+use jush_provider_common::models_dev::{ModelsDevClient, VendorReading};
 use jush_shared_types::SystemClock;
 use reqwest::Url;
 use tokio_util::sync::CancellationToken;
@@ -157,7 +157,7 @@ pub async fn refresh(client: &reqwest::Client, base: &Url, directory: &Path) -> 
         jush_provider_registry::shutdowns::DEFAULT_URL.parse().expect("LiteLLM's address parses"),
         Arc::new(SystemClock),
     );
-    let catalog = VendorCatalog::new(ModelsDevClient::new(client.clone(), document, Arc::new(SystemClock), &[]), shutdowns);
+    let catalog = VendorCatalog::new(ModelsDevClient::new(client.clone(), document, Arc::new(SystemClock), VendorReading::default()), shutdowns);
     let vendors = catalog
         .vendors()
         .await

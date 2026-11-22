@@ -95,8 +95,8 @@ pub struct ConfiguredModel {
     #[schemars(with = "Nullable<String>")]
     #[garde(length(chars, min = 1))]
     pub fast_tier: Option<String>,
-    /// On the Messages API, how a reasoning level goes; Effort when absent,
-    /// what every model stored before it was sent.
+    /// On the Messages API and Gemini's, how a reasoning level goes; Effort
+    /// when absent, what every model stored before it was sent.
     #[serde(default)]
     #[garde(skip)]
     pub thinking_form: ThinkingForm,
@@ -1185,7 +1185,8 @@ pub struct ModelMatch {
     #[serde(deserialize_with = "Option::deserialize")]
     #[schemars(with = "Nullable<Vec<FileExtension>>")]
     pub accepted_extensions: Option<Vec<FileExtension>>,
-    /// How a reasoning level goes on the Messages API, from the record.
+    /// How a reasoning level goes on the Messages API and Gemini's, from the
+    /// record.
     pub thinking_form: ThinkingForm,
     /// Whether its earlier thinking goes back on Chat Completions, from the
     /// record's `interleaved`.

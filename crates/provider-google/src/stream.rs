@@ -35,7 +35,8 @@ pub(crate) fn run(
         let url = shared.stream_url(&request.model_id);
         let model = request.model_id.clone();
         let conversation = request.conversation.clone();
-        let body = encode_body(LABEL, move || request::encode(&request));
+        let form = shared.models.of(&request.model_id).thinking_form;
+        let body = encode_body(LABEL, move || request::encode(&request, form));
         let body = tokio::select! {
             biased;
             () = cancel.cancelled() => None,
