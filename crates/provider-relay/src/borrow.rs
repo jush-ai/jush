@@ -24,7 +24,7 @@ use std::sync::{Arc, RwLock};
 
 use jush_provider_common::{
     CatalogError, ErrorCode, Provider, ProviderEvent, ProviderFailure, ProviderHttp, ProviderRun, ProviderRuntime,
-    RequestBuilder, RequestLimits, RuntimeEnv, RuntimeError, InferenceRequest,
+    MediaKinds, RequestBuilder, RequestLimits, RuntimeEnv, RuntimeError, InferenceRequest,
 };
 use jush_provider_common::audio::AudioMaker;
 use jush_provider_common::images::ImageMaker;
@@ -513,6 +513,9 @@ impl ProviderRuntime for BorrowedRuntime {
         }
     }
 
+    /// The lender's limits; before its first run tells them, every medium of
+    /// a message is given, which the lender's own wire names in text where
+    /// it carries none.
     fn request_limits(&self, model: &Model) -> RequestLimits {
         self.config
             .limits
@@ -520,6 +523,9 @@ impl ProviderRuntime for BorrowedRuntime {
             .expect("the limits' lock is never poisoned")
             .get(&model.id)
             .copied()
-            .unwrap_or_default()
+            .unwrap_or(RequestLimits {
+                messages: MediaKinds::ALL,
+                ..RequestLimits::default()
+            })
     }
 }

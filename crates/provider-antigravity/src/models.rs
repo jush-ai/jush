@@ -15,7 +15,7 @@
 
 use jush_provider_common::CatalogError;
 use jush_provider_common::models_dev::{ModelsDevMatch, ModelsDevSnapshot};
-use jush_shared_types::{IMAGE_FILE_EXTENSIONS, ProviderModel, ProviderModelList, ThinkingForm};
+use jush_shared_types::{FileExtension, ProviderModel, ProviderModelList, ThinkingForm};
 
 use crate::acp::NewSession;
 
@@ -134,12 +134,12 @@ fn catalog_model(offered: Offered, listing: ModelsDevMatch, levels: &[&str]) -> 
         id: offered.id,
         display_name: offered.name,
         supports_tools: Some(true),
-        // `agy` takes images in a prompt, and no audio (its
-        // `promptCapabilities`).
+        // Its model reads any other medium as a file (`media.rs`), but its
+        // `read_file` reads no FLAC or AIFF (measured).
         accepted_extensions: listing.model.accepted_extensions.map(|extensions| {
             extensions
                 .into_iter()
-                .filter(|extension| IMAGE_FILE_EXTENSIONS.contains(extension))
+                .filter(|extension| !matches!(extension, FileExtension::Flac | FileExtension::Aiff))
                 .collect()
         }),
         supported_thinking_efforts: (!efforts.is_empty()).then_some(efforts),

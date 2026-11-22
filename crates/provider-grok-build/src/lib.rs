@@ -32,7 +32,7 @@ use std::sync::Arc;
 
 use jush_provider_common::{
     CatalogError, InferenceRequest, Provider, ProviderRun, ProviderRuntime,
-    RequestLimits, Searches, ToolResultKinds, RuntimeEnv, RuntimeError,
+    RequestLimits, Searches, MediaKinds, RuntimeEnv, RuntimeError,
     credentials::{Accounts, CredentialPool, SubscriptionAccounts},
     images::ImageMaker,
     videos::VideoMaker,
@@ -248,11 +248,13 @@ impl ProviderRuntime for GrokRuntime {
         Box::pin(async {})
     }
 
-    /// The Grok Build proxy documents none. A tool's output carries images,
-    /// and no video or PDF, which the proxy reads nowhere.
+    /// The Grok Build proxy documents none. A message and a tool's output
+    /// carry images, and no video, audio or PDF, which the proxy reads
+    /// nowhere.
     fn request_limits(&self, _model: &Model) -> RequestLimits {
         RequestLimits {
-            tool_results: ToolResultKinds::IMAGES,
+            messages: MediaKinds::IMAGES,
+            tool_results: MediaKinds::IMAGES,
             ..RequestLimits::default()
         }
     }

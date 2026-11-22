@@ -145,6 +145,7 @@
       "line": "{kind} não armazenado: {reason}",
       "image": "Imagem",
       "video": "Vídeo",
+      "audio": "Áudio",
       "document": "Documento"
     },
     "shellFallback": "Executar comando de shell",

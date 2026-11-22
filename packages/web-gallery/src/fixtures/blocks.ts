@@ -888,7 +888,7 @@ export const binaryStdoutTool = toolCall({
     { type: 'text', text: `status: exited\nexitCode: 0\ncommandId: cmd-printed\noutput:\n${binaryLine(5_883)}` },
     {
       type: 'text',
-      text: '[binary stdout, 5883 bytes: not shown; to look at an image, a video or a PDF, pipe it into jush file view; to keep it, redirect it to a file]',
+      text: '[binary stdout, 5883 bytes: not shown; to look at an image, a video, audio or a PDF, pipe it into jush file view; to keep it, redirect it to a file]',
     },
   ],
   view: shellView({ commandId: 'cmd-printed', chunks: [{ stream: 'stdout', text: binaryLine(5_883) }] }),

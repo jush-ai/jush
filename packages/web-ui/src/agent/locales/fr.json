@@ -145,6 +145,7 @@
       "line": "{kind} non conservé : {reason}",
       "image": "Image",
       "video": "Vidéo",
+      "audio": "Audio",
       "document": "Document"
     },
     "shellFallback": "Exécuter une commande shell",

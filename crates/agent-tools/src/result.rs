@@ -48,7 +48,7 @@ use jush_device_interface::{
     BinaryOutput, CommandMedium, CommandState, CommandStatus, Newest, OutputText,
     Piece, Seen, Streams, Unreachable, WholeOutput, WholeView,
 };
-use jush_provider_common::{MediaBytes, RequestLimits, ResultPart, ToolResultKinds};
+use jush_provider_common::{MediaBytes, RequestLimits, ResultPart, MediaKinds};
 use jush_shared_types::{
     B64Bytes, CommandId, Model, ModelMediaKind, OutputChunk, OutputView, ShellToolView,
     ShellViewStatus, StreamView, ToolView, model_media_type_for,
@@ -679,7 +679,7 @@ async fn attached_media(
     }
     if let Some(binary) = binary {
         lines.push(format!(
-            "[binary stdout, {} bytes: not shown; to look at an image, a video or a PDF, pipe it into jush file view; to keep it, redirect it to a file]",
+            "[binary stdout, {} bytes: not shown; to look at an image, a video, audio or a PDF, pipe it into jush file view; to keep it, redirect it to a file]",
             binary.info.total_bytes
         ));
     }
@@ -693,7 +693,7 @@ async fn attached_media(
 async fn viewed_medium(
     medium: &CommandMedium,
     model: &Model,
-    kinds: ToolResultKinds,
+    kinds: MediaKinds,
     budget: &mut Budget,
 ) -> (Option<ResultPart>, Option<String>) {
     let number = medium.number;
@@ -737,7 +737,7 @@ async fn viewed_medium(
         media_type: media_type.to_owned(),
     };
     match entry.kind {
-        ModelMediaKind::Video | ModelMediaKind::Document => {
+        ModelMediaKind::Video | ModelMediaKind::Audio | ModelMediaKind::Document => {
             if bytes.len() as u64 > MEDIUM_CAP_BYTES {
                 return (
                     None,
@@ -747,13 +747,13 @@ async fn viewed_medium(
             if let Err(reason) = budget.take(data.base64_len()) {
                 return (None, not_attached(&reason));
             }
-            let part = if entry.kind == ModelMediaKind::Video {
-                ResultPart::Video(whole(data))
-            } else {
-                ResultPart::Document {
+            let part = match entry.kind {
+                ModelMediaKind::Video => ResultPart::Video(whole(data)),
+                ModelMediaKind::Audio => ResultPart::Audio(whole(data)),
+                ModelMediaKind::Image | ModelMediaKind::Document => ResultPart::Document {
                     bytes: whole(data),
                     file_name: medium.name.clone().unwrap_or_else(|| document_name(number)),
-                }
+                },
             };
             (Some(part), line(Viewing::Whole))
         }

@@ -13,7 +13,7 @@ use futures_util::{
 
 use crate::{
     Ahead, InferenceRequest, ProviderEvent, ProviderFailure, ProviderRun, ProviderRuntime,
-    RequestLimits, ToolCall, ToolResultKinds,
+    RequestLimits, ToolCall, MediaKinds,
 };
 
 /// Builders of the events a scripted run yields.
@@ -109,7 +109,8 @@ impl ScriptedRuntime {
                 requests: Vec::new(),
                 closes: 0,
                 limits: RequestLimits {
-                    tool_results: ToolResultKinds::ALL,
+                    messages: MediaKinds::ALL,
+                    tool_results: MediaKinds::ALL,
                     ..RequestLimits::default()
                 },
             })),

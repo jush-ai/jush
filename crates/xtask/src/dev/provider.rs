@@ -5,7 +5,9 @@
 
 use std::num::NonZeroU32;
 
-use jush_shared_types::{ATTACHMENT_FILE_EXTENSIONS, FileExtension, VIDEO_FILE_EXTENSIONS};
+use jush_shared_types::{
+    ATTACHMENT_FILE_EXTENSIONS, AUDIO_FILE_EXTENSIONS, FileExtension, VIDEO_FILE_EXTENSIONS,
+};
 use serde_json::json;
 
 /// The variables, in the order the entry needs them.
@@ -127,6 +129,7 @@ fn accepted_extension(name: &str) -> Result<FileExtension, String> {
         let known: Vec<String> = ATTACHMENT_FILE_EXTENSIONS
             .iter()
             .chain(&VIDEO_FILE_EXTENSIONS)
+            .chain(&AUDIO_FILE_EXTENSIONS)
             .map(ToString::to_string)
             .collect();
         format!(

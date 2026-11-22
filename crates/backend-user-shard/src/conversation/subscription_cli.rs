@@ -552,6 +552,7 @@ impl ProcessControl for RelayedControl {
 /// What the user's side asks of a relayed process's directory.
 enum DirOrder {
     Read(String, oneshot::Sender<Result<Bytes, DeviceError>>),
+    Write(String, Bytes, oneshot::Sender<Result<(), DeviceError>>),
     Output(String, Vec<String>, oneshot::Sender<Result<Bytes, String>>),
 }
 
@@ -566,6 +567,17 @@ impl ConfigDir for RelayedDir {
             let gone = || DeviceError::new(DeviceErrorKind::Unavailable, "the directory's relay ended");
             self.0
                 .send(DirOrder::Read(name.to_owned(), answer))
+                .map_err(|_| gone())?;
+            answered.await.unwrap_or_else(|_| Err(gone()))
+        })
+    }
+
+    fn write<'a>(&'a self, name: &'a str, bytes: Bytes) -> LocalBoxFuture<'a, Result<(), DeviceError>> {
+        Box::pin(async move {
+            let (answer, answered) = oneshot::channel();
+            let gone = || DeviceError::new(DeviceErrorKind::Unavailable, "the directory's relay ended");
+            self.0
+                .send(DirOrder::Write(name.to_owned(), bytes, answer))
                 .map_err(|_| gone())?;
             answered.await.unwrap_or_else(|_| Err(gone()))
         })
@@ -650,6 +662,9 @@ fn relay(shard: &Shard, placed: Placed, hold: Option<AccountHold>) -> Relayed {
                     match order {
                         DirOrder::Read(name, answer) => {
                             let _ = answer.send(config.read(&name).await);
+                        }
+                        DirOrder::Write(name, bytes, answer) => {
+                            let _ = answer.send(config.write(&name, bytes).await);
                         }
                         DirOrder::Output(command, args, answer) => {
                             let args: Vec<&str> = args.iter().map(String::as_str).collect();
@@ -1319,6 +1334,10 @@ impl MachineDir {
 impl ConfigDir for MachineDir {
     fn read<'a>(&'a self, name: &'a str) -> LocalBoxFuture<'a, Result<Bytes, DeviceError>> {
         Box::pin(async move { self.device.fs().read_file(&format!("{}/{name}", self.path)).await })
+    }
+
+    fn write<'a>(&'a self, name: &'a str, bytes: Bytes) -> LocalBoxFuture<'a, Result<(), DeviceError>> {
+        Box::pin(MachineDir::write(self, vec![(name.to_owned(), bytes)]))
     }
 
     fn output<'a>(

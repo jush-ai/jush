@@ -235,7 +235,7 @@ impl<B> Node<B> {
                     notes.push(format!("Permission: {with}needs the user's permission ({permission}) in each conversation; without it, the command asks the user and waits for the answer."));
                 }
                 if leaf.media {
-                    notes.push("Media: shows you images, videos and PDFs, attached to the result that reports the command's end, whatever its stdout is.".into());
+                    notes.push("Media: shows you images, videos, audio and PDFs, attached to the result that reports the command's end, whatever its stdout is.".into());
                 }
                 if !notes.is_empty() {
                     sections.push(notes.join("\n"));

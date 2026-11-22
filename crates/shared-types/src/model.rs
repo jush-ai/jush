@@ -19,9 +19,10 @@
 //!
 //! The file types a model reads natively come from the input modalities its
 //! catalog gives it, kind by kind, and not from models.dev's single attachment
-//! flag, since most models it marks read images but no PDF. A provider's
-//! catalog lists only the types its wire carries in a message, so a model's
-//! list never promises what its provider would drop.
+//! flag, since most models it marks read images but no PDF. A request gives
+//! the model a file natively only where its provider's wire carries the
+//! file's kind (`RequestLimits` in `jush_provider_common`), so a model's list
+//! never makes a provider drop a file.
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -42,6 +43,12 @@ pub enum FileExtension {
     Mov,
     Webm,
     M4v,
+    Mp3,
+    Wav,
+    Ogg,
+    Flac,
+    Aiff,
+    M4a,
 }
 
 serde_plain::derive_display_from_serialize!(FileExtension);
@@ -68,7 +75,7 @@ pub const IMAGE_FILE_EXTENSIONS: [FileExtension; 5] = [
 ];
 
 /// The types a catalog's input modalities give a model: `image` the image types, `pdf` the PDF,
-/// `video` the video types; `text`, and any other, none.
+/// `video` the video types, `audio` the audio types; `text`, and any other, none.
 pub fn modality_extensions<'a>(modalities: impl IntoIterator<Item = &'a str>) -> Vec<FileExtension> {
     let mut extensions = Vec::new();
     for modality in modalities {
@@ -76,6 +83,7 @@ pub fn modality_extensions<'a>(modalities: impl IntoIterator<Item = &'a str>) ->
             "image" => extensions.extend(IMAGE_FILE_EXTENSIONS),
             "pdf" => extensions.push(FileExtension::Pdf),
             "video" => extensions.extend(VIDEO_FILE_EXTENSIONS),
+            "audio" => extensions.extend(AUDIO_FILE_EXTENSIONS),
             _ => {}
         }
     }
@@ -88,6 +96,16 @@ pub const VIDEO_FILE_EXTENSIONS: [FileExtension; 4] = [
     FileExtension::Mov,
     FileExtension::Webm,
     FileExtension::M4v,
+];
+
+/// The audio types, which only a model known to read audio accepts.
+pub const AUDIO_FILE_EXTENSIONS: [FileExtension; 6] = [
+    FileExtension::Mp3,
+    FileExtension::Wav,
+    FileExtension::Ogg,
+    FileExtension::Flac,
+    FileExtension::Aiff,
+    FileExtension::M4a,
 ];
 
 /// Whether a model whose catalog lists `accepted` reads `extension`

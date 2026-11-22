@@ -167,9 +167,9 @@ impl<'a> Source<'a> {
 /// The media of a message's or a steer's content.
 fn content_sources(content: &[UserContentBlock]) -> impl Iterator<Item = Source<'_>> {
     content.iter().filter_map(|part| match part {
-        UserContentBlock::Image { source } | UserContentBlock::Video { source } => {
-            Some(Source::Media(source))
-        }
+        UserContentBlock::Image { source }
+        | UserContentBlock::Video { source }
+        | UserContentBlock::Audio { source } => Some(Source::Media(source)),
         UserContentBlock::Document { source } => Some(Source::Document(source)),
         _ => None,
     })
@@ -205,9 +205,9 @@ fn sources(block: &Block) -> Vec<Source<'_>> {
 /// that is gone.
 fn result_source(part: &ToolResultContentBlock) -> Option<Source<'_>> {
     match part {
-        ToolResultContentBlock::Image { source } | ToolResultContentBlock::Video { source } => {
-            Some(Source::Tool(source))
-        }
+        ToolResultContentBlock::Image { source }
+        | ToolResultContentBlock::Video { source }
+        | ToolResultContentBlock::Audio { source } => Some(Source::Tool(source)),
         ToolResultContentBlock::Document { source } => Some(Source::Document(source)),
         ToolResultContentBlock::Text { .. } | ToolResultContentBlock::Gone { .. } => None,
     }
@@ -271,6 +271,7 @@ pub async fn store_result(
             }
             ResultPart::Image(bytes) => (ModelMediaKind::Image, bytes, None),
             ResultPart::Video(bytes) => (ModelMediaKind::Video, bytes, None),
+            ResultPart::Audio(bytes) => (ModelMediaKind::Audio, bytes, None),
             ResultPart::Document { bytes, file_name } => {
                 (ModelMediaKind::Document, bytes, Some(file_name))
             }
@@ -294,10 +295,12 @@ pub async fn store_result(
                             width: size.map(|size| size.width),
                             height: size.map(|size| size.height),
                         };
-                        if kind == ModelMediaKind::Video {
-                            ToolResultContentBlock::Video { source }
-                        } else {
-                            ToolResultContentBlock::Image { source }
+                        match kind {
+                            ModelMediaKind::Video => ToolResultContentBlock::Video { source },
+                            ModelMediaKind::Audio => ToolResultContentBlock::Audio { source },
+                            ModelMediaKind::Image | ModelMediaKind::Document => {
+                                ToolResultContentBlock::Image { source }
+                            }
                         }
                     }
                 }

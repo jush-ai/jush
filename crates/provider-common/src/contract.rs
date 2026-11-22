@@ -261,41 +261,46 @@ pub struct RequestLimits {
     pub body_bytes: Option<u64>,
     /// The most images one request carries.
     pub images: Option<u32>,
+    /// The kinds of media the vendor's wire carries in a user's message.
+    pub messages: MediaKinds,
     /// The kinds of media the vendor's wire carries in a tool result.
-    pub tool_results: ToolResultKinds,
+    pub tool_results: MediaKinds,
 }
 
-/// The kinds of media a provider's wire carries in a tool result.
-/// A provider names only what it
-/// carries, so it never drops a medium silently.
+/// The kinds of media a provider's wire carries in one place of a request,
+/// a message or a tool result. A provider names only what it carries, so it
+/// never drops a medium silently: a medium of a kind it does not carry
+/// reaches the model as its text.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
-pub struct ToolResultKinds {
+pub struct MediaKinds {
     pub image: bool,
     pub video: bool,
+    pub audio: bool,
     pub document: bool,
 }
 
-impl ToolResultKinds {
+impl MediaKinds {
     /// No media at all.
     pub const NONE: Self = Self {
         image: false,
         video: false,
+        audio: false,
         document: false,
     };
     pub const IMAGES: Self = Self {
         image: true,
-        video: false,
-        document: false,
+        ..Self::NONE
     };
     pub const IMAGES_AND_DOCUMENTS: Self = Self {
         image: true,
-        video: false,
         document: true,
+        ..Self::NONE
     };
     /// Every kind.
     pub const ALL: Self = Self {
         image: true,
         video: true,
+        audio: true,
         document: true,
     };
 
@@ -303,12 +308,13 @@ impl ToolResultKinds {
         match kind {
             ModelMediaKind::Image => self.image,
             ModelMediaKind::Video => self.video,
+            ModelMediaKind::Audio => self.audio,
             ModelMediaKind::Document => self.document,
         }
     }
 
-    /// Whether `model` reads `media_type` in a tool result: it accepts the
-    /// type, and the wire carries its kind.
+    /// Whether `model` reads `media_type` here: it accepts the type, and the
+    /// wire carries its kind.
     pub fn reads(self, model: &Model, media_type: &str) -> bool {
         model_media_type_for(media_type)
             .is_some_and(|entry| self.carries(entry.kind))
@@ -333,16 +339,19 @@ impl ToolResultKinds {
 }
 
 impl RequestLimits {
-    /// The OpenAI API's, which Codex's backend shares.
+    /// The OpenAI API's, which Codex's backend shares: a message carries
+    /// images and PDFs (`input_file`).
     pub const OPENAI: Self = Self {
         body_bytes: Some(512_000_000),
         images: Some(1_500),
-        tool_results: ToolResultKinds::NONE,
+        messages: MediaKinds::IMAGES_AND_DOCUMENTS,
+        tool_results: MediaKinds::NONE,
     };
 
     /// The Anthropic Messages API's for `model`, which Claude Code's CLI
     /// sends its history to: 32 MB, and 100 images when the model's context
-    /// window is at most 200,000 tokens or unknown, 600 otherwise.
+    /// window is at most 200,000 tokens or unknown, 600 otherwise. A message
+    /// carries images and PDFs.
     pub fn anthropic_messages(model: &Model) -> Self {
         let images = if model.context_window <= 200_000 {
             100
@@ -352,7 +361,8 @@ impl RequestLimits {
         Self {
             body_bytes: Some(32_000_000),
             images: Some(images),
-            tool_results: ToolResultKinds::NONE,
+            messages: MediaKinds::IMAGES_AND_DOCUMENTS,
+            tool_results: MediaKinds::NONE,
         }
     }
 }
@@ -606,7 +616,8 @@ pub enum InferenceItem {
 
 /// One part of a message or a steer as a request carries it. A reference
 /// and an attachment record reach the model as the text that names them, and
-/// so does a medium the request's model does not take.
+/// so does a medium the request's model does not take or its wire does not
+/// carry ([`RequestLimits::messages`]).
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
 pub enum UserPart {
     Text(String),
@@ -614,6 +625,8 @@ pub enum UserPart {
     /// Only a model whose catalog marks video support receives one with
     /// its bytes.
     Video(Medium),
+    /// A recording, always by its bytes.
+    Audio(MediaBytes),
     /// A PDF, with the name the file came with.
     Document {
         bytes: MediaBytes,
@@ -629,6 +642,18 @@ pub enum Medium {
     Url(String),
 }
 
+impl Medium {
+    /// The medium, a message's `kind` of one, named in text where a wire
+    /// does not give it to the model: as [`MediaBytes::unsent_text`] names its
+    /// bytes, or `[video:https://example.com/demo.mp4]`.
+    pub fn unsent_text(&self, kind: ModelMediaKind) -> String {
+        match self {
+            Self::Bytes(bytes) => bytes.unsent_text(),
+            Self::Url(url) => format!("[{}:{url}]", kind.name()),
+        }
+    }
+}
+
 /// A medium's bytes and their media type.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
 pub struct MediaBytes {
@@ -636,13 +661,30 @@ pub struct MediaBytes {
     pub media_type: String,
 }
 
+impl MediaBytes {
+    /// The medium named in text, where a wire does not give it to the model:
+    /// `[video:video/mp4]`. Replay already turns a medium of a kind the wire
+    /// does not carry into its text ([`RequestLimits`]), so a wire names one
+    /// only where its vendor's format has no place for it, such as a video
+    /// in MCP content.
+    pub fn unsent_text(&self) -> String {
+        let kind = ["image", "video", "audio"]
+            .into_iter()
+            .find(|kind| self.media_type.starts_with(&format!("{kind}/")))
+            .unwrap_or("document");
+        format!("[{kind}:{}]", self.media_type)
+    }
+}
+
 /// One part of a tool's result as the tool returns it and as a request
-/// carries it: text, or an image, a video or a document with its bytes.
+/// carries it: text, or an image, a video, a recording or a document with
+/// its bytes.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
 pub enum ResultPart {
     Text(String),
     Image(MediaBytes),
     Video(MediaBytes),
+    Audio(MediaBytes),
     Document {
         bytes: MediaBytes,
         file_name: String,

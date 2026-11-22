@@ -11,6 +11,7 @@ use std::borrow::Cow;
 use std::collections::BTreeMap;
 
 use jush_provider_common::{InferenceItem, Medium, UserPart, json_body};
+use jush_shared_types::ModelMediaKind;
 use rmcp::model::ServerJsonRpcMessage;
 use serde::Serialize;
 
@@ -211,8 +212,9 @@ fn text_block(text: &str) -> Block<'_> {
 }
 
 /// A user message's content as the Messages API reads it. The API has no
-/// video block, and the catalog marks video unsupported, so a video that
-/// reaches here anyway is named in text.
+/// video or audio block, and replay gives the model neither
+/// (`RequestLimits::anthropic_messages`), so one that reaches here anyway is
+/// named in text.
 fn user_content(content: &[UserPart]) -> Vec<Block<'_>> {
     content
         .iter()
@@ -227,7 +229,12 @@ fn user_content(content: &[UserPart]) -> Vec<Block<'_>> {
                     Medium::Url(url) => ImageSource::Url { url },
                 },
             },
-            UserPart::Video(_) => text_block("[video]"),
+            UserPart::Video(medium) => Block::Text {
+                text: Cow::Owned(medium.unsent_text(ModelMediaKind::Video)),
+            },
+            UserPart::Audio(bytes) => Block::Text {
+                text: Cow::Owned(bytes.unsent_text()),
+            },
             UserPart::Document { bytes, file_name } => Block::Document {
                 source: Base64 {
                     media_type: &bytes.media_type,

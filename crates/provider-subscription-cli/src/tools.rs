@@ -21,7 +21,7 @@ use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use futures_channel::mpsc;
 use futures_util::StreamExt as _;
-use jush_provider_common::{MediaBytes, ResultPart, ToolCall, ToolDefinition};
+use jush_provider_common::{ResultPart, ToolCall, ToolDefinition};
 use rmcp::model::{
     CallToolRequestParams, CallToolResponse, CallToolResult, ClientJsonRpcMessage, ContentBlock,
     Implementation, ListToolsResult, PaginatedRequestParams, ServerCapabilities, ServerConfig,
@@ -273,9 +273,9 @@ pub fn tool_result(output: &[ResultPart], is_error: bool) -> CallToolResult {
             ResultPart::Image(bytes) => {
                 ContentBlock::image(STANDARD.encode(&bytes.data), bytes.media_type.clone())
             }
-            ResultPart::Video(bytes) | ResultPart::Document { bytes, .. } => {
-                ContentBlock::text(unsent_text(bytes))
-            }
+            ResultPart::Video(bytes)
+            | ResultPart::Audio(bytes)
+            | ResultPart::Document { bytes, .. } => ContentBlock::text(bytes.unsent_text()),
         })
         .collect();
     if is_error {
@@ -285,15 +285,3 @@ pub fn tool_result(output: &[ResultPart], is_error: bool) -> CallToolResult {
     }
 }
 
-/// A medium a CLI does not give the model, such as a video of a tool's
-/// result, which MCP has no content for, named in text: `[video:video/mp4]`.
-pub fn unsent_text(bytes: &MediaBytes) -> String {
-    let kind = if bytes.media_type.starts_with("video/") {
-        "video"
-    } else if bytes.media_type.starts_with("image/") {
-        "image"
-    } else {
-        "document"
-    };
-    format!("[{kind}:{}]", bytes.media_type)
-}

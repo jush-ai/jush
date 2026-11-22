@@ -145,6 +145,7 @@
       "line": "{kind}未存储：{reason}",
       "image": "图片",
       "video": "视频",
+      "audio": "音频",
       "document": "文档"
     },
     "shellFallback": "运行 shell 命令",

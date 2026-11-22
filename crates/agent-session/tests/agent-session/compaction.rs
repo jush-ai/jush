@@ -2605,7 +2605,8 @@ fn taking(images: Option<u32>, body_bytes: Option<u64>) -> RequestLimits {
     RequestLimits {
         body_bytes,
         images,
-        tool_results: jush_provider_common::ToolResultKinds::ALL,
+        messages: jush_provider_common::MediaKinds::ALL,
+        tool_results: jush_provider_common::MediaKinds::ALL,
     }
 }
 

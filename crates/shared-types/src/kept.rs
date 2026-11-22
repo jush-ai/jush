@@ -70,16 +70,20 @@ impl KeptMessage {
             let (piece, placeholder) = match part {
                 UserContentBlock::Text { text } => (text.as_str(), false),
                 UserContentBlock::Reference { reference } => (reference.as_str(), false),
-                UserContentBlock::Image { .. } | UserContentBlock::Video { .. } | UserContentBlock::Document { .. }
+                UserContentBlock::Image { .. }
+                | UserContentBlock::Video { .. }
+                | UserContentBlock::Audio { .. }
+                | UserContentBlock::Document { .. }
                     if viewed =>
                 {
                     continue;
                 }
                 UserContentBlock::Image { .. } => (IMAGE, true),
                 UserContentBlock::Attachment(_) if after_image => (IMAGE, true),
-                UserContentBlock::Attachment(_) | UserContentBlock::Video { .. } | UserContentBlock::Document { .. } => {
-                    (ATTACHMENT, true)
-                }
+                UserContentBlock::Attachment(_)
+                | UserContentBlock::Video { .. }
+                | UserContentBlock::Audio { .. }
+                | UserContentBlock::Document { .. } => (ATTACHMENT, true),
             };
             if !text.is_empty() {
                 text.push(if placeholder || after_placeholder { ' ' } else { '\n' });

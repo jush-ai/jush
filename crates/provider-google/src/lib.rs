@@ -19,7 +19,7 @@ use std::sync::Arc;
 
 use jush_provider_common::{
     InferenceRequest, ModelWires, OfferedModel, Provider, ProviderHttp, ProviderRun, ProviderRuntime,
-    RequestLimits, ToolResultKinds, RuntimeEnv, RuntimeError, Secret, read_http_failure,
+    RequestLimits, MediaKinds, RuntimeEnv, RuntimeError, Secret, read_http_failure,
     audio::AudioMaker,
     images::ImageMaker,
     videos::VideoMaker,
@@ -212,9 +212,10 @@ impl ProviderRuntime for GoogleRuntime {
         RequestLimits {
             body_bytes: Some(20_000_000),
             images: Some(3_600),
-            // `inlineData` parts beside the `functionResponse`
-            // (`crates/provider-common/src/contract.rs`).
-            tool_results: ToolResultKinds::ALL,
+            // `inlineData` parts in a message, and beside the
+            // `functionResponse` (`crates/provider-common/src/contract.rs`).
+            messages: MediaKinds::ALL,
+            tool_results: MediaKinds::ALL,
         }
     }
 }

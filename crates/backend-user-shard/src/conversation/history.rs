@@ -1100,17 +1100,18 @@ fn message(reader: &Reader, at: usize, author: &str, time: Timestamp, content: &
 }
 
 /// The files of a message, numbered from 1: each attachment, and each
-/// image, video or PDF that is not the model's view of the attachment
-/// after it, which an upload becomes before its record.
+/// image, video, recording or PDF that is not the model's view of the
+/// attachment after it, which an upload becomes before its record.
 fn files(content: &[UserContentBlock]) -> Vec<(usize, &UserContentBlock)> {
     let mut found = Vec::new();
     for (position, part) in content.iter().enumerate() {
         let view_of_next = matches!(content.get(position + 1), Some(UserContentBlock::Attachment(_)));
         let numbered = match part {
             UserContentBlock::Attachment(_) => true,
-            UserContentBlock::Image { .. } | UserContentBlock::Video { .. } | UserContentBlock::Document { .. } => {
-                !view_of_next
-            }
+            UserContentBlock::Image { .. }
+            | UserContentBlock::Video { .. }
+            | UserContentBlock::Audio { .. }
+            | UserContentBlock::Document { .. } => !view_of_next,
             UserContentBlock::Text { .. } | UserContentBlock::Reference { .. } => false,
         };
         if numbered {
@@ -1125,6 +1126,7 @@ fn file_kind(part: &UserContentBlock) -> String {
         UserContentBlock::Attachment(attachment) => format!("attachment: {}", attachment.name),
         UserContentBlock::Image { .. } => "image".to_owned(),
         UserContentBlock::Video { .. } => "video".to_owned(),
+        UserContentBlock::Audio { .. } => "audio".to_owned(),
         UserContentBlock::Document { source: DocumentSource::Ref { file_name, .. } } => format!("PDF: {file_name}"),
         UserContentBlock::Text { .. } | UserContentBlock::Reference { .. } => unreachable!("not a file"),
     }
@@ -1365,12 +1367,14 @@ async fn save<A>(
     let (blob, file_name) = match part {
         UserContentBlock::Attachment(attachment) => (&attachment.sha256, attachment.name.clone()),
         UserContentBlock::Image { source: MediaSource::Ref { r#ref, media_type, .. } }
-        | UserContentBlock::Video { source: MediaSource::Ref { r#ref, media_type, .. } } => {
+        | UserContentBlock::Video { source: MediaSource::Ref { r#ref, media_type, .. } }
+        | UserContentBlock::Audio { source: MediaSource::Ref { r#ref, media_type, .. } } => {
             (r#ref, format!("file.{}", extension(media_type)))
         }
         UserContentBlock::Document { source: DocumentSource::Ref { r#ref, file_name, .. } } => (r#ref, file_name.clone()),
         UserContentBlock::Image { source: MediaSource::Url { url } }
-        | UserContentBlock::Video { source: MediaSource::Url { url } } => {
+        | UserContentBlock::Video { source: MediaSource::Url { url } }
+        | UserContentBlock::Audio { source: MediaSource::Url { url } } => {
             return Err(failed(format!("the file is not stored; the model read it from {url}")));
         }
         UserContentBlock::Text { .. } | UserContentBlock::Reference { .. } => unreachable!("not a file"),
@@ -1428,6 +1432,8 @@ fn extension(media_type: &str) -> &str {
         "image/jpeg" => "jpg",
         "image/svg+xml" => "svg",
         "video/quicktime" => "mov",
+        "audio/mpeg" => "mp3",
+        "audio/mp4" => "m4a",
         other => other.split('/').nth(1).unwrap_or("bin"),
     }
 }

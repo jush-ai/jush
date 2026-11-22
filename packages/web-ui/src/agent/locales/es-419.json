@@ -145,6 +145,7 @@
       "line": "{kind} no guardado: {reason}",
       "image": "Imagen",
       "video": "Video",
+      "audio": "Audio",
       "document": "Documento"
     },
     "shellFallback": "Ejecutar comando de shell",

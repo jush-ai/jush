@@ -43,7 +43,7 @@
 //! its record are stored in one transaction, and a Fork's destination keeps its
 //! source's attachments, since its history names them.
 //!
-//! A send writes nothing to a device: the model reads an image, a video or a PDF
+//! A send writes nothing to a device: the model reads an image, a video, audio or a PDF
 //! from the message itself, and fetches a file with `download` only for a
 //! command that works on it, which never replaces a file.
 

@@ -30,7 +30,7 @@ use futures_util::future::LocalBoxFuture;
 use futures_util::stream::Stream;
 use jush_provider_common::{
     InferenceRequest, ProviderEvent, ProviderRun, ProviderRuntime, RequestLimits,
-    ToolResultKinds,
+    MediaKinds,
 };
 use jush_provider_subscription_cli::{Placement, ProcessSlot};
 use jush_shared_types::{Model, TokenUsage};
@@ -76,11 +76,13 @@ impl ProviderRuntime for AgyRuntime {
             .idle(&*self.placement, &self.shared.entry, self.shared.auth.account().ok());
     }
 
-    /// `agy` takes an image in a tool's result, as MCP image content, and
-    /// documents no limit of a request's size.
+    /// `agy` documents no limit of a request's size. It takes an image in a
+    /// prompt and, as MCP image content, in a tool's result; its model reads
+    /// any other medium as a file (`media.rs`).
     fn request_limits(&self, _model: &Model) -> RequestLimits {
         RequestLimits {
-            tool_results: ToolResultKinds::IMAGES,
+            messages: MediaKinds::ALL,
+            tool_results: MediaKinds::ALL,
             ..RequestLimits::default()
         }
     }

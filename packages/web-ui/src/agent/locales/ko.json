@@ -145,6 +145,7 @@
       "line": "{kind} 저장 안 됨: {reason}",
       "image": "이미지",
       "video": "동영상",
+      "audio": "오디오",
       "document": "문서"
     },
     "shellFallback": "셸 명령 실행",

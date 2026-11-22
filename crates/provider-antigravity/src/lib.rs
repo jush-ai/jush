@@ -41,6 +41,7 @@ mod failure;
 mod history;
 mod live;
 mod login;
+mod media;
 mod models;
 mod probe;
 mod quota;

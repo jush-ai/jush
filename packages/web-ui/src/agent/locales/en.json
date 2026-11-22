@@ -145,6 +145,7 @@
       "line": "{kind} not stored: {reason}",
       "image": "Image",
       "video": "Video",
+      "audio": "Audio",
       "document": "Document"
     },
     "shellFallback": "Run shell command",

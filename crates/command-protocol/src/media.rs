@@ -1,5 +1,5 @@
 //! The media a declared command returns (`crates/runner-jobs/src/commands/command_output.rs`):
-//! images, videos and PDF documents that `jush file view` hands to its job,
+//! images, videos, audio and PDF documents that `jush file view` hands to its job,
 //! their bound, how their bytes are recognized, and the facts a medium
 //! record carries of one.
 
@@ -10,14 +10,19 @@ use serde::{Deserialize, Serialize};
 pub const MAX_MEDIUM_BYTES: u64 = 16 * 1024 * 1024;
 
 /// The media type `bytes` begin with, from their magic numbers, or `None` for
-/// anything but the image, video and document types a model reads
+/// anything but the image, video, audio and document types a model reads
 /// (`crates/shared-types/src/model.rs`).
 ///
 /// - Fewer than 12 bytes are never recognized.
 /// - An ISO media file (`ftyp`) is QuickTime for the brand `qt  `, M4V for a
-///   brand starting `M4V`, and MP4 otherwise.
+///   brand starting `M4V`, M4A audio for the brand `M4A `, and MP4 otherwise.
 /// - An EBML header is WebM, the Matroska format a model reads.
 /// - `%PDF-` begins a PDF.
+/// - MP3 begins with an ID3v2 tag, its version 2 to 4 and its size four
+///   7-bit bytes, or an MPEG Layer III frame header, whose bitrate and
+///   sample rate are valid: text that starts `ID3` and a UTF-16 byte order
+///   mark, `FF FE`, are neither.
+/// - Ogg is audio unless its first packet is Theora video.
 pub fn sniff_media_type(bytes: &[u8]) -> Option<&'static str> {
     if bytes.len() < 12 {
         return None;
@@ -40,13 +45,59 @@ pub fn sniff_media_type(bytes: &[u8]) -> Option<&'static str> {
             "video/quicktime"
         } else if brand.starts_with(b"M4V") {
             "video/x-m4v"
+        } else if brand == b"M4A " {
+            "audio/mp4"
         } else {
             "video/mp4"
         }
+    } else if bytes.starts_with(b"RIFF") && &bytes[8..12] == b"WAVE" {
+        "audio/wav"
+    } else if bytes.starts_with(b"FORM") && (&bytes[8..12] == b"AIFF" || &bytes[8..12] == b"AIFC") {
+        "audio/aiff"
+    } else if bytes.starts_with(b"OggS") && !contains(&bytes[..bytes.len().min(OGG_HEAD)], b"\x80theora") {
+        "audio/ogg"
+    } else if bytes.starts_with(b"fLaC") {
+        "audio/flac"
+    } else if is_id3_tag(bytes) || is_mp3_frame(bytes) {
+        "audio/mpeg"
     } else {
         return None;
     };
     Some(media_type)
+}
+
+/// How far into an Ogg file its first packet starts: a page header of 27
+/// bytes, its segment table, then the packet's codec signature.
+const OGG_HEAD: usize = 64;
+
+fn contains(bytes: &[u8], needle: &[u8]) -> bool {
+    bytes.windows(needle.len()).any(|window| window == needle)
+}
+
+/// Whether `bytes` begin with an ID3v2 tag: `ID3`, a major version of 2 to
+/// 4, a revision byte, a flags byte whose low four bits are clear, and a
+/// size of four bytes of 7 bits.
+fn is_id3_tag(bytes: &[u8]) -> bool {
+    bytes.starts_with(b"ID3")
+        && (2..=4).contains(&bytes[3])
+        && bytes[5] & 0x0f == 0
+        && bytes[6..10].iter().all(|byte| byte & 0x80 == 0)
+}
+
+/// Whether `bytes` begin with an MPEG Layer III frame header: 11 sync bits,
+/// a version that is not reserved, layer III, a bitrate index other than
+/// free and bad, and a sample rate index that is not reserved.
+fn is_mp3_frame(bytes: &[u8]) -> bool {
+    let version = (bytes[1] >> 3) & 0x03;
+    let layer = (bytes[1] >> 1) & 0x03;
+    let bitrate = bytes[2] >> 4;
+    let sample_rate = (bytes[2] >> 2) & 0x03;
+    bytes[0] == 0xff
+        && bytes[1] & 0xe0 == 0xe0
+        && version != 0b01
+        && layer == 0b01
+        && bitrate != 0 && bitrate != 0x0f
+        && sample_rate != 0b11
 }
 
 /// How many of their first bytes a NUL byte makes bytes binary within, as

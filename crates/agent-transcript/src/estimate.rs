@@ -299,10 +299,10 @@ fn content_estimate(content: &[UserContentBlock], request: &RequestView) -> (Str
 /// A message's part: its line, and the weight of the medium the request
 /// carries.
 ///
-/// - An image or a video weighs its URL or media type.
+/// - An image, a video or a recording weighs its URL or media type.
 /// - A document weighs `<fileName> <mediaType>`.
 /// - A medium the request carries as text weighs that text.
-/// - Videos weigh nothing.
+/// - Videos and recordings weigh nothing.
 fn content_part_estimate<'a>(
     part: &'a UserContentBlock,
     request: &RequestView,
@@ -322,6 +322,11 @@ fn content_part_estimate<'a>(
             Err(text) => (Cow::Owned(text), 0),
         },
         UserContentBlock::Video { source } => match request.medium(ModelMediaKind::Video, source) {
+            Ok(Medium::Bytes(MediaBytes { media_type, .. })) => (Cow::Owned(media_type), 0),
+            Ok(Medium::Url(url)) => (Cow::Owned(url), 0),
+            Err(text) => (Cow::Owned(text), 0),
+        },
+        UserContentBlock::Audio { source } => match request.medium(ModelMediaKind::Audio, source) {
             Ok(Medium::Bytes(MediaBytes { media_type, .. })) => (Cow::Owned(media_type), 0),
             Ok(Medium::Url(url)) => (Cow::Owned(url), 0),
             Err(text) => (Cow::Owned(text), 0),
@@ -353,6 +358,7 @@ fn result_estimate<'a>(
         }
         ToolResultContentBlock::Image { source } => (ModelMediaKind::Image, source),
         ToolResultContentBlock::Video { source } => (ModelMediaKind::Video, source),
+        ToolResultContentBlock::Audio { source } => (ModelMediaKind::Audio, source),
         ToolResultContentBlock::Document { source } => {
             return match request.tool_document(source) {
                 Ok(MediaBytes { data, media_type }) => {
