@@ -264,6 +264,11 @@ pub trait ConfigDir {
     /// told to read.
     fn write<'a>(&'a self, name: &'a str, bytes: Bytes) -> LocalBoxFuture<'a, Result<(), DeviceError>>;
 
+    /// Whether anything is at the absolute path `path` of the directory's
+    /// machine, a link that points nowhere included, such as a file a
+    /// process asks to read.
+    fn exists<'a>(&'a self, path: &'a str) -> LocalBoxFuture<'a, Result<bool, DeviceError>>;
+
     /// The standard output of `command` with `args`, run in the directory to
     /// its end; why it failed otherwise, such as its standard error. It is
     /// for a short command whose output is small, such as one that takes a

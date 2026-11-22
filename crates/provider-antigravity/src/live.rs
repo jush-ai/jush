@@ -19,11 +19,13 @@
 //! A call of one of `agy`'s own tools, such as `read_file`, is `agy`'s to run:
 //! it arrives as `session/update`s, which the run reports as a vendor's step.
 //! Before a call `agy` does not allow by itself, `agy` asks Jush, which allows
-//! only a call of its own MCP server: `read_file` then reads only what `agy`
-//! saved of a result and the media Jush puts in the session's workspace
-//! (`media.rs`), which it reads without asking. `agy`'s other tools ask
-//! nothing and reach no file (measured). A denial ends the turn with no
-//! answer, which fails the run.
+//! a call of its own MCP server, and a `read_file` of a path where nothing is
+//! on the process's machine, which fails with `file does not exist` and
+//! leaves the turn going: `read_file` then reads only what `agy` saved of a
+//! result and the media Jush puts in the session's workspace (`media.rs`),
+//! which it reads without asking. `agy`'s other tools ask nothing and reach
+//! no file (measured). A denial ends the turn with no answer, which fails the
+//! run.
 //!
 //! A kept process goes on with a later request only where it continues what
 //! the process received, with the same system prompt: new user messages
@@ -339,7 +341,11 @@ impl Live {
                 Line::Notification { .. } => {}
                 Line::Request { id, method, params } => {
                     let line = if method == "session/request_permission" {
-                        let (line, allowed) = acp::permission(id, &params, own_call(&params["toolCall"]));
+                        let allow = tokio::select! {
+                            () = cancel.cancelled() => return Next::Cancelled,
+                            allow = allows(self.held.dir(), &params["toolCall"]) => allow,
+                        };
+                        let (line, allowed) = acp::permission(id, &params, allow);
                         self.denied |= !allowed;
                         line
                     } else {
@@ -597,6 +603,40 @@ fn own_call(call: &Value) -> bool {
     call.get("name")
         .and_then(Value::as_str)
         .is_some_and(tools::is_server_tool)
+}
+
+/// Whether Jush allows the call `call` that `agy` asks about: one of its own
+/// MCP server, or a `read_file` of paths where nothing is on the machine of
+/// the process's directory `dir`, which reveals nothing of the machine.
+async fn allows(dir: Option<&dyn ConfigDir>, call: &Value) -> bool {
+    if own_call(call) {
+        return true;
+    }
+    if call.get("name").and_then(Value::as_str) != Some("read_file") {
+        return false;
+    }
+    let (Some(dir), Some(paths)) = (dir, read_paths(call)) else {
+        return false;
+    };
+    for path in paths {
+        if !matches!(dir.exists(path).await, Ok(false)) {
+            return false;
+        }
+    }
+    true
+}
+
+/// The paths a `read_file` call names: the model's, and each `agy` resolved,
+/// the file it reads, with `..` and every link, `/proc/self` among them,
+/// resolved (measured). None when it names no resolved path, which is the
+/// one that counts, or one is not an absolute path of the machine, which
+/// runs Linux.
+fn read_paths(call: &Value) -> Option<Vec<&str>> {
+    let mut paths = vec![call.get("rawInput")?.get("Path")?.as_str()?];
+    for location in call.get("locations")?.as_array()? {
+        paths.push(location.get("path")?.as_str()?);
+    }
+    (paths.len() > 1 && paths.iter().all(|path| path.starts_with('/'))).then_some(paths)
 }
 
 /// A prompt in flight: its request's id, the model it runs, by Jush's id,

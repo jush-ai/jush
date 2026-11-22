@@ -553,6 +553,7 @@ impl ProcessControl for RelayedControl {
 enum DirOrder {
     Read(String, oneshot::Sender<Result<Bytes, DeviceError>>),
     Write(String, Bytes, oneshot::Sender<Result<(), DeviceError>>),
+    Exists(String, oneshot::Sender<Result<bool, DeviceError>>),
     Output(String, Vec<String>, oneshot::Sender<Result<Bytes, String>>),
 }
 
@@ -578,6 +579,17 @@ impl ConfigDir for RelayedDir {
             let gone = || DeviceError::new(DeviceErrorKind::Unavailable, "the directory's relay ended");
             self.0
                 .send(DirOrder::Write(name.to_owned(), bytes, answer))
+                .map_err(|_| gone())?;
+            answered.await.unwrap_or_else(|_| Err(gone()))
+        })
+    }
+
+    fn exists<'a>(&'a self, path: &'a str) -> LocalBoxFuture<'a, Result<bool, DeviceError>> {
+        Box::pin(async move {
+            let (answer, answered) = oneshot::channel();
+            let gone = || DeviceError::new(DeviceErrorKind::Unavailable, "the directory's relay ended");
+            self.0
+                .send(DirOrder::Exists(path.to_owned(), answer))
                 .map_err(|_| gone())?;
             answered.await.unwrap_or_else(|_| Err(gone()))
         })
@@ -665,6 +677,9 @@ fn relay(shard: &Shard, placed: Placed, hold: Option<AccountHold>) -> Relayed {
                         }
                         DirOrder::Write(name, bytes, answer) => {
                             let _ = answer.send(config.write(&name, bytes).await);
+                        }
+                        DirOrder::Exists(path, answer) => {
+                            let _ = answer.send(config.exists(&path).await);
                         }
                         DirOrder::Output(command, args, answer) => {
                             let args: Vec<&str> = args.iter().map(String::as_str).collect();
@@ -1338,6 +1353,10 @@ impl ConfigDir for MachineDir {
 
     fn write<'a>(&'a self, name: &'a str, bytes: Bytes) -> LocalBoxFuture<'a, Result<(), DeviceError>> {
         Box::pin(MachineDir::write(self, vec![(name.to_owned(), bytes)]))
+    }
+
+    fn exists<'a>(&'a self, path: &'a str) -> LocalBoxFuture<'a, Result<bool, DeviceError>> {
+        self.device.fs().exists(path)
     }
 
     fn output<'a>(

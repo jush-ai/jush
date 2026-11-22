@@ -13,10 +13,11 @@
 //!   of a long tool result; the process that makes a session for its history
 //!   to be written into has the agent and no server (`history.rs`).
 //! - `agy` asks before every call it does not allow by itself, and Jush
-//!   allows only its own tools' (`live.rs`): the machine holds every
-//!   account's sign-in, which no model may read. The session's workspace,
-//!   whose files `agy` reads without asking, holds only the media Jush gives
-//!   the model as files (`media.rs`), none of the process's own.
+//!   allows only its own tools' and a read of a path where nothing is
+//!   (`live.rs`): the machine holds every account's sign-in, which no model
+//!   may read. The session's workspace, whose files `agy` reads without
+//!   asking, holds only the media Jush gives the model as files
+//!   (`media.rs`), none of the process's own.
 //! - A usage read runs `agy --print /usage`, which prints the account's usage
 //!   and ends (`quota.rs`).
 //! - No API key in the machine's environment reaches `agy`, so the account
