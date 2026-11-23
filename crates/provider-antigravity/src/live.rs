@@ -234,6 +234,20 @@ impl Live {
             None => session_id(&opened)?,
         };
         live.sent = user_messages(&request.items[..input]).cloned().collect();
+        // The prompt waits for `agy` to have Jush's tools, which it asks for
+        // once the session is made: a turn takes the tools it has as it starts.
+        let exited = tokio::select! {
+            listed = live.channel.listed() => {
+                listed.map_err(failure)?;
+                false
+            }
+            _ = live.exit.clone() => true,
+        };
+        if exited {
+            // What `agy` wrote last says why it ended.
+            while live.output.line().await.is_some() {}
+            return Err(live.ended().await);
+        }
         live.prompt(shared, request).await?;
         Ok(live)
     }

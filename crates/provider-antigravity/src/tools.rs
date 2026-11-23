@@ -13,7 +13,11 @@
 //!
 //! Whichever side opens a pipe first waits for the other, so they may start
 //! in either order. The channel serves one MCP session: once either side ends
-//! it, the pipes are done, and so is the process.
+//! it, the pipes are done, and so is the process. `agy` asks for the tools
+//! once a session is made or loaded, but answers `session/new` and
+//! `session/load` without waiting for them, and a turn takes the tools `agy`
+//! has as the turn starts. So a new process's first prompt waits until the
+//! server answered `tools/list` ([`Channel::listed`]).
 //!
 //! The server's one tool, `shell`, is eager, so the model sees it with its
 //! schema as `mcp_jush_shell`; a lazy one is called through `agy`'s own tool
@@ -30,7 +34,7 @@ use jush_device_interface::{Process, ProcessControl, ProcessOutput, SpawnEnv, Sp
 use jush_provider_common::{ToolCall, ToolDefinition};
 use jush_provider_subscription_cli::{ToolEvent, ToolServer};
 use jush_shared_types::StreamKind;
-use rmcp::model::{CallToolResult, ClientJsonRpcMessage};
+use rmcp::model::{CallToolResult, ClientJsonRpcMessage, JsonRpcResponse, ServerJsonRpcMessage, ServerResult};
 use serde_json::{Value, json};
 use tokio::sync::mpsc;
 
@@ -70,6 +74,11 @@ const SERVER_SCRIPT: &str =
 /// waits for the user has no end, so `agy` never gives up on one first; by
 /// default it gives up after three minutes and the model calls again.
 const CALL_TIMEOUT_SECONDS: i32 = i32::MAX;
+
+/// How long a new process may take to ask for the tools: `agy` asks within
+/// a second of the session's start (measured), and one that does not must
+/// not hold the turn for good.
+const LIST_WAIT: std::time::Duration = std::time::Duration::from_secs(30);
 
 /// The companion's command, the other end.
 const COMPANION_SCRIPT: &str =
@@ -116,6 +125,8 @@ pub(crate) struct Channel {
     writes: mpsc::UnboundedSender<Bytes>,
     /// Why the channel ended, once it did.
     ended: Option<String>,
+    /// The server's answer to `agy`'s `tools/list` is on its way to `agy`.
+    listed: bool,
 }
 
 /// What the channel did that the run acts on.
@@ -149,7 +160,34 @@ impl Channel {
             pending: Lines::default(),
             writes,
             ended: None,
+            listed: false,
         }
+    }
+
+    /// Carries messages both ways until the server answered `agy`'s
+    /// `tools/list`, before the process's first prompt: a prompt sent before
+    /// runs its whole turn without Jush's tools (measured). A prompt sent 15
+    /// milliseconds after the answer left had them each time (measured), and
+    /// the prompt follows `session/set_model`'s round trip besides.
+    ///
+    /// An `agy` that has not asked within [`LIST_WAIT`] fails the run, rather
+    /// than hold it for good or let it go on without the tools.
+    pub(crate) async fn listed(&mut self) -> Result<(), String> {
+        let waited = tokio::time::timeout(LIST_WAIT, async {
+            while !self.listed {
+                if let Some(reason) = &self.ended {
+                    return Err(reason.clone());
+                }
+                // No turn runs before the first prompt, so `agy` calls no
+                // tool: a call is a protocol failure.
+                if let Some(call) = self.carry().await {
+                    return Err(format!("Antigravity called {} before its turn", call.tool_name));
+                }
+            }
+            Ok(())
+        })
+        .await;
+        waited.unwrap_or_else(|_| Err("Antigravity did not ask for Jush's tools".into()))
     }
 
     /// Makes `tools` the ones the server lists.
@@ -175,13 +213,30 @@ impl Channel {
             if let Some(reason) = &self.ended {
                 return ChannelEvent::Ended(reason.clone());
             }
-            tokio::select! {
-                biased;
-                event = self.server.next() => match event {
-                    ToolEvent::Reply(reply) => self.write(&*reply),
-                    ToolEvent::Opened(call) => return ChannelEvent::Opened(call),
-                },
-                chunk = self.output.next() => match chunk {
+            if let Some(call) = self.carry().await {
+                return ChannelEvent::Opened(call);
+            }
+        }
+    }
+
+    /// Carries the next message either way; the call the server opened, if
+    /// that was it.
+    async fn carry(&mut self) -> Option<ToolCall> {
+        tokio::select! {
+            biased;
+            event = self.server.next() => match event {
+                ToolEvent::Reply(reply) => {
+                    self.listed |= matches!(
+                        &*reply,
+                        ServerJsonRpcMessage::Response(JsonRpcResponse { result: ServerResult::ListToolsResult(_), .. })
+                    );
+                    self.write(&*reply);
+                    None
+                }
+                ToolEvent::Opened(call) => Some(call),
+            },
+            chunk = self.output.next() => {
+                match chunk {
                     Some(chunk) if chunk.stream == StreamKind::Stdout => {
                         self.pending.push(&chunk.bytes);
                         self.pass_lines();
@@ -190,7 +245,8 @@ impl Channel {
                     // not be made, end its output too.
                     Some(_) => {}
                     None => self.ended = Some("Antigravity's MCP channel ended".into()),
-                },
+                }
+                None
             }
         }
     }
