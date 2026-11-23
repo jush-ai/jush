@@ -24,6 +24,7 @@ import {
   schemaRefusal,
   starterRequestSchema,
   syncEventSchema,
+  userPreferencesSchema,
   withPart,
   type Accounts,
   type CoreState,
@@ -31,6 +32,8 @@ import {
   type CreateProvider,
   type DeviceDto,
   type DeviceExec,
+  type Preferences,
+  type PreferencesPatch,
   type ProviderDto,
   type ProviderPatch,
   type PushMessage,
@@ -125,6 +128,15 @@ export class Core {
       this.starter?.close()
       this.starter = null
     }
+  }
+
+  /**
+   * Changes what `patch` names of the core's preferences, the web app's
+   * Settings, and answers them, such as `commandLocale`, the time zone and
+   * languages its commands and browsers run in.
+   */
+  async updatePreferences(patch: PreferencesPatch): Promise<Preferences> {
+    return (await this.routes.json('PATCH', '/settings/preferences', userPreferencesSchema, patch)).preferences
   }
 
   /**

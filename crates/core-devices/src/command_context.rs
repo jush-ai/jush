@@ -20,9 +20,9 @@ pub fn default_locale() -> CommandLocale {
     }
 }
 
-/// The context of work `caller` starts for `conversation`: the reported
-/// locale, or the default before one, and the browser profile the
-/// conversation names.
+/// The context of work `caller` starts for `conversation`: the locale a
+/// program set, else the reported one, else the default, and the browser
+/// profile the conversation names.
 pub async fn command_context(
     store: &CoreStore,
     conversation: &ConversationId,
@@ -86,13 +86,15 @@ pub struct Reported {
     pub color_scheme: ColorScheme,
 }
 
-/// What the page last reported, each part the default before one.
+/// What the page last reported, each part the default before one; the
+/// locale a program set comes before the browser's.
 pub async fn reported(store: &CoreStore) -> Result<Reported, StorageError> {
     let preferences = store.preferences().await?;
     Ok(Reported {
         locale: preferences
-            .locale
-            .map_or_else(default_locale, BrowserLocale::command_locale),
+            .command_locale
+            .or_else(|| preferences.locale.map(BrowserLocale::command_locale))
+            .unwrap_or_else(default_locale),
         color_scheme: preferences.color_scheme.unwrap_or(DEFAULT_COLOR_SCHEME),
     })
 }

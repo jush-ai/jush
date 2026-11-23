@@ -1,7 +1,9 @@
-//! Per-user preferences: the check a reported locale passes before it is saved,
-//! and how a patch merges into what is saved.
+//! Per-user preferences: the check a locale passes before it is saved, the
+//! browser's report and the one a program sets for commands alike, and how
+//! a patch merges into what is saved.
 
 
+use jush_command_protocol::CommandLocale;
 use jush_web_api_protocol::settings::{
     BrowserLocale,
     ContextLimitChange, ContextLimits, Preferences, PreferencesPatch,
@@ -19,34 +21,54 @@ pub struct CheckedPatch(PreferencesPatch);
 /// does.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum LocaleError {
-    #[error("locale.timeZone: {0:?} is not a time zone the backend knows")]
-    UnknownTimeZone(String),
-    #[error("locale.languages[{index}]: {tag:?} is not a BCP 47 language tag")]
-    MalformedTag { index: usize, tag: String },
+    #[error("{field}.timeZone: {zone:?} is not a time zone the backend knows")]
+    UnknownTimeZone { field: &'static str, zone: String },
+    #[error("{field}.languages[{index}]: {tag:?} is not a BCP 47 language tag")]
+    MalformedTag {
+        field: &'static str,
+        index: usize,
+        tag: String,
+    },
 }
 
 pub fn check(mut patch: PreferencesPatch) -> Result<CheckedPatch, LocaleError> {
     if let Some(locale) = patch.locale.take() {
-        patch.locale = Some(canonical(locale)?);
+        let (time_zone, languages) = canonical("locale", &locale.time_zone, &locale.languages)?;
+        patch.locale = Some(BrowserLocale {
+            time_zone,
+            languages,
+            language: locale.language,
+        });
     }
+    patch.command_locale = match patch.command_locale.take() {
+        Some(Some(locale)) => {
+            let (time_zone, languages) = canonical("commandLocale", &locale.time_zone, &locale.languages)?;
+            Some(Some(CommandLocale { time_zone, languages }))
+        }
+        unchanged => unchanged,
+    };
     Ok(CheckedPatch(patch))
 }
 
-/// The locale with its time zone checked against ICU4X's IANA names, which
-/// ignore case, and its tags canonicalized as a web browser's
-/// `Intl.getCanonicalLocales` does.
+/// A locale's time zone checked against ICU4X's IANA names, which ignore
+/// case, and its tags canonicalized as a web browser's
+/// `Intl.getCanonicalLocales` does; a refusal names `field`.
 ///
 /// For example, `zh-cn` becomes `zh-CN`, `iw` becomes `he`, and a tag that
 /// repeats an earlier one goes.
-fn canonical(locale: BrowserLocale) -> Result<BrowserLocale, LocaleError> {
-    let zone = IanaParserExtended::new().parse(&locale.time_zone);
+fn canonical(field: &'static str, time_zone: &str, tags: &[String]) -> Result<(String, Vec<String>), LocaleError> {
+    let zone = IanaParserExtended::new().parse(time_zone);
     if zone.time_zone.is_unknown() {
-        return Err(LocaleError::UnknownTimeZone(locale.time_zone));
+        return Err(LocaleError::UnknownTimeZone {
+            field,
+            zone: time_zone.to_owned(),
+        });
     }
     let canonicalizer = LocaleCanonicalizer::new_extended();
-    let mut languages: Vec<String> = Vec::with_capacity(locale.languages.len());
-    for (index, tag) in locale.languages.iter().enumerate() {
+    let mut languages: Vec<String> = Vec::with_capacity(tags.len());
+    for (index, tag) in tags.iter().enumerate() {
         let mut parsed = Locale::try_from_str(tag).map_err(|_| LocaleError::MalformedTag {
+            field,
             index,
             tag: tag.clone(),
         })?;
@@ -56,11 +78,7 @@ fn canonical(locale: BrowserLocale) -> Result<BrowserLocale, LocaleError> {
             languages.push(canonical);
         }
     }
-    Ok(BrowserLocale {
-        time_zone: zone.normalized.to_owned(),
-        languages,
-        language: locale.language,
-    })
+    Ok((zone.normalized.to_owned(), languages))
 }
 
 /// `preferences` with `patch` applied:
@@ -68,7 +86,8 @@ fn canonical(locale: BrowserLocale) -> Result<BrowserLocale, LocaleError> {
 /// - A field the patch holds replaces the saved one. The lists of hidden
 ///   entries and models replace it whole.
 /// - A `null` shortcut removes that override; a set's change leaves the other set as it is.
-/// - A `null` small model goes back to Automatic.
+/// - A `null` small model goes back to Automatic, and a `null` command
+///   locale to the browser's report.
 /// - A context limit changes that one model's.
 /// - Everything the patch leaves out stays.
 pub fn merge(mut preferences: Preferences, CheckedPatch(patch): CheckedPatch) -> Preferences {
@@ -113,6 +132,9 @@ pub fn merge(mut preferences: Preferences, CheckedPatch(patch): CheckedPatch) ->
     preferences.last_project_device = patch.last_project_device.or(preferences.last_project_device);
     preferences.language = patch.language.or(preferences.language);
     preferences.locale = patch.locale.or(preferences.locale);
+    if let Some(command_locale) = patch.command_locale {
+        preferences.command_locale = command_locale;
+    }
     preferences.color_scheme = patch.color_scheme.or(preferences.color_scheme);
     preferences.send_while_running = patch.send_while_running.or(preferences.send_while_running);
     preferences.resume_at_retry = patch.resume_at_retry.or(preferences.resume_at_retry);
