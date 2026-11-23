@@ -5,8 +5,9 @@ use serde_json::Value;
 
 use crate::{Group, Leaf, Node, StdinRead, parse::placeholder};
 
-/// The line the capability index opens with, before one section a group.
-pub const INDEX_OPENER: &str = "Jush commands, run in the shell; `jush <group> --help` for details:";
+/// The line the capability index opens with, before one section a group:
+/// a group under `jush` or a command of a plugin's own.
+pub const INDEX_OPENER: &str = "Commands, run in the shell; `<command> --help` for details:";
 
 /// The model's capability index: the opener, then one section a group,
 /// sorted by the group's path.
