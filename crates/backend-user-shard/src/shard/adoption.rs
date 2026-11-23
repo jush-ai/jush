@@ -107,23 +107,38 @@ impl Shard {
         // would release what is in use, so a runner whose welcome cannot name
         // them is dropped and connects again.
         let idle = self.idle_released();
-        // Beside the conversations whose records name the device, those with a
-        // live subagent there, which a move of the conversation left on it.
-        let with_agents = self.conversations_with_agents_on(&device.id);
+        // Beside the conversations whose records name the device: those a
+        // restart is resuming, whose trees are not open yet, first those
+        // still marked, then those whose mark was taken; and last those whose
+        // open tree has a live subagent there, which a move of the
+        // conversation left on it. Read in that order, a conversation that
+        // goes from one to the next meanwhile is named by one of them.
         let held = match self.services().control.conversations_on(self.user().clone(), device.id.clone()).await {
-            Ok(held) => held
-                .into_iter()
-                .chain(with_agents)
-                .filter(|id| !idle.contains(id))
-                .map(|id| id.to_string())
-                .collect::<std::collections::BTreeSet<_>>()
-                .into_iter()
-                .collect(),
+            Ok(held) => held,
             Err(error) => {
                 tracing::warn!(event = "runner_adoption.read_failed", device_id = %device.id, what = "held_conversations", outcome = "runner_reconnects", error = &error as &dyn std::error::Error, "the conversations the device holds could not be read");
                 return;
             }
         };
+        let marked = match self.services().control.interrupted_turns(self.user().clone()).await {
+            Ok(marked) => marked.into_iter().map(|mark| mark.conversation),
+            Err(error) => {
+                tracing::warn!(event = "runner_adoption.read_failed", device_id = %device.id, what = "interrupted_turns", outcome = "runner_reconnects", error = &error as &dyn std::error::Error, "the conversations a restart resumes could not be read");
+                return;
+            }
+        };
+        let resuming = self.restart_resumes().all();
+        let with_agents = self.conversations_with_agents_on(&device.id);
+        let held: Vec<String> = held
+            .into_iter()
+            .chain(marked)
+            .chain(resuming)
+            .chain(with_agents)
+            .filter(|id| !idle.contains(id))
+            .map(|id| id.to_string())
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
+            .collect();
         let storage = match self.storage_rules().await {
             Ok(rules) => crate::shard::storage::wire_rules(rules),
             Err(error) => {

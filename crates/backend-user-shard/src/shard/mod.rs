@@ -436,8 +436,9 @@ impl Shard {
     ///   page reads the state again from the next backend.
     /// - The lanes end before the agents, so no tree opens and no frame reaches a
     ///   tree after its shutdown.
-    /// - A root's running turn is marked in `interrupted_turns` before it is
-    ///   aborted, so the next start resumes it however far the shutdown got.
+    /// - A root's running turn, or a resting root's working subagents, are
+    ///   marked in `interrupted_turns` before they are aborted, so the next
+    ///   start resumes them however far the shutdown got.
     /// - Transfers and user streams end before the Cloud stops, so the Cloud can
     ///   still save.
     async fn close(&self) {
@@ -454,7 +455,7 @@ impl Shard {
         self.tree_openers.close();
         closed("the tree openings ended", self.tree_openers.wait()).await;
         let _transfers_closed = closed("the transfers ended", self.conversations.end_transfers()).await;
-        closed("the running roots were marked", self.mark_running_roots()).await;
+        closed("the working trees were marked", self.mark_working_trees()).await;
         closed("the agents were disposed", self.agent.shutdown()).await;
         closed("the Cloud closed", self.cloud_shard().close_cloud()).await;
         closed("the devices were shut down", self.devices.shut_down(&self.services.control)).await;
