@@ -243,7 +243,9 @@ pub async fn configure(
     // The profile's language preference sets `navigator.languages` and every
     // request's `Accept-Language` from the first byte, in popups and workers too.
     // A conversation's profile keeps the preferences the sites and Chrome set
-    // before, and only this one changes.
+    // before, and only this one changes. Chrome keeps the list twice and,
+    // as it starts, puts `selected_languages` back over `accept_languages`,
+    // so a profile started in other languages before would keep them.
     let preferences = profile.join("Default");
     tokio::fs::create_dir_all(&preferences).await?;
     let file = preferences.join("Preferences");
@@ -258,7 +260,9 @@ pub async fn configure(
     if !kept["intl"].is_object() {
         kept["intl"] = serde_json::json!({});
     }
-    kept["intl"]["accept_languages"] = serde_json::Value::String(locale.languages.join(","));
+    let languages = serde_json::Value::String(locale.languages.join(","));
+    kept["intl"]["accept_languages"] = languages.clone();
+    kept["intl"]["selected_languages"] = languages;
     // Replaced whole, so a start that ends halfway leaves the file as it was.
     let staged = preferences.join("Preferences.jush");
     tokio::fs::write(
