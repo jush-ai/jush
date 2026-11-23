@@ -261,8 +261,8 @@ fn flags(conversation: &Option<ConversationId>, agent: Option<u32>) -> String {
 impl Reader {
     async fn of<A>(core: &Core, call: &Call<A>, target: &Target) -> Result<Self, RpcError> {
         let here = conversation_of(&call.invocation)?;
-        // A zone the user's page reported that this build does not know
-        // shows the times in UTC rather than refusing the read.
+        // A zone of the command context that this build does not know shows
+        // the times in UTC rather than refusing the read.
         let zone = TimeZone::get(&call.invocation.context.locale.time_zone).unwrap_or(TimeZone::UTC);
         let no_transcript = || failed(format!("no transcript{}", flags(&target.conversation, target.agent)));
         let (conversation, node) = match (&target.conversation, target.agent) {

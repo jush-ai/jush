@@ -2,12 +2,13 @@
 //! after the turn resumes, starts with: the model has no clock of its own, and
 //! a device's clock tells that device's zone, not the user's.
 //!
-//! The zone is the one the user's page last reported, which schedules and
-//! history searches read too; the minute is the core's clock. Before any
-//! page reported a zone, or for one this build does not know, the block gives
-//! UTC and says the user's zone is unknown, so the model does not take UTC
-//! for the user's. The block follows the turn's input, never in the system
-//! prompt, whose cache then holds across days.
+//! The zone is the one commands run in, which schedules and history searches
+//! read too: the one a program set, else the one the user's page last
+//! reported. The minute is the core's clock. With neither, or with a zone
+//! this build does not know, the block gives UTC and says the user's zone is
+//! unknown, so the model does not take UTC for the user's. The block follows
+//! the turn's input, never in the system prompt, whose cache then holds
+//! across days.
 
 use std::rc::Weak;
 
@@ -15,6 +16,8 @@ use futures_util::future::LocalBoxFuture;
 use jiff::tz::TimeZone;
 use jush_agent_tools::{ContextAnswer, ContextSource, NodeContext, SeenBlock};
 use jush_shared_types::{Timestamp, TurnId, USER_TIME_SOURCE};
+
+use jush_core_devices::command_context::known_locale;
 
 use crate::Core;
 use crate::schedules::plan;
@@ -50,14 +53,14 @@ impl ContextSource for UserTime {
                 .await
                 .map_err(|error| format!("the user's time zone cannot be read: {error}"))?;
             let now = core.services().clock.now();
-            let zone = preferences.locale.map(|locale| locale.time_zone);
+            let zone = known_locale(&preferences).map(|locale| locale.time_zone);
             Ok(Some(ContextAnswer::from(user_time(now, zone.as_deref()))))
         })
     }
 }
 
-/// The block's text for `now` in `zone`, the user's IANA zone; UTC when the
-/// zone is not known.
+/// The block's text for `now` in `zone`, the IANA zone commands run in; UTC
+/// when the zone is not known.
 fn user_time(now: Timestamp, zone: Option<&str>) -> String {
     let Some((name, found)) = zone.and_then(|name| Some((name, plan::zone(name).ok()?))) else {
         let utc = now.to_jiff().to_zoned(TimeZone::UTC);

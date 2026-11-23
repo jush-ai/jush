@@ -7,12 +7,13 @@ use jush_command_protocol::{
     DEVICE_SCOPE, PROVIDER_SCOPE_PREFIX,
 };
 use jush_web_api_protocol::ids::{ConversationId, ProviderId};
-use jush_web_api_protocol::settings::BrowserLocale;
+use jush_web_api_protocol::settings::{BrowserLocale, Preferences};
 
 use jush_core_store::StorageError;
 use jush_core_store::store::CoreStore;
 
-/// The locale commands receive until the user's browser reports one.
+/// The locale commands receive until a program sets one or the user's
+/// browser reports one.
 pub fn default_locale() -> CommandLocale {
     CommandLocale {
         time_zone: "UTC".into(),
@@ -20,9 +21,9 @@ pub fn default_locale() -> CommandLocale {
     }
 }
 
-/// The context of work `caller` starts for `conversation`: the reported
-/// locale, or the default before one, and the browser profile the
-/// conversation names.
+/// The context of work `caller` starts for `conversation`: the locale a
+/// program set, else the reported one, else the default, and the browser
+/// profile the conversation names.
 pub async fn command_context(
     store: &CoreStore,
     conversation: &ConversationId,
@@ -79,20 +80,29 @@ async fn context(
 /// The color scheme commands receive until the user's page reports one.
 pub const DEFAULT_COLOR_SCHEME: ColorScheme = ColorScheme::Light;
 
-/// What commands receive of what their page reported: its
-/// browser's locale and the color scheme it shows.
+/// What commands receive of what their page reported: the locale, the one a
+/// program set or else the page's browser's, and the color scheme the page
+/// shows.
 pub struct Reported {
     pub locale: CommandLocale,
     pub color_scheme: ColorScheme,
 }
 
-/// What the page last reported, each part the default before one.
+/// What the page last reported, each part the default before one; the
+/// locale a program set comes before the browser's.
 pub async fn reported(store: &CoreStore) -> Result<Reported, StorageError> {
     let preferences = store.preferences().await?;
     Ok(Reported {
-        locale: preferences
-            .locale
-            .map_or_else(default_locale, BrowserLocale::command_locale),
+        locale: known_locale(&preferences).unwrap_or_else(default_locale),
         color_scheme: preferences.color_scheme.unwrap_or(DEFAULT_COLOR_SCHEME),
     })
+}
+
+/// The locale commands run in, when one is known: the one a program set,
+/// else the one the user's browser last reported.
+pub fn known_locale(preferences: &Preferences) -> Option<CommandLocale> {
+    preferences
+        .command_locale
+        .clone()
+        .or_else(|| preferences.locale.clone().map(BrowserLocale::command_locale))
 }
