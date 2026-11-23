@@ -33,9 +33,30 @@ fn cache_mark(ttl: Option<&str>) -> CacheControl<'_> {
     CacheControl { kind: "ephemeral", ttl }
 }
 
-/// The JSON body of `request`, whose cache marks ask for `ttl`.
-pub(crate) fn encode(request: &InferenceRequest, form: ThinkingForm, ttl: Option<&str>) -> Vec<u8> {
-    json_body(&body(request, form, ttl))
+/// The beta that lets a request say what a replayed thinking block whose
+/// prefix changed does.
+pub(crate) const THINKING_BINDING_BETA: &str = "thinking-binding-controls-2026-08-01";
+
+/// The earliest Claude version that binds its thinking to the prefix: 5.1.
+/// A floor and not a list, since every later model binds too.
+const BINDING_SINCE: (u32, u32) = (5, 1);
+
+/// A request's JSON body, and whether it sets what a thinking block whose
+/// prefix changed does, which needs [`THINKING_BINDING_BETA`].
+pub(crate) struct Encoded {
+    pub body: Vec<u8>,
+    pub binding: bool,
+}
+
+/// The JSON body of `request`, whose cache marks ask for `ttl`, to an
+/// endpoint that takes the binding `controls` when it is Anthropic's own.
+pub(crate) fn encode(request: &InferenceRequest, form: ThinkingForm, ttl: Option<&str>, controls: bool) -> Encoded {
+    let body = body(request, form, ttl, controls);
+    let binding = matches!(body.thinking, Some(Thinking::Adaptive { block_binding: Some(_), .. }));
+    Encoded {
+        body: json_body(&body),
+        binding,
+    }
 }
 
 #[derive(Serialize)]
@@ -196,8 +217,54 @@ impl<'a> From<&'a ToolDefinition> for Tool<'a> {
 enum Thinking {
     /// A fixed token budget.
     Enabled { budget_tokens: u32 },
-    /// Thinking whose depth the effort level sets.
-    Adaptive { display: Display },
+    /// Thinking whose depth the effort level sets; without `display`, the
+    /// model's own.
+    Adaptive {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        display: Option<Display>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        block_binding: Option<BlockBinding>,
+    },
+}
+
+/// What the vendor does with a replayed thinking block whose prefix, the
+/// system prompt, the tools and every message before it, changed since the
+/// model wrote it: it leaves each such block out, where it would refuse the
+/// request.
+///
+/// Jush's system prompt changes during a conversation: its capability index
+/// follows the commands the user and the program turn on, a program changes
+/// a conversation's identity, and a release rewords its guide. Each change
+/// would otherwise end every conversation that holds thinking, Resume
+/// included. The model loses that reasoning once, and the prompt cache from
+/// the first block dropped; the blocks written since bind to the new prefix.
+#[derive(Serialize)]
+struct BlockBinding {
+    prefix_mismatch_behavior: &'static str,
+}
+
+/// Whether `model`, a Claude model's id such as `claude-sonnet-5-5`, binds
+/// its thinking to the prefix. A gateway's prefix (`anthropic/…`) and a
+/// suffix after `@` or `:` are not its name, and a snapshot's date, such as
+/// `claude-opus-5-20260901`, is no minor version.
+fn binds_thinking(model: &str) -> bool {
+    let name = model.rsplit('/').next().unwrap_or(model);
+    let name = name.split(['@', ':']).next().unwrap_or(name);
+    let Some(rest) = name.strip_prefix("claude-") else {
+        return false;
+    };
+    let mut numbers = rest
+        .split('-')
+        .skip_while(|part| !part.chars().all(|c| c.is_ascii_digit()));
+    let Some(major) = numbers.next().and_then(|part| part.parse::<u32>().ok()) else {
+        return false;
+    };
+    let minor = numbers
+        .next()
+        .filter(|part| part.len() <= 2 && part.chars().all(|c| c.is_ascii_digit()))
+        .and_then(|part| part.parse::<u32>().ok())
+        .unwrap_or(0);
+    (major, minor) >= BINDING_SINCE
 }
 
 /// Whether a thinking block streams a readable summary or empty text.
@@ -213,11 +280,29 @@ struct OutputConfig<'a> {
     effort: &'a str,
 }
 
-fn body<'a>(request: &'a InferenceRequest, form: ThinkingForm, ttl: Option<&'a str>) -> Body<'a> {
+fn body<'a>(request: &'a InferenceRequest, form: ThinkingForm, ttl: Option<&'a str>, controls: bool) -> Body<'a> {
     let max_tokens = request
         .max_output_tokens()
         .map_or(DEFAULT_MAX_TOKENS, |limit| limit.get());
-    let (thinking, output_config) = thinking(request.thinking.as_ref(), max_tokens, form);
+    let (mut thinking, output_config) = thinking(request.thinking.as_ref(), max_tokens, form);
+    // The setting is the vendor's own, and its models take it only with
+    // adaptive thinking. A model that binds thinks adaptively when the
+    // request says nothing of thinking, so saying so changes nothing else.
+    if controls && binds_thinking(&request.model_id) {
+        let binding = BlockBinding {
+            prefix_mismatch_behavior: "drop_block",
+        };
+        match &mut thinking {
+            Some(Thinking::Adaptive { block_binding, .. }) => *block_binding = Some(binding),
+            Some(Thinking::Enabled { .. }) => {}
+            None => {
+                thinking = Some(Thinking::Adaptive {
+                    display: None,
+                    block_binding: Some(binding),
+                });
+            }
+        }
+    }
     let mut system = Vec::new();
     if !is_blank(&request.system_prompt) {
         let prompt = Block::Text {
@@ -335,7 +420,8 @@ fn thinking(
         }
         Some(ThinkingConfig::Adaptive { effort }) => (
             Some(Thinking::Adaptive {
-                display: Display::Summarized,
+                display: Some(Display::Summarized),
+                block_binding: None,
             }),
             Some(OutputConfig { effort }),
         ),
@@ -345,7 +431,10 @@ fn thinking(
                 _ => Display::Summarized,
             };
             (
-                Some(Thinking::Adaptive { display }),
+                Some(Thinking::Adaptive {
+                    display: Some(display),
+                    block_binding: None,
+                }),
                 Some(OutputConfig { effort }),
             )
         }
