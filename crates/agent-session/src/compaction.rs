@@ -68,7 +68,7 @@ What was decided, why, and what was ruled out.
 ## Critical context
 Paths, names, ids, commands, numbers and error text needed to go on.
 
-Keep each section short, with \"(none)\" for an empty one, and every identifier exact. If the conversation starts with an earlier summary, update it: keep what still holds, change what changed, and drop what no longer holds.";
+Write \"(none)\" for an empty section, and keep every identifier exact. If the conversation starts with an earlier summary, update it: keep what still holds, change what changed, and drop what no longer holds.";
 
 /// How many passes a model switch runs to fit the new model's window.
 ///
