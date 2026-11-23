@@ -276,6 +276,8 @@ export interface PageHost {
   downloading(plugin: string, on: DeviceScope): readonly DeviceDownload[]
   /** Whether a device of a conversation is the user's Cloud while it does not run, read reactively. */
   deviceStarting(on: DeviceScope): boolean
+  /** What a device of a conversation is called, as the user's devices name it, read reactively. */
+  deviceName(on: DeviceScope): string
   files(conversation: string): ConversationFileService
   intents: IntentService
   /** The work tabs of one conversation. */
@@ -322,6 +324,12 @@ export interface PageHost {
    * promise carries.
    */
   openLink(url: string | Promise<string>): Promise<void>
+  /**
+   * Opens a link to an app, such as `chat://…`, on the computer or phone the user
+   * looks from, as a page's link to one would. A link a page runs or loads itself,
+   * such as `javascript:` or `https:`, is refused with an error.
+   */
+  openApp(url: string): void
   overlays: OverlayStore
 }
 
@@ -374,6 +382,8 @@ export interface ConversationPlugin {
    * user starts there waits for it to start first.
    */
   readonly deviceStarting: ComputedRef<boolean>
+  /** What the conversation's primary device is called, such as its name or the Cloud. */
+  readonly deviceName: ComputedRef<string>
 }
 
 /** The page's own plugin. */
@@ -408,8 +418,8 @@ export interface PageContext {
   readonly workspaces: PageHost['workspaces']
   /** The user's paired devices, read reactively. */
   readonly devices: PageHost['devices']
-  /** Opens a web page in a new tab, as {@link PageHost.openLink} does. */
-  readonly links: { open(url: string | Promise<string>): Promise<void> }
+  /** Opens a web page in a new tab, or a link to an app here, as {@link PageHost} does. */
+  readonly links: { open(url: string | Promise<string>): Promise<void>; openApp(url: string): void }
   readonly errors: {
     /** An error the user sees; a call its caller dropped is none. */
     report(message: HeadlineText, error: unknown): void
@@ -763,6 +773,7 @@ function conversationPlugin(host: PageHost, plugin: string, on: DeviceScope): Co
     installed: computed(() => host.installed(plugin, on)),
     downloading: computed(() => host.downloading(plugin, on)),
     deviceStarting: computed(() => host.deviceStarting(on)),
+    deviceName: computed(() => host.deviceName(on)),
   }
 }
 
@@ -899,7 +910,7 @@ export function pageContext(host: PageHost, page: AnyPluginPage): PageContext {
     settings: { open: (section) => host.openSettings(section) },
     workspaces: host.workspaces,
     devices: host.devices,
-    links: { open: (url) => host.openLink(url) },
+    links: { open: (url) => host.openLink(url), openApp: (url) => host.openApp(url) },
     errors,
     overlays: host.overlays,
     files: (conversation) => host.files(conversation),

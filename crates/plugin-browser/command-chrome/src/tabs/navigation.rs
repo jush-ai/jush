@@ -76,6 +76,10 @@ pub struct NavigationObservation {
     /// Whether a new document committed before the action's input began.
     changed: bool,
     pub url: String,
+    /// The link to an app a frame of the page went to since the observation
+    /// began, by itself or by a server's redirect, which is no navigation of
+    /// the tab (`tabs::apps`).
+    pub app: Option<String>,
 }
 
 #[derive(Default)]
@@ -116,6 +120,7 @@ impl NavigationObservation {
         self.expected_loader = None;
         self.documents.clear();
         self.states.clear();
+        self.app = None;
         Ok(())
     }
 
@@ -168,6 +173,7 @@ impl NavigationObservation {
             began: std::time::Instant::now(),
             steps: NavigationSteps::default(),
             changed: false,
+            app: None,
             url: format!(
                 "{}{}",
                 frame.url,
@@ -181,6 +187,7 @@ impl NavigationObservation {
         observation.states.clear();
         observation.committed = None;
         observation.changed = false;
+        observation.app = None;
         Ok(observation)
     }
 
@@ -189,6 +196,14 @@ impl NavigationObservation {
             biased;
             event = self.requests.next() => {
                 let event = event.ok_or(BrowserError::TabNotFound)??;
+                // Chrome aborts the request for a link to an app, a frame's
+                // or a redirect's alike, which leaves the page as it was.
+                if event.r#type == Some(ResourceType::Document)
+                    && crate::driver::apps::is_app_link(&event.request.url)
+                {
+                    self.app = Some(event.request.url.clone());
+                    return Ok(Observed::Other);
+                }
                 if event.frame_id.as_ref() == Some(&self.frame) && event.r#type == Some(ResourceType::Document) {
                     self.documents.insert(event.request_id.clone(), event.loader_id.clone());
                     if event.loader_id != self.previous_loader {
@@ -245,6 +260,9 @@ impl NavigationObservation {
             }
             event = self.requested.next() => {
                 let event = event.ok_or(BrowserError::TabNotFound)??;
+                if crate::driver::apps::is_app_link(&event.url) {
+                    return Ok(Observed::Other);
+                }
                 Ok(if event.frame_id == self.frame && event.disposition == ClientNavigationDisposition::CurrentTab {
                     Observed::Requested
                 } else {

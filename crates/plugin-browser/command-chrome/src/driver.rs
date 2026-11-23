@@ -8,7 +8,9 @@
 //! - the operation every command runs as;
 //! - element handles, frames, navigation history, and the conversation's tab
 //!   numbers;
-//! - the text and output a command answers with.
+//! - the text and output a command answers with;
+//! - the device's apps that open a page's links to them, which Chrome without
+//!   a window never asks the user about.
 //!
 //! Chrome for Testing is used because its downloads are versioned and never
 //! update themselves, so one release can be verified and reproduced across
@@ -20,6 +22,7 @@
 
 use jush_command_package_browser_protocol::browser as protocol;
 
+pub mod apps;
 pub mod capture;
 pub mod frames;
 pub mod glibc;

@@ -124,6 +124,7 @@ pub async fn metadata(
                 title,
                 viewport: tab.viewport(),
                 dialog,
+                app: tab.state().app.pending(),
             })
         })
         .await
@@ -229,6 +230,9 @@ async fn command_run(
     ) && tab.state().dialog.is_open()
     {
         return Err(operation.failure(BrowserError::DialogBlocked, tab.id().as_str(), None));
+    }
+    if takes_input(command) && tab.state().app.holds_input() {
+        return Err(operation.failure(BrowserError::AppBlocked, tab.id().as_str(), None));
     }
     let mut navigation =
         if command.wait_url().is_some()
@@ -1043,6 +1047,25 @@ async fn command_run(
     result.map_err(|error| operation.failure(error, tab.id().as_str(), current_url.as_deref()))
 }
 
+/// Whether `command` acts through the page's input, which Chrome's own
+/// dialog for a link to an app holds (`tabs::apps`).
+fn takes_input(command: &BrowserOperation) -> bool {
+    matches!(
+        command,
+        BrowserOperation::Click(_)
+            | BrowserOperation::Move(_)
+            | BrowserOperation::Drag(_)
+            | BrowserOperation::Scroll(_)
+            | BrowserOperation::Fill(_)
+            | BrowserOperation::Type(_)
+            | BrowserOperation::Key(_)
+            | BrowserOperation::Check(_)
+            | BrowserOperation::Select(_)
+            | BrowserOperation::SelectText(_)
+            | BrowserOperation::Upload(_)
+    )
+}
+
 /// The tab's current URL and title.
 async fn target_info(tab: &BrowserTab) -> Result<(String, String)> {
     let info = tab
@@ -1099,6 +1122,7 @@ async fn action_result(
             .await
             .map_err(|error| deadline.failure(error, tab.id().as_str(), Some(&observation.url)))?;
         result.url = Some(observation.url.clone());
+        result.app = observation.app.clone();
     }
     Ok(result)
 }

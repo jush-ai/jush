@@ -32,6 +32,8 @@ image = { version = "0.25", default-features = false, features = ["bmp", "gif", 
 # Validate page tool schemas and the pinned CDP protocol without fetching external refs (MIT).
 jsonschema = { version = "0.56", default-features = false }
 png = "0.18"
+# Tell whether two pages share a site, as Chrome does for a tab's dialogs (MIT OR Apache-2.0).
+psl = "2"
 regex = "1"
 # Draw a page's SVG icon on the device, without its fonts or embedded images (Apache-2.0 OR MIT).
 resvg = { version = "0.48", default-features = false }
@@ -44,6 +46,14 @@ tokio-tungstenite = { version = "0.29", default-features = false, features = ["h
 tokio-util.workspace = true
 tracing.workspace = true
 url = "2"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+  "Win32_System_Com",
+  "Win32_System_SystemInformation",
+  "Win32_UI_Shell",
+  "Win32_UI_WindowsAndMessaging",
+] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

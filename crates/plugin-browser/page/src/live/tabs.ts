@@ -173,6 +173,8 @@ export interface BrowserTabsApi {
   stream: OpenUserStream
   /** Whether the device is a Cloud that does not run yet, read reactively. */
   deviceStarting(): boolean
+  /** What the device is called, as the conversation names it, read reactively. */
+  deviceName(): string
   /** What the device downloads of the plugin's packages now, Chrome or its program, read reactively. */
   downloading(): readonly DeviceDownload[]
 }
@@ -979,7 +981,8 @@ export class BrowserTabsController {
     if (reason === 'tab_not_found') {
       return
     }
-    this.errors.report(t('failures.operate'), BrowserTabsError.of(reason))
+    const title = reason === 'app_not_opened' ? t('failures.openApp') : t('failures.operate')
+    this.errors.report(title, BrowserTabsError.of(reason))
   }
 
   private closeView(): void {

@@ -27,6 +27,7 @@ pub enum ControlReason {
     NotActionable,
     Timeout,
     DialogBlocked,
+    AppBlocked,
     DialogNotFound,
     InvalidDialogAction,
     HistoryBoundary,
@@ -48,10 +49,11 @@ pub enum ControlReason {
     BrowserLost,
     Cancelled,
     OutcomeUnknown,
-    // The view's capture notices.
+    // The view's notices.
     CaptureUnavailable,
     CaptureFailed,
     CaptureStopped,
+    AppNotOpened,
     // The conversation's device access (`crates/backend-device-access/src/access.rs`).
     ConversationNotFound,
     ConversationArchived,
@@ -90,6 +92,7 @@ impl From<BrowserErrorCode> for ControlReason {
             BrowserErrorCode::NotActionable => Self::NotActionable,
             BrowserErrorCode::Timeout => Self::Timeout,
             BrowserErrorCode::DialogBlocked => Self::DialogBlocked,
+            BrowserErrorCode::AppBlocked => Self::AppBlocked,
             BrowserErrorCode::DialogNotFound => Self::DialogNotFound,
             BrowserErrorCode::InvalidDialogAction => Self::InvalidDialogAction,
             BrowserErrorCode::HistoryBoundary => Self::HistoryBoundary,

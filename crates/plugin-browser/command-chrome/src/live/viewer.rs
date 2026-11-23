@@ -404,6 +404,7 @@ struct Watched {
     /// Its pictures and the pacing they follow; none once its stream ended.
     stream: Option<StreamView>,
     dialog: watch::Receiver<Option<Arc<EventJavascriptDialogOpening>>>,
+    app: watch::Receiver<crate::tabs::apps::Requests>,
     observed: Option<Observing>,
     /// The tab's observer while it starts: Chrome holds the commands that
     /// start it until a navigation under way commits, and the view never
@@ -443,6 +444,7 @@ enum Update {
     Observed(BrowserResult<Arc<Observed>>),
     StreamEnded,
     Dialog,
+    App,
     Controls,
     Cursor,
     Regions,
@@ -504,6 +506,7 @@ impl Watched {
                 None => Update::StreamEnded,
             },
             Ok(()) = watched.dialog.changed() => Update::Dialog,
+            Ok(()) = watched.app.changed() => Update::App,
             update = observed => update,
             // A start the tab's end gave up answers nothing.
             Ok(started) = starting => Update::Observed(started),
@@ -634,6 +637,7 @@ impl Session<'_> {
             source: SourceId::try_from(tab.id().as_str())
                 .expect("a tab's ID fits a picture's source"),
             dialog: tab.state().dialog.watch(),
+            app: tab.state().app.watch(),
             starting: Some(start_observer(self.live, &tab)),
             tab,
             stream,
@@ -641,6 +645,7 @@ impl Session<'_> {
         });
         if self.watched.is_some() {
             self.update(Update::Dialog).await;
+            self.update(Update::App).await;
         }
     }
 
@@ -674,6 +679,14 @@ impl Session<'_> {
                 {
                     watched.tab.mark_used();
                     commands::answer(watched.tab.clone(), accept, text, self.writer.clone());
+                }
+            }
+            LiveViewerMessage::App { tab, url, open } => {
+                if let Some(watched) = &self.watched
+                    && watched.tab.id() == &tab
+                {
+                    watched.tab.mark_used();
+                    commands::open_app(watched.tab.clone(), url, open, self.writer.clone());
                 }
             }
             LiveViewerMessage::Keyframe(LiveKeyframe { generation }) => {
@@ -808,6 +821,12 @@ impl Session<'_> {
                     });
                 self.writer
                     .control(&LiveModuleMessage::Dialog { tab, dialog })
+                    .await;
+            }
+            Update::App => {
+                let request = watched.app.borrow_and_update().asked();
+                self.writer
+                    .control(&LiveModuleMessage::App { tab, request })
                     .await;
             }
             Update::Controls => {

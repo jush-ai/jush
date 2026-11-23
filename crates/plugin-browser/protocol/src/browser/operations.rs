@@ -12,7 +12,7 @@ use serde_with::rust::unwrap_or_skip;
 
 
 use super::{
-    AssetKind, BrowserFailure, BrowserNode, BrowserTab, BrowserTarget, BrowserTreeNode,
+    AppRequest, AssetKind, BrowserFailure, BrowserNode, BrowserTab, BrowserTarget, BrowserTreeNode,
     BrowserViewport, ClipboardFormat, ClipboardMime, ContentFormat, Dialog, DialogOutcome,
     DialogType, ElementState, InspectView, Load, LogLevel, PATH_LENGTH,
     MAX_TIMEOUT_MS, Modifier, MouseButton, NodeRef, ReadProperty, ResolvedElement, STDIN_BYTES,
@@ -243,7 +243,8 @@ pub struct TabListResult {
 
 input! {
     tab
-    /// `info`: reads a tab's URL, title, viewport and dialog.
+    /// `info`: reads a tab's URL, title, viewport, dialog and request to open
+    /// an app.
     pub struct InfoInput {}
 }
 
@@ -261,6 +262,15 @@ pub struct InfoResult {
     )]
     #[schemars(with = "Dialog")]
     pub dialog: Option<Dialog>,
+    /// The page's request to open a link in an app, while the user has not
+    /// answered it.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "unwrap_or_skip"
+    )]
+    #[schemars(with = "AppRequest")]
+    pub app: Option<AppRequest>,
 }
 
 input! {
@@ -821,7 +831,7 @@ input! {
 
 /// What a pointer or form action answers: the operation and the element it
 /// acted on, its own result, and what it observed after: the URL, tabs the
-/// page opened, and a dialog.
+/// page opened, a dialog, and a link the page asked to open in an app.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ActionResult {
@@ -860,6 +870,15 @@ pub struct ActionResult {
     )]
     #[schemars(with = "Dialog")]
     pub dialog: Option<Dialog>,
+    /// The link the page asked to open in an app after the input, which waits
+    /// for the user (`InfoResult::app`).
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "unwrap_or_skip"
+    )]
+    #[schemars(with = "String")]
+    pub app: Option<String>,
 }
 
 impl ActionResult {
@@ -872,6 +891,7 @@ impl ActionResult {
             url: None,
             opened_tabs: None,
             dialog: None,
+            app: None,
         }
     }
 }

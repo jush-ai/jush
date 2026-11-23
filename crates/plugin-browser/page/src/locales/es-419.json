@@ -14,6 +14,7 @@
     "not_actionable": "Esa parte de la página no se puede usar en este momento.",
     "timeout": "El navegador no respondió a tiempo.",
     "dialog_blocked": "Un diálogo de la página está esperando una respuesta.",
+    "app_blocked": "La página espera que elijas dónde abrir un enlace en una app.",
     "dialog_not_found": "La página no tiene ningún diálogo esperando una respuesta.",
     "invalid_dialog_action": "El diálogo no se puede responder de esa forma.",
     "history_boundary": "La pestaña no tiene ninguna página en esa dirección.",
@@ -38,6 +39,7 @@
     "capture_unavailable": "Este dispositivo no puede capturar las páginas del navegador.",
     "capture_failed": "El dispositivo no pudo capturar la página. Lo está intentando de nuevo.",
     "capture_stopped": "El dispositivo no pudo capturar la página.",
+    "app_not_opened": "El dispositivo no pudo abrir el enlace en una app.",
     "conversation_not_found": "Este chat ya no existe.",
     "conversation_archived": "Este chat está archivado.",
     "conversation_busy": "El chat está ocupado. Vuelve a intentarlo en un momento.",
@@ -76,7 +78,8 @@
     "stopLoading": "No se pudo detener la carga",
     "openPage": "No se pudo abrir la página",
     "saveDownload": "No se pudo guardar la descarga",
-    "deviceFilesUnreachable": "No se puede acceder a los archivos del dispositivo."
+    "deviceFilesUnreachable": "No se puede acceder a los archivos del dispositivo.",
+    "openApp": "No se pudo abrir el enlace"
   },
   "region": {
     "couldntShow": "No se pudo mostrar esta página.",
@@ -117,6 +120,16 @@
     "leave": "Salir",
     "cancel": "Cancelar",
     "ok": "Aceptar"
+  },
+  "app": {
+    "open": "¿Abrir {app}?",
+    "openLink": "¿Abrir el enlace en una app?",
+    "wants": "{host} quiere abrir esta app.",
+    "thisPageWants": "Esta página quiere abrir esta app.",
+    "noApp": "{device} no tiene una app para enlaces {scheme}.",
+    "here": "Abrir aquí",
+    "onDevice": "Abrir en {device}",
+    "copyLink": "Copiar enlace"
   },
   "browserInput": "Entrada del navegador"
 }

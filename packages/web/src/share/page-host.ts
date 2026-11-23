@@ -29,6 +29,7 @@ export function sharePageHost(token: string): PageHost {
     installed: () => [],
     downloading: () => [],
     deviceStarting: () => false,
+    deviceName: () => none('devices'),
     files: () => none('files'),
     intents: { open: () => none('work'), canOpen: () => false },
     work: { tabs: () => [], select: () => none('work'), canGo: () => false, go: () => {} },
@@ -38,6 +39,7 @@ export function sharePageHost(token: string): PageHost {
     openLink: async (url) => {
       window.open(await url, '_blank', 'noopener,noreferrer')
     },
+    openApp: () => none('apps'),
     overlays: appOverlayStore,
     pinia: createPinia(),
   }

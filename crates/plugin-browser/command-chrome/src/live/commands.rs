@@ -1,6 +1,7 @@
 //! What a viewer does to the tab it watches besides input:
 //! choosing its mode and answering its
-//! dialogs, as the agent's commands do and beside them.
+//! dialogs, as the agent's commands do and beside them, and its requests to
+//! open an app, which only a viewer answers.
 
 use std::sync::Weak;
 
@@ -11,6 +12,7 @@ use crate::driver::operation::{BrowserError, CONTROL_TIMEOUT, Result};
 use crate::tabs::{environment::BrowserEnvironment, navigation::reload, tab::BrowserTab};
 
 use crate::live::protocol::{TabId, ViewportMode};
+use jush_command_package_browser_protocol::live::{APP_NOT_OPENED, AppAnswer};
 use crate::live::{hub::Membership, writer::Writer};
 use crate::traced::SpawnTraced as _;
 
@@ -85,6 +87,46 @@ pub(crate) async fn find(environment: &BrowserEnvironment, id: &TabId) -> Result
     environment
         .tab(id, &CancellationToken::new(), CONTROL_TIMEOUT)
         .await
+}
+
+/// Answers the tab's request to open `url` in an app for the viewer, unless
+/// it is no longer the one asked: on the device, the system opens the link;
+/// here, the viewer's page opens it itself. A link the system could not open
+/// is the viewer's notice. A tab Chrome's own dialog holds is released after
+/// any answer, while the system opens the link (`tabs::apps`).
+pub(crate) fn open_app(tab: BrowserTab, url: String, open: AppAnswer, writer: Writer) {
+    let Some(holds) = tab.state().app.answer(&url) else {
+        return;
+    };
+    let tasks = tab.state().tasks.clone();
+    let writer = writer.until(tab.ended());
+    tasks.spawn_traced(async move {
+        let opening = async {
+            if open != AppAnswer::Device {
+                return;
+            }
+            // The tab's end ends the wait for an opener that waits for its app.
+            let opened = tokio::select! {
+                () = tab.ended().cancelled() => return,
+                opened = crate::driver::apps::open(&url) => opened,
+            };
+            if let Err(error) = opened {
+                tracing::warn!(%error, "the device could not open a link in an app");
+                writer.notice(APP_NOT_OPENED, &error.to_string()).await;
+            }
+        };
+        let releasing = async {
+            if !holds {
+                return;
+            }
+            if let Err(error) = crate::tabs::apps::release(&tab).await {
+                tracing::warn!(%error, "a tab Chrome's dialog held was not released");
+                writer.notice(error.code(), &error.to_string()).await;
+            }
+            tab.state().app.released();
+        };
+        tokio::join!(opening, releasing);
+    });
 }
 
 /// Answers the tab's dialog for the viewer, unless someone answered first.

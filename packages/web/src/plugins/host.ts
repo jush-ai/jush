@@ -18,7 +18,7 @@ import { useResources } from '../state/resources'
 import { useSettingsAddress } from '../settings/address'
 import { useWorkspaces } from '../state/workspaces'
 import { executionFor } from '../targets/execution'
-import { cloudDeviceIn } from '../state/devices'
+import { cloudDeviceIn, deviceLabel, targetKindOf } from '../state/devices'
 import { pluginEnabled } from './enabled'
 import { callFailure } from './errors'
 import { PLUGIN_PAGES } from './generated/pages'
@@ -66,6 +66,21 @@ async function openLink(url: string | Promise<string>): Promise<void> {
     tab?.close()
     throw error
   }
+}
+
+/** The schemes a page runs or loads itself, which no app opens. */
+const PAGE_SCHEMES = new Set(['about', 'blob', 'data', 'file', 'filesystem', 'http', 'https', 'javascript', 'vbscript'])
+
+/**
+ * Goes to `url`, a link to an app, as a page's link to one does: the browser
+ * hands it to the app, asking first, and the page stays.
+ */
+function openApp(url: string): void {
+  const scheme = /^([a-z][a-z\d+.-]*):/i.exec(url)?.[1]?.toLowerCase()
+  if (scheme === undefined || PAGE_SCHEMES.has(scheme)) {
+    throw new Error(`Not a link to an app: ${url}`)
+  }
+  window.location.href = url
 }
 
 export function productPageHost(): PageHost {
@@ -151,6 +166,14 @@ export function productPageHost(): PageHost {
       const device = on.device ?? executionFor(listed).deviceId
       return device !== null && device === cloudDeviceIn(state.devices)?.id
     },
+    deviceName(on) {
+      if (on.device !== null) {
+        const device = product.snapshot?.devices?.find((each) => each.id === on.device)
+        return deviceLabel(targetKindOf(device), device)
+      }
+      const listed = conversations.items.find((entry) => entry.id === on.conversation)
+      return listed ? executionFor(listed).name : deviceLabel('device', null)
+    },
     files: conversationFiles,
     intents: {
       open: (conversation, request) => work.openIn(conversation, request),
@@ -184,6 +207,7 @@ export function productPageHost(): PageHost {
     },
     openSettings: (section) => void settings.open(section),
     openLink,
+    openApp,
     overlays: appOverlayStore,
     pinia,
   }

@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import { ArrowLeft, ArrowRight, ClipboardPaste, Copy, Link, RotateCw, Scissors } from '@lucide/vue'
-import { LIVE_CAPTURE_FAILED, LIVE_CAPTURE_STOPPED, type LiveTab } from '../generated/plugin'
+import { LIVE_CAPTURE_FAILED, LIVE_CAPTURE_STOPPED, type AppAnswer, type LiveTab } from '../generated/plugin'
 import LiveControls from './LiveControls.vue'
 import LiveDialog from './LiveDialog.vue'
+import LiveAppDialog from './LiveAppDialog.vue'
 import { CanvasPictures, ClickCount, Menu, MenuDivider, MenuItem, Popover, RegionStatus, keyInput, pointerInput, usePage, wheelInput } from '@jush-ai/plugin-sdk'
 import { reasonSentence } from './tabs'
 import { t } from '../locales/text'
@@ -38,6 +39,8 @@ const props = defineProps<{
   panel: PanelSize
   /** What moves the picture onto the screen's pixel grid. */
   snap: { x: number; y: number }
+  /** What the browser's device is called, which a request to open an app offers. */
+  device: string
 }>()
 const emit = defineEmits<{
   /** Back, Forward or Reload, chosen in the browser's menu. */
@@ -45,7 +48,7 @@ const emit = defineEmits<{
   /** The view unmounts with a picture: the next view of the tab shows it. */
   keep: [picture: KeptPicture]
 }>()
-const { overlays, errors } = usePage()
+const { overlays, errors, links } = usePage()
 const platform = clientPlatform(navigator)
 
 const frame = ref<HTMLDivElement | null>(null)
@@ -289,6 +292,24 @@ function answered(accept: boolean, text: string | undefined): void {
 }
 
 /**
+ * A request to open a link in an app answered. Here, this page goes to the
+ * link, as a page's link to an app does: the browser hands it to its app,
+ * asking first where it does, and the page stays as it was.
+ */
+function openApp(open: AppAnswer): void {
+  const url = props.session?.state.app?.request.url
+  props.session?.answerApp(open)
+  if (open === 'here' && url) {
+    try {
+      links.openApp(url)
+    } catch (error) {
+      errors.report(t('failures.openApp'), error)
+    }
+  }
+  bridge.value?.focus({ preventScroll: true })
+}
+
+/**
  * The browser's menu the viewer's right click opened, built here from what lies
  * under the click: a link's, a field's, a selection's, or the page's own Back,
  * Forward and Reload.
@@ -512,6 +533,14 @@ onBeforeUnmount(() => {
       :dialog="session.state.dialog.dialog"
       :host="host"
       @answer="answered($event.accept, $event.text)"
+    />
+    <LiveAppDialog
+      v-else-if="watching && session?.state.app"
+      :key="session.state.app.request.url"
+      :request="session.state.app.request"
+      :host="host"
+      :device="device"
+      @answer="openApp"
     />
     <Popover
       :overlay-store="overlays"

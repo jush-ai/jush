@@ -110,6 +110,7 @@ export function browserTabsApi(
     stop: (tab) => move('stop', { tab } satisfies StopTab),
     stream: plugin.stream('browser'),
     deviceStarting: () => plugin.deviceStarting.value,
+    deviceName: () => plugin.deviceName.value,
     downloading: () => plugin.downloading.value,
   }
 }

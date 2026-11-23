@@ -79,6 +79,8 @@ export interface GalleryShell {
   intents?: IntentService
   /** Whether the specimen's device is a Cloud that is starting; never, unless the specimen says. */
   deviceStarting?(): boolean
+  /** What the specimen's device is called; alex-mbp, unless the specimen says. */
+  deviceName?(): string
   /** What the specimen says the product would do with a page it opens in a new tab. */
   openLink?: PageHost['openLink']
   /** Whether the user has `plugin` on, read reactively; every plugin is, unless the specimen says. */
@@ -163,6 +165,7 @@ export function galleryPageHost(plugins: Record<string, GalleryPlugin>, shell: G
       return (found && at(found, on).downloading?.()) ?? []
     },
     deviceStarting: () => shell.deviceStarting?.() ?? false,
+    deviceName: () => shell.deviceName?.() ?? 'alex-mbp',
     files: () => {
       if (!shell.files) {
         throw new Error('The specimen shows no conversation files')
@@ -199,6 +202,7 @@ export function galleryPageHost(plugins: Record<string, GalleryPlugin>, shell: G
       await url
       productWould('Open the Page in a New Tab')
     }),
+    openApp: () => productWould('Open the Link in Its App Here'),
     overlays: appOverlayStore,
     pinia: createPinia(),
   }

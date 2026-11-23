@@ -14,7 +14,7 @@ use serde_json::Value;
 use crate::driver::{
     operation::{BrowserError, Result},
     protocol::{
-        ActionResult, AssetsExportResult, AssetsListResult, BrowserCreatedBy, BrowserNode,
+        ActionResult, AppRequest, AssetsExportResult, AssetsListResult, BrowserCreatedBy, BrowserNode,
         BrowserOperation, BrowserTarget, BrowserTreeNode, BrowserViewport, CapabilitiesResult,
         CdpDetachResult, CdpEventsResult, CdpSendResult, CdpTargetsResult, ClipboardReadResult,
         ClipboardWriteResult, ContentFetchResult, ContentReadResult, Dialog,
@@ -256,7 +256,23 @@ fn info(result: &InfoResult) -> String {
         Some(shown) => text.push_str(&dialog(shown)),
         None => text.push_str("Dialog: -\n"),
     }
+    match &result.app {
+        Some(request) => text.push_str(&app(request)),
+        None => text.push_str("App: -\n"),
+    }
     text
+}
+
+/// A request to open a link in an app, which only the user answers.
+fn app(request: &AppRequest) -> String {
+    let opener = match &request.app {
+        Some(app) => format!("{} on this device", quoted(app)),
+        None => "no app on this device".to_owned(),
+    };
+    format!(
+        "App: {} ({opener}), waiting for the user to choose where to open it in the browser panel\n",
+        quoted(&request.url)
+    )
 }
 
 fn navigation(verb: &str, result: &NavigationResult) -> String {
@@ -595,6 +611,12 @@ fn action(operation: &BrowserOperation, result: &ActionResult) -> Result<String>
     }
     if let Some(shown) = &result.dialog {
         text.push_str(&dialog(shown));
+    }
+    if let Some(url) = &result.app {
+        text.push_str(&format!(
+            "The page asked to open {} in an app; info shows it while the user is asked in the browser panel where to open it.\n",
+            quoted(url)
+        ));
     }
     Ok(text)
 }

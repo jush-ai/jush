@@ -24,6 +24,7 @@ import type { DeviceDownload } from '@jush-ai/web-ui/devices/installed'
 import type { ControlReason } from '@jush-ai/plugin-browser/generated/plugin'
 import { PROJECT_ROOT } from './project'
 import { GALLERY_DEVICE } from './devices'
+import { productWould } from '../product-would'
 
 /** How often the drawn page is painted and sent: a still page needs few frames. */
 const FPS = 10
@@ -74,6 +75,14 @@ const INVOICE = { x: 184, y: 98, width: 200, height: 18, url: 'https://example.t
 
 /** The titles the drawn pages give themselves once loaded, as a page's `<title>` does; another keeps its host. */
 const PAGE_TITLES: ReadonlyMap<string, string> = new Map([[INVOICE.url, 'Invoice 4711 — Example']])
+/**
+ * The drawn page's links to apps, as a sign-in page's "Authorize in the app"
+ * is: the device has the first one's app and not the second one's.
+ */
+const APP_LINKS = [
+  { x: 400, y: 98, width: 170, height: 18, label: 'Authorize in Chat', url: 'chat://client/authorize?token=8f2c41d0a7e94b6c&from=web', app: 'Chat' },
+  { x: 400, y: 118, width: 170, height: 18, label: 'Open in Memo Pad', url: 'memo-pad://open?note=4711', app: null },
+] as const
 /** The drawn page's link that downloads a file, which the gallery's project holds where the device would save it. */
 const DOWNLOAD = { x: 184, y: 118, width: 140, height: 18, url: 'https://example.test/guide.pdf' }
 const DOWNLOADED: Pick<LiveDownload, 'name' | 'total' | 'path'> = {
@@ -96,6 +105,7 @@ function pageCursors(viewport: BrowserViewport): CursorRegion[] {
     { x: 24, y: 216, width: viewport.width - 48, height: 36, cursor: 'text' },
     { x: INVOICE.x, y: INVOICE.y, width: INVOICE.width, height: INVOICE.height, cursor: 'pointer' },
     { x: DOWNLOAD.x, y: DOWNLOAD.y, width: DOWNLOAD.width, height: DOWNLOAD.height, cursor: 'pointer' },
+    ...APP_LINKS.map((link) => ({ x: link.x, y: link.y, width: link.width, height: link.height, cursor: 'pointer' })),
   ]
 }
 
@@ -234,6 +244,8 @@ class GalleryBrowserView {
   private typed = 'Ship it'
   private selection: 'caret' | 'all' = 'caret'
   private pressed = false
+  /** The requests to open a link in an app, asked one at a time in order, as the device queues them. */
+  private appRequests: { url: string; app: string | null }[] = []
   private overText = false
   private status = 'open'
   /** Whether the device stopped capturing until the viewer asks again, as after a failed recreation of its extension. */
@@ -360,6 +372,16 @@ class GalleryBrowserView {
         }
         this.pressed = false
         break
+      case 'app':
+        if (this.appRequests[0]?.url !== value.url) {
+          break
+        }
+        this.appRequests.shift()
+        this.send({ type: 'app', tab: value.tab, request: this.appRequests[0] ?? null })
+        if (value.open === 'device') {
+          productWould('Open the Link in Its App on the Device')
+        }
+        break
       case 'keyframe':
         this.restart()
         break
@@ -399,6 +421,14 @@ class GalleryBrowserView {
         }
         if (value.action === 'up' && value.button === 'left' && tab && within(DOWNLOAD, value.x, value.y)) {
           this.downloads.start(tab.id)
+          break
+        }
+        const appLink = APP_LINKS.find((link) => within(link, value.x, value.y))
+        if (value.action === 'up' && value.button === 'left' && tab && appLink) {
+          this.appRequests.push({ url: appLink.url, app: appLink.app })
+          if (this.appRequests.length === 1) {
+            this.send({ type: 'app', tab: tab.id, request: this.appRequests[0] })
+          }
           break
         }
         if (value.action === 'down' && tab) {
@@ -578,6 +608,9 @@ class GalleryBrowserView {
     context.fillStyle = '#2563eb'
     context.fillText('Open the invoice in a new tab', INVOICE.x, INVOICE.y + 14)
     context.fillText('Download guide.pdf', DOWNLOAD.x, DOWNLOAD.y + 14)
+    for (const link of APP_LINKS) {
+      context.fillText(link.label, link.x, link.y + 14)
+    }
     // A moving mark, so a still picture is told from a stalled one.
     const seconds = (performance.now() - this.started) / 1000
     context.fillStyle = '#22c55e'

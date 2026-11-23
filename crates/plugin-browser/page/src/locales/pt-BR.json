@@ -14,6 +14,7 @@
     "not_actionable": "Essa parte da página não pode ser usada agora.",
     "timeout": "O navegador não respondeu a tempo.",
     "dialog_blocked": "Uma caixa de diálogo na página está aguardando resposta.",
+    "app_blocked": "A página está esperando você escolher onde abrir um link em um app.",
     "dialog_not_found": "A página não tem nenhuma caixa de diálogo aguardando resposta.",
     "invalid_dialog_action": "A caixa de diálogo não pode ser respondida dessa forma.",
     "history_boundary": "A aba não tem nenhuma página nessa direção.",
@@ -38,6 +39,7 @@
     "capture_unavailable": "Este dispositivo não consegue capturar as páginas do navegador.",
     "capture_failed": "O dispositivo não conseguiu capturar a página. Tentando novamente.",
     "capture_stopped": "O dispositivo não conseguiu capturar a página.",
+    "app_not_opened": "O dispositivo não conseguiu abrir o link em um app.",
     "conversation_not_found": "Esta conversa não existe mais.",
     "conversation_archived": "Esta conversa está arquivada.",
     "conversation_busy": "A conversa está ocupada. Tente novamente em instantes.",
@@ -76,7 +78,8 @@
     "stopLoading": "Não foi possível parar o carregamento",
     "openPage": "Não foi possível abrir a página",
     "saveDownload": "Não foi possível salvar o download",
-    "deviceFilesUnreachable": "Os arquivos do dispositivo não estão acessíveis."
+    "deviceFilesUnreachable": "Os arquivos do dispositivo não estão acessíveis.",
+    "openApp": "Não foi possível abrir o link"
   },
   "region": {
     "couldntShow": "Não foi possível mostrar esta página.",
@@ -117,6 +120,16 @@
     "leave": "Sair",
     "cancel": "Cancelar",
     "ok": "OK"
+  },
+  "app": {
+    "open": "Abrir {app}?",
+    "openLink": "Abrir o link em um app?",
+    "wants": "{host} quer abrir este app.",
+    "thisPageWants": "Esta página quer abrir este app.",
+    "noApp": "{device} não tem um app para links {scheme}.",
+    "here": "Abrir aqui",
+    "onDevice": "Abrir em {device}",
+    "copyLink": "Copiar link"
   },
   "browserInput": "Entrada do navegador"
 }
