@@ -216,6 +216,25 @@ for (const listed of core.state.devices) {
 }
 ```
 
+### The language and time zone of the agents' work
+
+Commands run in the time zone and languages of the browser that last
+showed the core's pages, and in `en-US` and UTC before one did. A
+conversation's browser starts in them: a site shows its text in that
+language, and a page its times in that zone. A new schedule counts in that
+zone too, and each turn tells the model the time in it. Set them for the
+core's work with `commandLocale`, which no page changes:
+
+```ts
+await core.updatePreferences({ commandLocale: { timeZone: 'Asia/Shanghai', languages: ['zh-CN'] } })
+// Back to what the pages' browser reports:
+await core.updatePreferences({ commandLocale: null })
+```
+
+A conversation's browser takes them as it starts, as it takes the color
+scheme: one already open keeps its own until it starts again, after its
+last tab closed.
+
 ### Scripts outside a conversation
 
 `device.exec(script, options)` runs a script on a paired device as the agent's

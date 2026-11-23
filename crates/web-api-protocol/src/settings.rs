@@ -785,6 +785,17 @@ pub struct Preferences {
     #[schemars(with = "BrowserLocale")]
     #[garde(dive)]
     pub locale: Option<BrowserLocale>,
+    /// The time zone and languages commands run in, which a program sets, in
+    /// place of what the user's browser reported; none follows the
+    /// browser's. A page never writes it.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "unwrap_or_skip"
+    )]
+    #[schemars(with = "CommandLocale")]
+    #[garde(dive)]
+    pub command_locale: Option<CommandLocale>,
     /// The color scheme the user's page last reported showing, which the
     /// conversation browser starts with.
     #[serde(
@@ -1130,6 +1141,16 @@ pub struct PreferencesPatch {
     #[schemars(with = "BrowserLocale")]
     #[garde(dive)]
     pub locale: Option<BrowserLocale>,
+    /// The time zone and languages commands run in; null follows the
+    /// browser's report again. Checked as `locale` is.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "double_option"
+    )]
+    #[schemars(with = "Option<CommandLocale>")]
+    #[garde(dive)]
+    pub command_locale: Option<Option<CommandLocale>>,
     /// The color scheme the user's page shows.
     #[serde(
         default,

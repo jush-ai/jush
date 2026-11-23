@@ -25,10 +25,11 @@ import { DEFAULT_ACCENT, DEFAULT_TRANSCRIPT_TEXT_SIZE } from '@jush-agent/web-ui
  * `preferences` with what `patch` changes, as the backend applies it: appearance
  * keys merge, a shortcut set to null goes back to its default, a context limit of
  * null leaves the model's full window, a small model of null goes back to
- * Automatic, and every other field replaces the stored one.
+ * Automatic, a command locale of null follows the browser's again, and every
+ * other field replaces the stored one.
  */
 function withPatch(preferences: Preferences, patch: PreferencesPatch): Preferences {
-  const { appearance, shortcuts, contextLimit, smallModel, ...fields } = patch
+  const { appearance, shortcuts, contextLimit, smallModel, commandLocale, ...fields } = patch
   const next: Preferences = {
     ...preferences,
     ...fields,
@@ -50,6 +51,11 @@ function withPatch(preferences: Preferences, patch: PreferencesPatch): Preferenc
     delete next.smallModel
   } else if (smallModel !== undefined) {
     next.smallModel = smallModel
+  }
+  if (commandLocale === null) {
+    delete next.commandLocale
+  } else if (commandLocale !== undefined) {
+    next.commandLocale = commandLocale
   }
   if (contextLimit) {
     const { providerId, modelId, tokens } = contextLimit
