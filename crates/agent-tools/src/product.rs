@@ -565,6 +565,15 @@ impl From<String> for ContextAnswer {
     }
 }
 
+/// One of a source's context blocks the model receives.
+#[derive(Debug, Clone, Copy)]
+pub struct SeenBlock<'a> {
+    pub text: &'a str,
+    /// Written by the node's running action: since its turn started, or
+    /// since the turn last resumed, was retried or ran again.
+    pub current: bool,
+}
+
 /// One source of what the model must learn before a request, such as the
 /// conversation's execution context, the instructions or a plugin.
 ///
@@ -582,19 +591,19 @@ impl From<String> for ContextAnswer {
 /// compaction boundary on, so after a compaction it tells the model again what
 /// the summary may have left out.
 pub trait ContextSource {
-    /// The name its blocks record: `execution`, `instructions`,
-    /// `side_questions`, or a plugin's id.
+    /// The name its blocks record: `user_time`, `execution`, `instructions`,
+    /// `side_questions`, `pinned_documents`, or a plugin's id.
     fn name(&self) -> &str;
 
     /// What the node must learn now, or nothing.
     ///
-    /// `seen` is the text of the source's own blocks the model receives, oldest
-    /// first, and `turn` the input turn the request belongs to. A failure adds
+    /// `seen` is the source's own blocks the model receives, oldest first,
+    /// and `turn` the input turn the request belongs to. A failure adds
     /// no block; the source is asked again before the next request.
     fn context<'a>(
         &'a self,
         node: NodeContext<'a>,
         turn: &'a TurnId,
-        seen: &'a [&'a str],
+        seen: &'a [SeenBlock<'a>],
     ) -> LocalBoxFuture<'a, Result<Option<ContextAnswer>, String>>;
 }

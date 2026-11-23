@@ -490,7 +490,8 @@ pub struct ContextBlock {
     pub request: Option<BlockId>,
     #[garde(dive)]
     pub model: ModelSelection,
-    /// The source that answered: `execution`, [`INSTRUCTIONS_SOURCE`],
+    /// The source that answered: [`USER_TIME_SOURCE`], `execution`,
+    /// [`INSTRUCTIONS_SOURCE`], [`PINNED_DOCUMENTS_SOURCE`],
     /// [`WORKING_DIRECTORY_SOURCE`], or a plugin's id.
     #[garde(length(chars, min = 1, max = 64))]
     pub source: String,
@@ -538,6 +539,11 @@ pub const SIDE_QUESTIONS_SOURCE: &str = "side_questions";
 /// (`crates/backend-user-shard/src/conversation/pins.rs`). No plugin may be
 /// named so: a plugin's id has no `_`.
 pub const PINNED_DOCUMENTS_SOURCE: &str = "pinned_documents";
+
+/// The context source of the user's local time, which each turn starts
+/// with (`crates/backend-user-shard/src/conversation/user_time.rs`). No
+/// plugin may be named so: a plugin's id has no `_`.
+pub const USER_TIME_SOURCE: &str = "user_time";
 
 /// The context source of the conversation's execution context, which
 /// also names what still runs after a compaction; no plugin may be named

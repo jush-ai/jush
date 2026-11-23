@@ -15,7 +15,7 @@
 use std::rc::{Rc, Weak};
 
 use jush_agent_server::instructions::{self, NONE_LEFT, ProjectFile, WorkflowText, render};
-use jush_agent_tools::{ContextAnswer, ContextSource, NodeContext, WORKFLOW_EXTENSION};
+use jush_agent_tools::{ContextAnswer, ContextSource, NodeContext, SeenBlock, WORKFLOW_EXTENSION};
 use jush_backend_device_access::conversation_of;
 use jush_backend_device_access::kept::Found;
 use jush_backend_device_access::plugin_files::ReadFilesError;
@@ -103,7 +103,7 @@ impl ContextSource for Instructions {
         &'a self,
         node: NodeContext<'a>,
         _: &'a TurnId,
-        seen: &'a [&'a str],
+        seen: &'a [SeenBlock<'a>],
     ) -> LocalBoxFuture<'a, Result<Option<ContextAnswer>, String>> {
         Box::pin(async move {
             let Some(shard) = self.shard.upgrade() else {
@@ -140,12 +140,12 @@ impl ContextSource for Instructions {
             let (files, workflow) = futures_util::join!(shard.kept_instructions(&conversation, &placement), workflow);
             let answer = match render(&personal, &files, workflow.as_ref()) {
                 Some(answer) => answer,
-                None if seen.last().is_some_and(|newest| *newest != NONE_LEFT) => {
+                None if seen.last().is_some_and(|newest| newest.text != NONE_LEFT) => {
                     ContextAnswer::from(NONE_LEFT.to_owned())
                 }
                 None => return Ok(None),
             };
-            Ok((seen.last() != Some(&answer.text.as_str())).then_some(answer))
+            Ok((seen.last().map(|newest| newest.text) != Some(answer.text.as_str())).then_some(answer))
         })
     }
 }

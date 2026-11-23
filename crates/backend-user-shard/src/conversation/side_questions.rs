@@ -287,7 +287,7 @@ impl jush_agent_tools::ContextSource for Told {
         &'a self,
         node: jush_agent_tools::NodeContext<'a>,
         _: &'a jush_shared_types::TurnId,
-        seen: &'a [&'a str],
+        seen: &'a [jush_agent_tools::SeenBlock<'a>],
     ) -> futures_util::future::LocalBoxFuture<'a, Result<Option<jush_agent_tools::ContextAnswer>, String>> {
         Box::pin(async move {
             let Some(shard) = self.shard.upgrade() else {
@@ -296,8 +296,9 @@ impl jush_agent_tools::ContextSource for Told {
             let Some(tree) = shard.agent().tree(node.root) else {
                 return Ok(None);
             };
+            let seen: Vec<&str> = seen.iter().map(|block| block.text).collect();
             Ok(tree
-                .side_questions_context(node.node, seen)
+                .side_questions_context(node.node, &seen)
                 .await
                 .map_err(|error| error.to_string())?
                 .map(jush_agent_tools::ContextAnswer::from))

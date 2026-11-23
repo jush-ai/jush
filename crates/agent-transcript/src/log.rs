@@ -268,10 +268,10 @@ impl TranscriptLog {
         text: String,
         instructions: Vec<InstructionEntry>,
         cwd: Option<String>,
-    ) {
+    ) -> BlockId {
         let (id, created_at) = self.stamp();
         self.append(Block::Context(ContextBlock {
-            id,
+            id: id.clone(),
             turn_id,
             created_at,
             request: None,
@@ -282,6 +282,7 @@ impl TranscriptLog {
             cwd,
             entries: Vec::new(),
         }));
+        id
     }
 
     /// A human steer, under the steer's id.

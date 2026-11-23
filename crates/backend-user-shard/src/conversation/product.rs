@@ -13,7 +13,7 @@ use std::rc::{Rc, Weak};
 
 use jush_agent_tools::{
     ContextAnswer, ContextSource, ConversationProfiles, DeviceAsk, DeviceResolver, Named, NewProfileDraft, NodeContext,
-    Profile, WorkflowListing,
+    Profile, SeenBlock, WorkflowListing,
     ProfileEdit, ProfileModel, SubagentSettings, SubagentSource, Toolset, ToolsetSource,
     runs_on as job_model,
 };
@@ -448,14 +448,15 @@ impl ContextSource for ExecutionContext {
         &'a self,
         node: NodeContext<'a>,
         _turn: &'a TurnId,
-        seen: &'a [&'a str],
+        seen: &'a [SeenBlock<'a>],
     ) -> LocalBoxFuture<'a, Result<Option<ContextAnswer>, String>> {
         Box::pin(async move {
             let Some(shard) = self.shard.upgrade() else {
                 return Ok(None);
             };
+            let seen: Vec<&str> = seen.iter().map(|block| block.text).collect();
             shard
-                .execution_context(&conversation_of(node.root), seen)
+                .execution_context(&conversation_of(node.root), &seen)
                 .await
                 .map(|text| text.map(ContextAnswer::from))
                 .map_err(|error| format!("the execution context cannot be read: {error}"))
@@ -479,7 +480,7 @@ impl ContextSource for PluginContext {
         &'a self,
         node: NodeContext<'a>,
         turn: &'a TurnId,
-        seen: &'a [&'a str],
+        seen: &'a [SeenBlock<'a>],
     ) -> LocalBoxFuture<'a, Result<Option<ContextAnswer>, String>> {
         Box::pin(async move {
             let Some(shard) = self.shard.upgrade() else {
@@ -512,7 +513,7 @@ impl ContextSource for PluginContext {
                 cwd,
                 paths,
                 turn: turn.clone(),
-                seen: seen.iter().map(|text| (*text).to_owned()).collect(),
+                seen: seen.iter().map(|block| block.text.to_owned()).collect(),
                 project,
             };
             // The request ends with the provider request it serves, which

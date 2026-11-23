@@ -313,6 +313,9 @@ pub struct RunningWork {
 pub struct SeenContext<'a> {
     pub source: &'a str,
     pub text: &'a str,
+    /// Written by the running action: since the turn started, or since it
+    /// last resumed, was retried or ran again.
+    pub current: bool,
 }
 
 /// What one context source answered: a new block's source and text, for
