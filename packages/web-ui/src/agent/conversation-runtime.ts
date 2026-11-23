@@ -253,43 +253,6 @@ export class ConversationRuntime {
   }
 
   /**
-   * Whether the page follows only the conversation's status, not its
-   * transcripts, which it holds as they were when it paused
-   * (`ConversationClient.pauseTranscripts`).
-   */
-  get transcriptsPaused(): boolean {
-    // Read so that a caller that watches it sees the pause and its end, which trigger it.
-    void this.client.value
-    return this.options.client.transcriptsPaused
-  }
-
-  /**
-   * Whether the root's turn ran while the page followed only the
-   * conversation's status, so the transcript it holds is behind
-   * (`ConversationClient.transcriptsBehind`).
-   */
-  get transcriptsBehind(): boolean {
-    void this.client.value
-    return this.options.client.transcriptsBehind
-  }
-
-  /** Follows only the conversation's status from now on, as for one the page does not show. */
-  pauseTranscripts(): void {
-    this.options.client.pauseTranscripts()
-    triggerRef(this.client)
-  }
-
-  /**
-   * Follows the conversation's transcripts again; resolves once the page holds
-   * them current, which `caughtUp` says too.
-   */
-  resumeTranscripts(): Promise<void> {
-    const resumed = this.options.client.resumeTranscripts()
-    triggerRef(this.client)
-    return resumed
-  }
-
-  /**
    * Whether a session of this view has opened, whose handshake the page has
    * applied.
    */

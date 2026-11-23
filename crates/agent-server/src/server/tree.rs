@@ -543,8 +543,8 @@ impl<H: DeviceResolver> Tree<H> {
                 }
                 if let SessionEvent::TranscriptChanged { patches, version } = event {
                     // The root keeps its recent patches after its turn ends:
-                    // a page that followed only the conversation's status
-                    // meanwhile comes back by them, not by a read.
+                    // a page whose connection dropped while the turn ended
+                    // comes back by them, not by a read.
                     sink.patched(&root, patches, version, true);
                 } else if let Some(frame) = frame_of(event) {
                     sink.emit(frame);

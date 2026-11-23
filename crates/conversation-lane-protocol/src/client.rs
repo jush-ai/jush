@@ -12,8 +12,6 @@ use crate::{Follow, Followed, Version};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Understood {
-    /// `followed`, which ends the answer to each `follow`.
-    Followed,
     /// `metadata_changed`, which sends the fields of the metadata that
     /// changed rather than the whole of it.
     MetadataChanged,

@@ -27,9 +27,9 @@
 //! and are shared by every page that follows it, none for a page that left.
 //! The buffer is made by the node's first patch. A subagent's or a side
 //! question's is freed when it stops running, and the root's when its tree
-//! is dropped: a page that follows only the conversation's status while its
-//! turn ends comes back to the root by its patches, and to another node,
-//! which it shows rarely, by a read.
+//! is dropped: a page whose connection dropped while the turn ended comes
+//! back to the root by its patches, and to another node, which it shows
+//! rarely, by a read.
 //!
 //! The bound holds in the worst case: a tree holds at most a mebibyte of
 //! recent patches for its root and one for each other node that runs.

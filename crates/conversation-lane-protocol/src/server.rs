@@ -118,13 +118,6 @@ pub enum ServerFrame {
         #[garde(dive)]
         value: Followed,
     },
-    /// The answer to a `follow` of `value` has all come, after the frames
-    /// that bring the page current or the `stale` that ends the follow; sent
-    /// to a page whose `open` understands it.
-    Followed {
-        #[garde(dive)]
-        value: Followed,
-    },
     /// The page's copy of `value` is what the server holds, now that the
     /// conversation's tree restored from the store the page read: the page
     /// holds it at `version`, the version the live value has, and the follow
