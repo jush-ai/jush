@@ -27,6 +27,12 @@ use crate::conditional::{self, Answer, Failure, Validators};
 /// downloaded or confirmed.
 const FRESH_FOR: Duration = Duration::from_secs(24 * 60 * 60);
 
+/// How long after [`ModelsDevClient::held`] started a download it starts no
+/// other: a link that could not bring several megabytes would otherwise
+/// spend itself on them again at each provider's build, beside the model
+/// requests it carries.
+const HELD_RETRY_AFTER: Duration = Duration::from_secs(10 * 60);
+
 /// The one models.dev copy of a backend. Cloning it is cheap, and every
 /// clone shares the copy.
 #[derive(Clone)]
@@ -50,6 +56,8 @@ struct State {
     /// The request in flight, which every reader joins; it ends when its
     /// last reader stops waiting.
     flight: Option<WeakShared<Flight>>,
+    /// When [`ModelsDevClient::held`] may start a download again.
+    held_retry_at: Option<Instant>,
 }
 
 type Flight = BoxFuture<'static, Result<Arc<DocumentCopy>, String>>;
@@ -151,6 +159,33 @@ impl ModelsDevClient {
     /// models.dev.
     pub async fn kept(&self) -> Result<ModelsDevSnapshot, ModelsDevError> {
         self.read(Reuse::Any).await
+    }
+
+    /// The copy held now, for a reader that must not wait for the network,
+    /// such as the build of a provider that the product state reads: none
+    /// before the first download ends, which this starts in the background.
+    /// The document is several megabytes, which a slow network takes minutes
+    /// to bring.
+    pub fn held(&self) -> Option<ModelsDevSnapshot> {
+        {
+            let mut state = self.inner.lock();
+            if let Some(copy) = state.copy.clone() {
+                return Some(copy.snapshot(&self.inner.reading));
+            }
+            let downloading = state.flight.as_ref().and_then(WeakShared::upgrade).is_some();
+            let holding_off = state.held_retry_at.is_some_and(|at| Instant::now() < at);
+            if downloading || holding_off {
+                return None;
+            }
+            state.held_retry_at = Some(Instant::now() + HELD_RETRY_AFTER);
+        }
+        let client = self.clone();
+        tokio::spawn(async move {
+            if let Err(error) = client.kept().await {
+                tracing::warn!(event = "models_dev.unread", error = %error, "models.dev was not read; it is asked again later");
+            }
+        });
+        None
     }
 
     async fn read(&self, reuse: Reuse) -> Result<ModelsDevSnapshot, ModelsDevError> {
