@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { reactive, ref } from 'vue'
 import SidebarLayout from '@jush-ai/web-ui/sidebar/SidebarLayout.vue'
+import { fileIntent } from '@jush-ai/web-ui/plugins/intents'
 import AppSidebar from '@jush-ai/web-ui/sidebar/AppSidebar.vue'
 import ChatSession from '@jush-ai/web-ui/agent/ChatSession.vue'
 import { provideLiveCalls } from '@jush-ai/web-ui/agent/live-calls'
@@ -62,12 +63,12 @@ provideLiveCalls((toolUseId) => commandOf(undefined, toolUseId))
 const schedules = ref(gallerySchedules())
 
 /** A file a message names opens in Files; a commit in Changes; an attachment in Attachments. */
-const files = galleryConversationFiles(project.source, ({ path, line }) => {
-  work.openIn({ intent: 'file', payload: line === null ? { path } : { path, line } })
+const files = galleryConversationFiles(project.source, (target) => {
+  work.openIn(fileIntent(target))
 }, ({ commit, root }) => {
   work.openIn({ intent: 'commit', payload: { commit, ...(root === undefined ? {} : { root }) } })
-}, ({ path }) => {
-  work.openIn({ intent: 'file', payload: { path, tree: true } })
+}, (target) => {
+  work.openIn(fileIntent(target, true))
 }, (id, { name, size, url }) => {
   work.openIn({ intent: 'attachment', payload: { id, name, size, url } })
 })

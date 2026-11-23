@@ -65,13 +65,14 @@ export class GalleryWorkRecord implements WorkBackend {
   }
 
   /**
-   * Makes the tabs of `kind` the tabs `listed`, the tabs a device has open,
-   * as one change, as the backend mirrors them: creates each listed tab the
-   * work never had, at its index; sets the data of each it has to the listed
-   * data; and removes each tab of the kind the list does not name. Answers
-   * the listed ids the work retired, tabs their user closed.
+   * Makes the tabs of `kind` on `device` the tabs `listed`, the tabs the
+   * device has open, as one change, as the backend mirrors them: creates each
+   * listed tab the work never had, at its index; sets the data of each it has
+   * to the listed data; and removes each of the device's tabs of the kind the
+   * list does not name, leaving other devices' tabs. Answers the listed ids
+   * the work retired, tabs their user closed.
    */
-  mirror(kind: string, listed: readonly { id: string; data: Record<string, unknown>; index?: number }[]): string[] {
+  mirror(kind: string, device: string, listed: readonly { id: string; data: Record<string, unknown>; index?: number }[]): string[] {
     const before = this.revision
     const closed: string[] = []
     const named = new Set(listed.map((tab) => tab.id))
@@ -82,10 +83,10 @@ export class GalleryWorkRecord implements WorkBackend {
       } else if (current) {
         this.change({ type: 'update', id, data: dataChanges(current.data, data) })
       } else {
-        this.change({ type: 'create', tab: { id, kind, data }, index })
+        this.change({ type: 'create', tab: { id, kind, device, data }, index })
       }
     }
-    for (const tab of this.tabs.filter((each) => each.kind === kind && !named.has(each.id))) {
+    for (const tab of this.tabs.filter((each) => each.kind === kind && each.device === device && !named.has(each.id))) {
       this.change({ type: 'remove', id: tab.id })
     }
     if (this.revision > before) {
@@ -130,16 +131,20 @@ function browserData(tab: WorkTab | null): BrowserTabData | null {
   return parsed.success ? parsed.data : null
 }
 
-/** A work tab as the mirroring places others beside it: the browser tab it shows, and the work tab that opened it. */
+/**
+ * A work tab as the mirroring places others beside it: the browser tab it
+ * shows on its device, and the work tab that opened it.
+ */
 interface Placed {
   id: string
+  device: string | undefined
   shows: string | null
   openedBy: string | null
 }
 
 function placed(tab: WorkTab): Placed {
   const data = tab.kind === 'browser' ? browserData(tab) : null
-  return { id: tab.id, shows: data?.tab ?? null, openedBy: data?.openedBy ?? null }
+  return { id: tab.id, device: tab.device, shows: data?.tab ?? null, openedBy: data?.openedBy ?? null }
 }
 
 /**
@@ -154,11 +159,6 @@ function afterOpened(order: readonly Placed[], at: number): number {
     end += 1
   }
   return end
-}
-
-/** The browser tab a work tab the plugin made shows. */
-function browserTab(workTab: string): string | null {
-  return workTab.startsWith('browser-') ? workTab.slice('browser-'.length) : null
 }
 
 /** The browser plugin's part in the work's `browser` tabs, as the backend's plugin does it. */
@@ -188,18 +188,21 @@ export function galleryBrowserPlugin(browser: GalleryBrowser, record: GalleryWor
   }
 
   function mirror(): void {
+    const { device } = browser
+    // The work's whole order, in which an index counts, as the backend's plugin places a tab; the browser tabs
+    // its device shows.
     const order = record.all.map(placed)
-    const shown = new Set(order.map((tab) => tab.shows))
+    const shown = new Set(order.filter((tab) => tab.device === device).map((tab) => tab.shows))
     const tabs = browser.listed.value.tabs.map((tab) => {
-      const id = addedWorkTab(tab.id)
+      const id = addedWorkTab(device, tab.id)
       const opener = tab.createdBy.kind === 'page' ? tab.createdBy.opener : null
-      const openedBy = opener === null ? null : addedWorkTab(opener)
+      const openedBy = opener === null ? null : addedWorkTab(device, opener)
       let index: number | undefined
       if (!shown.has(tab.id)) {
         // Beside its opener, as the backend's plugin places it.
-        const at = opener === null ? -1 : order.findIndex((each) => each.shows === opener)
+        const at = opener === null ? -1 : order.findIndex((each) => each.device === device && each.shows === opener)
         index = at < 0 ? undefined : afterOpened(order, at)
-        order.splice(index ?? order.length, 0, { id, shows: tab.id, openedBy })
+        order.splice(index ?? order.length, 0, { id, device, shows: tab.id, openedBy })
       }
       const data: BrowserTabData = { tab: tab.id, url: tab.url, title: tab.title }
       if (tab.shows > 0) {
@@ -210,9 +213,9 @@ export function galleryBrowserPlugin(browser: GalleryBrowser, record: GalleryWor
       }
       return { id, data, index }
     })
-    for (const closed of record.mirror('browser', tabs)) {
-      const tab = browserTab(closed)
-      if (tab !== null) {
+    for (const closed of record.mirror('browser', device, tabs)) {
+      const tab = tabs.find((each) => each.id === closed)?.data.tab
+      if (tab !== undefined) {
         void browser.close(tab)
       }
     }

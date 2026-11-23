@@ -3,6 +3,7 @@ import { GALLERY_MARKS, shownAmong } from '../fixtures/device-marks'
 import { computed, nextTick, onBeforeUnmount, onMounted, provide, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import SidebarLayout from '@jush-ai/web-ui/sidebar/SidebarLayout.vue'
+import { fileIntent } from '@jush-ai/web-ui/plugins/intents'
 import AppSidebar from '@jush-ai/web-ui/sidebar/AppSidebar.vue'
 import ChatSession from '@jush-ai/web-ui/agent/ChatSession.vue'
 import SettingsDialog from '@jush-ai/web-ui/settings/SettingsDialog.vue'
@@ -107,12 +108,12 @@ const commandOf = useCallTerminals(() => session.terminals)
 provideLiveCalls((toolUseId) => commandOf(undefined, toolUseId))
 
 /** A file a message names opens in its window, full screen, as the product opens it. */
-const files = galleryConversationFiles(project.source, ({ path, line }) => {
-  work.openIn({ intent: 'file', payload: line === null ? { path } : { path, line } })
+const files = galleryConversationFiles(project.source, (target) => {
+  work.openIn(fileIntent(target))
 }, ({ commit, root }) => {
   work.openIn({ intent: 'commit', payload: { commit, ...(root === undefined ? {} : { root }) } })
-}, ({ path }) => {
-  work.openIn({ intent: 'file', payload: { path, tree: true } })
+}, (target) => {
+  work.openIn(fileIntent(target, true))
 }, (id, { name, size, url }) => {
   work.openIn({ intent: 'attachment', payload: { id, name, size, url } })
 })

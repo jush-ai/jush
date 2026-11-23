@@ -1,14 +1,14 @@
 import { getActivePinia } from 'pinia'
 import { watch } from 'vue'
 import { z } from 'zod'
-import type { PageHost } from '@jush-ai/web-ui/plugins/page'
+import type { DeviceScope, PageHost } from '@jush-ai/web-ui/plugins/page'
 import { disposePluginStores } from '@jush-ai/web-ui/plugins/stores'
 import { appOverlayStore } from '@jush-ai/web-ui/overlay/appOverlay'
 import { workspaceName } from '@jush-ai/web-ui/workspaces/workspaces'
 import { userStreamOf } from '@jush-ai/web-ui/transport/user-stream'
 import { apiRequest, jsonBody, readResponse } from '../api/client'
 import { conversationFiles } from '../conversation/files'
-import { directRoute } from '../direct'
+import { directRouteOn } from '../direct'
 import { directStream } from '../direct/operations'
 import { useWork } from '../conversation/work'
 import { useConversations } from '../conversation/store'
@@ -18,6 +18,7 @@ import { useResources } from '../state/resources'
 import { useSettingsAddress } from '../settings/address'
 import { useWorkspaces } from '../state/workspaces'
 import { executionFor } from '../targets/execution'
+import { cloudDeviceIn } from '../state/devices'
 import { pluginEnabled } from './enabled'
 import { callFailure } from './errors'
 import { PLUGIN_PAGES } from './generated/pages'
@@ -32,10 +33,10 @@ import { usePluginSettings } from '../settings/plugins'
  * - Its conversation states, by revision.
  * - Its calls, over the plugin call routes. These calls and the states' reads
  *   wait in the HTTP client while the backend cannot be reached.
- * - Its user streams.
- * - What a conversation's primary device holds of its packages, from that
- *   device's in the product state, and whether that device is a Cloud that does
- *   not run, from the Cloud's state there.
+ * - Its user streams, on a device of the conversation.
+ * - What a device of a conversation holds of its packages, from that device's
+ *   in the product state, and whether that device is a Cloud that does not
+ *   run, from the Cloud's state there.
  * - The shell's own services: the conversations' files, intents and work, and
  *   the settings dialog.
  * - The app's Pinia, which holds the plugins' stores; a plugin the user turns
@@ -79,15 +80,15 @@ export function productPageHost(): PageHost {
   const workspaces = useWorkspaces()
   const conversations = useConversations()
   const states = usePluginStates()
-  /** `conversation`'s primary device and `plugin`'s packages, once the product state names both. */
-  function primaryDevice(plugin: string, conversation: string) {
+  /** The device of a conversation `on` names, its primary device without one, and `plugin`'s packages, once the product state names both. */
+  function hostDevice(plugin: string, on: DeviceScope) {
     const state = product.snapshot
-    const listed = conversations.items.find((entry) => entry.id === conversation && entry.persistence === 'synced')
+    const listed = conversations.items.find((entry) => entry.id === on.conversation && entry.persistence === 'synced')
     if (!state || !listed) {
       return null
     }
     const packages = state.plugins?.find((entry) => entry.id === plugin)?.packages ?? []
-    return { deviceId: executionFor(listed).deviceId, packages }
+    return { deviceId: on.device ?? executionFor(listed).deviceId, packages }
   }
   // Each plugin is watched on its own, so a switch of one leaves the others' stores alone.
   for (const page of PLUGIN_PAGES) {
@@ -110,9 +111,10 @@ export function productPageHost(): PageHost {
     features: (plugin) => product.snapshot?.plugins?.find((entry) => entry.id === plugin)?.features ?? {},
     setFeature: (plugin, feature, enabled) => usePluginSettings().switchFeature(plugin, feature, enabled),
     followState: states.follow,
-    async call(plugin, method, params, conversation, options) {
-      const scope = conversation === null ? '' : `/conversations/${encodeURIComponent(conversation)}`
-      const path = `${scope}/plugins/${encodeURIComponent(plugin)}/calls/${encodeURIComponent(method)}`
+    async call(plugin, method, params, on, options) {
+      const scope = on === null ? '' : `/conversations/${encodeURIComponent(on.conversation)}`
+      const device = on?.device == null ? '' : `?device=${encodeURIComponent(on.device)}`
+      const path = `${scope}/plugins/${encodeURIComponent(plugin)}/calls/${encodeURIComponent(method)}${device}`
       try {
         // A call that cannot reach the backend waits for it in the HTTP client and goes then
         // (`packages/web-ui/src/plugins/page.ts`).
@@ -127,22 +129,27 @@ export function productPageHost(): PageHost {
         throw callFailure(error)
       }
     },
-    stream(name, conversation) {
-      // Over the direct channel while the conversation's device has one.
-      return directStream(() => directRoute(conversation), name, userStreamOf(conversation, name))
+    stream(name, on) {
+      // Over the direct channel while the device has one.
+      return directStream(() => directRouteOn(on.conversation, on.device), name, userStreamOf(on.conversation, name, on.device))
     },
-    installed(plugin, conversation) {
-      const host = primaryDevice(plugin, conversation)
+    installed(plugin, on) {
+      const host = hostDevice(plugin, on)
       return host ? packageInstalled(product.snapshot, host.deviceId, host.packages) : []
     },
-    downloading(plugin, conversation) {
-      const host = primaryDevice(plugin, conversation)
+    downloading(plugin, on) {
+      const host = hostDevice(plugin, on)
       return host ? packageDownloading(product.snapshot, host.deviceId, host.packages) : []
     },
-    deviceStarting(conversation) {
+    deviceStarting(on) {
       const state = product.snapshot
-      const listed = conversations.items.find((entry) => entry.id === conversation)
-      return !!state && !!listed && executionFor(listed).kind === 'cloud' && state.cloud !== undefined && state.cloud.state !== 'running'
+      const listed = conversations.items.find((entry) => entry.id === on.conversation)
+      if (!state || !listed || state.cloud === undefined || state.cloud.state === 'running') {
+        return false
+      }
+      // The Cloud starts whether it is the primary device or attached, as a move away from it leaves it.
+      const device = on.device ?? executionFor(listed).deviceId
+      return device !== null && device === cloudDeviceIn(state.devices)?.id
     },
     files: conversationFiles,
     intents: {
@@ -150,8 +157,10 @@ export function productPageHost(): PageHost {
       canOpen: (intent) => work.canOpen(intent),
     },
     work: {
-      tabs: (conversation, kind) =>
-        work.stateFor(conversation).tabsState.tabs.filter((tab) => tab.kind === kind).map((tab) => tab.data),
+      tabs: (conversation, kind, device) =>
+        work.stateFor(conversation).tabsState.tabs
+          .filter((tab) => tab.kind === kind && (device == null || tab.device === device))
+          .map((tab) => tab.data),
       // Its window comes to the front on it once the tab is there, as a selection does.
       select: (conversation, _kind, id) => work.request(conversation, id),
       canGo: (conversation, direction) => work.canGo(conversation, direction),

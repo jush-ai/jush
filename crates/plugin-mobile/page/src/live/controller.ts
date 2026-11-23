@@ -1,5 +1,5 @@
 /**
- * A conversation's simulators on the page (`crates/plugin-mobile/page/src/index.ts`),
+ * A conversation's simulators on one of its devices on the page (`crates/plugin-mobile/page/src/index.ts`),
  * which the plugin's store keeps while the plugin is on (`./store.ts`): each
  * open device's live view, on a stream of its own, kept until the device
  * closes, and the
@@ -55,11 +55,12 @@ export interface Opening {
 }
 
 /**
- * The id of the work tab the plugin adds for the device `device`, as the
- * plugin names it (`crates/plugin-mobile/plugin/src/tabs.rs`).
+ * The id of the work tab the plugin adds for the simulator `device` on the
+ * conversation's device `on`, as the plugin names it
+ * (`crates/plugin-mobile/plugin/src/tabs.rs`).
  */
-export function addedWorkTab(device: string): string {
-  return `mobile-${device}`
+export function addedWorkTab(on: string | null, device: string): string {
+  return `mobile-${on ?? ''}-${device}`
 }
 
 export interface MobileControllerOptions {
@@ -88,6 +89,8 @@ export class MobileDevicesController {
 
   constructor(
     readonly api: MobileApi,
+    /** The conversation's device whose simulators these are; null for its primary device's, whichever that is. */
+    private readonly on: string | null,
     private readonly errors: MobileErrors,
     /** Selects the tab `id` of the conversation's work, once it is there. */
     private readonly select: (id: string) => void,
@@ -158,7 +161,7 @@ export class MobileDevicesController {
    */
   openingTab(opening: Opening): string | null {
     const device = opening.device ?? this.held().find((data) => data.nativeId === opening.nativeId)?.device
-    return device === undefined || device === null ? null : addedWorkTab(device)
+    return device === undefined || device === null ? null : addedWorkTab(this.on, device)
   }
 
   /**
@@ -200,7 +203,7 @@ export class MobileDevicesController {
    * done whose tab it no longer holds is over, as its tab closed.
    */
   settle(): void {
-    const held = new Set(this.held().map((data) => addedWorkTab(data.device)))
+    const held = new Set(this.held().map((data) => addedWorkTab(this.on, data.device)))
     let changed = false
     const next = this.openings.value.flatMap((opening) => {
       const tab = this.openingTab(opening)

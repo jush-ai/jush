@@ -79,13 +79,17 @@ pub enum Request {
     },
     /// A page called a method, with parameters that are valid against the
     /// method's schema; `conversation` is the conversation a method of the
-    /// conversation scope was called for.
+    /// conversation scope was called for, and `device` the device of it the
+    /// page asked about, such as the one whose browser window called it;
+    /// none for its primary device.
     PageCall {
         user: UserId,
         method: String,
         params: Map<String, Value>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         conversation: Option<ConversationId>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        device: Option<DeviceId>,
     },
     /// The user removed a tab of one of the plugin's tab kinds; the backend applied the change
     /// and answered the page (`crates/backend-http/src/work.rs`). `tab` is the tab as it was when

@@ -6,7 +6,7 @@ import { PLUGIN_PAGES } from '../plugins/generated/pages'
 import { pluginEnabled } from '../plugins/enabled'
 import { useProduct } from '../state/product'
 import { usePreferences } from '../state/preferences'
-import { executionFor } from '../targets/execution'
+import { sessionDevices } from '../targets/execution'
 import { useConversations } from './store'
 import { useWork } from './work'
 
@@ -23,6 +23,11 @@ export function useSessionWork(conversationId: () => string | null): ComputedRef
   const work = useWork()
   const conversations = useConversations()
   const host = usePageHost()
+  const devices = computed(() => {
+    const id = conversationId()
+    const item = id === null ? undefined : conversations.items.find((entry) => entry.id === id)
+    return item ? sessionDevices(item) : []
+  })
   const kinds = useBoundKinds(
     () => PLUGIN_PAGES.filter((page) => pluginEnabled(product.snapshot, page.plugin)),
     host,
@@ -30,6 +35,10 @@ export function useSessionWork(conversationId: () => string | null): ComputedRef
       const id = conversationId()
       return id !== null && work.recorded(id) ? id : null
     },
+    // Until the conversation has its primary device, as a Cloud never
+    // started, no device's window is bound apart: the kinds follow whichever
+    // primary device comes.
+    () => devices.value.some((device) => device.primary) ? devices.value.map((device) => device.id) : [],
   )
   return computed(() => {
     const id = conversationId()
@@ -37,16 +46,13 @@ export function useSessionWork(conversationId: () => string | null): ComputedRef
       return undefined
     }
     const state = work.stateFor(id)
-    const item = conversations.items.find((entry) => entry.id === id)
-    const execution = item ? executionFor(item) : null
     return {
       tabsState: state.tabsState,
       pinned: state.pinned,
       kinds: kinds.value,
       tabsRead: state.tabsRead,
       beforeFirstMessage: !work.recorded(id),
-      // A Cloud that is stopped or starting is not offline: its tabs say what starts.
-      deviceOffline: execution?.kind === 'device' && execution.state === 'offline' ? execution.name : null,
+      devices: devices.value,
       request: state.request,
       took: (request) => work.took(id, request),
       inFront: (tab, cause) => work.inFront(id, tab, cause),

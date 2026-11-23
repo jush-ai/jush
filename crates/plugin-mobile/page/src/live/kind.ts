@@ -5,7 +5,7 @@ import { ICON_PX, SystemLogo, usePage, type KindTab, type TabKind, type WindowKi
 import MobileTabContent from './MobileTabContent.vue'
 import OpenMenu from './OpenMenu.vue'
 import OpeningStatus from './OpeningStatus.vue'
-import type { MobileStore } from './store'
+import { devicesKey, type MobileStore } from './store'
 import { mobilePlatformSchema, type MobilePlatform } from '../generated/plugin'
 import { t } from '../locales/text'
 
@@ -40,54 +40,61 @@ const MobileTabMark = defineComponent({
   setup: (props) => () => h(MobilePlatformLogo, { platform: props.data.platform, class: 'text-fg-subtle' }),
 })
 
-/** The simulators' window, a tab per simulator or emulator the conversation opened. */
-const simulatorsWindow: WindowKind = { id: 'simulators', name: () => t('window.name'), icon: Smartphone }
+/** The simulators' window, a tab per simulator or emulator the conversation opened; each device's simulators are a window of their own. */
+const simulatorsWindow: WindowKind = { id: 'simulators', name: () => t('window.name'), icon: Smartphone, perDevice: true }
 
 /**
- * The `mobile` tab kind over `store`: a device's live view, whose content
- * watches the conversation's simulators while it is mounted. A device opens
- * by the agent's command or the user's choice in the taskbar's Open
- * (`openMenu`), never as a blank tab, so the kind has no New entry.
+ * The `mobile` tab kind over `store`, bound once for each device the
+ * conversation reaches: a simulator's live view, whose content watches the
+ * conversation's simulators on the tab's device while it is mounted. A
+ * simulator opens by the agent's command or the user's choice in the
+ * taskbar's Open (`openMenu`), never as a blank tab, so the kind has no New
+ * entry.
  */
 export function mobileDeviceKind(store: MobileStore): TabKind<MobileTabData> {
-  /** The conversation's simulators on the page, watched while the component is mounted. */
-  function watching(conversation: string) {
-    const watched = usePage().store(store).watch(conversation)
+  /** The conversation's simulators on `device` on the page, watched while the component is mounted. */
+  function watching(conversation: string, device: string | null) {
+    const watched = usePage().store(store).watch(devicesKey(conversation, device))
     onBeforeUnmount(() => watched.end())
     return watched.session.devices
   }
   const openMenu = defineComponent({
-    props: { conversation: { type: String, required: true } },
+    props: {
+      conversation: { type: String, required: true },
+      device: { type: String, default: null },
+    },
     emits: { opened: () => true },
     setup(props, { emit }) {
-      const controller = watching(props.conversation)
+      const controller = watching(props.conversation, props.device)
       return () => h(OpenMenu, { controller, onOpened: () => emit('opened') })
     },
   })
   const opening = defineComponent({
     props: {
       conversation: { type: String, required: true },
+      device: { type: String, default: null },
       opening: { type: String, required: true },
       // A simulator's opening shows its status alone, which needs no panel.
       shown: { type: Boolean, required: true },
     },
     setup(props) {
-      const controller = watching(props.conversation)
+      const controller = watching(props.conversation, props.device)
       return () => h(OpeningStatus, { controller, opening: Number(props.opening) })
     },
   })
-  /** The conversation's simulators on the page, unwatched. */
-  const devices = (tab: KindTab) => tab.page.store(store).of(tab.conversation).devices
+  /** The conversation's simulators on the tab's device on the page, unwatched. */
+  const devices = (tab: KindTab) => tab.page.store(store).of(devicesKey(tab.conversation, tab.device)).devices
   const content = defineComponent({
     props: {
       conversation: { type: String, required: true },
+      device: { type: String, default: null },
       tabId: { type: String, required: true },
       data: { type: Object as PropType<MobileTabData>, required: true },
       shown: { type: Boolean, required: true },
     },
     setup(props) {
       // Watched while mounted: the conversation's simulators are the most recent to keep.
-      const watched = usePage().store(store).watch(props.conversation)
+      const watched = usePage().store(store).watch(devicesKey(props.conversation, props.device))
       onBeforeUnmount(() => watched.end())
       return () => h(MobileTabContent, {
         conversation: props.conversation,
@@ -109,7 +116,7 @@ export function mobileDeviceKind(store: MobileStore): TabKind<MobileTabData> {
     opening,
     // Read without making the conversation's simulators: every conversation on screen asks.
     openings: (tab) => {
-      const controller = tab.page.store(store).peek(tab.conversation)?.devices
+      const controller = tab.page.store(store).peek(devicesKey(tab.conversation, tab.device))?.devices
       return (controller?.openings.value ?? []).map((each) => ({
         key: String(each.id),
         title: each.name,

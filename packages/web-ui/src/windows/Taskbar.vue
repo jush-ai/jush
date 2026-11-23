@@ -65,6 +65,10 @@ export interface TaskbarItem {
   tabs: readonly TaskbarTab[]
   current: string | null
   pinned: boolean
+  /** Whether its menu offers Pin; absent, it does. Another device's window is never pinned. */
+  pinnable?: boolean
+  /** The name of the window's device, after its title, where another device's window stands beside it. */
+  tag?: string
   /** closed: pinned, its window not open; front: the window takes the keys. */
   state: 'closed' | 'minimized' | 'shown' | 'front'
   /** What a system button counts, shown in place of a title above zero. */
@@ -154,7 +158,7 @@ function label(item: TaskbarItem): string {
 function menu(item: TaskbarItem, system: boolean): () => ContextMenuGroup[] {
   return () => {
     const groups: ContextMenuGroup[] = []
-    if (!system) {
+    if (!system && (item.pinned || item.pinnable !== false)) {
       groups.push([{ icon: item.pinned ? PinOff : Pin, label: item.pinned ? t('unpin') : t('pin'), run: () => emit('pin', item.id, !item.pinned) }])
     }
     if (item.state !== 'closed') {
@@ -329,6 +333,7 @@ function press(item: TaskbarItem): void {
           :data-reorder-id="item.id"
           :icon="windowIcon(item)"
           :label="label(item)"
+          :tag="item.tag"
           :count="item.state !== 'closed' && item.tabs.length > 1 ? item.tabs.length : undefined"
           :state="item.state"
           :style="{ minWidth: `min(${BUTTON_MIN_PX}px, max-content)`, maxWidth: `${BUTTON_MAX_PX}px` }"
@@ -350,6 +355,7 @@ function press(item: TaskbarItem): void {
           :data-reorder-id="item.id"
           :icon="windowIcon(item)"
           :label="label(item)"
+          :tag="item.tag"
           :count="item.state !== 'closed' && item.tabs.length > 1 ? item.tabs.length : undefined"
           :state="item.state"
           :style="{ minWidth: `min(${BUTTON_MIN_PX}px, max-content)`, maxWidth: `${BUTTON_MAX_PX}px` }"

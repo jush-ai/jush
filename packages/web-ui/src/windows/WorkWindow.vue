@@ -62,6 +62,8 @@ export interface WindowTab {
   closable?: boolean
   /** The tab's status dot, as a command's tab shows it. */
   status?: ConversationStatus
+  /** The name of the device it is of, as a tag after its title (`device-tags.ts`). */
+  tag?: string | null
   menu?: () => readonly ContextMenuGroup[]
 }
 
@@ -177,6 +179,7 @@ function doubleClick(event: MouseEvent): void {
           :busy="tab.busy"
           :closable="tab.closable ?? true"
           :status="tab.status"
+          :tag="tab.tag ?? null"
           v-context-menu="tab.menu"
           @select="emit('select', tab.id)"
           @close="emit('closeTab', tab.id)"
@@ -264,7 +267,8 @@ function doubleClick(event: MouseEvent): void {
   box-shadow: 0 0 0 1px var(--color-line-strong), var(--window-shadow, 0 0 #0000);
 }
 
-.work-window-actions:not(:has(button, [role="button"])) {
+/* A window that adds nothing, neither an action nor its device's tag, takes no room for it. */
+.work-window-actions:not(:has(*)) {
   display: none;
 }
 </style>

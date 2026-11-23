@@ -772,7 +772,8 @@ async fn check_open(
         LaneTarget::UserStream {
             conversation,
             stream,
-        } => streams::open(state, &user.id, &conversation, stream).await,
+            device,
+        } => streams::open(state, &user.id, &conversation, stream, device).await,
         LaneTarget::Debug { resume } => debug::open(state, &user.id, page, resume),
     }
 }

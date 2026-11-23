@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { reactive, ref } from 'vue'
 import { provideEditSelection } from '@jush-ai/web-ui/agent/edit-selection'
+import { fileIntent } from '@jush-ai/web-ui/plugins/intents'
 import { agentDirectories } from '@jush-ai/web-ui/agent/working-directory'
 import { provideMessageFiles } from '@jush-ai/web-ui/markdown/message-files'
 import Button from '@jush-ai/web-ui/ui/Button.vue'
@@ -41,12 +42,12 @@ const work = useGalleryWork('file', { files, browser: galleryBrowser([]) })
 useGalleryTranscripts(() => ({ blocks: [], subagents: [{ id: SLOT_NODE, blocks: slotBlocks() }] }))
 provideEditSelection(() => work.selectEdit)
 // A link in the child's messages opens its window for the directory the child wrote it in.
-const conversationFiles = galleryConversationFiles(project.source, ({ path, line, root }) => {
-  work.openIn({ intent: 'file', payload: { path, ...(line === null ? {} : { line }), ...(root === undefined ? {} : { root }) } })
+const conversationFiles = galleryConversationFiles(project.source, (target) => {
+  work.openIn(fileIntent(target))
 }, ({ commit, root }) => {
   work.openIn({ intent: 'commit', payload: { commit, ...(root === undefined ? {} : { root }) } })
-}, ({ path, root }) => {
-  work.openIn({ intent: 'file', payload: { path, tree: true, ...(root === undefined ? {} : { root }) } })
+}, (target) => {
+  work.openIn(fileIntent(target, true))
 }, (id, { name, size, url }) => {
   work.openIn({ intent: 'attachment', payload: { id, name, size, url } })
 }, (root) => files.history(root), ({ root, branch }) => {

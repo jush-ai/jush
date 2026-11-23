@@ -1,6 +1,11 @@
 import { ref } from 'vue'
 import { z } from 'zod'
-import { definePlace, isAbsoluteDevicePath, joinPath, type IntentPayloads } from '@jush-ai/plugin-sdk'
+import { FolderOpen } from '@lucide/vue'
+import { definePlace, isAbsoluteDevicePath, joinPath, type IntentPayloads, type WindowKind } from '@jush-ai/plugin-sdk'
+import { t } from './locales/text'
+
+/** Files' window: the File view, with its tree, and the files of other devices beside it. */
+export const filesWindow: WindowKind = { id: 'files', name: () => t('kind.title'), icon: FolderOpen }
 
 /**
  * What the File view shows: one file of the conversation's device, by its

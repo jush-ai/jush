@@ -10,6 +10,7 @@ import {
   PluginCallError,
   type AnyPluginPage,
   type ConversationFileService,
+  type DeviceScope,
   type IntentService,
   type PageHost,
   type StateFeed,
@@ -50,7 +51,13 @@ export interface GalleryPlugin {
   features?: Record<string, boolean>
   /** Follows the plugin's state of a conversation, as the product follows it by revision. */
   followState?(conversation: string): StateFeed
-  call(method: string, params: object, conversation: string | null): Promise<unknown>
+  call(method: string, params: object, conversation: DeviceScope | null): Promise<unknown>
+  /**
+   * The plugin on another of the conversation's devices, whose calls,
+   * streams and packages are that device's; this one stands for the
+   * gallery's own device and any device it has none for.
+   */
+  on?(device: string): GalleryPlugin | undefined
   /** Its user streams, by name. */
   streams?: Record<string, OpenUserStream>
   /** What the specimen's device holds of its packages, read reactively. */
@@ -106,6 +113,9 @@ export function galleryPageHost(plugins: Record<string, GalleryPlugin>, shell: G
     }
     return found
   }
+  /** `plugin` on the device `scope` names, as the backend routes a call to that device's runner. */
+  const at = (plugin: GalleryPlugin, scope: DeviceScope | null): GalleryPlugin =>
+    (scope?.device ? plugin.on?.(scope.device) : undefined) ?? plugin
   return {
     pages: () => shell.pages ?? [],
     blockDocument: (plugin, tag, id) => plugins[plugin]?.blockDocument?.(tag, id) ?? 'about:blank',
@@ -126,10 +136,10 @@ export function galleryPageHost(plugins: Record<string, GalleryPlugin>, shell: G
       }
       return follow(conversation)
     },
-    call: async (plugin, method, params, conversation) => fixture(plugin).call(method, params, conversation),
-    stream: (name) => {
+    call: async (plugin, method, params, conversation) => at(fixture(plugin), conversation).call(method, params, conversation),
+    stream: (name, on) => {
       for (const [id, plugin] of Object.entries(plugins)) {
-        const stream = plugin.streams?.[name]
+        const stream = at(plugin, on).streams?.[name]
         if (!stream) {
           continue
         }
@@ -144,8 +154,14 @@ export function galleryPageHost(plugins: Record<string, GalleryPlugin>, shell: G
       }
       throw new PluginCallError('unknown_stream', `No user stream "${name}"`)
     },
-    installed: (plugin) => plugins[plugin]?.installed?.() ?? [],
-    downloading: (plugin) => plugins[plugin]?.downloading?.() ?? [],
+    installed: (plugin, on) => {
+      const found = plugins[plugin]
+      return (found && at(found, on).installed?.()) ?? []
+    },
+    downloading: (plugin, on) => {
+      const found = plugins[plugin]
+      return (found && at(found, on).downloading?.()) ?? []
+    },
     deviceStarting: () => shell.deviceStarting?.() ?? false,
     files: () => {
       if (!shell.files) {
@@ -203,8 +219,13 @@ function beat(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-/** The conversation browser's plugin over the gallery's `browser`: its tab list and its tab methods. */
-export function browserPlugin(browser: GalleryBrowser): GalleryPlugin {
+/**
+ * The conversation browser's plugin over the gallery's `browser`, and over
+ * `others` on the conversation's other devices: the tab list of each, and
+ * each one's tab methods on its own device.
+ */
+export function browserPlugin(browser: GalleryBrowser, others: readonly GalleryBrowser[] = []): GalleryPlugin {
+  const elsewhere = new Map(others.map((other) => [other.device, browserPlugin(other)]))
   async function call(method: string, params: object): Promise<unknown> {
     switch (method) {
       case 'open': {
@@ -232,7 +253,9 @@ export function browserPlugin(browser: GalleryBrowser): GalleryPlugin {
     downloading: () => browser.downloading.value,
     followState: () => ({
       // A browser held while the page connects has brought no list yet, as before a feed's first answer.
-      value: () => (browser.held.value === 'connecting' ? undefined : browser.listed.value),
+      value: () => (browser.held.value === 'connecting'
+        ? undefined
+        : { devices: [browser, ...others].map((each) => each.listed.value) }),
       error: () => null,
       read: () => {},
       stop: () => {},
@@ -252,6 +275,7 @@ export function browserPlugin(browser: GalleryBrowser): GalleryPlugin {
       }
     },
     streams: { browser: browser.stream },
+    on: (device) => elsewhere.get(device),
   }
 }
 

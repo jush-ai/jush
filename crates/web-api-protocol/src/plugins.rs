@@ -4,7 +4,7 @@
 
 use std::collections::BTreeMap;
 
-use jush_shared_types::MAX_SAFE_INTEGER;
+use jush_shared_types::{DeviceId, MAX_SAFE_INTEGER};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -78,4 +78,13 @@ pub struct ReplyBlocksRead {
 #[serde(rename_all = "camelCase")]
 pub struct ReplyBlocksAnswer {
     pub reply_blocks: Vec<jush_conversation_lane_protocol::ReplyBlockFacts>,
+}
+
+/// `?device=` of a conversation's plugin call: the device of the conversation
+/// it is about, such as the one whose browser window called it; its primary
+/// device when omitted. Queries are the backend's alone and are not emitted.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize)]
+pub struct PluginCallQuery {
+    #[serde(default)]
+    pub device: Option<DeviceId>,
 }

@@ -2,19 +2,19 @@
 // pinned `file` kind and the File view, which opens the `file` intent of the
 // files messages name. The page also has the `attachment` kind, which previews
 // an attachment's copy for the `attachment` intent, and the `media` kind, the
-// one Media tab of the conversation's pictures and videos.
+// one Media tab of the conversation's pictures and videos. The `device-file`
+// kind shows a file of another device the conversation reaches in the Files
+// window.
 import { defineComponent, h, type PropType } from 'vue'
-import { File, FolderOpen } from '@lucide/vue'
-import { FileIcon, ICON_PX, baseName, definePage, type TabKind, type WindowKind } from '@jush-ai/plugin-sdk'
+import { File } from '@lucide/vue'
+import { FileIcon, ICON_PX, baseName, definePage, type TabKind } from '@jush-ai/plugin-sdk'
 import { PLUGIN } from './generated/plugin'
 import { t } from './locales/text'
 import FileTab from './FileTab.vue'
-import { fileDataSchema, filePlace, firstFileData, openFile, type FileData } from './data'
+import { fileDataSchema, filePlace, filesWindow, firstFileData, openFile, type FileData } from './data'
 import { attachmentKind } from './attachment'
+import { deviceFileKind } from './device-file'
 import { mediaKind } from './media'
-
-/** Files' window: the File view, with its tree. */
-const filesWindow: WindowKind = { id: 'files', name: () => t('kind.title'), icon: FolderOpen }
 
 /** The file's own icon once the view shows one, a plain file before. */
 const FileMark = defineComponent({
@@ -40,7 +40,7 @@ export const fileKind: TabKind<FileData> = {
   },
 }
 
-export const fileBrowserPage = definePage({ plugin: PLUGIN, kinds: [fileKind, attachmentKind, mediaKind] })
+export const fileBrowserPage = definePage({ plugin: PLUGIN, kinds: [fileKind, deviceFileKind, attachmentKind, mediaKind] })
 
 /** The page the registry imports (`crates/xtask/src/contracts/registry.rs`). */
 export default fileBrowserPage

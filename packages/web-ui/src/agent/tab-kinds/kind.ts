@@ -27,6 +27,25 @@ export interface WindowKind {
    * attachment in the transcript opens, says false.
    */
   openable?: boolean
+  /**
+   * Each device's tabs of it make a window of their own, as each Chrome
+   * profile's do: a device's browser or simulators. The page binds its kinds
+   * once per device the conversation reaches, each to a copy of the window
+   * whose `device` names it.
+   */
+  perDevice?: boolean
+  /** The device a per-device window's copy is of. */
+  device?: string
+}
+
+/**
+ * The id of a per-device window `window`'s copy for `device`: the window's
+ * own for the conversation's `primary` device, so the user's pin and the
+ * layout the conversation keeps name the primary device's window, as they
+ * named the one window before; `browser@<device>` for another device.
+ */
+export function deviceWindowId(window: WindowKind, device: string, primary: string): string {
+  return device === primary ? window.id : `${window.id}@${device}`
 }
 
 /**
@@ -62,6 +81,8 @@ export interface BoundTabKind<Data = unknown> {
   kind: string
   /** A tab's `data`, checked where the saved state enters the page. */
   schema: z.ZodType<Data>
+  /** The device a per-device window's kind is bound to, whose tabs alone it reads. */
+  device?: string
   /** The window its tabs open in. */
   window: WindowKind
   /** The data of a new tab the window's + opens, or what `open` asks for; absent, it opens tabs only by intents. */
@@ -145,12 +166,17 @@ export function resolveTab(tab: WorkTab, kinds: readonly BoundTabKind[]): Resolv
   return read ? { tab, kind: read.kind, data: read.data, title: read.kind.title(read.data) } : { tab, kind: null, data: null, title: tab.kind }
 }
 
-/** The tab's kind among `kinds` and its data as the kind reads it: null while none of them reads it, so no window can show it. */
-export function readTab<Kind extends { kind: string; schema: z.ZodType }>(
+/**
+ * The tab's kind among `kinds` and its data as the kind reads it: null while
+ * none of them reads it, so no window can show it, as a tab of a device the
+ * conversation no longer reaches. A kind bound to a device reads that
+ * device's tabs alone.
+ */
+export function readTab<Kind extends { kind: string; schema: z.ZodType; device?: string }>(
   tab: WorkTab,
   kinds: readonly Kind[],
 ): { kind: Kind; data: unknown } | null {
-  const kind = kinds.find((candidate) => candidate.kind === tab.kind)
+  const kind = kinds.find((candidate) => candidate.kind === tab.kind && (candidate.device === undefined || candidate.device === tab.device))
   const parsed = kind?.schema.safeParse(tab.data)
   return kind && parsed?.success ? { kind, data: parsed.data } : null
 }

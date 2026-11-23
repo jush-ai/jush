@@ -86,6 +86,7 @@ mod from_0_1_65_dev_jush;
 mod from_0_1_65_dev_wakes;
 mod from_0_1_65_dev_elevation;
 mod from_0_1_65_dev_subscriptions_machine;
+mod from_0_1_65_dev_device_tabs;
 mod from_0_1_5979_devices;
 mod from_0_1_5979_subscription_devices;
 mod from_0_1_5979_archived_at;
@@ -459,5 +460,9 @@ pub(super) const HISTORY: &[Shipped] = &[
     Shipped {
         sql: include_str!("from_0_1_65_dev_subscriptions_machine.sql"),
         migration: from_0_1_65_dev_subscriptions_machine::MIGRATION,
+    },
+    Shipped {
+        sql: include_str!("from_0_1_65_dev_device_tabs.sql"),
+        migration: from_0_1_65_dev_device_tabs::MIGRATION,
     },
 ];

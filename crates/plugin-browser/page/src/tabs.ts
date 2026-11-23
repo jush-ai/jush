@@ -1,6 +1,6 @@
 import { computed, onScopeDispose } from 'vue'
 import { z } from 'zod'
-import { BrowserTabsError, asTabsError, type BrowserTabsApi } from './live/tabs'
+import { BrowserTabsError, addedWorkTab, asTabsError, type BrowserTabsApi } from './live/tabs'
 import { PluginCallError, type ConversationPlugin } from '@jush-ai/plugin-sdk'
 import {
   browserTabsSchema,
@@ -43,18 +43,34 @@ function tabsError(error: PluginCallError): BrowserTabsError {
 }
 
 /**
- * The conversation browser's tab list, its tab methods and its `browser` user
- * stream over the plugin, for a conversation's browser on the page, whose
- * effect scope the tab list is followed in. A call still waiting for the
- * backend when the store releases that browser, as when the plugin is turned
- * off, is dropped and never sent (`packages/web-ui/src/plugins/page.ts`).
+ * The conversation browser's tab list on its device `device`, its tab methods
+ * and its `browser` user stream over the plugin, which is the conversation's
+ * on that device, for a conversation's browser on the page, whose effect
+ * scope the tab list is followed in; `device` null is the primary device's,
+ * whichever that is. A call still waiting for the backend when the store
+ * releases that browser, as when the plugin is turned off, is dropped and
+ * never sent (`packages/web-ui/src/plugins/page.ts`).
  */
 export function browserTabsApi(
   plugin: ConversationPlugin,
+  device: string | null,
   select: (workTab: string) => void,
   held: () => readonly string[],
 ): BrowserTabsApi {
-  const tabs = plugin.state(browserTabsSchema)
+  const state = plugin.state(browserTabsSchema)
+  // The device's list, the primary device's first; one whose browser never
+  // reported has none of its tabs.
+  const tabs = {
+    value: computed(() => {
+      const all = state.value.value
+      if (all === null) {
+        return null
+      }
+      const listed = device === null ? all.devices[0] : all.devices.find((each) => each.device === device)
+      return listed ?? { device: device ?? '', list: 0, tabs: [] }
+    }),
+    error: state.error,
+  }
   const session = new AbortController()
   onScopeDispose(() => session.abort())
   async function call<T>(method: string, params: object, answer: z.ZodType<T>, timeoutMs?: number): Promise<T> {
@@ -87,6 +103,7 @@ export function browserTabsApi(
       return call('open', params, tabOpenedSchema, OPEN_TIMEOUT_MS)
     },
     select,
+    workTab: (tab) => addedWorkTab(device, tab),
     held,
     navigate: (tab, url) => move('navigate', { tab, url } satisfies NavigateTab),
     history: (tab, action) => move('history', { tab, action } satisfies TabHistory),

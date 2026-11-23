@@ -85,6 +85,7 @@ const opening = computed(() => props.window.tabs.find((tab) => tab.id === props.
         <component
           :is="tab.kind.content"
           :tab-id="tab.id"
+          :device="tab.device ?? null"
           :data="tab.data"
           :shown="onScreen && tab.id === window.selected"
           @update="(data: unknown, how?: TabUpdate) => tab.pinned ? emit('updatePinned', tab.id, data, how) : emit('updateTab', tab.id, data, how)"

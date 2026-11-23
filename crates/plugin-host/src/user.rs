@@ -35,7 +35,7 @@ use jush_device_interface::{CommandSet, GroupBuilder, JobCaller, PortError, RpcP
 use jush_plugin_interface::{
     AskedVideo, AudioAsk, AudioVoices, Feature, ImageAsk, MadeAudio, MadeImage, MediaListing, MediaRefusal, VideoAsk,
     VideoStep, CallKind, DirectoryPath, DeviceDirectory, Plugin, PluginError, PluginId, PluginPort,
-    PluginTransport, PortAnswer, PortFailure, PortMessage, PortRefusal, Reply, Request, Scope, StoredReport,
+    PluginTransport, PortAnswer, PortFailure, PortMessage, PortRefusal, Reply, Request, Scope, DeviceReport, StoredReport,
     StoredValue, Workspaces, DeviceName, GitTree,
 };
 use jush_device_interface::{DeviceFile, DeviceRead};
@@ -101,11 +101,13 @@ impl MediaCall {
 /// a conversation's devices through its device access, and the user's blobs.
 /// The user's shard implements it.
 pub trait ProductPort {
-    /// Runs `operation` once on the conversation's primary device for the user,
-    /// waking it or not as `kind` says, and answers its JSON result.
+    /// Runs `operation` once on `device`, one the conversation reaches, or on
+    /// its primary device without one, for the user, waking it or not as
+    /// `kind` says, and answers its JSON result.
     fn package_call<'a>(
         &'a self,
         conversation: &'a ConversationId,
+        device: Option<&'a DeviceId>,
         operation: &'a NativeOperation,
         args: Map<String, Value>,
         input: String,
@@ -134,6 +136,11 @@ pub trait ProductPort {
     /// The plugins' device directories changed, which each connected device
     /// receives in the background.
     fn directories_changed(&self);
+
+    /// The devices the conversation reaches, as its device access admits
+    /// them: its primary device first, then the attached ones, then those a
+    /// live subagent works on. It asks no device.
+    fn reached_devices<'a>(&'a self, conversation: &'a ConversationId) -> LocalBoxFuture<'a, Result<Vec<DeviceId>, PortFailure>>;
 
     /// The commit `url`'s default branch points to, as the user's paired
     /// device `device` reads it with its own `git`.
@@ -253,6 +260,9 @@ pub struct PageCall {
     /// The conversation of the route, for a method of the conversation
     /// scope.
     pub conversation: Option<ConversationId>,
+    /// The device of the conversation the page asked about; none for its
+    /// primary device.
+    pub device: Option<DeviceId>,
 }
 
 /// Why a page call did not answer.
@@ -426,6 +436,15 @@ impl Shared {
             (_, None) => (None, ReadOn::Primary, None),
         };
         let call = call.unwrap_or_else(|| (format!("{:032x}", rand::random::<u128>()), false));
+        // The device the request is of (`PluginPort`): a command's job's, the
+        // one a page names, a closed tab's, or the one a package spoke from.
+        let device = match &request {
+            Request::Command { invocation, .. } => DeviceId::try_from(invocation.device.as_str()).ok(),
+            Request::PageCall { device, .. } => device.clone(),
+            Request::TabClosed { tab, .. } => tab.device.clone(),
+            Request::PackageMessage { device, .. } | Request::PackageLost { device, .. } => Some(device.clone()),
+            _ => None,
+        };
         let transport = RequestPort {
             shared: self.clone(),
             plugin,
@@ -433,6 +452,7 @@ impl Shared {
             rpc,
             cancel: cancel.clone(),
             read_on,
+            device,
             caller,
             call,
             media_asked: std::cell::Cell::new(0),
@@ -590,18 +610,19 @@ impl Shared {
         }
     }
 
-    /// Makes the tabs of `kind` the tabs `listed` a device has open
-    /// (`WorkDocument::mirror`), and answers the listed ids whose tabs the
-    /// user closed. A change of what the plugin owns tells no plugin.
+    /// Makes the tabs of `kind` on `device` the tabs `listed` the device has
+    /// open (`WorkDocument::mirror`), and answers the listed ids whose tabs
+    /// the user closed. A change of what the plugin owns tells no plugin.
     async fn mirror_work(
         &self,
         conversation: &ConversationId,
         kind: String,
+        device: DeviceId,
         listed: Vec<CreateWorkTab>,
     ) -> Result<Vec<String>, WorkError> {
         match self
             .store
-            .mirror_work(conversation.clone(), kind, listed)
+            .mirror_work(conversation.clone(), kind, device, listed)
             .await?
         {
             MirrorOutcome::Mirrored { changed, closed } => {
@@ -1599,6 +1620,7 @@ impl UserPlugins {
             method: call.method,
             params,
             conversation: call.conversation.clone(),
+            device: call.device,
         };
         let reply = self
             .0
@@ -1643,6 +1665,10 @@ struct RequestPort {
     cancel: CancellationToken,
     /// Where its reads of files go.
     read_on: ReadOn,
+    /// The device the request is of, which its package calls, report and
+    /// mirrored tabs are on unless the plugin names another; none for the
+    /// conversation's primary device.
+    device: Option<DeviceId>,
     /// The job that called the command, for a command an agent's job
     /// called.
     caller: Option<JobCaller>,
@@ -1769,6 +1795,7 @@ impl RequestPort {
                 args,
                 input,
                 kind,
+                device,
             } => {
                 let registered = &shared.registry.plugins[self.plugin];
                 if !registered.packages.contains(&operation.package) {
@@ -1779,14 +1806,15 @@ impl RequestPort {
                     .into());
                 }
                 let conversation = self.conversation()?;
+                let device = device.or_else(|| self.device.clone());
                 let result = product
-                    .package_call(conversation, &operation, args, input, kind, &self.cancel)
+                    .package_call(conversation, device.as_ref(), &operation, args, input, kind, &self.cancel)
                     .await?;
                 PortAnswer::Called { result }
             }
-            PortMessage::ReadReport => {
+            PortMessage::ReadReport { device } => {
                 let conversation = self.conversation()?;
-                let report = match shared.primary_device(conversation).await? {
+                let report = match self.device_of(device).await? {
                     Some(device) => shared
                         .store
                         .report(shared.plugin_id(self.plugin), conversation.clone(), device)
@@ -1800,6 +1828,27 @@ impl RequestPort {
                         value: report.value,
                     }),
                 }
+            }
+            PortMessage::ReadDevice { device } => PortAnswer::Device {
+                device: self.device_of(device).await?,
+            },
+            PortMessage::ReadReports => {
+                let conversation = self.conversation()?;
+                let mut reports = Vec::new();
+                for device in shared.product.reached_devices(&conversation).await? {
+                    let report = shared
+                        .store
+                        .report(shared.plugin_id(self.plugin), conversation.clone(), device.clone())
+                        .await
+                        .map_err(storage)?;
+                    if let Some(report) = report {
+                        reports.push(DeviceReport {
+                            device,
+                            report: StoredReport { revision: report.revision, value: report.value },
+                        });
+                    }
+                }
+                PortAnswer::Reports { reports }
             }
             PortMessage::WriteReport { device, revision, value } => {
                 let device = DeviceId::try_from(device.as_str()).map_err(|error| {
@@ -1819,8 +1868,7 @@ impl RequestPort {
                     )
                     .await
                     .map_err(storage)?;
-                let primary = shared.primary_device(conversation).await?.as_ref() == Some(&device);
-                PortAnswer::Kept { primary }
+                PortAnswer::Done
             }
             PortMessage::Devices => PortAnswer::Devices {
                 devices: product.devices().await?,
@@ -1869,7 +1917,7 @@ impl RequestPort {
                 self.own_tab(&id).await?;
                 self.work_change(WorkChange::Remove { id }).await?
             }
-            PortMessage::MirrorWorkTabs { kind, tabs } => {
+            PortMessage::MirrorWorkTabs { kind, tabs, device } => {
                 let registered = &shared.registry.plugins[self.plugin];
                 if let Some(other) = std::iter::once(&kind)
                     .chain(tabs.iter().map(|tab| &tab.kind))
@@ -1877,8 +1925,11 @@ impl RequestPort {
                 {
                     return Err(WorkError::UnknownKind(other.clone()).refusal());
                 }
+                let Some(device) = self.device_of(device).await? else {
+                    return Err(PortFailure::Refused(PortRefusal::NotRunning));
+                };
                 let closed = shared
-                    .mirror_work(self.conversation()?, kind, tabs)
+                    .mirror_work(self.conversation()?, kind, device, tabs)
                     .await
                     .map_err(|error| error.refusal())?;
                 PortAnswer::Mirrored { closed }
@@ -2018,6 +2069,16 @@ fn job_failure(message: &str) -> PortFailure {
         self.conversation
             .as_ref()
             .ok_or(PortFailure::Refused(PortRefusal::NoConversation))
+    }
+
+    /// The device a message is about: the one it names, else the request's,
+    /// else the conversation's primary device; none for a conversation whose
+    /// device does not exist yet.
+    async fn device_of(&self, named: Option<DeviceId>) -> Result<Option<DeviceId>, PortFailure> {
+        match named.or_else(|| self.device.clone()) {
+            Some(device) => Ok(Some(device)),
+            None => self.shared.primary_device(self.conversation()?).await,
+        }
     }
 }
 

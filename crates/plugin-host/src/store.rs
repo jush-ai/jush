@@ -202,12 +202,13 @@ pub trait PluginStore {
 
     fn change_work(&self, conversation: ConversationId, changes: Vec<WorkChange>) -> Stored<'_, WorkOutcome>;
 
-    /// Makes the tabs of `kind` the tabs `listed` a device has open, as one
-    /// change of the work (`WorkDocument::mirror`).
+    /// Makes the tabs of `kind` on `device` the tabs `listed` the device has
+    /// open, as one change of the work (`WorkDocument::mirror`).
     fn mirror_work(
         &self,
         conversation: ConversationId,
         kind: String,
+        device: DeviceId,
         listed: Vec<CreateWorkTab>,
     ) -> Stored<'_, MirrorOutcome>;
 

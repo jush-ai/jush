@@ -781,7 +781,7 @@ const agentsWindow = useAgentsWindow(() => shownAgents.value, {
 })
 /** The child the Agents window shows; none shows it empty. */
 const activeSubagentId = agentsWindow.activeId
-const commandWindows = useCommandWindows(() => terminals.value, (id) => emit('abortTerminal', id))
+const commandWindows = useCommandWindows(() => terminals.value, (id) => emit('abortTerminal', id), () => props.work?.devices ?? [])
 // Another conversation's windows show their own tabs.
 watch(() => props.conversation.id, () => {
   activeSubagentId.value = null

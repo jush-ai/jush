@@ -46,9 +46,10 @@ function webLink(url: string, attributes = ''): string {
  * names one. It opens a window, so a press on it puts none away
  * (`KEEPS_WINDOWS`).
  */
-function fileLink({ path, line }: MessageFileTarget, attributes = ''): string {
+function fileLink({ path, line, device }: MessageFileTarget, attributes = ''): string {
   const at = line === null ? '' : ` data-line="${line}"`
-  return `<a href="${escapeHtml(path)}" data-file-link${at} ${KEEPS_WINDOWS}${attributes}>`
+  const on = device === undefined ? '' : ` data-device="${escapeHtml(device)}"`
+  return `<a href="${escapeHtml(path)}" data-file-link${at}${on} ${KEEPS_WINDOWS}${attributes}>`
 }
 
 /**
@@ -856,7 +857,7 @@ export function referencedMedia(
     // Without copies the text is the user's, whose device image is its file,
     // which the viewer shows at the version the page keeps. A reply's device
     // picture the backend kept no copy of shows as a link, which is no medium.
-    if (image && pictures === undefined)
+    if (image && !('device' in image) && pictures === undefined)
       return files?.contents ? [{ kind: 'image', file: { path: image.path, contents: files.contents }, name }] : []
     return []
   })

@@ -191,7 +191,8 @@ pub(crate) async fn call(
             let opened = run::<OpenResult, _>(port, MobileOperation::Open, input, CallKind::Starts)
                 .await
                 .map_err(refused)?;
-            let tab = added_id(opened.device.as_str());
+            let on = port.device().await?.ok_or(PortFailure::Refused(PortRefusal::NotRunning))?;
+            let tab = added_id(&on, opened.device.as_str());
             to_value(Opened { device: opened.device, tab })
         }
         "close" => {

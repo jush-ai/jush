@@ -24,9 +24,15 @@
 //! 2. commit: the device leaves the conversation's, and each agent's next
 //!    request says so; nothing more when it was not attached
 //! 3. ask every job of the conversation on the device to stop, and answer
-//! 4. once the jobs ended, tell the device to release the conversation, unless
-//!    the conversation reaches it again
+//! 4. once the jobs ended and no subagent works there any longer, drop the
+//!    device's work tabs and plugin reports and tell the device to release
+//!    the conversation, unless the conversation reaches it again
 //! ```
+//!
+//! Step 4 is a task of the shard, which ends with it. Each time a
+//! conversation's tree opens or starts or stops running, the release is made
+//! for any device it keeps tabs or reports of but no longer reaches, so one
+//! that task missed is released then (`release_unreached`).
 //!
 //! A job is stopped as an abort stops it, and its end says the device was
 //! detached. One whose device cannot be reached at that moment ends as lost with
@@ -74,7 +80,7 @@
 //! Files do not move, and a path keeps referring to its original device.
 
 use jush_backend_database::conversation_index::{
-    ChangeOutcome, ConversationRecord, RecordChange, SwitchEnds, SwitchWrite, TargetSwitch,
+    ChangeOutcome, ConversationRecord, RecordChange, SwitchEnds, SwitchWrite, TargetSwitch, WorkRelease,
 };
 use jush_backend_database::projects::ProjectRecord;
 use jush_backend_database::{Selection, StorageError, Unselectable};
@@ -84,7 +90,7 @@ use jush_web_api_protocol::error::ErrorCode;
 use jush_web_api_protocol::ids::{ConversationId, DeviceId, UserId};
 
 use crate::DeviceShard;
-use crate::access::DeviceAccessError;
+use crate::access::{DeviceAccessError, DeviceRole};
 use crate::transfer::TransfersClosed;
 
 /// Why a change was not applied.
@@ -419,17 +425,94 @@ impl dyn DeviceShard + '_ {
     }
 
     /// The release of `device`, which a detach of the conversation `id`
-    /// removed (§ step 4): sent once the conversation's jobs there ended, and
-    /// not sent when the conversation reaches the device again by then, a
-    /// move to it or a new attach having come first. A release that fails is
-    /// logged and fails nothing.
+    /// removed (§ step 4): made once the conversation's jobs there ended and
+    /// the last subagent working there ended too, and not made when the
+    /// conversation reaches the device again by then, a move to it or a new
+    /// attach having come first. A read of the devices that fails leaves the
+    /// device as it is.
     pub async fn release_detached(&self, id: &ConversationId, device: &DeviceId) {
-        self.conversations().slot(id).jobs_ended_on(device).await;
-        match self.conversation_devices(id).await {
-            Ok(devices) if devices.iter().any(|each| each.device == *device) => {}
-            // A conversation deleted meanwhile was released by its deletion.
-            Err(DeviceAccessError::Missing) => {}
-            Ok(_) | Err(_) => self.tell_release(id, std::slice::from_ref(device), false),
+        loop {
+            self.conversations().slot(id).jobs_ended_on(device).await;
+            // Taken before the devices are read, so a subagent that ends
+            // between the read and the wait is not missed.
+            let changes = self.agent_changes(id);
+            match self.conversation_devices(id).await {
+                Ok(devices) => match devices.iter().find(|each| each.device == *device) {
+                    None => break,
+                    Some(reached) if reached.role == DeviceRole::Agent => {
+                        // A closed tree has no subagents left: the next read
+                        // finds none.
+                        if let Some(mut changes) = changes {
+                            let _ = changes.changed().await;
+                        }
+                    }
+                    Some(_) => return,
+                },
+                // A conversation deleted meanwhile was released by its deletion.
+                Err(error) => {
+                    if !matches!(error, DeviceAccessError::Missing) {
+                        tracing::warn!(event = "device.release_unread", conversation = %id, device = %device, %error, "a detached device's release cannot read the conversation's devices");
+                    }
+                    return;
+                }
+            }
+        }
+        self.leave_device(id, device).await;
+    }
+
+    /// Releases every device the conversation keeps work tabs or plugin
+    /// reports of but no longer reaches, and where none of its jobs runs:
+    /// what a release missed, its task having ended with the backend, or a
+    /// device a resumed subagent worked on. A read that fails leaves every
+    /// device as it is.
+    pub async fn release_unreached(&self, id: &ConversationId) {
+        let Ok(held) = self.control().held_devices(id.clone()).await else {
+            return;
+        };
+        if held.is_empty() {
+            return;
+        }
+        let Ok(reached) = self.conversation_devices(id).await else {
+            return;
+        };
+        let slot = self.conversations().slot(id);
+        for device in held {
+            if reached.iter().any(|each| each.device == device) || slot.jobs_run_on(&device) {
+                continue;
+            }
+            self.leave_device(id, &device).await;
+        }
+    }
+
+    /// Drops the work tabs and plugin reports of `device`, which the
+    /// conversation no longer reaches, so a later attach starts from what
+    /// the device reports then, and tells the device to let go of the
+    /// conversation. A device the conversation reaches again by then keeps
+    /// them, and hears nothing.
+    async fn leave_device(&self, id: &ConversationId, device: &DeviceId) {
+        let works_there =
+            |shard: &Self| shard.agent_placements(id).iter().any(|placement| placement.device.as_deref() == Some(device.as_str()));
+        if works_there(self) {
+            return;
+        }
+        match self.control().release_device_work(id.clone(), device.clone()).await {
+            Ok(WorkRelease::Released { changed }) => {
+                if changed {
+                    self.summary_changed(id);
+                }
+                // A subagent resumed there meanwhile works on.
+                if !works_there(self) {
+                    self.tell_release(id, std::slice::from_ref(device), false);
+                }
+            }
+            Ok(WorkRelease::Reached | WorkRelease::Missing) => {}
+            Err(error) => tracing::warn!(
+                event = "device.work_release_failed",
+                conversation = %id,
+                device = %device,
+                %error,
+                "a device the conversation left keeps its work tabs and reports"
+            ),
         }
     }
 

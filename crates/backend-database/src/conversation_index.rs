@@ -207,6 +207,18 @@ pub enum RecordChange {
     Detach(DeviceId),
 }
 
+/// What a release of a device's work found.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorkRelease {
+    /// The work tabs and reports of the device are gone; `changed` says
+    /// whether there were any, which the conversation's summary carries.
+    Released { changed: bool },
+    /// The conversation reaches the device again: nothing changed.
+    Reached,
+    /// No conversation has the id.
+    Missing,
+}
+
 /// What a change found.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChangeOutcome {
@@ -584,6 +596,69 @@ impl ControlService {
                    AND (asked_end_revision < ?2 OR (asked_end_revision = ?2 AND asked_end_failed <> ?3))",
                 params![id.as_str(), revision_column(end.revision), end.failed],
             )? > 0)
+        })
+        .await
+    }
+
+    /// The devices whose work tabs or plugin reports the conversation keeps:
+    /// the devices it holds anything of.
+    pub async fn held_devices(&self, conversation: ConversationId) -> Result<Vec<DeviceId>, StorageError> {
+        self.call(move |connection, _| {
+            let (_, document) = crate::work::stored(connection, &conversation)?;
+            let mut held: Vec<DeviceId> = Vec::new();
+            for device in document.tabs.into_iter().filter_map(|tab| tab.device) {
+                if !held.contains(&device) {
+                    held.push(device);
+                }
+            }
+            let mut statement =
+                connection.prepare("SELECT DISTINCT device_id FROM plugin_reports WHERE conversation_id = ?1")?;
+            let mut rows = statement.query([conversation.as_str()])?;
+            while let Some(row) = rows.next()? {
+                let device = decode("plugin_reports", "device_id", DeviceId::try_from(row.get::<_, String>(0)?))?;
+                if !held.contains(&device) {
+                    held.push(device);
+                }
+            }
+            Ok(held)
+        })
+        .await
+    }
+
+    /// Drops what the conversation holds of `device`, a device it no longer
+    /// reaches: its work tabs, without retiring them
+    /// (`WorkDocument::release_device`), and the plugins' reports from it,
+    /// so a later attach starts from what the device reports then. A device
+    /// the records say it reaches again, its primary device or an attached
+    /// one, keeps them: an attach or a move may come between the caller's
+    /// check and this.
+    pub async fn release_device_work(
+        &self,
+        conversation: ConversationId,
+        device: DeviceId,
+    ) -> Result<WorkRelease, StorageError> {
+        self.call(move |connection, now| {
+            let transaction = connection.transaction()?;
+            let exists: Option<i64> = transaction
+                .query_row("SELECT 1 FROM conversations WHERE id = ?1", [conversation.as_str()], |row| row.get(0))
+                .optional()?;
+            if exists.is_none() {
+                return Ok(WorkRelease::Missing);
+            }
+            if reaches_device(&transaction, &conversation, &device)? {
+                return Ok(WorkRelease::Reached);
+            }
+            let (revision, mut document) = crate::work::stored(&transaction, &conversation)?;
+            let tabs = document.release_device(&device);
+            if tabs {
+                crate::work::store(&transaction, &conversation, revision + 1, &document, now.as_millisecond())?;
+            }
+            let reports = transaction.execute(
+                "DELETE FROM plugin_reports WHERE conversation_id = ?1 AND device_id = ?2",
+                [conversation.as_str(), device.as_str()],
+            )?;
+            transaction.commit()?;
+            Ok(WorkRelease::Released { changed: tabs || reports > 0 })
         })
         .await
     }

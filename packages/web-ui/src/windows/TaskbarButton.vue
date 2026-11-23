@@ -1,15 +1,17 @@
 <script setup lang="ts">
 import { onBeforeUpdate, onUpdated, useTemplateRef, type Component } from 'vue'
 import CornerDot from '../ui/CornerDot.vue'
+import Tag from '../ui/Tag.vue'
 import { ICON_PX } from '../ui/icon-metrics'
 import type { TaskbarItem } from './Taskbar.vue'
 import { resized } from './taskbar-motion'
 
 /**
- * One button of the taskbar: its icon, then its name, then a count. A
- * window's button shows its tab's name and, holding more than one tab,
- * their count; a system button, its count alone, or its icon alone at zero;
- * More, its name.
+ * One button of the taskbar: its icon, then its name, then its device's tag,
+ * then a count. A window's button shows its tab's name and, holding more than
+ * one tab, their count; a system button, its count alone, or its icon alone
+ * at zero; More, its name. A narrow button cuts its name short, never its
+ * tag.
  *
  * The state says how it draws: closed and minimized windows are fainter; a
  * shown window wears a mark under it, the one in front the accent's, as More
@@ -22,6 +24,8 @@ import { resized } from './taskbar-motion'
 defineProps<{
   icon: Component
   label?: string
+  /** The name of its window's device (`device-tags.ts`). */
+  tag?: string
   count?: number
   dot?: TaskbarItem['dot']
   state?: TaskbarItem['state']
@@ -54,6 +58,7 @@ onUpdated(() => {
       <CornerDot v-if="dot" tone="accent" size="xs" :breathing="dot === 'breathing'" />
     </span>
     <span v-if="label" class="min-w-0 truncate">{{ label }}</span>
+    <Tag v-if="tag" class="shrink-0">{{ tag }}</Tag>
     <span v-if="count !== undefined" class="taskbar-count">{{ count }}</span>
   </button>
 </template>

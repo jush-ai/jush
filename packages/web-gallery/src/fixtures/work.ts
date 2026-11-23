@@ -13,6 +13,7 @@ import { selectTab } from '@jush-ai/web-ui/agent/tab-close'
 import type { RequestEditSelection } from '@jush-ai/web-ui/files/request-changes'
 import type { IntentRequest } from '@jush-ai/web-ui/plugins/intents'
 import type { FrontCause, WorkRequest } from '@jush-ai/web-ui/windows/session-work'
+import type { SessionDevice } from '@jush-ai/web-ui/windows/device-tags'
 import { readTab } from '@jush-ai/web-ui/agent/tab-kinds/kind'
 import type { TabUpdate } from '@jush-ai/web-ui/plugins/page'
 import { disposePluginStores } from '@jush-ai/web-ui/plugins/stores'
@@ -35,6 +36,7 @@ import { sharedHistory } from './history'
 import { galleryHistory } from './browser-history'
 import { browserPlugin, galleryPageHost } from './plugins'
 import { galleryWidgets } from './widgets'
+import { galleryDevices } from './devices'
 
 /**
  * The gallery project as the tab kinds read a conversation's files.
@@ -51,6 +53,8 @@ export function galleryFiles(
   let slot: ChangeSetSource | null = null
   return {
     tree: { source: project.source, root: project.root },
+    // The gallery's other devices hold the same project, at the same place.
+    deviceSource: () => project.source,
     root: project.root,
     get directories() {
       return (directories?.() ?? [project.root]).map((path) => ({ path }))
@@ -79,17 +83,20 @@ const CONVERSATION = 'gallery'
  *   them.
  * - The plugin pages' kinds, bound to it over the specimen's files and its own
  *   conversation browser, whose plugin opens and closes browser tabs for the
- *   work's tabs as the backend's does.
+ *   work's tabs as the backend's does; with `others`, the browsers of other
+ *   devices the conversation reaches, each a window of its own.
  *
  * Intents open in it as they open in the product.
  */
 export function useGalleryWork(
   selection: string | null,
-  { files, browser = galleryBrowser(), screen, pictures, pages, open: startsOpen = true }: {
+  { files, browser = galleryBrowser(), others = [], screen, pictures, pages, open: startsOpen = true }: {
     files: ConversationFileService
     /** Whether the windows are asked for `selection` at the start: a phone's shows the conversation instead. */
     open?: boolean
     browser?: GalleryBrowser
+    /** The browsers of the devices attached to the conversation, beside its own device's `browser`. */
+    others?: readonly GalleryBrowser[]
     /** The screen the simulators show in place of the gallery's own. */
     screen?: GalleryScreen
     /** Whether the web browser decodes the pictures; by default it asks the web browser, as the product does. */
@@ -110,15 +117,40 @@ export function useGalleryWork(
   const enabled = (plugin: string) => !off.has(plugin)
   const backend = new GalleryWorkRecord()
   const plugin = galleryBrowserPlugin(browser, backend)
+  const othersPlugins = new Map(others.map((other) => [other.device, galleryBrowserPlugin(other, backend)]))
   // The conversation's simulators, whose plugin opens and closes devices for the work's `mobile` tabs.
   const mobile = galleryMobile(backend, screen)
-  // The browser tells the plugin of every change of its tabs, as the browser package does
+  // Each browser tells the plugin of every change of its tabs, as the browser package does
   // (`crates/command-protocol/src/messages.rs`).
   watch(browser.listed, () => void plugin.tabsChanged())
-  // The browser's tabs stand in the browser window in its order, as the product's would, the plugin having
-  // mirrored its list. A work without the browser's page has none.
+  for (const other of others) {
+    watch(other.listed, () => void othersPlugins.get(other.device)?.tabsChanged())
+  }
+  // Each browser's tabs stand in its device's browser window in its order, as the product's would, the plugin
+  // having mirrored its list. A work without the browser's page has none.
   if (shown.some((page) => page.plugin === 'browser')) {
     plugin.mirror()
+    for (const each of othersPlugins.values()) {
+      each.mirror()
+    }
+  }
+  /** The devices the specimen's user took offline. */
+  const offline = reactive(new Set<string>())
+  const names = new Map(galleryDevices().map(({ device }) => [device.id, device.name]))
+  /** The devices the conversation reaches, its own first, as the product lists them. */
+  const devices = computed<SessionDevice[]>(() => [browser, ...others].map((each, index) => ({
+    id: each.device,
+    name: names.get(each.device) ?? each.device,
+    primary: index === 0,
+    offline: offline.has(each.device),
+  })))
+  /** Takes `device` offline or brings it back, as its runner disconnects and reconnects. */
+  function setOffline(device: string, down: boolean) {
+    if (down) {
+      offline.add(device)
+    } else {
+      offline.delete(device)
+    }
   }
   const tabs = new WorkTabs(backend, (error) => {
     productWould(`Report the Refused Work Change: ${error instanceof Error ? error.message : String(error)}`)
@@ -127,7 +159,7 @@ export function useGalleryWork(
     if (tab.kind === 'mobile') {
       mobile.removed(tab)
     } else if (tab.kind === 'browser') {
-      void plugin.removed(tab)
+      void (othersPlugins.get(tab.device ?? '') ?? plugin).removed(tab)
     }
   }
   tabs.receive(backend.current())
@@ -284,7 +316,7 @@ export function useGalleryWork(
     select(opened.selection)
   }
 
-  const host = galleryPageHost({ browser: browserPlugin(browser), mobile: mobile.plugin, widget: galleryWidgets }, {
+  const host = galleryPageHost({ browser: browserPlugin(browser, others), mobile: mobile.plugin, widget: galleryWidgets }, {
     files,
     enabled,
     deviceStarting: () => browser.deviceStarting.value,
@@ -293,13 +325,19 @@ export function useGalleryWork(
       canOpen: (intent) => intentKind(shown, enabled, intent) !== null,
     },
     work: {
-      tabs: (_conversation, kind) => tabs.tabs.value.filter((tab) => tab.kind === kind).map((tab) => tab.data),
+      tabs: (_conversation, kind, device) =>
+        tabs.tabs.value.filter((tab) => tab.kind === kind && (device == null || tab.device === device)).map((tab) => tab.data),
       select: (_conversation, _kind, id) => select(id),
       canGo: (_conversation, direction) => steps.canGo(direction),
       go: (direction) => steps.go(direction),
     },
   })
-  const kinds = useBoundKinds(() => shown.filter((page) => enabled(page.plugin)), host, () => CONVERSATION)
+  const kinds = useBoundKinds(
+    () => shown.filter((page) => enabled(page.plugin)),
+    host,
+    () => CONVERSATION,
+    () => devices.value.map((device) => device.id),
+  )
   // A request the address made for a tab no window can show is dropped, and
   // the step says in its place what the windows show, as the product's work
   // store settles it.
@@ -331,7 +369,9 @@ export function useGalleryWork(
       backend.apply({ type: 'remove', id: tab.id })
     }
     if (pluginId === 'browser') {
-      browser.end()
+      for (const each of [browser, ...others]) {
+        each.end()
+      }
     }
     disposePluginStores(host.pinia, pluginId)
   }
@@ -377,6 +417,9 @@ export function useGalleryWork(
     inFront,
     pick,
     browser,
+    others,
+    devices,
+    setOffline,
     mobile,
     agentShows,
     agentOpens,

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { AT_REST, rootActivity } from '@jush-ai/web-ui/agent/agent-activity'
+import { fileIntent } from '@jush-ai/web-ui/plugins/intents'
 import { SHAPES, useCardCost } from '../fixtures/cost'
 import { GALLERY_MARKS, shownAmong } from '../fixtures/device-marks'
 import { correction, requestFailure } from '../fixtures/request-failures'
@@ -58,7 +59,7 @@ import type { ActivityKind } from '@jush-ai/web-ui/agent/activity-slot'
 import { provideEditSelection } from '@jush-ai/web-ui/agent/edit-selection'
 import ChatSession from '@jush-ai/web-ui/agent/ChatSession.vue'
 import type { PinnedDocumentView } from '@jush-ai/web-ui/agent/PinnedDocuments.vue'
-import { GALLERY_DEVICE } from '../fixtures/attachments'
+import { GALLERY_DEVICE } from '../fixtures/devices'
 import GalleryWorkWindows from '../components/GalleryWorkWindows.vue'
 import { gallerySessionWork } from '../fixtures/session-work'
 import { galleryFiles, useGalleryWork, type GalleryWork } from '../fixtures/work'
@@ -80,7 +81,7 @@ import { LINKED_COMMIT, sharedHistory } from '../fixtures/history'
 import { COMMITS_HEIGHT } from '@jush-ai/web-ui/files/file-view'
 import type { CommitHistorySource } from '@jush-ai/web-ui/files/history'
 import type { BoundTabKind } from '@jush-ai/web-ui/agent/tab-kinds/kind'
-import { BrowserTabsError, browserTabDataSchema, startingLabel, type StartingPhase } from '@jush-ai/plugin-browser/live/tabs'
+import { BrowserTabsError, addedWorkTab, browserTabDataSchema, startingLabel, type StartingPhase } from '@jush-ai/plugin-browser/live/tabs'
 import { SERVER_FAILED } from '../fixtures/plugins'
 import type { ChangeMode, ChangeSetSource, ChangeSources } from '@jush-ai/web-ui/files/changes'
 import { storedRequests, type RequestChangeSource, type RequestEditRef, type RequestEditSelection } from '@jush-ai/web-ui/files/request-changes'
@@ -615,13 +616,14 @@ function openFrameResult(row: SearchRow): void {
  */
 function useWorkTabs(
   selection: string,
-  { path = 'src/auth/cookie.ts', browser = galleryBrowser(), pictures }: {
+  { path = 'src/auth/cookie.ts', browser = galleryBrowser(), others, pictures }: {
     path?: string
     browser?: GalleryBrowser
+    others?: readonly GalleryBrowser[]
     pictures?: () => Promise<boolean>
   } = {},
 ) {
-  const work = useGalleryWork(selection, { files, browser, pictures })
+  const work = useGalleryWork(selection, { files, browser, others, pictures })
   if (path) {
     work.openIn({ intent: 'file', payload: { path: `${project.root}/${path}` } })
     work.select(selection)
@@ -811,15 +813,15 @@ const sessionPins = ref<PinnedDocumentView[]>([
 ])
 /** The session's messages reach the gallery project: images from its fixtures, files opened in the frame's windows. */
 const sessionFiles = {
-  ...galleryConversationFiles(project.source, ({ path, line }) => {
+  ...galleryConversationFiles(project.source, (target) => {
     // From the session page, which shows no window, a click opens the frame's.
-    frameWork.openIn({ intent: 'file', payload: line === null ? { path } : { path, line } })
+    frameWork.openIn(fileIntent(target))
     view.value = 'frame'
   }, ({ commit, root }) => {
     frameWork.openIn({ intent: 'commit', payload: { commit, ...(root === undefined ? {} : { root }) } })
     view.value = 'frame'
-  }, ({ path }) => {
-    frameWork.openIn({ intent: 'file', payload: { path, tree: true } })
+  }, (target) => {
+    frameWork.openIn(fileIntent(target, true))
     view.value = 'frame'
   }, (id, { name, size, url }) => {
     frameWork.openIn({ intent: 'attachment', payload: { id, name, size, url } })
@@ -1043,10 +1045,19 @@ function failNextOnServer() {
 // proprietary codecs.
 /** The device-offline specimen: the windows of a conversation whose primary device's runner is not connected. */
 const offlineWork = useWorkTabs('change')
-const deviceOfflineName = ref<string | null>('alex-laptop')
+offlineWork.setOffline(GALLERY_DEVICE, true)
+/** The device-offline specimen's device is offline now. */
+const primaryOffline = computed(() => offlineWork.devices.value[0]?.offline ?? false)
+/** An attached device's browser beside the conversation's own: a window for each, tagged with its device. */
+const ATTACHED_DEVICE = 'studio'
+const attachedWork = useWorkTabs(addedWorkTab(ATTACHED_DEVICE, 't1'), {
+  path: '',
+  others: [galleryBrowser(undefined, { device: ATTACHED_DEVICE })],
+})
+const attachedOffline = computed(() => attachedWork.devices.value.find((device) => device.id === ATTACHED_DEVICE)?.offline ?? false)
 const undecodedWork = useWorkTabs('change', { path: '', pictures: async () => false })
 // A device that cannot capture its tabs, such as an Apple M4's Linux VM: the agent's tab shows why it has no picture.
-const uncapturedWork = useWorkTabs('browser-t1', { path: '', browser: galleryBrowser(undefined, { capture: false }) })
+const uncapturedWork = useWorkTabs(addedWorkTab(GALLERY_DEVICE, 't1'), { path: '', browser: galleryBrowser(undefined, { capture: false }) })
 /** What the device's live view module does when it cannot deliver the viewer's input: it tells the viewer in a notice. */
 function failInput() {
   browserWork.browser.fail('driver_error', 'Input.dispatchKeyEvent: the target closed')
@@ -3786,7 +3797,7 @@ onBeforeUnmount(() => {
       </GallerySection>
       <GallerySection
         title="Terminals"
-        note="The Running window. Tabs are running jobs, each titled by its call’s description, cut at the end and whole in its tooltip; the body is a read-only xterm with ANSI color from bun, rg and git. The terminal opens with the script as a terminal shows what was typed: a muted $ and the first line, a muted > before each further line (Show the auth test changes), long lines wrapped at the terminal’s width (Find where the old cookie name is still used), the script highlighted as Bash in the colors all code shows in (Count the old cookie name and list the changed files), then the output. The watch tab’s output comes live: the terminal adds only what is new and keeps its scrollback, and after a burst longer than a frame holds, it shows the frame’s tail anew. A click on a tab only selects it; its menu, from a right-click or the Menu key or Shift+F10, ends a running command (End Command) or closes an ended one’s tab (Close Tab). A command being stopped shows a spinner in its tab’s mark until its runner says that it ended, and End Command is off meanwhile. Completed in the title bar lists the commands of the window’s kind that ended, newest first, as Agents does its children, those of this page and those the conversation keeps from before, each with how long it ran, a failed one tagged Failed, a stopped one Stopped and a lost one Lost; the command picked there shows as the window’s ended tab, reading its output the first time (Loading output… here for a moment), or saying why the conversation did not store it (Print the release archive); Services lists the component previews stopped earlier. The taskbar’s Running and Services buttons, after Open, count the commands that run, and show or hide their windows; once a conversation has had a command of a kind, its button stays, its icon alone while none runs, and a count that comes or goes slides the buttons beside it. Running's icon wears the accent's steady dot while a command runs, and Services none, a running service being settled. End every command here to see the buttons stay without a number."
+        note="The Running window. Tabs are running jobs, each titled by its call’s description, cut at the end and whole in its tooltip; the body is a read-only xterm with ANSI color from bun, rg and git. The terminal opens with the script as a terminal shows what was typed: a muted $ and the first line, a muted > before each further line (Show the auth test changes), long lines wrapped at the terminal’s width (Find where the old cookie name is still used), the script highlighted as Bash in the colors all code shows in (Count the old cookie name and list the changed files), then the output. A command its call ran on another device (Run the auth tests, on build-box) carries that device’s tag after its title, and the others then the conversation’s own device’s. The watch tab’s output comes live: the terminal adds only what is new and keeps its scrollback, and after a burst longer than a frame holds, it shows the frame’s tail anew. A click on a tab only selects it; its menu, from a right-click or the Menu key or Shift+F10, ends a running command (End Command) or closes an ended one’s tab (Close Tab). A command being stopped shows a spinner in its tab’s mark until its runner says that it ended, and End Command is off meanwhile. Completed in the title bar lists the commands of the window’s kind that ended, newest first, as Agents does its children, those of this page and those the conversation keeps from before, each with how long it ran, a failed one tagged Failed, a stopped one Stopped and a lost one Lost; the command picked there shows as the window’s ended tab, reading its output the first time (Loading output… here for a moment), or saying why the conversation did not store it (Print the release archive); Services lists the component previews stopped earlier. The taskbar’s Running and Services buttons, after Open, count the commands that run, and show or hide their windows; once a conversation has had a command of a kind, its button stays, its icon alone while none runs, and a count that comes or goes slides the buttons beside it. Running's icon wears the accent's steady dot while a command runs, and Services none, a running service being settled. End every command here to see the buttons stay without a number."
       >
         <div class="mb-3 flex flex-wrap gap-2">
           <Button variant="ghost" size="sm" @click="resetWindows">Run Them Again</Button>
@@ -4267,13 +4278,24 @@ onBeforeUnmount(() => {
           </GallerySpecimen>
           <GallerySpecimen variant="tabs · the device is offline" wide>
             <div class="gallery-frame flex h-[24rem] overflow-hidden">
-              <GalleryWorkWindows class="w-full" :work="offlineWork" :device-offline="deviceOfflineName" />
+              <GalleryWorkWindows class="w-full" :work="offlineWork" />
             </div>
             <div class="mt-2 flex items-center gap-2 text-[12px] text-fg-muted">
-              <Button size="sm" @click="deviceOfflineName = deviceOfflineName === null ? 'alex-laptop' : null">
-                {{ deviceOfflineName === null ? 'Take the Device Offline' : 'Bring the Device Back' }}
+              <Button size="sm" @click="offlineWork.setOffline(GALLERY_DEVICE, !primaryOffline)">
+                {{ primaryOffline ? 'Bring the Device Back' : 'Take the Device Offline' }}
               </Button>
               <span>Offline, a page names the device in place of the tabs’ contents, with no spinner; back, each tab shows as it was.</span>
+            </div>
+          </GallerySpecimen>
+          <GallerySpecimen variant="tabs · a browser on an attached device · live" wide>
+            <div class="gallery-frame flex h-[24rem] overflow-hidden">
+              <GalleryWorkWindows class="w-full" :work="attachedWork" />
+            </div>
+            <div class="mt-2 flex items-center gap-2 text-[12px] text-fg-muted">
+              <Button size="sm" @click="attachedWork.setOffline(ATTACHED_DEVICE, !attachedOffline)">
+                {{ attachedOffline ? 'Bring the Attached Device Back' : 'Take the Attached Device Offline' }}
+              </Button>
+              <span>Each device’s browser is a window of its own, its taskbar button and title tagged with the device; offline, only that device’s window says so.</span>
             </div>
           </GallerySpecimen>
           <GallerySpecimen variant="tabs · a viewer’s browser that cannot decode H.264 · live" wide>

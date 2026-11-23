@@ -69,12 +69,15 @@ export type ReplyBlockLookup =
  * A Device file a message names, by its absolute path, and the line it opens
  * at, if any; an empty path names no file, only a directory's tree. `root`
  * is the directory the view opens for, the working directory of the agent
- * that wrote the link; absent, the conversation's.
+ * that wrote the link; absent, the conversation's. `device` is the id of
+ * another device the conversation reaches that the file is on, as a
+ * `device:<id>/path` link names it; absent, the conversation's device.
  */
 export interface MessageFileTarget {
   path: string
   line: number | null
   root?: string
+  device?: string
 }
 
 /**

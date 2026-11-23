@@ -118,16 +118,13 @@ async fn screenshots(
             ))
             .await?;
         }
-        // The picture is on the conversation's primary device, which a job on
-        // an attached device does not read: its screenshots are skipped.
+        // The browser drew the picture on the job's own device, where it is read.
         let read = port
             .read_device_files(vec![DeviceRead::content(drawn.path.clone(), MAX_MEDIUM_BYTES)])
             .await;
         let Ok(Some(DeviceFile::File { bytes, size })) = read.map(|files| files.into_iter().next()) else {
-            rpc.stderr(format!(
-                "{CREATE}: screenshots skipped: the picture the conversation's primary device drew cannot be read from this device\n"
-            ))
-            .await?;
+            rpc.stderr(format!("{CREATE}: screenshots skipped: the picture the browser drew cannot be read\n"))
+                .await?;
             return Ok(());
         };
         if size > MAX_MEDIUM_BYTES {

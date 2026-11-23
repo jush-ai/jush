@@ -8,6 +8,9 @@ use garde::Validate;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
+use serde_with::rust::unwrap_or_skip;
+
+use crate::ids::DeviceId;
 
 /// The most tabs one work holds.
 ///
@@ -80,6 +83,13 @@ pub struct WorkTab {
     pub id: String,
     #[garde(length(min = 1))]
     pub kind: String,
+    /// The device whose thing it shows, such as a browser's tab, a simulator
+    /// or a file of an attached device; none for a tab of no one device,
+    /// which follows the conversation's primary device.
+    #[serde(default, skip_serializing_if = "Option::is_none", with = "unwrap_or_skip")]
+    #[schemars(with = "DeviceId")]
+    #[garde(skip)]
+    pub device: Option<DeviceId>,
     #[garde(skip)]
     pub data: Map<String, Value>,
 }
@@ -95,6 +105,10 @@ pub struct CreateWorkTab {
     pub id: String,
     #[garde(length(min = 1))]
     pub kind: String,
+    #[serde(default, skip_serializing_if = "Option::is_none", with = "unwrap_or_skip")]
+    #[schemars(with = "DeviceId")]
+    #[garde(skip)]
+    pub device: Option<DeviceId>,
     #[garde(skip)]
     pub data: Map<String, Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -242,24 +256,26 @@ impl WorkDocument {
         Ok(effects)
     }
 
-    /// Makes the tabs of `kind` the tabs `listed`, the tabs a device has
-    /// open, as one change: creates each listed tab the document never had,
-    /// at its index; sets the data of each it has to the listed data; and
-    /// removes each tab of the kind the list does not name. A listed id the
-    /// document had and retired is a tab its user closed, answered in
-    /// [`Mirrored::closed`].
+    /// Makes the tabs of `kind` on `device` the tabs `listed`, the tabs the
+    /// device has open, as one change: creates each listed tab the document
+    /// never had, at its index, on `device`; sets the data of each it has to
+    /// the listed data; and removes each tab of the kind on `device` the list
+    /// does not name. The kind's tabs on other devices stay as they are. A
+    /// listed id the document had and retired is a tab its user closed,
+    /// answered in [`Mirrored::closed`].
     ///
     /// A tab that does not fit, past the most tabs or the most data, is left
     /// out, or keeps the data it had, while every other changes: one tab too
     /// many never holds the others back. A later list places it once there
     /// is room.
-    pub fn mirror(&mut self, kind: &str, listed: Vec<CreateWorkTab>) -> Mirrored {
+    pub fn mirror(&mut self, kind: &str, device: &DeviceId, listed: Vec<CreateWorkTab>) -> Mirrored {
         let named: std::collections::HashSet<String> = listed.iter().map(|tab| tab.id.clone()).collect();
         let mut changes = Vec::new();
         let mut closed = Vec::new();
         // Created and set first: a listed tab's index counts the tabs as
         // they stand before the unlisted ones go.
-        for create in listed {
+        for mut create in listed {
+            create.device = Some(device.clone());
             if self.retired.contains(&create.id) {
                 closed.push(create.id);
                 continue;
@@ -287,7 +303,7 @@ impl WorkDocument {
         let removals: Vec<WorkChange> = self
             .tabs
             .iter()
-            .filter(|tab| tab.kind == kind && !named.contains(&tab.id))
+            .filter(|tab| tab.kind == kind && tab.device.as_ref() == Some(device) && !named.contains(&tab.id))
             .map(|tab| WorkChange::Remove { id: tab.id.clone() })
             .collect();
         let mut effects = Vec::new();
@@ -307,6 +323,16 @@ impl WorkDocument {
             }
         }
         Mirrored { effects, closed }
+    }
+
+    /// Drops the tabs of `device`, which the conversation no longer reaches,
+    /// without retiring their ids: the device's things ended with the
+    /// conversation's release there, and a tab of the same id it lists once
+    /// it is reached again is a new one. Answers whether any went.
+    pub fn release_device(&mut self, device: &DeviceId) -> bool {
+        let before = self.tabs.len();
+        self.tabs.retain(|tab| tab.device.as_ref() != Some(device));
+        self.tabs.len() != before
     }
 
     /// Applies `change`, or leaves the document as it was when the change
@@ -350,6 +376,7 @@ impl WorkDocument {
                 let tab = WorkTab {
                     id: create.id,
                     kind: create.kind,
+                    device: create.device,
                     data: create.data,
                 };
                 let index = create.index.unwrap_or(self.tabs.len()).min(self.tabs.len());

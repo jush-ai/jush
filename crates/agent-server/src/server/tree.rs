@@ -664,6 +664,11 @@ impl<H: DeviceResolver> Tree<H> {
         (self.agents.version(), self.agents.all(waits))
     }
 
+    /// Changes whenever a child starts or closes; closed once the tree is.
+    pub fn changes(&self) -> watch::Receiver<u64> {
+        self.changes.subscribe()
+    }
+
     /// The tree's live nodes, the root first, then its children and its
     /// side questions.
     pub fn nodes(&self) -> Vec<Rc<Node<H>>> {

@@ -275,16 +275,20 @@ impl ConversationSlot {
         loop {
             // Made before the check, so an end after it is not missed.
             let ended = self.jobs_ended.notified();
-            let running = self
-                .jobs
-                .borrow()
-                .iter()
-                .any(|entry| entry.device == *device && (entry.unadmitted || entry.admitted.borrow().is_some()));
-            if !running {
+            if !self.jobs_run_on(device) {
                 return;
             }
             ended.await;
         }
+    }
+
+    /// Whether a job of the conversation runs on `device`, as
+    /// [`Self::jobs_ended_on`] waits for.
+    pub fn jobs_run_on(&self, device: &DeviceId) -> bool {
+        self.jobs
+            .borrow()
+            .iter()
+            .any(|entry| entry.device == *device && (entry.unadmitted || entry.admitted.borrow().is_some()))
     }
 
     /// Asks every job of the conversation on `device`, a device it detached, to
@@ -1212,14 +1216,6 @@ impl dyn DeviceShard + '_ {
         Ok(DirectoryNamed::default())
     }
 
-    /// The devices the user's conversation `id` reaches, which the web app's device
-    /// routes and `jush device shell --device` accept
-    /// (`crates/backend-database/src/conversation_index.rs`): its primary device,
-    /// then its attached ones.
-    ///
-    /// A command on the primary device starts in the conversation's directory
-    /// there. A command on an attached device starts in the directory fixed when
-    /// it was attached, or in its home when none was.
     /// Whether the conversation `id` works on `device` now: its primary
     /// device's device, or the device of a device one of its live subagents works
     /// on (`crates/agent-server/src/node/mod.rs`).
@@ -1233,6 +1229,15 @@ impl dyn DeviceShard + '_ {
                 .any(|placement| placement.device.as_deref() == Some(device.as_str())))
     }
 
+    /// The devices the user's conversation `id` reaches, which the web app's device
+    /// routes and `jush device shell --device` accept
+    /// (`crates/backend-database/src/conversation_index.rs`), the plugins' reports
+    /// are read from and the pages show the work of: its primary device, then its
+    /// attached ones, then those its live subagents work on.
+    ///
+    /// A command on the primary device starts in the conversation's directory
+    /// there. A command on an attached device starts in the directory fixed when
+    /// it was attached, or in its home when none was.
     pub async fn conversation_devices(
         &self,
         id: &ConversationId,

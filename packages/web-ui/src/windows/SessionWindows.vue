@@ -21,6 +21,8 @@ import { tabsToClose, type TabCloseScope } from '../agent/tab-close'
 import { rearranged } from '../ui/drag-order'
 import { windowIcon } from './taskbar-icon'
 import type { WindowStageModel } from './stage'
+import { deviceTags } from './device-tags'
+import Tag from '../ui/Tag.vue'
 import { t } from './locales/text'
 
 /**
@@ -43,6 +45,13 @@ import { t } from './locales/text'
  * A tab a kind's plugin opens, such as the browser's new tab, stands in its
  * window from the click, selected, until the work holds the tab it becomes,
  * which is selected in its place (`work-windows.ts`).
+ *
+ * Each device the conversation reaches has its own window of a per-device
+ * kind, such as its browser. Its button and title bar name the device in a
+ * tag where another device's window stands beside it, as a strip's tabs of
+ * several devices do (`device-tags.ts`); Open lists only the primary
+ * device's, and only the primary device's pins. A window whose device is
+ * offline says so over its tabs.
  *
  * The stage alone says which windows stand and which is in front; each
  * window of the work shows the newest of its own tabs. The host's address
@@ -126,6 +135,34 @@ function workOf(id: string): WorkWindow | undefined {
 }
 function ownOf(id: string): OwnWindow | undefined {
   return props.own.find((window) => window.id === id)
+}
+
+/** The conversation's primary device, while it is known. */
+const primary = computed(() => props.work?.devices.find((device) => device.primary)?.id ?? null)
+/** Whether the window is another device's than the primary one. */
+function elsewhere(window: WorkWindow): boolean {
+  return window.window.device !== undefined && window.window.device !== primary.value
+}
+/** The name of the window's device while it is offline, which the window says over its tabs; null otherwise. */
+function offlineOf(window: WorkWindow): string | null {
+  const id = window.window.device ?? primary.value
+  const device = props.work?.devices.find((each) => each.id === id)
+  return device?.offline ? device.name : null
+}
+/**
+ * The tag of each work window's device, by the window's id, among the
+ * windows the taskbar shows together: pinned or on the stage. A device's
+ * window that is not there, as one without tabs, makes no tag of another.
+ */
+const windowTags = computed(() => {
+  const pins = props.work?.pins ?? []
+  const shown = windows.value.filter((window) => pins.includes(window.window.id) || props.stage.state.windows.some((each) => each.id === window.window.id))
+  const tags = deviceTags(shown.map((window) => window.window.device ?? null), props.work?.devices ?? [])
+  return new Map(shown.map((window, at) => [window.window.id, tags[at] ?? null]))
+})
+/** The kind of `kind` a request opens a tab of: the primary device's, for a kind of a device's own windows. */
+function opensOf(kind: string): BoundTabKind | undefined {
+  return props.work?.kinds.find((candidate) => candidate.kind === kind && (candidate.device === undefined || candidate.device === primary.value))
 }
 
 /** Whether the area has its size, which places a window opening for the first time. */
@@ -247,7 +284,7 @@ watch([() => props.work?.request ?? null, windows, ready], ([request]) => {
   }
   if (request.opens) {
     const { kind, data } = request.opens
-    const opens = work.kinds.find((candidate) => candidate.kind === kind)
+    const opens = opensOf(kind)
     take()
     if (opens?.open) {
       opens.open(data)
@@ -395,9 +432,15 @@ function isSingle(window: WorkWindow): boolean {
 
 /** The window's tabs; a single view's is named by what it shows, such as a file's name, as its title bar and button say. */
 function workTabs(window: WorkWindow): WindowTab[] {
-  const offline = props.work?.deviceOffline !== null
+  const offline = offlineOf(window) !== null
   const single = isSingle(window)
-  return window.tabs.map((tab) => ({
+  // A device's own window shows that device's tabs alone; any other names
+  // the devices of tabs of several, a tab that follows the primary device
+  // as the primary device's.
+  const tags = window.window.device === undefined
+    ? deviceTags(window.tabs.map((tab) => tab.device ?? (tab.pinned ? null : primary.value)), props.work?.devices ?? [])
+    : []
+  return window.tabs.map((tab, at) => ({
     id: tab.id,
     key: tab.opening === null ? keyOf(tab.id) : tab.id,
     title: single ? tab.subject : tab.title,
@@ -406,6 +449,7 @@ function workTabs(window: WorkWindow): WindowTab[] {
     // An opening is at work until its tab comes, as a loading page's tab.
     busy: !offline && (tab.opening !== null || (tab.kind.busy?.(tab.data, tab.id) ?? false)),
     closable: !tab.pinned,
+    tag: tags[at] ?? null,
     menu: tabMenu(window, tab),
   }))
 }
@@ -578,6 +622,7 @@ function itemOf(id: string): TaskbarItem | null {
   const window = workOf(id)
   if (window) {
     const tabs = workTabs(window)
+    const tag = windowTags.value.get(id) ?? null
     return {
       id,
       icon: window.window.icon,
@@ -585,6 +630,9 @@ function itemOf(id: string): TaskbarItem | null {
       tabs: props.stage.find(id) ? tabs.map((tab) => ({ id: tab.id, title: tab.title, mark: tab.mark, icon: tab.icon, closable: tab.closable })) : [],
       current: window.selected,
       pinned: props.work?.pins.includes(id) ?? false,
+      // Another device's window comes and goes with the device: only the primary device's pins.
+      pinnable: !elsewhere(window),
+      ...(tag === null ? {} : { tag }),
       state: stateOf(id),
     }
   }
@@ -614,8 +662,11 @@ const items = computed<TaskbarItem[]>(() => {
 const system = computed<TaskbarItem[]>(() => props.own
   .flatMap((window) => window.count === undefined ? [] : itemOf(window.id) ?? [])
   .filter((item) => ownOf(item.id)?.used || item.state !== 'closed'))
-/** What Open lists: every window of the work but those that say it does not (`openable`). */
-const opens = computed<TaskbarOpen[]>(() => windows.value.filter((window) => window.window.openable !== false).map((window) => ({
+/**
+ * What Open lists: every window of the work but those that say it does not
+ * (`openable`), a device's own window only the primary device's.
+ */
+const opens = computed<TaskbarOpen[]>(() => windows.value.filter((window) => window.window.openable !== false && !elsewhere(window)).map((window) => ({
   kind: window.window.id,
   icon: window.window.icon,
   label: window.window.name(),
@@ -706,7 +757,7 @@ function listPick(id: string): void {
             v-if="workOf(id)"
             :window="workOf(id)!"
             :on-screen="onScreen(id)"
-            :device-offline="work?.deviceOffline ?? null"
+            :device-offline="offlineOf(workOf(id)!)"
             :dismiss="phone ? () => stage.minimizeAll() : null"
             @update-tab="(tab: string, data: unknown, how?: TabUpdate) => work?.updateTab(tab, data, how)"
             @update-pinned="(kind: string, data: unknown, how?: TabUpdate) => work?.updatePinned(kind, data, how)"
@@ -716,6 +767,7 @@ function listPick(id: string): void {
         </template>
         <template #trailing="{ id }">
           <slot v-if="!workOf(id)" name="trailing" :id="id" />
+          <Tag v-else-if="windowTags.get(id)" class="shrink-0">{{ windowTags.get(id) }}</Tag>
         </template>
       </WindowStage>
     </div>

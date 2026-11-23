@@ -25,7 +25,7 @@ use jush_backend_user_shard::shard::ReloadRefusal;
 use jush_plugin_interface::{PluginError, PortRefusal};
 use jush_web_api_protocol::error::ErrorCode;
 use jush_web_api_protocol::ids::UserId;
-use jush_web_api_protocol::plugins::{PluginStateAnswer, PluginSwitch};
+use jush_web_api_protocol::plugins::{PluginCallQuery, PluginStateAnswer, PluginSwitch};
 use serde_json::Value;
 
 use super::AppState;
@@ -33,6 +33,7 @@ use super::body::{JsonBody, JsonValueBody};
 use super::conversations::owned;
 use super::error::{ApiError, status_of};
 use super::gate::AuthUser;
+use super::query::QueryParams;
 
 /// `GET /api/plugins/:plugin/files/:name`: a file the plugin's pages load.
 ///
@@ -177,16 +178,18 @@ pub(super) async fn user_call(
         method,
         params,
         conversation: None,
+        device: None,
     };
     page_call(&state, &user.id, call).await
 }
 
-/// `POST /conversations/:id/plugins/:plugin/calls/:method`, for a
+/// `POST /conversations/:id/plugins/:plugin/calls/:method?device=`, for a
 /// conversation the user owns.
 pub(super) async fn conversation_call(
     State(state): State<AppState>,
     AuthUser(user): AuthUser,
     Path((id, plugin, method)): Path<(String, String, String)>,
+    QueryParams(query): QueryParams<PluginCallQuery>,
     JsonValueBody(params): JsonValueBody,
 ) -> Result<Json<Value>, ApiError> {
     let record = owned(&state.services, &user.id, &id).await?;
@@ -195,6 +198,7 @@ pub(super) async fn conversation_call(
         method,
         params,
         conversation: Some(record.id),
+        device: query.device,
     };
     page_call(&state, &user.id, call).await
 }

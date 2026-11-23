@@ -10,6 +10,7 @@ function changeBody(change: WorkChange) {
         op: 'create',
         id: change.tab.id,
         kind: change.tab.kind,
+        ...(change.tab.device === undefined ? {} : { device: change.tab.device }),
         data: change.tab.data,
         ...(change.index === undefined ? {} : { index: change.index }),
       }

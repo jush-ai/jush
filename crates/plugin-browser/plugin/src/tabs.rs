@@ -1,5 +1,7 @@
 //! The `browser` kind's tabs on the backend: the work shows exactly the
-//! browser tabs the conversation's primary device lists.
+//! browser tabs each device the conversation reaches lists, each work tab on
+//! its device, so the page shows each device's browser as a window of its
+//! own.
 //!
 //! ```text
 //!  close, + , a link's Open --call--> browser package on the device
@@ -8,10 +10,13 @@
 //!  work tabs <-- mirror_tabs <-- plugin <-- kept list (page::keep)
 //! ```
 //!
-//! - Each list the browser package reports becomes the kind's work tabs, as
-//!   one change (`PluginPort::mirror_tabs`): a work tab for each browser tab,
-//!   its data as the list says it, and no work tab for a browser tab the list
-//!   does not name; a tab the work has no room for waits for a later list.
+//! - Each list the browser package on a device reports becomes the kind's
+//!   work tabs on that device, as one change (`PluginPort::mirror_tabs`): a
+//!   work tab for each browser tab, its data as the list says it, and no
+//!   work tab for a browser tab the list does not name; a tab the work has no
+//!   room for waits for a later list. A device the conversation no longer
+//!   reaches, as after a detach, lists the tabs its release ended; the page
+//!   shows no tab of a device the conversation does not reach.
 //!   Nothing else adds or removes one; the page opens a tab by asking the
 //!   device (`Work::open`), which answers once the work holds the tab.
 //! - A work tab the user closes closes its browser tab. A device that cannot
@@ -27,7 +32,8 @@
 //! # Rules
 //!
 //! - A tab id is used once per conversation, so a tab the user closed never
-//!   comes back.
+//!   comes back. It names its device, since each device's browser numbers
+//!   its own tabs.
 //! - A page's tab goes right after its opener, behind the tabs that opener
 //!   opened before, as Chrome places them; the others go at the end.
 //! - `shows` is the count of the times the agent, or the user's own Open,
@@ -76,28 +82,28 @@ impl TabData {
     }
 }
 
-/// The id of the work tab for the browser's tab `tab`: a tab the user closed
-/// is never added again, since an id is used once.
-fn work_id(tab: &str) -> String {
-    format!("browser-{tab}")
+/// The id of the work tab for the browser's tab `tab` on `device`: a tab the
+/// user closed is never added again, since an id is used once.
+fn work_id(device: &DeviceId, tab: &str) -> String {
+    format!("browser-{device}-{tab}")
 }
 
-/// The browser's tab a work tab the plugin made shows.
-fn browser_tab(work_tab: &str) -> Option<&str> {
-    work_tab.strip_prefix("browser-")
+/// The browser's tab on `device` a work tab the plugin made shows.
+fn browser_tab<'a>(device: &DeviceId, work_tab: &'a str) -> Option<&'a str> {
+    work_tab.strip_prefix(&format!("browser-{device}-"))
 }
 
 /// One conversation's work at a time.
 #[derive(Default)]
 pub struct Work {
     locks: RefCell<HashMap<ConversationId, Rc<Mutex<()>>>>,
-    /// Each conversation's last list the work followed, which an open waits
-    /// on.
-    followed: RefCell<HashMap<ConversationId, watch::Sender<Followed>>>,
+    /// Each conversation's last list of each device the work followed, which
+    /// an open waits on.
+    followed: RefCell<HashMap<(ConversationId, DeviceId), watch::Sender<Followed>>>,
 }
 
-/// A list of the primary device's the work followed: its number and the
-/// browser tabs it named.
+/// A list of a device's the work followed: its number and the browser tabs
+/// it named.
 #[derive(Default)]
 struct Followed {
     list: u64,
@@ -113,29 +119,33 @@ impl Work {
             .clone()
     }
 
-    fn followed(&self, conversation: &ConversationId) -> watch::Sender<Followed> {
+    fn followed(&self, conversation: &ConversationId, device: &DeviceId) -> watch::Sender<Followed> {
         self.followed
             .borrow_mut()
-            .entry(conversation.clone())
+            .entry((conversation.clone(), device.clone()))
             .or_insert_with(|| watch::channel(Followed::default()).0)
             .clone()
     }
 
-    /// Opens a tab of the conversation's browser for the user, on `url` or
-    /// blank, and answers it once the work holds it: once the device listed
-    /// it and the work followed. Its opening on the page ends on every path:
-    /// a tab the work has no room for closes again and is refused, and one
-    /// that closed before the work held it is refused as gone.
+    /// Opens a tab of the conversation's browser on the port's device for the
+    /// user, on `url` or blank, and answers it once the work holds it: once
+    /// the device listed it and the work followed. Its opening on the page
+    /// ends on every path: a tab the work has no room for closes again and is
+    /// refused, and one that closed before the work held it is refused as
+    /// gone.
     pub async fn open(
         &self,
         conversation: &ConversationId,
         port: &PluginPort,
         url: Option<String>,
     ) -> Result<TabOpened, PluginError> {
+        let device = port.device().await?.ok_or_else(|| PluginError::from(jush_plugin_interface::PortFailure::Refused(
+            jush_plugin_interface::PortRefusal::NotRunning,
+        )))?;
         // Followed from before the device opens the tab: a list the work
         // followed earlier may be of a browser before the one it opens in,
         // numbered apart from it.
-        let mut followed = self.followed(conversation).subscribe();
+        let mut followed = self.followed(conversation, &device).subscribe();
         let opened = page::new_tab(port, url).await?;
         let list = opened.list.ok_or_else(|| {
             PluginError::failed("the device did not number the list its new tab is in")
@@ -161,7 +171,7 @@ impl Work {
                     "the tab closed before the work held it".into(),
                 ));
             }
-            let id = work_id(&tab);
+            let id = work_id(&device, &tab);
             if port.work_tabs().await?.tabs.iter().any(|held| held.id == id) {
                 return Ok(TabOpened { tab, list });
             }
@@ -191,16 +201,16 @@ impl Work {
         Ok(())
     }
 
-    /// The package's state on a device ended unsaid. The primary device's
-    /// last list stays; while it names tabs, a look on the device brings the
+    /// The package's state on the port's device ended unsaid. Its last list
+    /// stays; while it names tabs, a look on the device brings the
     /// conversation to the next resident, which opens them again and lists
     /// them. A device that cannot be reached now does when the next resident
     /// first hears of the conversation.
     pub async fn lost(&self, port: &PluginPort) -> Result<(), PluginError> {
-        let Some(kept) = page::reported(port).await? else {
+        let Some((_, tabs)) = page::reported(port).await? else {
             return Ok(());
         };
-        if kept.tabs.is_empty() {
+        if tabs.is_empty() {
             return Ok(());
         }
         if let Err(error) = page::look(port).await {
@@ -209,12 +219,12 @@ impl Work {
         Ok(())
     }
 
-    /// Keeps the browser's tabs `listed`, as the package on the device
-    /// `device` reported them at `revision`, and makes the work's tabs those
-    /// of the conversation's primary device: a work tab for each, placed
-    /// beside its opener (`after_opened`) or at the end, and none for a tab
-    /// the list does not name. A listed tab whose work tab the user closed is
-    /// closed on the device.
+    /// Keeps the browser's tabs `listed`, as the package on the port's
+    /// device, `device`, reported them at `revision`, and makes the work's
+    /// tabs on that device those: a work tab for each, placed beside its
+    /// opener (`after_opened`) or at the end, and none for a tab the list
+    /// does not name. A listed tab whose work tab the user closed is closed
+    /// on the device.
     pub async fn sync(
         &self,
         conversation: &ConversationId,
@@ -225,19 +235,16 @@ impl Work {
     ) -> Result<(), PluginError> {
         let lock = self.lock(conversation);
         let _turn = lock.lock().await;
-        // Another device's report waits in the store: the work shows the
-        // primary device's browser, and a conversation moved back finds it.
-        if !page::keep(port, device, revision, listed.clone()).await? {
-            return Ok(());
-        }
+        page::keep(port, device, revision, listed.clone()).await?;
         let work = port.work_tabs().await?;
-        // The kind's tabs in order, as the mirroring leaves them.
-        let mut order: Vec<Placed> = work.tabs.iter().map(Placed::of).collect();
+        // The work's tabs in order, as the mirroring leaves them; the browser
+        // tabs a work tab shows are the device's own.
+        let mut order: Vec<Placed> = work.tabs.iter().map(|tab| Placed::of(tab, device)).collect();
         let shown: HashSet<String> = order.iter().filter_map(|placed| placed.shows.clone()).collect();
         let mut tabs = Vec::with_capacity(listed.len());
         for tab in &listed {
-            let id = work_id(tab.id.as_str());
-            let opened_by = opener(tab).map(work_id);
+            let id = work_id(device, tab.id.as_str());
+            let opened_by = opener(tab).map(|opener| work_id(device, opener));
             let index = if shown.contains(tab.id.as_str()) {
                 None
             } else {
@@ -253,17 +260,18 @@ impl Work {
             tabs.push(CreateWorkTab {
                 id,
                 kind: KIND.into(),
+                device: Some(device.clone()),
                 data: data(tab, opened_by),
                 index,
             });
         }
         let closed = port.mirror_tabs(KIND, tabs).await?;
-        self.followed(conversation).send_replace(Followed {
+        self.followed(conversation, device).send_replace(Followed {
             list: revision,
             tabs: listed.iter().map(|tab| tab.id.to_string()).collect(),
         });
         for closed in closed {
-            if let Some(tab) = browser_tab(&closed) {
+            if let Some(tab) = browser_tab(device, &closed) {
                 close(port, tab).await;
             }
         }
@@ -279,8 +287,8 @@ async fn close(port: &PluginPort, tab: &str) {
     }
 }
 
-/// A work tab as the sync places others beside it: the browser tab it
-/// shows, and the work tab that opened it.
+/// A work tab as the sync places others beside it: the browser tab of the
+/// syncing device it shows, and the work tab that opened it.
 struct Placed {
     id: String,
     shows: Option<String>,
@@ -288,8 +296,12 @@ struct Placed {
 }
 
 impl Placed {
-    fn of(tab: &WorkTab) -> Self {
-        let data = (tab.kind == KIND).then(|| TabData::of(tab)).flatten();
+    /// `tab` as a sync of `device` sees it: a tab of another device shows
+    /// none of its browser's tabs.
+    fn of(tab: &WorkTab, device: &DeviceId) -> Self {
+        let data = (tab.kind == KIND && tab.device.as_ref() == Some(device))
+            .then(|| TabData::of(tab))
+            .flatten();
         Self {
             id: tab.id.clone(),
             shows: data.as_ref().map(|data| data.tab.clone()),

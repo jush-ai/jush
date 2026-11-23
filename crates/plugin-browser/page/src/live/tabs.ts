@@ -1,6 +1,6 @@
 /**
- * One conversation's browser on the page, which the plugin's store keeps
- * while the plugin is on (`../index.ts`). It holds:
+ * One conversation's browser on one of its devices on the page, which the
+ * plugin's store keeps while the plugin is on (`../index.ts`). It holds:
  *
  * - what a tab keeps;
  * - the conversation browser's tab list, which the plugin's conversation state
@@ -39,7 +39,7 @@ import { clientPlatform } from '@jush-ai/utils'
 import { useDocumentVisibility, useDebounceFn } from '@vueuse/core'
 import { computed, shallowReactive, shallowRef, watch, type ComputedRef, type Ref, type ShallowRef } from 'vue'
 import { z } from 'zod'
-import { controlReasonSchema, type BrowserTabs, type LiveDownload, type LiveTab, type ControlReason, type TabOpened } from '../generated/plugin'
+import { controlReasonSchema, type DeviceTabs, type LiveDownload, type LiveTab, type ControlReason, type TabOpened } from '../generated/plugin'
 import { viewerClipboard } from './clipboard'
 import { picturesSupported } from '@jush-ai/plugin-sdk'
 import type { DeviceDownload, OpenUserStream, PageContext, SentenceText } from '@jush-ai/plugin-sdk'
@@ -49,9 +49,9 @@ import { t } from '../locales/text'
 /** The address of a blank page, which a new tab shows. */
 export const BLANK_URL = 'about:blank'
 
-/** The id of the work tab the plugin adds for the browser's tab `tab`. */
-export function addedWorkTab(tab: string): string {
-  return `browser-${tab}`
+/** The id of the work tab the plugin adds for the browser's tab `tab` on `device`, as each device numbers its own tabs. */
+export function addedWorkTab(device: string | null, tab: string): string {
+  return `browser-${device ?? ''}-${tab}`
 }
 
 /**
@@ -79,8 +79,8 @@ export const browserTabDataSchema = z.object({
 })
 export type BrowserTabData = z.infer<typeof browserTabDataSchema>
 
-/** The plugin's conversation state: the conversation browser's tabs. */
-export type BrowserTabList = BrowserTabs
+/** One device's browser's tabs in the plugin's conversation state. */
+export type BrowserTabList = DeviceTabs
 
 /**
  * What every reason the page can be told means to the user, in the Writing
@@ -160,6 +160,8 @@ export interface BrowserTabsApi {
   open(url: string | null): Promise<TabOpened>
   /** Brings the window of the work tab `workTab` to the front on it, once the work has it. */
   select(workTab: string): void
+  /** The id of the work tab of the browser's tab `tab`. */
+  workTab(tab: string): string
   /** The browser tabs the conversation's work holds, read reactively. */
   held(): readonly string[]
   /** Starts loading `url`; answers the number of the last tab list before the request started. */
@@ -940,7 +942,7 @@ export class BrowserTabsController {
     for (const tab of opened) {
       const opener = tab.createdBy.kind === 'page' ? tab.createdBy.opener : null
       if (opener !== null && opener === shown && view?.pressedLately(opener, OPENED_BY_USER_MS)) {
-        this.api.select(addedWorkTab(tab.id))
+        this.api.select(this.api.workTab(tab.id))
       }
     }
   }
