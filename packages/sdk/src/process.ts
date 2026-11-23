@@ -90,7 +90,7 @@ export class Process {
     const dial = (): Session => {
       // Node takes a pair of its own streams, which its types do not say.
       const stdio = Duplex.from({ readable: child.stdout!, writable: child.stdin! } as unknown as Parameters<typeof Duplex.from>[0])
-      const session = http2.connect('http://jush-core', { createConnection: () => stdio })
+      const session = http2.connect('http://jush-core', { ...SESSION_OPTIONS, createConnection: () => stdio })
       // Node keeps a session whose socket ended open until its streams
       // close, and a runner's channel on it would stay open with its
       // runner: the process's exit ends them all.
@@ -113,7 +113,7 @@ export class Process {
   static connect(address: ProcessAddress): Process {
     const url = new URL(address.url)
     const dial = (): Session => {
-      const session = http2.connect(url)
+      const session = http2.connect(url, SESSION_OPTIONS)
       return { session, settled: settled(session, new Promise(() => {})) }
     }
     return new Process(dial, { authorization: `Bearer ${address.token}` }, true, async (session) => {
@@ -196,26 +196,16 @@ export class Process {
       abort()
     }
     request.signal.addEventListener('abort', abort, { once: true })
-    const answer = await answered(stream)
+    const bodied = (status: number) => request.method !== 'HEAD' && status !== 204 && status !== 304
+    const response = await answered(stream, bodied)
       .catch((error: unknown) => {
         throw request.signal.aborted ? request.signal.reason : error
       })
       .finally(() => request.signal.removeEventListener('abort', abort))
-    const status = Number(answer[':status'])
-    const responseHeaders = new Headers()
-    for (const [name, value] of Object.entries(answer)) {
-      if (name.startsWith(':') || value === undefined) {
-        continue
-      }
-      for (const each of Array.isArray(value) ? value : [value]) {
-        responseHeaders.append(name, String(each))
-      }
-    }
-    const empty = request.method === 'HEAD' || status === 204 || status === 304
-    if (empty) {
+    if (response.body === null) {
       stream.resume()
     }
-    return new Response(empty ? null : webBody(stream), { status, headers: responseHeaders })
+    return response
   }
 
   /**
@@ -234,26 +224,10 @@ export class Process {
       ':path': path,
     })
     stream.on('error', () => {})
-    // A refusal's body is read as its answer comes: Bun's streams flow
-    // before anyone reads them, so the body, which comes with the headers,
-    // would be gone once the answer is awaited. An accepted stream is left
-    // to its caller untouched.
-    const body: Buffer[] = []
-    stream.once('response', (headers) => {
-      if (Number(headers[':status']) !== 200) {
-        stream.on('data', (chunk: Buffer) => body.push(chunk))
-      }
-    })
-    const answer = await answered(stream)
-    const status = Number(answer[':status'])
-    if (status !== 200) {
-      if (!stream.readableEnded && !stream.closed) {
-        await new Promise<void>((resolve) => {
-          stream.once('end', resolve)
-          stream.once('close', resolve)
-        })
-      }
-      throw await refusal(new Response(Buffer.concat(body), { status }), `CONNECT ${path}`)
+    // An accepted stream is left to its caller untouched.
+    const response = await answered(stream, (status) => status !== 200)
+    if (response.status !== 200) {
+      throw await refusal(response, `CONNECT ${path}`)
     }
     this.lasting.add(stream)
     stream.once('close', () => this.lasting.delete(stream))
@@ -293,14 +267,46 @@ function settled(session: http2.ClientHttp2Session, failed: Promise<never>): Pro
   return settling
 }
 
-/** The headers `stream` is answered with; throws when it closes unanswered. */
-function answered(stream: http2.ClientHttp2Stream): Promise<http2.IncomingHttpHeaders> {
+/**
+ * The options of a session to a process. Node counts the request bodies it
+ * queued against the session's memory, 10 MB by default, and past it
+ * refuses the streams and the answers that come: the answer to an upload of
+ * more, when the process answers before it read it all, never comes, and a
+ * request sent while one is queued fails. The process is the program's own,
+ * which the cap does not guard against, so it is the largest the option's
+ * 32 bits of megabytes hold; Bun has no such cap.
+ */
+const SESSION_OPTIONS: http2.ClientSessionOptions = { maxSessionMemory: 2 ** 32 - 1 }
+
+/**
+ * The response `stream` brings, with a body when `bodied` says its status
+ * has one, else with none and the stream left to the caller; throws when it
+ * closes unanswered.
+ *
+ * The body is made as the headers come, not once they are awaited: Bun's
+ * streams flow before anyone reads them, and when the process answers
+ * before it read the whole request, as a refusal of a body over its limit
+ * does, Bun emits the body, its end and the stream's close in the same
+ * tick as the headers, so a body made a microtask later never hears them
+ * and its reader waits forever.
+ */
+function answered(stream: http2.ClientHttp2Stream, bodied: (status: number) => boolean): Promise<Response> {
   return new Promise((resolve, reject) => {
     const closed = () => reject(new Error(`The process closed the stream unanswered (${stream.rstCode ?? 'no code'})`))
     stream.once('close', closed)
-    stream.once('response', (headers) => {
+    stream.once('response', (answer) => {
       stream.off('close', closed)
-      resolve(headers)
+      const status = Number(answer[':status'])
+      const headers = new Headers()
+      for (const [name, value] of Object.entries(answer)) {
+        if (name.startsWith(':') || value === undefined) {
+          continue
+        }
+        for (const each of Array.isArray(value) ? value : [value]) {
+          headers.append(name, String(each))
+        }
+      }
+      resolve(new Response(bodied(status) ? webBody(stream) : null, { status, headers }))
     })
   })
 }
@@ -310,12 +316,15 @@ function answered(stream: http2.ClientHttp2Stream): Promise<http2.IncomingHttpHe
  * cancels it once cancelled. Node's `Readable.toWeb` is not used: it throws
  * from its listener when data comes after the reader cancelled, which
  * crashes the program.
+ *
+ * The stream flows until the queue holds what the stream itself buffers:
+ * Bun emits no end for a stream paused as it ends and reset right after,
+ * as one answered before it read the whole request is.
  */
 function webBody(stream: http2.ClientHttp2Stream): ReadableStream<Uint8Array> {
   let settled = false
   return new ReadableStream<Uint8Array>({
     start(controller) {
-      stream.pause()
       stream.on('data', (chunk: Buffer) => {
         if (settled) {
           return
@@ -345,7 +354,7 @@ function webBody(stream: http2.ClientHttp2Stream): ReadableStream<Uint8Array> {
       settled = true
       stream.close(http2.constants.NGHTTP2_CANCEL)
     },
-  })
+  }, new ByteLengthQueuingStrategy({ highWaterMark: stream.readableHighWaterMark }))
 }
 
 /** What separates the paths of a list, as `PATH` writes them. */
