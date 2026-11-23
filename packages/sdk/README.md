@@ -3,7 +3,7 @@
 Jush's agents in your program. The SDK starts `jush-core`, the process your
 program's cores run in, and gives your program the cores, their
 conversations, providers and devices, and plugins of your own whose commands
-the agents run as `jush <group> <command>`.
+the agents run, under `jush` or by names of their own.
 
 A core is one Jush: its conversations, provider entries, devices and
 settings, kept in a directory you choose. A team bot, for example, opens one
@@ -524,6 +524,26 @@ each command's `summary`, input and `output` are its `--help`.
 - A group's `permissions` declares categories, and a leaf's `permission`
   names the one it needs: the conversation then asks before the command
   runs.
+
+A group is under `jush` unless it says `placement: 'root'`, which makes it a
+command of the shell, run by its own name: with the plugin above at the
+root, the agent and every process its commands start run `chat send`, and
+`chat --help` shows it, as `jush` shows its own. Name it after your program:
+the core refuses `jush`, a name another plugin takes, and the names of shell
+words and common tools, such as `ls`, `git` or `node`; a device leaves out a
+command whose name its own shell answers, such as `history`, and keeps the
+rest.
+
+```ts
+commands: {
+  acme: {
+    placement: 'root',
+    summary: "Acme's tickets",
+    index: 'Files and reads Acme tickets.',
+    commands: { ticket: { summary: 'Tickets', commands: { create: leaf({ /* … */ }) } } },
+  },
+},
+```
 
 A plugin can also add a context block before each request (`context`),
 search a conversation's project (`projectSearch`), and follow conversations

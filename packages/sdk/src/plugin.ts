@@ -25,6 +25,7 @@ import {
   type Manifest,
   type MediumFacts,
   type Node,
+  type Placement,
   type PluginError,
   type PluginMessage,
   type PortAnswer,
@@ -38,11 +39,11 @@ import {
 } from '@jush-agent/protocol'
 import { decodeApart, encodeApart } from './apart'
 
-/** A command group under `jush`, as `GroupBuilder` declares one. */
+/** A command group, as `GroupBuilder` declares one. */
 export interface GroupDefinition {
   summary: string
   details?: string
-  /** Its sentence of the `jush` index, such as `Posts to the chat.` */
+  /** Its sentence of the capability index, such as `Posts to the chat.` */
   index?: string
   /** The permission categories its leaves need. */
   permissions?: Category[]
@@ -92,8 +93,12 @@ export interface PluginDefinition {
   name: string
   /** What it does for the user, in one sentence that names its command. */
   description: string
-  /** Its command groups under `jush`, by name; each says its sentence of the `jush` index. */
-  commands?: Record<string, GroupDefinition & { index: string }>
+  /**
+   * Its command groups, by name; each says its sentence of the capability
+   * index, and `placement: 'root'` makes it a command of the shell, run by
+   * its own name, where it is a group under `jush` without.
+   */
+  commands?: Record<string, GroupDefinition & { index: string; placement?: Placement }>
   /** The context block it adds before each request of a node, if any. */
   context?(request: Extract<PluginRequest, { type: 'context' }>, port: PluginPort): Promise<string | undefined>
   /** Searches a conversation's project directory, what it found and what to watch. */
@@ -111,7 +116,7 @@ export interface Plugin {
 /** The plugin `definition` defines. */
 export function definePlugin(definition: PluginDefinition): Plugin {
   const commands: Commands[] = Object.entries(definition.commands ?? {}).map(([name, group]) => ({
-    placement: 'jush',
+    placement: group.placement ?? 'jush',
     tree: groupNode(name, group),
     calls: [],
   }))

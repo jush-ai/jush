@@ -478,24 +478,22 @@ pub struct Installed {
     pub leases: PackageLeases,
 }
 
-/// Parses, checks and keeps `value` as the connection's manifest; a root
-/// command may not take one of the `reserved` names, which the runner and
-/// its shell answer to themselves.
+/// Parses, checks and keeps `value` as the connection's manifest. A root
+/// command that takes one of the `reserved` names, which the runner and its
+/// shell answer to themselves, is left out of what the jobs run, and the
+/// rest of the manifest works: the shell would answer the name first, and
+/// an alias of it would shadow the system's program in a job's
+/// subprocesses.
 pub async fn install(
     value: serde_json::Value,
     paths: &ContextPaths,
     residents: &ResidentHandle,
     reserved: &BTreeSet<String>,
 ) -> io::Result<Installed> {
-    let manifest = tokio::task::spawn_blocking(move || Manifest::parse(value))
+    let mut manifest = tokio::task::spawn_blocking(move || Manifest::parse(value))
         .await
         .map_err(io::Error::other)?
         .map_err(io::Error::other)?;
-    for name in manifest.roots.keys() {
-        if reserved.contains(name) {
-            return Err(io::Error::other(format!("reserved root command: {name}")));
-        }
-    }
     let path = paths.directory.join(format!("{}.json", manifest.hash));
     match tokio::fs::read(&path).await {
         Ok(bytes) => {
@@ -515,6 +513,15 @@ pub async fn install(
         }
         Err(error) => return Err(error),
     }
+    // Left out after the manifest is kept whole under its identity, which
+    // names its roots and packages as the core sent them.
+    manifest.roots.retain(|name, _| {
+        let free = !reserved.contains(name);
+        if !free {
+            tracing::warn!(event = "manifest.root_reserved", root = %name, "a root command the shell answers itself is left out");
+        }
+        free
+    });
     let leases = leases(&manifest, residents).await;
     Ok(Installed {
         manifest: Arc::new(manifest),
