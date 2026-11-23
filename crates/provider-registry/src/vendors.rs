@@ -60,21 +60,12 @@ impl VendorCatalog {
     }
 
     /// How each model of vendor `vendor_id` wants thinking sent and sent
-    /// back, from the backend's kept copy; none without one, so each model
-    /// takes the defaults.
-    pub async fn wires(&self, vendor_id: &str) -> ModelWires {
-        match self.models_dev.kept().await {
-            Ok(snapshot) => ModelWires::new(snapshot.wires(vendor_id)),
-            Err(error) => {
-                tracing::warn!(
-                    event = "vendor_wires.unread",
-                    vendor = vendor_id,
-                    error = %error,
-                    "a vendor's models were not read for how they take thinking; each takes the defaults"
-                );
-                ModelWires::default()
-            }
-        }
+    /// back, from the copy the backend holds now; none before its first
+    /// download ends, so each model takes the defaults until a later build.
+    pub fn wires(&self, vendor_id: &str) -> ModelWires {
+        self.models_dev
+            .held()
+            .map_or_else(ModelWires::default, |snapshot| ModelWires::new(snapshot.wires(vendor_id)))
     }
 
     /// The vendors an entry can be added from, by name as the web app sorts
