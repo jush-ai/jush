@@ -12,8 +12,9 @@
 //!   reserved. Each commits, then tells the connected devices it leaves to
 //!   release the conversation, and waits for none (`crates/backend-user-shard/src/lifecycle/conversations.rs`).
 //! - A detach applies at once and waits for no device, whatever the conversation
-//!   does, as a move does: the device leaves, its jobs are asked to stop, and it
-//!   answers; the device hears the release once they ended.
+//!   does, as a move does: the device leaves, its jobs are asked to stop, those
+//!   of a subagent that works there excepted, and it answers; the device hears
+//!   the release once they and that subagent ended.
 //! - A move stops and waits for nothing: it reads its destination as typed, ends the
 //!   transfers and streams, and commits, advancing the execution-context
 //!   revision, so each agent's next request names the new place. The commands
@@ -144,7 +145,8 @@ impl Shard {
             }
             ConversationChange::Record(RecordChange::Detach(device)) => {
                 // A detach holds nothing and waits for no work: it ends the
-                // conversation's jobs on the device
+                // conversation's jobs on the device except those of a
+                // subagent that works there
                 // (`crates/backend-device-access/src/transition.rs`).
                 let removed = access.detach(&record, device.clone()).await?;
                 if removed {

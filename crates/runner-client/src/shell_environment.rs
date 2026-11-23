@@ -543,7 +543,7 @@ impl RemoteShellEnvironment {
         };
         let adopted = matches!(job, Begin::Adopt { .. });
         // A command taken up again counts as the conversation's job on its
-        // device, so a detach of the device stops it.
+        // device, so a detach of the device stops it as it stops the others.
         let _held = match (&self.0.options.access, adopted) {
             (Some(access), true) => {
                 access

@@ -113,7 +113,7 @@ use jush_backend_database::conversation_index::ConversationChange;
 use jush_web_api_protocol::conversations::ConversationTarget;
 use jush_agent_store::Placement;
 use jush_shared_types::{Clock, NodeId};
-use jush_web_api_protocol::ids::{ConversationId, UserId};
+use jush_web_api_protocol::ids::{ConversationId, DeviceId, UserId};
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 
@@ -161,6 +161,9 @@ pub trait DeviceShard {
     /// a directory there; none while its tree is not open
     /// (`crates/agent-server/src/node/mod.rs`).
     fn agent_placements(&self, conversation: &ConversationId) -> Vec<Placement>;
+    /// Whether the conversation's subagent `node` is live and works on
+    /// `device`.
+    fn agent_works_on(&self, conversation: &ConversationId, node: &NodeId, device: &DeviceId) -> bool;
     /// Changes whenever a subagent of the conversation starts or ends, and
     /// is closed once its tree closes; none while its tree is not open.
     fn agent_changes(&self, conversation: &ConversationId) -> Option<tokio::sync::watch::Receiver<u64>>;
