@@ -114,8 +114,10 @@ impl ProviderFamily for AnthropicFamily {
             makes_videos: settings.video_shape == Some(VideoShape::Hailuo),
             makes_audio: settings.audio_shape == Some(AudioShape::Minimax),
         });
+        let own = settings.vendor_id.as_deref() == Some("anthropic");
         let config = AnthropicConfig {
-            lists_models: settings.vendor_id.as_deref() == Some("anthropic"),
+            lists_models: own,
+            binding_controls: own,
             api_key: settings.api_key,
             base_url: settings.base_url,
             models: settings.models,
