@@ -79,6 +79,7 @@ use jush_backend_runners::file_gate::{FileGate, FileLease};
 use jush_device_interface::{Device as _, DeviceError, DeviceErrorKind, DeviceFs};
 use jush_runner_protocol::files::FsFailure;
 use jush_shared_gates::{ActivityGate, GateLease, Purpose, SerialGate};
+use jush_shared_types::NodeId;
 use jush_web_api_protocol::devices::DeviceKind;
 use jush_web_api_protocol::error::ErrorCode;
 use futures_util::future::LocalBoxFuture;
@@ -181,15 +182,35 @@ impl Drop for HeldWait {
     }
 }
 
+/// Whose a job is, which decides what a move and a detach do to it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum JobAgent {
+    /// The root's or a side question's, which work where the conversation
+    /// does, or a `jush device shell`'s.
+    Following,
+    /// A subagent's, on a device one of its calls names: a move leaves it
+    /// where it runs, and a detach stops it.
+    Named,
+    /// The subagent `node`'s, on its own device: a move leaves it where it
+    /// runs, and a detach stops it only once the subagent no longer works
+    /// there.
+    OwnDevice(NodeId),
+}
+
+impl JobAgent {
+    /// Whether the job's agent works where the conversation does.
+    pub fn follows(&self) -> bool {
+        matches!(self, Self::Following)
+    }
+}
+
 /// A running job, held until the job ends: its admission, unless a move
 /// away from the job's offline device leaves the job to that device's runner
 /// without it, or the job holds none of its own, and the request that ends it
 /// when its device is detached (`crates/backend-device-access/src/transition.rs`).
 struct JobAdmission {
     device: DeviceId,
-    /// Whether the job's agent works where the conversation does, the root
-    /// or a side question: a move leaves a subagent's job where it runs.
-    follows: bool,
+    agent: JobAgent,
     /// Whether the job runs without an admission of its own: it runs inside
     /// one that its caller holds, or was taken up after a restart. Such a
     /// job counts as running until it lets go.
@@ -228,17 +249,18 @@ impl Drop for HeldJob {
 impl ConversationSlot {
     /// Holds the job on `device` while it runs, with its `admitted` when it
     /// holds one: a job that runs inside an admission of its own holds none.
-    /// A detach of `device` makes `withdrawal`'s request.
+    /// A detach of `device` makes `withdrawal`'s request, as
+    /// [`Self::withdraw_jobs_on`] says.
     pub(crate) fn hold_job(
         self: &Rc<Self>,
         device: DeviceId,
-        follows: bool,
+        agent: JobAgent,
         admitted: Option<Admitted>,
         withdrawal: Rc<Withdrawal>,
     ) -> HeldJob {
         let entry = Rc::new(JobAdmission {
             device,
-            follows,
+            agent,
             unadmitted: admitted.is_none(),
             admitted: RefCell::new(admitted),
             withdrawal,
@@ -261,7 +283,7 @@ impl ConversationSlot {
             .jobs
             .borrow()
             .iter()
-            .filter(|entry| entry.device == *device && (entry.follows || leaving == Leaving::Every))
+            .filter(|entry| entry.device == *device && (entry.agent.follows() || leaving == Leaving::Every))
             .filter_map(|entry| entry.admitted.take())
             .collect();
         drop(left);
@@ -292,9 +314,15 @@ impl ConversationSlot {
     }
 
     /// Asks every job of the conversation on `device`, a device it detached, to
-    /// stop for `reason`; waits for none.
-    pub fn withdraw_jobs_on(&self, device: &DeviceId, reason: &str) {
+    /// stop for `reason`, except the jobs on its own device of a subagent that
+    /// `works_there` says still works there; waits for none.
+    pub fn withdraw_jobs_on(&self, device: &DeviceId, reason: &str, works_there: impl Fn(&NodeId) -> bool) {
         for entry in self.jobs.borrow().iter().filter(|entry| entry.device == *device) {
+            if let JobAgent::OwnDevice(node) = &entry.agent
+                && works_there(node)
+            {
+                continue;
+            }
             entry.withdrawal.withdraw(reason);
         }
     }

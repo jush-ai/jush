@@ -17,6 +17,7 @@ use jush_backend_database::projects::DirectoryNamed;
 use jush_backend_device_access::{conversation_of, root_of};
 use jush_backend_device_access::transition::{ChangeRefusal, Switched};
 use jush_backend_page_sync::Part;
+use jush_shared_types::NodeId;
 use jush_backend_device_access::DeviceShard;
 use jush_backend_device_access::access::Conversations;
 use jush_backend_device_access::plugin_files::{DirectorySets, PluginInstalls};
@@ -111,6 +112,14 @@ impl DeviceShard for Shard {
 
     fn agent_changes(&self, conversation: &ConversationId) -> Option<tokio::sync::watch::Receiver<u64>> {
         self.agent.tree(&root_of(conversation)).map(|tree| tree.changes())
+    }
+
+    fn agent_works_on(&self, conversation: &ConversationId, node: &NodeId, device: &DeviceId) -> bool {
+        self.agent
+            .node(&root_of(conversation), node)
+            .and_then(|node| node.record().placement)
+            .and_then(|placement| placement.device)
+            .is_some_and(|works_on| works_on == device.as_str())
     }
 
     fn track_idle(&self, conversation: &ConversationId) {

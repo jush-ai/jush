@@ -23,7 +23,8 @@
 //!    await them
 //! 2. commit: the device leaves the conversation's, and each agent's next
 //!    request says so; nothing more when it was not attached
-//! 3. ask every job of the conversation on the device to stop, and answer
+//! 3. ask every job of the conversation on the device to stop, except those of
+//!    a subagent that works there, which goes on, and answer
 //! 4. once the jobs ended and no subagent works there any longer, drop the
 //!    device's work tabs and plugin reports and tell the device to release
 //!    the conversation, unless the conversation reaches it again
@@ -391,8 +392,9 @@ impl dyn DeviceShard + '_ {
     }
 
     /// The detach of `device`, in the steps of this module's comment:
-    /// answers once the device has left the conversation and its jobs were
-    /// asked to stop, and none waits for the device. Answers whether the
+    /// answers once the device has left the conversation and its jobs,
+    /// except those of a subagent that works there, were asked to stop, and
+    /// none waits for the device. Answers whether the
     /// commit removed the device, which is when the jobs were asked and the
     /// release is due ([`release_detached`](Self::release_detached)): a device
     /// that is not attached detaches as nothing, ending no transfer.
@@ -420,7 +422,7 @@ impl dyn DeviceShard + '_ {
             ChangeOutcome::Archived => return Err(ChangeRefusal::Archived),
         }
         let reason = detached_reason(&detached.name);
-        slot.withdraw_jobs_on(&device, &reason);
+        slot.withdraw_jobs_on(&device, &reason, |node| self.agent_works_on(&record.id, node, &device));
         Ok(true)
     }
 

@@ -47,7 +47,7 @@ use jush_web_api_protocol::ids::{ConversationId, DeviceId};
 use futures_util::future::LocalBoxFuture;
 use tokio_util::sync::CancellationToken;
 
-use crate::access::{DeviceWait, DeviceAccessError, Refusal, ShowWait, Waits};
+use crate::access::{DeviceWait, DeviceAccessError, JobAgent, Refusal, ShowWait, Waits};
 use crate::attachment_commands::{Numbering, Unnumbered, commit};
 use crate::{DeviceShard, conversation_of};
 
@@ -147,6 +147,7 @@ impl dyn DeviceShard + '_ {
         key: &DeviceKey,
         cancel: &CancellationToken,
         wait: DeviceWait<'_>,
+        agent: JobAgent,
         withdrawal: Rc<Withdrawal>,
         job: LocalBoxFuture<'_, ()>,
     ) -> Result<(), DeviceError> {
@@ -158,7 +159,6 @@ impl dyn DeviceShard + '_ {
                     "the job's device is no conversation's",
                 )
             })?;
-        let follows = wait.follows;
         let admitted = self
             .admit_device(id, Some(&device), Waits::job(cancel, wait))
             .await?;
@@ -173,7 +173,7 @@ impl dyn DeviceShard + '_ {
         let _held = self
             .conversations()
             .slot(id)
-            .hold_job(device.clone(), follows, Some(admitted), withdrawal.clone());
+            .hold_job(device.clone(), agent, Some(admitted), withdrawal.clone());
         // A detach that committed since the admission ends it here, before
         // it starts.
         self.reaches(id, &device, &withdrawal).await?;
@@ -184,20 +184,20 @@ impl dyn DeviceShard + '_ {
 
     /// Registers a job taken up again after a restart, which runs on the
     /// device `key` names, with its conversation until the answer is dropped,
-    /// so a detach of the device stops it. A device the conversation no
-    /// longer reaches stops it at once.
+    /// so a detach of the device stops it as it stops a job that ran from the
+    /// start. A device the conversation no longer reaches stops it at once.
     pub async fn hold_adopted(
         &self,
         id: &ConversationId,
         key: &DeviceKey,
-        follows: bool,
+        agent: JobAgent,
         withdrawal: Rc<Withdrawal>,
     ) -> Option<Box<dyn std::any::Any>> {
         let device = device_of(key).and_then(|device| DeviceId::try_from(device).ok())?;
         let held = self
             .conversations()
             .slot(id)
-            .hold_job(device.clone(), follows, None, withdrawal.clone());
+            .hold_job(device.clone(), agent, None, withdrawal.clone());
         // A failure to say is no reason to stop it: the withdrawal holds
         // the reason when it was made.
         let _ = self.reaches(id, &device, &withdrawal).await;
@@ -314,7 +314,13 @@ impl ShellEnvironmentFactory<RemoteDevice> for ShardShellEnvironments {
             options.access = Some(Rc::new(JobAccess {
                 shard: self.shard.clone(),
                 conversation: conversation.clone(),
-                follows: scope.follows,
+                agent: if scope.follows {
+                    JobAgent::Following
+                } else if scope.named.is_some() {
+                    JobAgent::Named
+                } else {
+                    JobAgent::OwnDevice(scope.node.clone())
+                },
             }));
             let device = device_of(&remote.key())
                 .and_then(|device| DeviceId::try_from(device).ok())
@@ -356,9 +362,8 @@ impl ShellEnvironmentFactory<RemoteDevice> for ShardShellEnvironments {
 struct JobAccess {
     shard: Weak<dyn DeviceShard>,
     conversation: ConversationId,
-    /// Whether the node works where the conversation does: the root or a
-    /// side question, agent 0, and not a subagent.
-    follows: bool,
+    /// Whose the environment's jobs are.
+    agent: JobAgent,
 }
 
 impl DeviceAccess for JobAccess {
@@ -369,7 +374,7 @@ impl DeviceAccess for JobAccess {
     ) -> LocalBoxFuture<'a, Option<Box<dyn std::any::Any>>> {
         Box::pin(async move {
             let shard = self.shard.upgrade()?;
-            shard.hold_adopted(&self.conversation, device, self.follows, withdrawal).await
+            shard.hold_adopted(&self.conversation, device, self.agent.clone(), withdrawal).await
         })
     }
 
@@ -389,9 +394,9 @@ impl DeviceAccess for JobAccess {
             let shown = Shown(waiting);
             let wait = DeviceWait {
                 shown: &shown,
-                follows: self.follows,
+                follows: self.agent.follows(),
             };
-            shard.run_job(&self.conversation, device, &cancel, wait, withdrawal, job).await
+            shard.run_job(&self.conversation, device, &cancel, wait, self.agent.clone(), withdrawal, job).await
         })
     }
 }

@@ -11,7 +11,7 @@
 //! - `pair` pairs the computer whose installer shows a code and attaches it.
 //! - `attach` attaches a device at once.
 //! - `detach` detaches a device at once, stopping the conversation's commands
-//!   there.
+//!   there except those of a subagent that works there.
 //! - `move` makes a device and a directory where the conversation runs, at once,
 //!   and answers once it is made.
 //!
@@ -78,7 +78,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::DeviceShard;
 use crate::machine::Machine;
-use crate::access::{DeviceRole, ReachableDevice};
+use crate::access::{DeviceRole, JobAgent, ReachableDevice};
 use crate::transition::ChangeRefusal;
 
 const SUMMARY: &str =
@@ -95,7 +95,7 @@ const INSTALL_COMMAND_SUMMARY: &str = "The command that installs the runner on a
 
 const PAIR_SUMMARY: &str = "Pair the computer whose installer shows `<code>` with the user's account and attach it to this conversation, so a `shell` call's `device` reaches it.";
 
-const DETACH_SUMMARY: &str = "Detach an attached device, by name or id from `jush device list`, at once; this conversation's commands that run there end.";
+const DETACH_SUMMARY: &str = "Detach an attached device, by name or id from `jush device list`, at once; this conversation's commands that run there end, except those of a subagent that works there.";
 
 const LIST_SUMMARY: &str = "List the user's devices and the Cloud, each with what it is to this conversation: name, id, status (a stopped Cloud wakes for work), role (primary, attached, subagent for a device only a subagent works on, or none), its system, CPU, memory and disk with how busy each is now, and the directory commands start in. A `shell` call's `device`, `jush device shell --device` and `jush device move` take any of them; one the conversation does not reach asks the user once.";
 
@@ -1057,12 +1057,12 @@ async fn run_on_device(
                     _ => format!("{} is offline", target.name),
                 });
             }
-            // The detach of its device ends it: the conversation holds it as
-            // it holds an agent's own job there.
+            // The detach of its device ends it, as it ends the root's jobs
+            // there.
             let _held = shard
                 .conversations()
                 .slot(conversation)
-                .hold_job(target.device.clone(), true, None, withdrawal.clone());
+                .hold_job(target.device.clone(), JobAgent::Following, None, withdrawal.clone());
             // A detach of the device that committed since the admission ends
             // the call here, before the job starts.
             shard

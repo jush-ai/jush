@@ -17,9 +17,10 @@ use super::gate::AuthUser;
 use jush_backend_device_access::transition::ChangeRefusal;
 
 /// Detaches a device: answers once it has left the conversation and the
-/// conversation's commands there were asked to stop, waiting for no device; the
-/// device hears the release once they ended. A device that is not attached
-/// detaches as nothing.
+/// conversation's commands there, except those of a subagent that works there,
+/// were asked to stop, waiting for no device; the device hears the release
+/// once they and that subagent ended. A device that is not attached detaches
+/// as nothing.
 pub(super) async fn detach(
     State(state): State<AppState>,
     AuthUser(user): AuthUser,
