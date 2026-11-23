@@ -12,6 +12,8 @@ import { PageConnection, reconnectWait, SILENCE_MS, type ConnectionHost, type La
 import {
   accountsSchema,
   activeAccountSchema,
+  attachmentAnswerSchema,
+  clientContentSchema,
   codeTakenSchema,
   coreStateSchema,
   createdConversationSchema,
@@ -27,6 +29,7 @@ import {
   userPreferencesSchema,
   withPart,
   type Accounts,
+  type ClientContent,
   type CoreState,
   type CreateConversation,
   type CreateProvider,
@@ -49,6 +52,18 @@ import { StreamSocket } from './socket'
 
 /** How a notification went, as the program answers the core: `id` aside. */
 export type Notified = StarterAnswer extends infer Answer ? (Answer extends { id: number } ? Omit<Answer, 'id'> : never) : never
+
+/** A file the program holds, as `core.upload` takes it. */
+export interface FileBytes {
+  /** The file's name, without a path, such as `receipt.png`. */
+  name: string
+  bytes: Uint8Array | ArrayBuffer | Blob
+  /**
+   * Its media type, else a `Blob`'s own; an image, a video, a recording or a
+   * PDF is recorded as its bytes show it whatever this says.
+   */
+  mediaType?: string
+}
 
 /** What a core is opened with. */
 export interface CoreOpening {
@@ -128,6 +143,22 @@ export class Core {
       this.starter?.close()
       this.starter = null
     }
+  }
+
+  /**
+   * Keeps `file` as an upload of the core's, as the web app's composer does,
+   * and answers the block a message, a steer or a run sends it in.
+   */
+  async upload(file: FileBytes): Promise<Extract<ClientContent, { type: 'upload' }>> {
+    // A name the block refuses, such as one with a path, fails before the bytes go.
+    const named = clientContentSchema.safeParse({ type: 'upload', ref: 'unsent', fileName: file.name })
+    if (!named.success) {
+      throw new Error(`${JSON.stringify(file.name)} is not a file's name: ${schemaRefusal(named.error)}`)
+    }
+    const type = file.mediaType || (file.bytes instanceof Blob ? file.bytes.type : '')
+    const query = new URLSearchParams({ name: file.name })
+    const { attachment } = await this.routes.json('POST', `/attachments?${query}`, attachmentAnswerSchema, new Blob([file.bytes], { type }))
+    return { type: 'upload', ref: attachment.id, fileName: file.name }
   }
 
   /**

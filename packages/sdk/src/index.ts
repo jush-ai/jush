@@ -38,6 +38,7 @@ export {
   type ConversationOptions,
   type ExecOptions,
   type ExecResult,
+  type FileBytes,
   type Notified,
   type ProviderAccounts,
   type SignIn,

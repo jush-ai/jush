@@ -397,6 +397,55 @@ await conversation.run([
 ])
 ```
 
+A file your program holds, such as a photo a user sent you, goes up with
+`core.upload`. The upload answers a block, which sends the file in a
+message, a steer or a run:
+
+```ts
+const photo = await core.upload({ name: 'receipt.png', bytes, mediaType: 'image/png' })
+await conversation.run([{ type: 'text', text: 'What does this receipt total?' }, photo])
+```
+
+- A file holds from 1 byte to 25 MiB. `bytes` is a `Uint8Array`, an
+  `ArrayBuffer` or a `Blob`; a `Blob`'s own type serves when `mediaType` is
+  absent.
+- The agent sees the file as an attachment of the conversation, such as
+  `<attachment id="a1" name="receipt.png" … />`. Nothing is written to the
+  device: the agent's commands fetch the file with `jush attachment
+  download`.
+- The core keeps an upload while a message holds it, so the same block can
+  go in more messages. An upload no message holds may be removed once a day
+  has passed since it was made, and a message that sends it after that
+  tells the model `[attachment … is not available]`: send an upload within
+  the day, or upload the file again.
+
+The model is shown the file itself, as an image, a PDF or another medium,
+when the model's `acceptedExtensions` list the file's type and the
+provider's API carries that medium. A vendor entry's types come from
+models.dev. A compatible entry's are yours to list among its `models`:
+
+```ts
+const gateway = await core.providers.create({
+  source: 'compatible',
+  providerType: 'openai',
+  label: 'Team Gateway',
+  baseUrl: 'https://gateway.example.com/v1',
+  apiKey: process.env.GATEWAY_KEY,
+  models: [{
+    id: 'vision-large',
+    displayName: 'Vision Large',
+    contextWindow: 128_000,
+    outputLimit: null,
+    thinkingEfforts: [],
+    acceptedExtensions: ['png', 'jpg', 'jpeg', 'gif', 'webp'],
+    fastTier: null,
+  }],
+})
+```
+
+`acceptedExtensions: null` means the types are unknown, and the model is
+told only that a file came; `[]` means the model reads none.
+
 `conversation.blocks` is what the conversation holds, oldest first.
 `conversation.events()` yields everything that happens in it, as the app
 shows it live; a `transcript_patch` event says the blocks changed, such as

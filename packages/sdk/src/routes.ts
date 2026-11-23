@@ -54,11 +54,21 @@ export class CoreRoutes {
     return `/cores/${encodeURIComponent(this.id)}/api${path}`
   }
 
-  /** Calls the route `path` with `body` as JSON; throws `JushError` for an answer other than 2xx. */
+  /**
+   * Calls the route `path` with `body`, a `Blob` as its bytes of its type
+   * and anything else as JSON; throws `JushError` for an answer other than
+   * 2xx. A `Blob`'s length is declared, so a route refuses one over its
+   * limit before it reads a byte of it.
+   */
   async request(method: string, path: string, body?: unknown, signal?: AbortSignal): Promise<Response> {
+    const sent: RequestInit = body === undefined
+      ? {}
+      : body instanceof Blob
+        ? { body, headers: { 'content-type': body.type || 'application/octet-stream', 'content-length': String(body.size) } }
+        : { body: JSON.stringify(body), headers: { 'content-type': 'application/json' } }
     const response = await this.process.fetch(new Request(PROCESS_ORIGIN + this.path(path), {
       method,
-      ...(body === undefined ? {} : { body: JSON.stringify(body), headers: { 'content-type': 'application/json' } }),
+      ...sent,
       ...(signal === undefined ? {} : { signal }),
     }))
     if (!response.ok) {
