@@ -1,5 +1,5 @@
-//! A root's turn a graceful shutdown interrupted, resumed once the backend is
-//! back.
+//! A root's turn a graceful shutdown interrupted, or the subagents it
+//! interrupted while their root rested, resumed once the backend is back.
 //!
 //! The restart was Jush's doing, not the turn's, so the turn goes on by itself,
 //! as the user's Resume would, unless the user's `resumeAfterRestart`
@@ -7,9 +7,10 @@
 //!
 //! # Marks
 //!
-//! Before the shard's close aborts the agent's turns, it marks each live root
-//! whose turn is running, in the control database (`interrupted_turns`), so the
-//! next start finds them without opening a conversation's database.
+//! Before the shard's close aborts the agent's turns, it marks each live tree
+//! that works, its root's turn or a subagent's, in the control database
+//! (`interrupted_turns`), so the next start finds them without opening a
+//! conversation's database.
 //!
 //! The mark and the turn's `interrupted` record live in two databases, so the
 //! mark comes first. A shutdown cut short, such as by a deployment that stops
@@ -25,7 +26,16 @@
 //!   the backend down cannot bring it down again.
 //! - The start takes each mark before it acts on it, so a turn is resumed once
 //!   for each shutdown that interrupted it.
-//! - Its children come back with the tree, as a restored tree brings them.
+//! - Its children come back with the tree, as a restored tree brings them,
+//!   and each one's interrupted turn goes on.
+//! - A conversation whose subagents the shutdown interrupted while its root
+//!   rested is marked as such. Its tree is restored, which brings the
+//!   subagents back, and its root stays as it was: an interrupted turn of the
+//!   root's, which an earlier crash left, still waits for the user. Its mark
+//!   is taken once the tree is open, and it is not `resuming`.
+//! - Until the resume settles, a runner's welcome names the conversation as
+//!   held, so its devices keep what they hold for it
+//!   (`crates/backend-user-shard/src/shard/adoption.rs`).
 //!
 //! # The `resuming` status
 //!
@@ -63,6 +73,11 @@ impl RestartResumes {
     pub(crate) fn contains(&self, conversation: &ConversationId) -> bool {
         self.0.borrow().contains(conversation)
     }
+
+    /// Every conversation the shard is resuming.
+    pub(crate) fn all(&self) -> Vec<ConversationId> {
+        self.0.borrow().iter().cloned().collect()
+    }
 }
 
 /// A conversation in the shard's `RestartResumes` while it lives; each entry
@@ -95,28 +110,32 @@ impl Drop for Resuming<'_> {
 }
 
 impl Shard {
-    /// Marks each live root whose turn runs, before the shutdown aborts it.
-    /// A mark not written leaves that turn to the user's Resume.
-    pub(crate) async fn mark_running_roots(&self) {
+    /// Marks each live tree whose agents work, before the shutdown aborts
+    /// them: its root's running turn, or only its subagents' while the root
+    /// rests. A mark not written leaves the root's turn to the user's
+    /// Resume, and the subagents to the conversation's next opening.
+    pub(crate) async fn mark_working_trees(&self) {
         let agent = self.agent();
-        let running: Vec<(ConversationId, SessionPhase)> = agent
+        let working: Vec<(ConversationId, SessionPhase)> = agent
             .live_roots()
             .into_iter()
             .filter_map(|root| {
-                let phase = agent.tree(&root)?.root().session().phase();
-                (phase != SessionPhase::Idle).then(|| (conversation_of(&root), phase))
+                let tree = agent.tree(&root)?;
+                let phase = tree.root().session().phase();
+                (phase != SessionPhase::Idle || tree.agents_work()).then(|| (conversation_of(&root), phase))
             })
             .collect();
         let control = &self.services().control;
-        for (conversation, phase) in running {
-            match control.mark_interrupted_turn(conversation.clone()).await {
+        for (conversation, phase) in working {
+            let root = phase != SessionPhase::Idle;
+            match control.mark_interrupted_turn(conversation.clone(), root).await {
                 Ok(_) => tracing::info!(
                     event = "recovery.candidate_chosen",
                     %conversation,
                     stage = "marked",
-                    reason = "turn_running",
+                    reason = if root { "turn_running" } else { "subagents_working" },
                     turn_state_at_shutdown = ?phase,
-                    "a turn the shutdown interrupts was marked"
+                    "work the shutdown interrupts was marked"
                 ),
                 Err(error) => tracing::error!(
                     event = "turn_mark.failed",
@@ -150,19 +169,60 @@ impl Shard {
             }
         };
         let candidates = marked.len();
-        let settled = join_all(marked.into_iter().map(|conversation| self.resume_interrupted_turn(conversation, on))).await;
+        let shard = &*self;
+        let settled = join_all(marked.into_iter().map(|mark| async move {
+            if mark.root {
+                shard.resume_interrupted_turn(mark.conversation, on).await
+            } else {
+                shard.restore_working_subagents(mark.conversation, on).await
+            }
+        }))
+        .await;
         let count = |wanted: &str| settled.iter().filter(|outcome| **outcome == wanted).count();
         tracing::info!(
             event = "recovery.ended",
             user = %self.user(),
             candidates,
             resumed = count("resumed"),
+            restored = count("restored"),
             held_by_preference = count("held"),
             skipped = count("skipped"),
             failed = count("failed"),
             ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
             "the turns a shutdown interrupted were taken up"
         );
+    }
+
+    /// Restores the tree of a conversation whose subagents the shutdown
+    /// interrupted while its root rested, when `on`: each subagent goes on,
+    /// and the root, whose own turn the shutdown did not interrupt, stays as
+    /// it was, its status included. The mark is taken once the tree is open,
+    /// so until then a runner's welcome names the conversation as held. A
+    /// restore that runs twice brings back what one does. Answers how it
+    /// settled: `restored`, `held` for the user's preference, `skipped` or
+    /// `failed`.
+    async fn restore_working_subagents(&self, conversation: ConversationId, on: bool) -> &'static str {
+        let _opening = self.tree_openers().token();
+        if self.is_closing() {
+            return "skipped";
+        }
+        let settled = if !on {
+            "held"
+        } else if let Err(why) = self.restore_tree(&conversation).await {
+            tracing::warn!(event = "interrupted_turn.settled", %conversation, outcome = "failed", %why, "the subagents the shutdown interrupted were not restored");
+            "failed"
+        } else {
+            tracing::info!(event = "interrupted_turn.settled", %conversation, outcome = "restored", "the subagents the shutdown interrupted went on");
+            "restored"
+        };
+        match self.services().control.take_interrupted_turn(conversation.clone()).await {
+            Ok(true) => settled,
+            Ok(false) => "skipped",
+            Err(error) => {
+                tracing::warn!(event = "interrupted_turn.take_up_failed", %conversation, %error, "a mark of the subagents the shutdown interrupted was not taken");
+                "failed"
+            }
+        }
     }
 
     /// Takes the conversation's mark and, when `on`, resumes its root's turn

@@ -73,8 +73,9 @@ pub enum Inbound {
         #[garde(inner(custom(conversation_name)))]
         archived: Vec<String>,
         /// The conversations the device is to hold residents for: those that
-        /// are neither archived, nor detached from it, nor released after
-        /// idling. The runner releases every other it holds one for.
+        /// reach it, and those a restart is resuming, whose trees are not open
+        /// yet, but none archived or released after idling. The runner
+        /// releases every other it holds one for.
         #[garde(inner(custom(conversation_name)))]
         held: Vec<String>,
         /// The packages whose plugin the user has turned off, whose residents

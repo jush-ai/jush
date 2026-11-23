@@ -770,11 +770,13 @@ CREATE TABLE permission_grants (
   PRIMARY KEY (conversation_id, category)
 ) STRICT;
 
--- A conversation whose root's running turn a graceful shutdown began to
--- interrupt, marked before the turn was aborted, which the next start resumes
--- once (`failures-and-recovery.md` § The unfinished turn).
+-- A conversation whose work a graceful shutdown began to interrupt, marked
+-- before the work was aborted, which the next start resumes once
+-- (`failures-and-recovery.md` § The unfinished turn): its root's running
+-- turn, or with `root` 0 only its subagents', while the root rested.
 CREATE TABLE interrupted_turns (
-  conversation_id TEXT PRIMARY KEY COLLATE NOCASE REFERENCES conversations (id) ON DELETE CASCADE
+  conversation_id TEXT PRIMARY KEY COLLATE NOCASE REFERENCES conversations (id) ON DELETE CASCADE,
+  root INTEGER NOT NULL DEFAULT 1 CHECK (root IN (0, 1))
 ) STRICT;
 
 -- The roots that compact while idle, shortly before their prompt cache

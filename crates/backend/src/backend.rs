@@ -570,7 +570,8 @@ impl Backend {
         // start delivers it.
         start_step("permission_decisions", deliver_decisions(&services.control, &shards.shards())).await;
         // Each root's turn the last shutdown interrupted goes on, in the
-        // background, as the user's Resume would, unless the user turned that
+        // background, as the user's Resume would, and so do the subagents it
+        // interrupted while their root rested, unless the user turned that
         // off. A failure does not stop the start: the marks stay for the next
         // start, and meanwhile the turns wait for the user's Resume.
         start_step("interrupted_turns", resume_after_restart(&services.control, &shards.shards())).await;
