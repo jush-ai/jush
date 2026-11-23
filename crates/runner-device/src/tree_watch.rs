@@ -11,7 +11,8 @@
 //! backend there is kqueue, which the vendored `tail` selects and which holds a
 //! descriptor for every file of a tree, more than a repository and the usual
 //! limit of 256 allow. With kqueue selected, notify builds no FSEvents watcher.
-//!   - On Linux it is inotify on each folder git does not ignore.
+//!   - On Linux it is inotify on each folder git does not ignore, in the
+//!     process's one inotify instance, which every watch shares.
 //!   - Elsewhere it is notify's recommended backend.
 //! - **A node**: one file or folder alone. On macOS it is a kqueue of its own,
 //!   watched again under its name when a rename replaces it. Elsewhere it is
@@ -135,7 +136,7 @@ impl TreeWatch {
 }
 
 /// What the platform said of one path, before it is judged and numbered.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 enum Raw {
     Changed {
         path: PathBuf,
@@ -276,24 +277,296 @@ fn from_notify(event: notify::Event) -> Vec<Raw> {
         .collect()
 }
 
+/// On Linux every watch of the process shares one notify watcher, one
+/// inotify instance, of which the kernel gives each user few (128 by
+/// default) across all its processes, where it gives each many folders to
+/// watch. The watcher keeps, for each folder, the watches that follow it,
+/// watches the folder once and lets it go with its last follower, and hands
+/// each event to the watches that follow the folder it happened in or the
+/// folder itself. It is made with the first watch and closed with the last.
+///
+/// Elsewhere each watch has a watcher of its own, as the platform sets no
+/// such limit: Windows's watcher, asked again for a folder it watches,
+/// opens a second reading of it and loses the first.
+///
+/// ```text
+///  Watch ──join/add/leave──> Hub ── one notify watcher (one inotify)
+///  Watch ──────────────────>  │      folders: path -> followers
+///  Watch <── events ─────────Routes <── notify's thread
+/// ```
 #[cfg(not(target_os = "macos"))]
 mod platform {
     use super::{Listener, Raw, Reach, from_notify};
     use notify::Watcher as _;
+    use std::collections::{HashMap, HashSet};
     use std::path::{Path, PathBuf};
-    use std::sync::{Arc, Mutex, mpsc};
+    use std::sync::{Arc, Mutex, Weak, mpsc};
+
+    /// The process's shared watcher, while a watch holds it.
+    static HUB: Mutex<Weak<Hub>> = Mutex::new(Weak::new());
+
+    /// The shared watcher and where its events go.
+    ///
+    /// A change of the routes and the watcher's own call for it happen under
+    /// `watcher`, so two watches that take and let go of one folder at once
+    /// leave it watched as its followers say. notify's thread takes only
+    /// `routes`, never `watcher`, whose calls wait for that thread.
+    struct Hub {
+        watcher: Mutex<notify::RecommendedWatcher>,
+        routes: Arc<Mutex<Routes>>,
+    }
+
+    #[derive(Default)]
+    struct Routes {
+        next: u64,
+        watches: HashMap<u64, Route>,
+        /// The watches that follow each folder, and whether one of them
+        /// follows everything below it.
+        folders: HashMap<PathBuf, Followed>,
+    }
+
+    struct Route {
+        listener: Arc<Mutex<Listener>>,
+        /// Where a tree watched folder by folder hands the folders it gains.
+        adder: Option<mpsc::Sender<FolderChange>>,
+        folders: HashSet<PathBuf>,
+    }
+
+    #[derive(Default)]
+    struct Followed {
+        /// Each follower, and whether it follows the folder's whole tree.
+        followers: HashMap<u64, bool>,
+    }
+
+    impl Followed {
+        fn recursive(&self) -> bool {
+            self.followers.values().any(|recursive| *recursive)
+        }
+
+        fn mode(&self) -> notify::RecursiveMode {
+            if self.recursive() {
+                notify::RecursiveMode::Recursive
+            } else {
+                notify::RecursiveMode::NonRecursive
+            }
+        }
+    }
+
+    impl Routes {
+        /// The watches what happened at `path` reaches: the followers of its
+        /// folder and of itself, and of a folder above it that follow its
+        /// whole tree.
+        fn reached(&self, path: &Path) -> Vec<u64> {
+            let mut reached = Vec::new();
+            for (depth, folder) in path.ancestors().enumerate() {
+                let Some(followed) = self.folders.get(folder) else {
+                    continue;
+                };
+                for (id, recursive) in &followed.followers {
+                    if (depth <= 1 || *recursive) && !reached.contains(id) {
+                        reached.push(*id);
+                    }
+                }
+            }
+            reached
+        }
+    }
+
+    impl Hub {
+        /// On Linux the process's watcher, made when no watch holds it;
+        /// elsewhere a watcher of the watch's own.
+        fn shared() -> Result<Arc<Hub>, String> {
+            if !cfg!(target_os = "linux") {
+                return Hub::new();
+            }
+            let mut held = lock(&HUB);
+            if let Some(hub) = held.upgrade() {
+                return Ok(hub);
+            }
+            let hub = Hub::new()?;
+            *held = Arc::downgrade(&hub);
+            Ok(hub)
+        }
+
+        fn new() -> Result<Arc<Hub>, String> {
+            let routes = Arc::new(Mutex::new(Routes::default()));
+            let handler = {
+                let routes = routes.clone();
+                move |event: notify::Result<notify::Event>| match event {
+                    Ok(event) => dispatch(&routes, from_notify(event), None),
+                    Err(error) => {
+                        let raw = Raw::Failed(error.to_string());
+                        dispatch(&routes, vec![raw], Some(error.paths))
+                    }
+                }
+            };
+            let watcher = notify::recommended_watcher(handler).map_err(|error| error.to_string())?;
+            Ok(Arc::new(Hub {
+                watcher: Mutex::new(watcher),
+                routes,
+            }))
+        }
+
+        fn join(&self, listener: Arc<Mutex<Listener>>, adder: Option<mpsc::Sender<FolderChange>>) -> u64 {
+            let mut routes = lock(&self.routes);
+            routes.next += 1;
+            let id = routes.next;
+            routes.watches.insert(
+                id,
+                Route {
+                    listener,
+                    adder,
+                    folders: HashSet::new(),
+                },
+            );
+            id
+        }
+
+        /// Has the watch `id` follow `folder`, the whole tree below it when
+        /// `recursive`. inotify is asked again even when another watch
+        /// follows the folder already, since a folder removed and made again
+        /// under its name is a new one to it, and asking again for one it
+        /// watches changes nothing.
+        fn add(&self, id: u64, folder: &Path, recursive: bool) -> Result<(), String> {
+            let mut watcher = lock(&self.watcher);
+            let mode = {
+                let mut routes = lock(&self.routes);
+                let Some(route) = routes.watches.get_mut(&id) else {
+                    // The watch stopped meanwhile.
+                    return Ok(());
+                };
+                route.folders.insert(folder.to_path_buf());
+                let followed = routes.folders.entry(folder.to_path_buf()).or_default();
+                followed.followers.insert(id, recursive);
+                followed.mode()
+            };
+            let watched = watcher.watch(folder, mode).map_err(|error| error.to_string());
+            if watched.is_err() {
+                let mut routes = lock(&self.routes);
+                if let Some(route) = routes.watches.get_mut(&id) {
+                    route.folders.remove(folder);
+                }
+                if let Some(followed) = routes.folders.get_mut(folder) {
+                    followed.followers.remove(&id);
+                    if followed.followers.is_empty() {
+                        routes.folders.remove(folder);
+                    }
+                }
+            }
+            watched
+        }
+
+        /// Ends the watch `id`, letting go of each folder it alone followed.
+        fn leave(&self, id: u64) {
+            let mut watcher = lock(&self.watcher);
+            let alone: Vec<PathBuf> = {
+                let mut routes = lock(&self.routes);
+                let Some(route) = routes.watches.remove(&id) else {
+                    return;
+                };
+                route
+                    .folders
+                    .into_iter()
+                    .filter(|folder| {
+                        let Some(followed) = routes.folders.get_mut(folder) else {
+                            return false;
+                        };
+                        followed.followers.remove(&id);
+                        let alone = followed.followers.is_empty();
+                        if alone {
+                            routes.folders.remove(folder);
+                        }
+                        alone
+                    })
+                    .collect()
+            };
+            for folder in alone {
+                // A folder that was removed is no longer watched.
+                let _ = watcher.unwatch(&folder);
+            }
+        }
+    }
+
+    /// Hands each watch what reaches it, in the order it happened: what
+    /// names no path, or a failure of no folder, reaches every watch.
+    fn dispatch(routes: &Mutex<Routes>, raws: Vec<Raw>, failed: Option<Vec<PathBuf>>) {
+        let mut handed: Vec<(u64, Vec<Raw>)> = Vec::new();
+        let mut targets: HashMap<u64, (Arc<Mutex<Listener>>, Option<mpsc::Sender<FolderChange>>)> = HashMap::new();
+        {
+            let routes = lock(routes);
+            for raw in raws {
+                let paths: Vec<&Path> = match (&raw, &failed) {
+                    (_, Some(paths)) => paths.iter().map(PathBuf::as_path).collect(),
+                    (Raw::Changed { path, .. }, None) | (Raw::Lost { under: Some(path) }, None) => vec![path.as_path()],
+                    (Raw::Lost { under: None } | Raw::Failed(_), None) => Vec::new(),
+                };
+                let reached: Vec<u64> = if paths.is_empty() {
+                    routes.watches.keys().copied().collect()
+                } else {
+                    let mut reached = Vec::new();
+                    for path in paths {
+                        for id in routes.reached(path) {
+                            if !reached.contains(&id) {
+                                reached.push(id);
+                            }
+                        }
+                    }
+                    reached
+                };
+                for id in reached {
+                    let Some(route) = routes.watches.get(&id) else {
+                        continue;
+                    };
+                    targets
+                        .entry(id)
+                        .or_insert_with(|| (route.listener.clone(), route.adder.clone()));
+                    match handed.iter_mut().find(|(each, _)| *each == id) {
+                        Some((_, raws)) => raws.push(raw.clone()),
+                        None => handed.push((id, vec![raw.clone()])),
+                    }
+                }
+            }
+        }
+        'watches: for (id, raws) in handed {
+            let Some((listener, adder)) = targets.remove(&id) else {
+                continue;
+            };
+            if let Some(adder) = adder {
+                for raw in &raws {
+                    if let Raw::Changed { path, entry: true, .. } = raw
+                        && path.is_dir()
+                        && adder.send(FolderChange::Added(path.clone())).is_err()
+                    {
+                        lock(&listener).deliver(vec![Raw::Failed("The folder watch thread stopped".into())]);
+                        continue 'watches;
+                    }
+                }
+            }
+            lock(&listener).deliver(raws);
+        }
+    }
 
     pub(super) struct Watch {
-        _watcher: Arc<Mutex<notify::RecommendedWatcher>>,
+        hub: Arc<Hub>,
+        id: u64,
         /// On Linux, the thread that watches each folder a tree gains.
-        _folders: Option<FolderAdder>,
+        folders: Option<FolderAdder>,
+    }
+
+    impl Drop for Watch {
+        fn drop(&mut self) {
+            // The thread stops first, so it adds no folder after the watch
+            // let its folders go.
+            drop(self.folders.take());
+            self.hub.leave(self.id);
+        }
     }
 
     /// Adds the watches of the folders a tree gains, off notify's own thread,
     /// which would wait for itself.
     ///
     /// - The thread receives an explicit stop message: it must not wait for all
-    ///   folder-event senders to disappear, since the watcher it owns owns one
+    ///   folder-event senders to disappear, since the shared routes hold one
     ///   of those senders.
     /// - Its queue has no length limit, so no new folder is missed.
     /// - Failure to start the thread is a watch failure too.
@@ -309,10 +582,9 @@ mod platform {
 
     impl Drop for FolderAdder {
         fn drop(&mut self) {
-            // The worker owns a watcher whose callback owns another sender,
-            // so dropping our sender cannot end its receive loop. Watch
-            // destruction runs on the blocking pool, where joining may wait
-            // without stopping the control runtime.
+            // The routes hold another sender, so dropping ours cannot end
+            // its receive loop. Watch destruction runs on the blocking pool,
+            // where joining may wait without stopping the control runtime.
             if self.added.send(FolderChange::Stop).is_err() {
                 // The worker already exited, so there is nothing to stop.
             }
@@ -331,40 +603,16 @@ mod platform {
             _left_out: &[PathBuf],
             listener: Listener,
         ) -> Result<Watch, String> {
+            let hub = Hub::shared()?;
             let listener = Arc::new(Mutex::new(listener));
             let tree_by_folder = cfg!(target_os = "linux") && reach == Reach::Tree;
+            let recursive = reach == Reach::Tree && !tree_by_folder;
             let (added, adding) = mpsc::channel::<FolderChange>();
-            let handler = {
-                let listener = listener.clone();
-                let added = added.clone();
-                move |event: notify::Result<notify::Event>| {
-                    let raws = match event {
-                        Ok(event) => from_notify(event),
-                        Err(error) => vec![Raw::Failed(error.to_string())],
-                    };
-                    if tree_by_folder {
-                        for raw in &raws {
-                            if let Raw::Changed { path, entry: true, .. } = raw
-                                && path.is_dir()
-                            {
-                                if added.send(FolderChange::Added(path.clone())).is_err() {
-                                    lock(&listener).deliver(vec![Raw::Failed(
-                                        "The folder watch thread stopped".into(),
-                                    )]);
-                                    return;
-                                }
-                            }
-                        }
-                    }
-                    lock(&listener).deliver(raws);
-                }
-            };
-            let watcher = notify::recommended_watcher(handler).map_err(|error| error.to_string())?;
-            let watcher = Arc::new(Mutex::new(watcher));
-            let mode = if reach == Reach::Tree && !tree_by_folder {
-                notify::RecursiveMode::Recursive
-            } else {
-                notify::RecursiveMode::NonRecursive
+            let id = hub.join(listener.clone(), tree_by_folder.then(|| added.clone()));
+            let mut watch = Watch {
+                hub: hub.clone(),
+                id,
+                folders: None,
             };
             for tree in trees {
                 let watched = match reach {
@@ -373,52 +621,37 @@ mod platform {
                     Reach::Node if !tree.is_dir() => tree.parent().unwrap_or(tree).to_path_buf(),
                     _ => tree.clone(),
                 };
-                lock(&watcher)
-                    .watch(&watched, mode)
-                    .map_err(|error| error.to_string())?;
+                hub.add(id, &watched, recursive)?;
                 if tree_by_folder {
-                    add_below(&watcher, &listener, &watched, false);
+                    add_below(&hub, id, &listener, &watched, false);
                 }
             }
-            let folders = if tree_by_folder {
-                let watcher = watcher.clone();
+            if tree_by_folder {
+                let hub = hub.clone();
                 let listener = listener.clone();
                 let thread = std::thread::Builder::new()
                     .name("inotify-folders".into())
                     .spawn(move || {
                         while let Ok(FolderChange::Added(folder)) = adding.recv() {
-                            if lock(&watcher)
-                                .watch(&folder, notify::RecursiveMode::NonRecursive)
-                                .is_ok()
-                            {
-                                add_below(&watcher, &listener, &folder, true);
+                            if hub.add(id, &folder, false).is_ok() {
+                                add_below(&hub, id, &listener, &folder, true);
                             }
                         }
                     })
                     .map_err(|error| error.to_string())?;
-                Some(FolderAdder {
+                watch.folders = Some(FolderAdder {
                     added,
                     thread: Some(thread),
-                })
-            } else {
-                None
-            };
-            Ok(Watch {
-                _watcher: watcher,
-                _folders: folders,
-            })
+                });
+            }
+            Ok(watch)
         }
     }
 
     /// Watches each folder below `folder` that git does not ignore; one
     /// that came after its parent's watch also reports what it holds, which
     /// may have come before its own watch did.
-    fn add_below(
-        watcher: &Mutex<notify::RecommendedWatcher>,
-        listener: &Mutex<Listener>,
-        folder: &Path,
-        came: bool,
-    ) {
+    fn add_below(hub: &Hub, id: u64, listener: &Mutex<Listener>, folder: &Path, came: bool) {
         let Ok(entries) = std::fs::read_dir(folder) else {
             return;
         };
@@ -462,11 +695,8 @@ mod platform {
             }
         };
         for folder in kept {
-            if lock(watcher)
-                .watch(&folder, notify::RecursiveMode::NonRecursive)
-                .is_ok()
-            {
-                add_below(watcher, listener, &folder, false);
+            if hub.add(id, &folder, false).is_ok() {
+                add_below(hub, id, listener, &folder, false);
             }
         }
     }
