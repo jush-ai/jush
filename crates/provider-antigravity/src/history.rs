@@ -15,6 +15,9 @@
 //! a step holds only what `agy` itself would send back. A medium is named in
 //! text, since the format of one in a step is unknown.
 //!
+//! A running session's last step is read back too, for the error step a
+//! failed model call ends a turn with (`failure.rs`).
+//!
 //! The format is `agy`'s own and undocumented; these are the fields its
 //! messages carry for each step (`agy` 1.5.13).
 
@@ -23,7 +26,7 @@ use std::collections::HashMap;
 use bytes::Bytes;
 use jush_provider_common::{InferenceItem, Medium, ResultPart, UserPart};
 use jush_shared_types::ModelMediaKind;
-use rusqlite::{Connection, MAIN_DB};
+use rusqlite::{Connection, MAIN_DB, OptionalExtension};
 use serde_json::Value;
 
 use crate::tools;
@@ -31,6 +34,8 @@ use crate::tools;
 /// The step types and the status of a finished step.
 const USER_INPUT: u64 = 14;
 const PLANNER_RESPONSE: u64 = 15;
+/// The step a turn ends with when a model call failed (`failure.rs`).
+pub(crate) const ERROR: u64 = 17;
 const MCP_TOOL: u64 = 132;
 const DONE: u64 = 3;
 
@@ -79,6 +84,86 @@ pub(crate) fn fill(database: &[u8], items: &[InferenceItem]) -> Result<Bytes, St
         filled[JOURNAL_VERSIONS].fill(WAL);
     }
     Ok(Bytes::from(filled))
+}
+
+/// The type and payload of the last step of `database`, a running session's,
+/// read with its write-ahead log `wal`, which holds the steps `agy` has not
+/// checkpointed into the file yet (measured): none for a session with no
+/// step.
+///
+/// SQLite reads a log only beside its database's file, so the two are copied
+/// into a private directory of their own, only the backend's user may read,
+/// which goes afterwards.
+pub(crate) fn last_step(database: &[u8], wal: Option<&[u8]>) -> Result<Option<(u64, Vec<u8>)>, String> {
+    let unreadable = |error: &dyn std::fmt::Display| format!("Antigravity's session cannot be read: {error}");
+    let dir = tempfile::tempdir().map_err(|error| unreadable(&error))?;
+    let file = dir.path().join("session.db");
+    std::fs::write(&file, database).map_err(|error| unreadable(&error))?;
+    if let Some(wal) = wal {
+        std::fs::write(dir.path().join("session.db-wal"), wal).map_err(|error| unreadable(&error))?;
+    }
+    let connection = Connection::open(&file).map_err(|error| unreadable(&error))?;
+    connection
+        .query_row("SELECT step_type, step_payload FROM steps ORDER BY idx DESC LIMIT 1", [], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, Option<Vec<u8>>>(1)?))
+        })
+        .optional()
+        .map(|last| last.map(|(kind, payload)| (kind as u64, payload.unwrap_or_default())))
+        .map_err(|error| unreadable(&error))
+}
+
+/// A field of a protobuf message as read: a varint's value or a
+/// length-delimited field's bytes.
+pub(crate) enum Field<'a> {
+    Varint(u64),
+    Bytes(&'a [u8]),
+}
+
+/// The fields of the protobuf message `message` numbered `number`, in order.
+/// A message that breaks off gives the fields before the break.
+pub(crate) fn fields(message: &[u8], number: u64) -> Vec<Field<'_>> {
+    let mut found = Vec::new();
+    let mut rest = message;
+    while let Some(key) = read_varint(&mut rest) {
+        let value = match key & 7 {
+            0 => match read_varint(&mut rest) {
+                Some(value) => Field::Varint(value),
+                None => break,
+            },
+            1 | 5 => {
+                let width = if key & 7 == 1 { 8 } else { 4 };
+                let Some(tail) = rest.get(width..) else { break };
+                rest = tail;
+                continue;
+            }
+            2 => {
+                let Some(length) = read_varint(&mut rest).and_then(|length| usize::try_from(length).ok()) else {
+                    break;
+                };
+                let Some(bytes) = rest.get(..length) else { break };
+                rest = &rest[length..];
+                Field::Bytes(bytes)
+            }
+            _ => break,
+        };
+        if key >> 3 == number {
+            found.push(value);
+        }
+    }
+    found
+}
+
+fn read_varint(rest: &mut &[u8]) -> Option<u64> {
+    let mut value = 0u64;
+    for shift in (0..64).step_by(7) {
+        let (&byte, tail) = rest.split_first()?;
+        *rest = tail;
+        value |= u64::from(byte & 0x7f) << shift;
+        if byte < 0x80 {
+            return Some(value);
+        }
+    }
+    None
 }
 
 /// The steps of `items`, each its type and its payload.

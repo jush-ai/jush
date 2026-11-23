@@ -59,10 +59,11 @@ use tokio_util::sync::CancellationToken;
 
 use crate::acp::{self, Line, Output, Refusal};
 use crate::failure::{self, Reported};
+use crate::history;
 use crate::media;
 use crate::start::{self, CONVERSATIONS};
 use crate::tools::{self, Channel, ChannelEvent};
-use crate::{CLI, Shared, history};
+use crate::{CLI, Shared};
 
 /// How long the process that makes a session may take to end once its input
 /// closed: `agy` ends in milliseconds, and one that does not must not hold
@@ -98,8 +99,13 @@ pub(crate) struct Live {
     context: Option<u64>,
     /// Whether the piece being streamed is reasoning.
     thinking: bool,
-    /// The failure `agy` reported in the turn's text.
-    reported: Option<Reported>,
+    /// The latest piece of text, when it words a failure as `agy` does: the
+    /// model's text when anything follows it, else what the turn's last step
+    /// says when the turn ends (`failure.rs`).
+    warning: Option<String>,
+    /// What the run is told next, before anything the process says: what
+    /// followed a held piece of text, given as the model's first.
+    after: Option<Next>,
     /// Whether Jush denied a call of the prompt in flight.
     denied: bool,
     /// The name and status of each of `agy`'s own calls of the prompt in
@@ -209,7 +215,8 @@ impl Live {
             next_id: acp::FIRST_FREE,
             context: None,
             thinking: false,
-            reported: None,
+            warning: None,
+            after: None,
             denied: false,
             steps: HashMap::new(),
             turn: None,
@@ -307,7 +314,7 @@ impl Live {
             sent_at: shared.clock.now(),
         });
         self.thinking = false;
-        self.reported = None;
+        self.warning = None;
         self.denied = false;
         self.steps.clear();
         self.turn = None;
@@ -316,6 +323,25 @@ impl Live {
 
     /// What the process does next for the run.
     pub(crate) async fn next(&mut self, shared: &Arc<Shared>, cancel: &CancellationToken) -> Next {
+        if let Some(next) = self.after.take() {
+            return next;
+        }
+        match self.event(shared, cancel).await {
+            Next::Text(text) => Next::Text(text),
+            // `agy` words a failure as the turn's last piece of text, so one
+            // held when anything else follows was the model's.
+            next => match self.warning.take() {
+                Some(held) => {
+                    self.after = Some(next);
+                    Next::Text(held)
+                }
+                None => next,
+            },
+        }
+    }
+
+    /// The next event of the process for the run.
+    async fn event(&mut self, shared: &Arc<Shared>, cancel: &CancellationToken) -> Next {
         loop {
             let line = tokio::select! {
                 biased;
@@ -377,12 +403,14 @@ impl Live {
         match update.get("sessionUpdate")?.as_str()? {
             "agent_message_chunk" => {
                 let text = text()?;
-                if let Some(reported) = failure::reported(&text) {
-                    self.reported = Some(reported);
-                    return None;
-                }
                 self.thinking = false;
-                Some(Next::Text(text))
+                if failure::warns(&text) {
+                    return self.warning.replace(text).map(Next::Text);
+                }
+                Some(Next::Text(match self.warning.take() {
+                    Some(held) => held + &text,
+                    None => text,
+                }))
             }
             "agent_thought_chunk" => {
                 let text = text()?;
@@ -435,17 +463,55 @@ impl Live {
         })
     }
 
-    /// The end of the turn, by the prompt's answer.
+    /// The end of the turn, by the prompt's answer and, after a piece of text
+    /// that words a failure, the session's last step: an error step fails the
+    /// turn, and any other step gives the piece as the model's text first.
     async fn answered(&mut self, shared: &Arc<Shared>, prompt: &Prompting, answer: Result<Value, Refusal>) -> Next {
-        if let Some(reported) = self.reported.take() {
-            if reported.signs_out() {
-                shared.auth.signed_out().await;
+        let Some(warning) = self.warning.take() else {
+            return self.turn_end(shared, answer).await;
+        };
+        let reported = match self.last_step().await {
+            Ok(Some((kind, payload))) => failure::reported(kind, &payload, &warning),
+            Ok(None) => None,
+            Err(error) => {
+                tracing::warn!(event = "antigravity.last_step_unread", node = %self.node, %error, "a session's last step was not read");
+                Some(Reported::unread(&warning))
             }
-            if reported.exhausted() && quota_left(shared, prompt).await {
-                return Next::Failed(reported.refused_with_quota_left());
-            }
-            return Next::Failed(reported.failure());
+        };
+        let Some(reported) = reported else {
+            tracing::info!(event = "antigravity.warning_was_text", node = %self.node, "a piece of text worded as agy words a failure ended a turn whose last step is no error");
+            self.after = Some(self.turn_end(shared, answer).await);
+            return Next::Text(warning);
+        };
+        if reported.signs_out() {
+            shared.auth.signed_out().await;
         }
+        if reported.exhausted() && quota_left(shared, prompt).await {
+            return Next::Failed(reported.refused_with_quota_left());
+        }
+        Next::Failed(reported.failure())
+    }
+
+    /// The type and payload of the session's last step, read from `agy`'s
+    /// database and its write-ahead log, which holds what `agy` has not
+    /// checkpointed yet.
+    async fn last_step(&self) -> Result<Option<(u64, Vec<u8>)>, String> {
+        let dir = own_dir(&self.held).map_err(|failure| failure.message)?;
+        let name = format!("{CONVERSATIONS}/{}.db", self.session);
+        let database = dir.read(&name).await.map_err(|error| error.to_string())?;
+        // A log `agy` checkpointed and removed holds nothing more.
+        let wal = match dir.read(&format!("{name}-wal")).await {
+            Ok(wal) => Some(wal),
+            Err(error) if error.code() == Some("ENOENT") => None,
+            Err(error) => return Err(error.to_string()),
+        };
+        tokio::task::spawn_blocking(move || history::last_step(&database, wal.as_deref()))
+            .await
+            .map_err(|error| error.to_string())?
+    }
+
+    /// The end of the turn by the prompt's answer alone.
+    async fn turn_end(&mut self, shared: &Arc<Shared>, answer: Result<Value, Refusal>) -> Next {
         let result = match answer {
             Ok(result) => result,
             Err(refusal) => return Next::Failed(refused(shared, refusal).await),

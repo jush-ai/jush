@@ -58,7 +58,7 @@ use jush_provider_common::credentials::{Accounts, CredentialPool, SubscriptionAc
 use jush_provider_common::models_dev::ModelsDevClient;
 use jush_provider_common::quota::{ProviderQuota, QuotaSnapshotStore};
 use jush_provider_common::{
-    CatalogError, Provider, ProviderRuntime, RuntimeEnv, RuntimeError, read_http_failure,
+    CatalogError, Provider, ProviderRuntime, RuntimeEnv, RuntimeError,
 };
 use jush_provider_subscription_cli::{AccountMachine, Cli, CliKit, Placement};
 use jush_shared_types::{
@@ -227,7 +227,7 @@ impl Provider for AntigravityProvider {
         diagnostics: &ProviderErrorDiagnostics,
         received_at: Timestamp,
     ) -> ProviderFailureFacts {
-        read_http_failure(diagnostics, received_at)
+        failure::read_failure(diagnostics, received_at)
     }
 
     fn quota(&self) -> Option<&ProviderQuota> {
