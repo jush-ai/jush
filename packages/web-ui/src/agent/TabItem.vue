@@ -6,6 +6,7 @@ import type { ConversationStatus } from './conversation-status'
 import IconButton from '@jush-ai/web-ui/ui/IconButton.vue'
 import Tooltip from '@jush-ai/web-ui/ui/Tooltip.vue'
 import ConversationStatusDot from './ConversationStatusDot.vue'
+import Tag from '@jush-ai/web-ui/ui/Tag.vue'
 import IndeterminateSpinner from '@jush-ai/web-ui/ui/IndeterminateSpinner.vue'
 import { ICON_PX } from '@jush-ai/web-ui/ui/icon-metrics'
 import { iconTabsKey } from './tab-strip'
@@ -54,6 +55,9 @@ import { iconTabsKey } from './tab-strip'
  * - A tab that is not `closable` has no close control and no middle-click
  *   close: a click only selects it, and closing is in its menu.
  *
+ * A tab of a device may carry the device's name as a tag after its title
+ * (`windows/device-tags.ts`): the title is cut short before it, never the tag.
+ *
  * In a window whose tabs narrow to their icons (`iconTabsKey`), a phone shows
  * each tab other than the selected one as its mark with its status dot, 44px
  * wide at least, its name left to assistive technology. The selected tab adds
@@ -78,6 +82,8 @@ const props = withDefaults(defineProps<{
   /** A picture in place of the mark, such as a web page's icon, by its URL. */
   icon?: string | null
   closable?: boolean
+  /** The name of the device it is of, after its title; none without it. */
+  tag?: string | null
 }>(), {
   closable: true,
 })
@@ -169,6 +175,7 @@ function onAuxclick(event: MouseEvent): void {
         :class="isActive || !closable ? 'max-w-full' : 'max-w-[calc(100%_+_var(--spacing-hit-xs))] group-hover:max-w-full phone:max-w-full'"
       >{{ title }}</span>
     </span>
+    <Tag v-if="tag" class="mr-1 shrink-0" :class="iconOnly ? 'phone:sr-only' : ''">{{ tag }}</Tag>
     <!--
       The close control's own slot: the title ends before it, and it sits as far
       from the tab's right edge as centering puts it from the top and bottom.

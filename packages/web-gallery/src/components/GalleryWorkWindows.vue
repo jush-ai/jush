@@ -15,11 +15,10 @@ import type { GalleryWork } from '../fixtures/work'
  * the area: a press in it outside the windows puts them away, and a press
  * elsewhere on the page does not.
  */
-const props = defineProps<{ work: GalleryWork; beforeFirstMessage?: boolean; deviceOffline?: string | null }>()
+const props = defineProps<{ work: GalleryWork; beforeFirstMessage?: boolean }>()
 
 const sessionWork = gallerySessionWork(props.work, {
   beforeFirstMessage: () => props.beforeFirstMessage ?? false,
-  deviceOffline: () => props.deviceOffline ?? null,
 })
 const stage = useWindowStage()
 const seen = new Set<string>()

@@ -4,8 +4,8 @@ import { ICON_PX, usePage, type KindTab, type TabKind, type WindowKind } from '@
 import BrowserOpening from './BrowserOpening.vue'
 import BrowserTabContent from './BrowserTabContent.vue'
 import { t } from '../locales/text'
-import { BROWSER_TAB_KIND, type BrowserStore } from './store'
-import { BLANK_URL, addedWorkTab, browserTabDataSchema, type BrowserTabData, type BrowserTabsController } from './tabs'
+import { BROWSER_TAB_KIND, browserKey, type BrowserStore } from './store'
+import { BLANK_URL, browserTabDataSchema, type BrowserTabData, type BrowserTabsController } from './tabs'
 
 const BrowserTabMark = defineComponent({
   setup: () => () => h(Globe, { size: ICON_PX.markIn28 }),
@@ -39,27 +39,29 @@ export interface BrowserTabOpens {
   url: string | null
 }
 
-/** The browser's window, a tab per page. */
-const browserWindow: WindowKind = { id: 'browser', name: () => t('window.name'), icon: Globe }
+/** The browser's window, a tab per page; each device's browser is a window of its own. */
+const browserWindow: WindowKind = { id: 'browser', name: () => t('window.name'), icon: Globe, perDevice: true }
 
 /**
- * The `browser` tab kind over `store`. Its content watches the conversation's
- * browser while it is mounted and reaches the device through it; its title, icon
- * and commands read it without watching; the panel sees only this
+ * The `browser` tab kind over `store`, bound once for each device the
+ * conversation reaches. Its content watches the conversation's browser on the
+ * tab's device while it is mounted and reaches the device through it; its
+ * title, icon and commands read it without watching; the panel sees only this
  * declaration.
  */
 export function browserTabKind(store: BrowserStore): TabKind<BrowserTabData, BrowserTabOpens> {
-  const browser = (tab: KindTab) => tab.page.store(store).of(tab.conversation).tabs
+  const browser = (tab: KindTab) => tab.page.store(store).of(browserKey(tab.conversation, tab.device)).tabs
   const content = defineComponent({
     props: {
       conversation: { type: String, required: true },
+      device: { type: String, default: null },
       tabId: { type: String, required: true },
       data: { type: Object as PropType<BrowserTabData>, required: true },
       shown: { type: Boolean, required: true },
     },
     setup(props) {
       // Watched while mounted: the conversation's browser is the most recent to keep.
-      const watched = usePage().store(store).watch(props.conversation)
+      const watched = usePage().store(store).watch(browserKey(props.conversation, props.device))
       onBeforeUnmount(() => watched.end())
       return () => h(BrowserTabContent, {
         conversation: props.conversation,
@@ -73,12 +75,13 @@ export function browserTabKind(store: BrowserStore): TabKind<BrowserTabData, Bro
   const opening = defineComponent({
     props: {
       conversation: { type: String, required: true },
+      device: { type: String, default: null },
       opening: { type: String, required: true },
       shown: { type: Boolean, required: true },
     },
     setup(props) {
       // Watched while mounted, as a tab's content: the view opens for the panel's size.
-      const watched = usePage().store(store).watch(props.conversation)
+      const watched = usePage().store(store).watch(browserKey(props.conversation, props.device))
       onBeforeUnmount(() => watched.end())
       return () => h(BrowserOpening, { session: watched.session.tabs, opening: Number(props.opening), shown: props.shown })
     },
@@ -92,13 +95,16 @@ export function browserTabKind(store: BrowserStore): TabKind<BrowserTabData, Bro
     // Only the device makes a tab: the work has it once the device lists it.
     open: (opens, tab) => void browser(tab).open(opens.url),
     // Read without making the conversation's browser: every conversation on screen asks.
-    openings: (tab) => (tab.page.store(store).peek(tab.conversation)?.tabs.openings.value ?? []).map((opening) => ({
-      key: String(opening.id),
-      title: addressTitle(opening.url ?? BLANK_URL),
-      tab: opening.tab === null ? null : addedWorkTab(opening.tab),
-      done: opening.done,
-      cancelled: opening.cancelled,
-    })),
+    openings: (tab) => {
+      const kept = tab.page.store(store).peek(browserKey(tab.conversation, tab.device))?.tabs
+      return (kept?.openings.value ?? []).map((opening) => ({
+        key: String(opening.id),
+        title: addressTitle(opening.url ?? BLANK_URL),
+        tab: opening.tab === null ? null : kept!.api.workTab(opening.tab),
+        done: opening.done,
+        cancelled: opening.cancelled,
+      }))
+    },
     cancel: (key, tab) => browser(tab).cancel(Number(key)),
     title: (data, tab) => browserTabTitle(data, browser(tab)),
     // The agent's showings, and the user's own opening, which the plugin carries from the tab list.

@@ -109,6 +109,10 @@ impl DeviceShard for Shard {
             .collect()
     }
 
+    fn agent_changes(&self, conversation: &ConversationId) -> Option<tokio::sync::watch::Receiver<u64>> {
+        self.agent.tree(&root_of(conversation)).map(|tree| tree.changes())
+    }
+
     fn track_idle(&self, conversation: &ConversationId) {
         Shard::track_idle(self, conversation);
     }

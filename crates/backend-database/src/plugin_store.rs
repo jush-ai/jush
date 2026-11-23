@@ -157,10 +157,11 @@ impl PluginStore for ControlService {
         &self,
         conversation: ConversationId,
         kind: String,
+        device: DeviceId,
         listed: Vec<CreateWorkTab>,
     ) -> Stored<'_, MirrorOutcome> {
         async move {
-            ControlService::mirror_work(self, conversation, kind, listed)
+            ControlService::mirror_work(self, conversation, kind, device, listed)
                 .await
                 .map_err(StoreError::new)
         }

@@ -68,6 +68,7 @@ impl ProductPort for ShardPort {
     fn package_call<'a>(
         &'a self,
         conversation: &'a ConversationId,
+        device: Option<&'a DeviceId>,
         operation: &'a NativeOperation,
         args: Map<String, Value>,
         input: String,
@@ -98,7 +99,7 @@ impl ProductPort for ShardPort {
             };
             let answer: Bytes = shard
                 .device_shard()
-                .user_call(conversation, kind, &call, cancel)
+                .user_call(conversation, device, kind, &call, cancel)
                 .await
                 .map_err(call_failure)?;
             serde_json::from_slice(&answer).map_err(|error| {
@@ -144,6 +145,18 @@ impl ProductPort for ShardPort {
         if let Ok(shard) = self.shard() {
             (&*shard as &dyn DeviceShard).install_everywhere();
         }
+    }
+
+    fn reached_devices<'a>(&'a self, conversation: &'a ConversationId) -> LocalBoxFuture<'a, Result<Vec<DeviceId>, PortFailure>> {
+        Box::pin(async move {
+            let shard = self.shard()?;
+            match shard.device_shard().conversation_devices(conversation).await {
+                Ok(devices) => Ok(devices.into_iter().map(|reached| reached.device).collect()),
+                // A conversation deleted meanwhile reaches nothing.
+                Err(DeviceAccessError::Missing) => Ok(Vec::new()),
+                Err(error) => Err(access_refusal(error)),
+            }
+        })
     }
 
     fn devices(&self) -> LocalBoxFuture<'_, Result<Vec<DeviceName>, PortFailure>> {

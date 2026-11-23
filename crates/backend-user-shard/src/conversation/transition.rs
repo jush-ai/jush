@@ -359,8 +359,8 @@ impl Shard {
     }
 
     /// Releases `device`, which a detach of the conversation `id` removed,
-    /// once the commands running there ended, as a task of the shard; the
-    /// shard's close ends the wait.
+    /// once the commands running there and the subagents working there
+    /// ended, as a task of the shard; the shard's close ends the wait.
     fn release_detached(&self, id: &ConversationId, device: DeviceId) {
         let shard = self.this();
         let id = id.clone();

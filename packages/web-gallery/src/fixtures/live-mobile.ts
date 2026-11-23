@@ -39,8 +39,10 @@ import type { DeviceDownload } from '@jush-ai/web-ui/devices/installed'
 import { encodeControl, encodeVideo } from '@jush-ai/web-ui/live/frames'
 import type { OpenUserStream, UserStreamHandlers } from '@jush-ai/web-ui/plugins/streams'
 import type { WorkTab } from '@jush-ai/web-ui/agent/work-tabs'
+import { addedWorkTab } from '@jush-ai/plugin-mobile/live/controller'
 import { shallowRef } from 'vue'
 import { productWould } from '../product-would'
+import { GALLERY_DEVICE } from './devices'
 import type { GalleryWorkRecord } from './work-record'
 import type { GalleryPlugin } from './plugins'
 import { PROJECT_ROOT } from './project'
@@ -391,7 +393,7 @@ export function galleryMobile(work: GalleryWorkRecord, screen: GalleryScreen | n
     }
     if (!work.all.some((tab) => tab.kind === 'mobile' && shows(tab) === shown.id)) {
       const data = { device: shown.id, nativeId: simulator.nativeId, name: simulator.name, platform: simulator.platform, model: simulator.model }
-      work.apply({ type: 'create', tab: { id: `mobile-${shown.id}`, kind: 'mobile', data } })
+      work.apply({ type: 'create', tab: { id: addedWorkTab(GALLERY_DEVICE, shown.id), kind: 'mobile', device: GALLERY_DEVICE, data } })
     }
     changed(shown.id)
     return shown
@@ -438,7 +440,7 @@ export function galleryMobile(work: GalleryWorkRecord, screen: GalleryScreen | n
           booted.add(nativeId)
         }
         const shown = await openDevice(simulator)
-        return openedSchema.parse({ device: shown.id, tab: `mobile-${shown.id}` })
+        return openedSchema.parse({ device: shown.id, tab: addedWorkTab(GALLERY_DEVICE, shown.id) })
       }
       case 'close': {
         const { device: id } = onDeviceSchema.parse(params)

@@ -161,6 +161,9 @@ pub trait DeviceShard {
     /// a directory there; none while its tree is not open
     /// (`crates/agent-server/src/node/mod.rs`).
     fn agent_placements(&self, conversation: &ConversationId) -> Vec<Placement>;
+    /// Changes whenever a subagent of the conversation starts or ends, and
+    /// is closed once its tree closes; none while its tree is not open.
+    fn agent_changes(&self, conversation: &ConversationId) -> Option<tokio::sync::watch::Receiver<u64>>;
     /// Starts the conversation's idle watch unless one runs, as each device
     /// admission does (`crates/backend-user-shard/src/lifecycle/mod.rs`).
     fn track_idle(&self, conversation: &ConversationId);

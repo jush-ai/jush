@@ -11,10 +11,15 @@ import type { TranscriptReveal } from '@jush-ai/web-ui/agent/history'
 import type { RequestOutputReading } from '@jush-ai/conversation-client'
 import type { SubagentRecord } from '@jush-ai/web-ui/agent/subagents'
 import type { TerminalRecord } from '@jush-ai/web-ui/agent/terminals'
+import type { SessionDevice } from '@jush-ai/web-ui/windows/device-tags'
 import type { CostShown } from '@jush-ai/web-ui/agent/context-cost'
 import SessionWindows from '@jush-ai/web-ui/windows/SessionWindows.vue'
 import { useWindowStage } from '@jush-ai/web-ui/windows/stage'
 import { useAgentContext } from '../agent-context'
+import { GALLERY_DEVICE } from '../fixtures/devices'
+
+/** The devices the specimens' conversation reaches: the gallery's own. */
+const DEVICES: readonly SessionDevice[] = [{ id: GALLERY_DEVICE, name: 'alex-mbp', primary: true, offline: false }]
 
 /**
  * The product's Agents, Running and Services windows over a specimen's
@@ -27,6 +32,8 @@ import { useAgentContext } from '../agent-context'
  * `fill`, a window that opens fills the area, for a specimen of the window
  * alone. An ended command among `terminals` that the page knows from the
  * conversation's list asks for its output (`readOutput`) as it first shows.
+ * The conversation runs on the gallery's own device alone; a command on
+ * another device tags each command's tab with its device.
  */
 const props = withDefaults(defineProps<{
   agents?: readonly SubagentRecord[]
@@ -60,7 +67,7 @@ const agentsWindow = useAgentsWindow(() => props.agents, {
   stop: (id) => emit('abortAgent', id),
   stopAll: () => emit('abort'),
 })
-const commandWindows = useCommandWindows(() => props.terminals, (id) => emit('abortTerminal', id))
+const commandWindows = useCommandWindows(() => props.terminals, (id) => emit('abortTerminal', id), () => DEVICES)
 watch(activeId, (id) => {
   agentsWindow.activeId.value = id
 }, { immediate: true })

@@ -23,6 +23,12 @@ static NAME_WITH_DOT: LazyLock<Regex> =
 static LINE_RANGE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r":\d+(?:-\d+)?$").expect("a valid pattern"));
 /// Leading `./` components.
 static CURRENT_DIR: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\./+").expect("a valid pattern"));
+/// A file of another device the conversation reaches, as `device:<id>/abs/path`
+/// names it (`packages/web-ui/src/markdown/filePath.ts`).
+static ON_DEVICE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^device:([^/\s]+)(/[^?#]*)").expect("a valid pattern"));
+/// A Windows path as such a link writes it, after a slash: `/C:/Users`.
+static SLASHED_DRIVE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^/[A-Za-z]:[\\/]").expect("a valid pattern"));
 
 /// Whether `text` starts with a URL scheme, such as `https:`.
 pub fn has_scheme(text: &str) -> bool {
@@ -52,13 +58,30 @@ fn normalized(target: &str) -> String {
     }
 }
 
-/// The path of the device an image's `target` names, as the reply wrote it
-/// without its query, fragment and percent-encoding, which the page reads as
-/// a picture of the device; none for a web image, a `data:` URL or a target
-/// that names no file. Relative to the node's working directory, or `~/` from
-/// the device's home.
-pub fn picture_path(target: &str) -> Option<String> {
+/// Where a picture a reply names is: the path, and the device it is on when
+/// the reply names one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PicturePlace {
+    /// The id of another device the conversation reaches, as
+    /// `device:<id>/abs/path` names it; none for the node's own device.
+    pub device: Option<String>,
+    /// On the node's device, relative to its working directory or `~/` from
+    /// its home; on another device, absolute.
+    pub path: String,
+}
+
+/// Where the picture an image's `target` names is, its path as the reply
+/// wrote it without its query, fragment and percent-encoding, which the page
+/// reads as a picture of a device; none for a web image, a `data:` URL or a
+/// target that names no file.
+pub fn picture_place(target: &str) -> Option<PicturePlace> {
     let trimmed = target.trim();
+    if let Some(found) = ON_DEVICE.captures(trimmed) {
+        let written = decoded(normalized(&found[2]));
+        let path = if SLASHED_DRIVE.is_match(&written) { written[1..].to_owned() } else { written };
+        let device = decoded(found[1].to_owned());
+        return (!path.is_empty()).then_some(PicturePlace { device: Some(device), path });
+    }
     let named = normalized(trimmed);
     if named.is_empty() || named.starts_with('#') || SCHEME.is_match(&named) {
         return None;
@@ -68,11 +91,15 @@ pub fn picture_path(target: &str) -> Option<String> {
         return None;
     }
     let before_query = trimmed.split(['?', '#']).next().unwrap_or_default();
-    let path = normalized(before_query);
-    let path = percent_encoding::percent_decode_str(&path)
+    let path = decoded(normalized(before_query));
+    (!path.is_empty()).then_some(PicturePlace { device: None, path })
+}
+
+/// `text` without its percent-encoding; as it is when it does not decode.
+fn decoded(text: String) -> String {
+    percent_encoding::percent_decode_str(&text)
         .decode_utf8()
-        .map_or(path.clone(), |decoded| decoded.into_owned());
-    (!path.is_empty()).then_some(path)
+        .map_or(text.clone(), |decoded| decoded.into_owned())
 }
 
 /// The targets of the images in the Markdown `text`, in order.
@@ -87,19 +114,19 @@ fn image_targets(text: &str) -> Vec<String> {
         .collect()
 }
 
-/// The pictures of the device `text` shows, each once, by its target, with the
-/// path it names.
-pub fn named_pictures(text: &str) -> Vec<(String, String)> {
+/// The pictures of a device `text` shows, each once, by its target, with
+/// where it is.
+pub fn named_pictures(text: &str) -> Vec<(String, PicturePlace)> {
     if !text.contains("![") {
         return Vec::new();
     }
-    let mut named: Vec<(String, String)> = Vec::new();
+    let mut named: Vec<(String, PicturePlace)> = Vec::new();
     for target in image_targets(text) {
         if named.iter().any(|(seen, _)| *seen == target) {
             continue;
         }
-        if let Some(path) = picture_path(&target) {
-            named.push((target, path));
+        if let Some(place) = picture_place(&target) {
+            named.push((target, place));
         }
     }
     named

@@ -1,7 +1,8 @@
 /**
  * The `mobile` page's store (`packages/web-ui/src/plugins/stores.ts`): each
- * conversation's simulators on the page (`./controller.ts`), kept while the
- * plugin is on, by conversation, each device on a stream of its own.
+ * conversation's simulators on each of its devices on the page
+ * (`./controller.ts`), kept while the plugin is on, by conversation and
+ * device (`devicesKey`), each simulator on a stream of its own.
  *
  * A device tab's content watches its conversation's simulators while it is
  * mounted. One no content watches is kept, with each device's stream, its
@@ -21,26 +22,35 @@ export interface KeptDevices extends KeptSession {
 
 export type MobileStore = PluginStore<KeptSessions<KeptDevices>>
 
+/** The store's key of the conversation's simulators on `device`, its primary device's for null. */
+export function devicesKey(conversation: string, device: string | null): string {
+  return `${conversation}\n${device ?? ''}`
+}
+
 /** The store of a page whose simulators take `options`. */
 export function mobileStore(options: MobileControllerOptions): MobileStore {
   return definePluginStore('devices', (page) => {
-    const devices = new KeptSessions((conversation) => keptDevices(page, conversation, options))
+    const devices = new KeptSessions((key) => {
+      const [conversation = '', device = ''] = key.split('\n')
+      return keptDevices(page, conversation, device === '' ? null : device, options)
+    })
     // The store ends as its plugin is turned off.
     onScopeDispose(() => devices.dispose())
     return devices
   })
 }
 
-function keptDevices(page: PageContext, conversation: string, options: MobileControllerOptions): KeptDevices {
+function keptDevices(page: PageContext, conversation: string, device: string | null, options: MobileControllerOptions): KeptDevices {
   // Its own scope, which ends when the store releases it rather than with whatever made it.
   const scope = effectScope(true)
-  const held = () => page.work.tabs(conversation, KIND).flatMap((data) => {
+  const held = () => page.work.tabs(conversation, KIND, device).flatMap((data) => {
     const parsed = mobileTabDataSchema.safeParse(data)
     return parsed.success ? [parsed.data] : []
   })
   const devices = scope.run(() => {
     const controller = new MobileDevicesController(
-      mobileApi(page.plugin.conversation(conversation)),
+      mobileApi(page.plugin.conversation(conversation, device)),
+      device,
       page.errors,
       (id) => page.work.select(conversation, KIND, id),
       held,

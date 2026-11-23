@@ -3,8 +3,10 @@
 //! conversation's user, and holds no browser logic.
 //!
 //! The tab list is the plugin's conversation state: what the browser package
-//! last reported, which the backend keeps, so reading it asks no device and
-//! works while the device is away. Closing, moving and stopping a tab operate the browser without
+//! on each device the conversation reaches last reported, which the backend
+//! keeps, so reading it asks no device and works while a device is away. A
+//! method acts on the browser of the device the page names, the one whose
+//! window called it, or the primary device's. Closing, moving and stopping a tab operate the browser without
 //! waking it; opening a tab is work the user starts. Opening and closing
 //! browser tabs for work tabs is [`crate::tabs`]'s, through
 //! the same operations.
@@ -43,11 +45,20 @@ use serde_json::{Map, Value};
 use crate::tabs::KIND;
 use crate::reason::ControlReason;
 
-/// The conversation state: the conversation browser's tabs, none while it
-/// does not run.
+/// The conversation state: the tabs of the conversation's browser on each
+/// device the conversation reaches whose browser reported, its primary
+/// device's first.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct BrowserTabs {
-    /// The number of the device's tab list they are; 0 before it reported.
+    pub devices: Vec<DeviceTabs>,
+}
+
+/// One device's browser's tabs of the conversation, none while it does not
+/// run.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct DeviceTabs {
+    pub device: DeviceId,
+    /// The number of the device's tab list they are.
     #[schemars(range(max = MAX_SAFE_INTEGER))]
     pub list: u64,
     pub tabs: Vec<BrowserTab>,
@@ -151,45 +162,60 @@ pub(crate) fn page() -> Page {
         .reasons::<ControlReason>()
 }
 
-/// The conversation state: the browser's tabs as its package last reported
-/// them, which the backend keeps; none while it never reported or its browser
-/// does not run. It asks no device.
+/// The conversation state: each device's browser's tabs as its package last
+/// reported them, which the backend keeps; a device whose browser never
+/// reported has none. It asks no device.
 pub(crate) async fn tabs(port: &PluginPort) -> Result<Value, PluginError> {
-    to_value(reported(port).await?.unwrap_or(BrowserTabs {
-        list: 0,
-        tabs: Vec::new(),
-    }))
+    to_value(all_reported(port).await?)
 }
 
-/// The conversation state as the package last reported it, and none while
-/// it never did.
+/// The conversation state as the packages last reported it, and none while
+/// none did.
 pub(crate) async fn held_tabs(port: &PluginPort) -> Result<Option<Value>, PluginError> {
-    reported(port).await?.map(to_value).transpose()
+    let reported = all_reported(port).await?;
+    if reported.devices.is_empty() {
+        return Ok(None);
+    }
+    to_value(reported).map(Some)
 }
 
-/// The tabs the primary device last reported; none before it did.
-pub(crate) async fn reported(port: &PluginPort) -> Result<Option<BrowserTabs>, PluginError> {
+/// The tabs of each device the conversation reaches whose browser reported.
+pub(crate) async fn all_reported(port: &PluginPort) -> Result<BrowserTabs, PluginError> {
+    let mut devices = Vec::new();
+    for reported in port.reports().await? {
+        devices.push(DeviceTabs {
+            device: reported.device,
+            list: reported.report.revision,
+            tabs: kept(reported.report.value)?,
+        });
+    }
+    Ok(BrowserTabs { devices })
+}
+
+/// The tabs the port's device last reported, with the number of their list;
+/// none before it did.
+pub(crate) async fn reported(port: &PluginPort) -> Result<Option<(u64, Vec<BrowserTab>)>, PluginError> {
     let Some(report) = port.report().await? else {
         return Ok(None);
     };
-    let kept: KeptTabs = serde_json::from_value(report.value).map_err(|error| {
-        PluginError::failed(format!("the browser's kept tabs do not decode: {error}"))
-    })?;
-    Ok(Some(BrowserTabs {
-        list: report.revision,
-        tabs: kept.tabs,
-    }))
+    Ok(Some((report.revision, kept(report.value)?)))
 }
 
-/// Keeps `tabs` as what the package on `device` reported, at `revision`;
-/// answers whether `device` is the conversation's primary device, whose tabs
-/// its work shows.
+/// The tabs a kept report holds.
+fn kept(value: Value) -> Result<Vec<BrowserTab>, PluginError> {
+    let kept: KeptTabs = serde_json::from_value(value).map_err(|error| {
+        PluginError::failed(format!("the browser's kept tabs do not decode: {error}"))
+    })?;
+    Ok(kept.tabs)
+}
+
+/// Keeps `tabs` as what the package on `device` reported, at `revision`.
 pub(crate) async fn keep(
     port: &PluginPort,
     device: &DeviceId,
     revision: u64,
     tabs: Vec<BrowserTab>,
-) -> Result<bool, PluginError> {
+) -> Result<(), PluginError> {
     let value = serde_json::to_value(KeptTabs { tabs }).map_err(|error| {
         PluginError::failed(format!("the browser's tabs do not encode: {error}"))
     })?;
@@ -238,16 +264,22 @@ pub(crate) async fn close(port: &PluginPort, tab: &str) -> Result<(), PluginErro
     }
 }
 
-/// Whether the conversation's browser, as it last reported, has a tab an
-/// agent or a page opened that the agent never showed: one `prune` may
-/// close. Without one there is nothing to ask the device.
-pub(crate) async fn prunes_any(port: &PluginPort) -> Result<bool, PluginError> {
-    Ok(reported(port).await?.is_some_and(|reported| {
-        reported.tabs.iter().any(|tab| {
-            tab.shows == 0
-                && matches!(tab.created_by, BrowserCreatedBy::Agent { .. } | BrowserCreatedBy::Page { .. })
+/// The devices whose browser, as it last reported, has a tab an agent or a
+/// page opened that the agent never showed: one `prune` may close. A device
+/// without one has nothing to be asked.
+pub(crate) async fn prunable(port: &PluginPort) -> Result<Vec<DeviceId>, PluginError> {
+    Ok(all_reported(port)
+        .await?
+        .devices
+        .into_iter()
+        .filter(|reported| {
+            reported.tabs.iter().any(|tab| {
+                tab.shows == 0
+                    && matches!(tab.created_by, BrowserCreatedBy::Agent { .. } | BrowserCreatedBy::Page { .. })
+            })
         })
-    }))
+        .map(|reported| reported.device)
+        .collect())
 }
 
 /// Closes the agents' tabs the user did not make theirs, and answers the

@@ -10,7 +10,8 @@
 use axum::http::StatusCode;
 use jush_backend_user_shard::shard::lane::{Lane, LaneClose, LaneEnd, LaneMessage, LaneReader};
 use jush_web_api_protocol::error::ErrorCode;
-use jush_web_api_protocol::ids::UserId;
+use jush_web_api_protocol::ids::{DeviceId, UserId};
+use jush_backend_device_access::access::{DeviceAccessError, Refusal};
 use tokio_util::sync::CancellationToken;
 
 use super::AppState;
@@ -20,9 +21,16 @@ use super::error::ApiError;
 use jush_backend_device_access::stream::UserStream;
 use jush_runner_protocol::direct::StreamWatched;
 
-/// The stream `name` of the caller's conversation `id`: everything that can
-/// refuse it refuses the open, the device's opening of it included.
-pub(super) async fn open(state: &AppState, user: &UserId, id: &str, name: String) -> Result<Opened, ApiError> {
+/// The stream `name` of the caller's conversation `id`, on its device
+/// `device` or its primary device: everything that can refuse it refuses the
+/// open, the device's opening of it included.
+pub(super) async fn open(
+    state: &AppState,
+    user: &UserId,
+    id: &str,
+    name: String,
+    device: Option<String>,
+) -> Result<Opened, ApiError> {
     let unknown = || {
         ApiError::new(
             StatusCode::NOT_FOUND,
@@ -33,6 +41,13 @@ pub(super) async fn open(state: &AppState, user: &UserId, id: &str, name: String
     let Some(binding) = state.services.user_streams.get(&name).cloned() else {
         return Err(unknown());
     };
+    // A device that is no device's is none the conversation reaches.
+    let device = device
+        .map(|device| {
+            DeviceId::try_from(device)
+                .map_err(|_| ApiError::from(DeviceAccessError::from(Refusal::NotAttached)))
+        })
+        .transpose()?;
     let record = owned(&state.services, user, id).await?;
     let conversation = record.id.clone();
     // A stream of a plugin the user has off does not exist; one whose
@@ -48,7 +63,7 @@ pub(super) async fn open(state: &AppState, user: &UserId, id: &str, name: String
                 };
                 let stream = shard
                     .device_shard()
-                    .open_user_stream(&record.id, &binding, &cancel)
+                    .open_user_stream(&record.id, device.as_ref(), &binding, &cancel)
                     .await?;
                 Ok::<_, ApiError>(Some((stream, plugin_off)))
             })

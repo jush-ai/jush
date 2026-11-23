@@ -268,6 +268,7 @@ export function conversationFiles(conversationId: string): ConversationFileServi
     get tree() {
       return tree.value
     },
+    deviceSource: (other) => conversationDeviceSource(conversationId, other, other === deviceId.value),
     get root() {
       return root.value
     },

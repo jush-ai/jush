@@ -3,9 +3,7 @@ import type { ReplyPicture } from '@jush-ai/protocol'
 import type { AttachmentLookup, AttachmentOrigin } from '@jush-ai/web-ui/markdown/types'
 import { galleryBlobSize, galleryBlobUrl, galleryBlobs } from './blobs'
 import { PROJECT_ROOT } from './project'
-
-/** The id of the device the gallery's conversation runs on, which its agent's uploads record. */
-export const GALLERY_DEVICE = 'device-1'
+import { GALLERY_DEVICE } from './devices'
 
 /**
  * The attachments the gallery's conversation holds, as `jush attachment

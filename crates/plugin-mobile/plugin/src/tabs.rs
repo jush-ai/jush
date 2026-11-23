@@ -11,8 +11,9 @@
 //! - Closing a tab closes its device, as `jush mobile close` does. A device
 //!   that cannot hear of it then closes it when it lists the device again: the
 //!   mirroring answers the listed devices whose tab the user closed.
-//! - A simulator the agent opens on an attached device has no tab: the work shows
-//!   the conversation's device's simulators alone.
+//! - Each device the conversation reaches has its simulators' tabs, each on
+//!   its device, so the page shows each device's simulators as a window of
+//!   their own. A device's word mirrors its own tabs alone.
 //!
 //! One conversation's work runs one piece at a time.
 
@@ -21,7 +22,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use jush_plugin_interface::{PluginError, PluginPort};
-use jush_web_api_protocol::ids::ConversationId;
+use jush_web_api_protocol::ids::{ConversationId, DeviceId};
 use jush_web_api_protocol::work::{CreateWorkTab, WorkTab};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -52,15 +53,16 @@ impl TabData {
     }
 }
 
-/// The id of the tab the plugin adds for the device `device`: a handle is
-/// given once in a conversation, so a closed tab is never added again.
-pub(crate) fn added_id(device: &str) -> String {
-    format!("mobile-{device}")
+/// The id of the tab the plugin adds for the simulator `device` on `on`: a
+/// handle is given once in a conversation on a device, so a closed tab is
+/// never added again.
+pub(crate) fn added_id(on: &DeviceId, device: &str) -> String {
+    format!("mobile-{on}-{device}")
 }
 
-/// The device a tab the plugin added shows.
-fn device_of(tab: &str) -> Option<&str> {
-    tab.strip_prefix("mobile-")
+/// The simulator on `on` a tab the plugin added shows.
+fn device_of<'a>(on: &DeviceId, tab: &'a str) -> Option<&'a str> {
+    tab.strip_prefix(&format!("mobile-{on}-"))
 }
 
 /// One conversation's work at a time.
@@ -94,9 +96,9 @@ impl Work {
         Ok(())
     }
 
-    /// Reads the device's simulators and updates the work's tabs: a tab for each simulator
-    /// this conversation has open that has none, and each tab whose device
-    /// is no longer open removed.
+    /// Reads the port's device's simulators and updates the work's tabs on
+    /// it: a tab for each simulator this conversation has open that has none,
+    /// and each tab whose device is no longer open removed.
     pub async fn sync(
         &self,
         conversation: &ConversationId,
@@ -119,6 +121,9 @@ impl Work {
         port: &PluginPort,
         listed: &[jush_command_package_mobile_protocol::mobile::Simulator],
     ) -> Result<(), PluginError> {
+        let Some(on) = port.device().await? else {
+            return Ok(());
+        };
         let tabs = listed
             .iter()
             .filter_map(|simulator| {
@@ -135,15 +140,16 @@ impl Work {
                     data.insert("model".into(), Value::from(simulator.model.clone()));
                 }
                 Some(CreateWorkTab {
-                    id: added_id(device.as_str()),
+                    id: added_id(&on, device.as_str()),
                     kind: KIND.into(),
+                    device: Some(on.clone()),
                     data,
                     index: None,
                 })
             })
             .collect();
-        for closed in port.mirror_tabs(KIND, tabs).await? {
-            if let Some(device) = device_of(&closed) {
+        for closed in port.on(on.clone()).mirror_tabs(KIND, tabs).await? {
+            if let Some(device) = device_of(&on, &closed) {
                 close(port, device).await;
             }
         }

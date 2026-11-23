@@ -43,8 +43,14 @@ pub enum LaneTarget {
     DeviceWatch { device: String },
     /// A paired device's direct channel signaling.
     Signaling { device: String },
-    /// A plugin's user stream of a conversation.
-    UserStream { conversation: String, stream: String },
+    /// A plugin's user stream of a conversation, on the device of it
+    /// `device` names, or on its primary device without one.
+    UserStream {
+        conversation: String,
+        stream: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        device: Option<String>,
+    },
     /// The page's debugging (`crate::debug`): a new link, or the one the tab
     /// kept, which the backend gives back while it is the same user's and
     /// unexpired.

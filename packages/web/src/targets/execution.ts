@@ -1,4 +1,6 @@
 import type { MoveLock } from '@jush-ai/web-ui/targets/move-question'
+import type { SessionDevice } from '@jush-ai/web-ui/windows/device-tags'
+import { isSubagentRunning } from '@jush-ai/web-ui/agent/subagents'
 import type { DeviceOption, MenuDevice } from '@jush-ai/web-ui/targets/types'
 import type { Conversation, Device } from '../state/types'
 import { useProduct } from '../state/product'
@@ -37,6 +39,42 @@ export function executionFor(conversation: Pick<Conversation, 'target' | 'cwd'>)
     /** The device's mark; null for the Cloud and a device the account no longer lists. */
     mark: deviceMarkOf(device, snapshot?.devices ?? []),
   }
+}
+
+/**
+ * The devices the conversation reaches as its windows name them, as its
+ * device access admits them: its primary device first, then the attached ones
+ * in the order they were attached, then those a running subagent works on; none
+ * of the primary device while the conversation has no device yet, as a Cloud
+ * never started. A Cloud that is stopped or starting is not offline, primary
+ * or attached, as a move away from it leaves it: its windows say what starts.
+ */
+export function sessionDevices(
+  conversation: Pick<Conversation, 'target' | 'cwd' | 'attachedDevices' | 'subagents'>,
+): SessionDevice[] {
+  const execution = executionFor(conversation)
+  const devices = useProduct().snapshot?.devices ?? []
+  const cloud = cloudDeviceIn(devices)?.id
+  const listed: SessionDevice[] = execution.deviceId === null
+    ? []
+    : [{ id: execution.deviceId, name: execution.name, primary: true, offline: execution.kind === 'device' && execution.state === 'offline' }]
+  for (const attached of conversation.attachedDevices.shown.value ?? []) {
+    if (listed.some((device) => device.id === attached.deviceId)) {
+      continue
+    }
+    const device = devices.find((each) => each.id === attached.deviceId)
+    const offline = attached.deviceId !== cloud && (device?.state ?? 'offline') === 'offline'
+    listed.push({ id: attached.deviceId, name: attached.name, primary: false, offline })
+  }
+  for (const agent of conversation.subagents) {
+    if (agent.device === null || !isSubagentRunning(agent.phase) || listed.some((device) => device.id === agent.device)) {
+      continue
+    }
+    const device = devices.find((each) => each.id === agent.device)
+    const offline = agent.device !== cloud && (device?.state ?? 'offline') === 'offline'
+    listed.push({ id: agent.device, name: device?.name ?? agent.device, primary: false, offline })
+  }
+  return listed
 }
 
 /**

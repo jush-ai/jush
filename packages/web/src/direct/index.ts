@@ -106,6 +106,29 @@ export function directRoute(conversationId: string): DirectRoute | null {
 }
 
 /**
+ * The direct route of `conversationId` on its device `deviceId`: its primary
+ * device's (`directRoute`), or an attached paired device's while its runner is
+ * connected, in the directory its commands start in, its home without one.
+ * None for a device the conversation does not reach, or the Cloud.
+ */
+export function directRouteOn(conversationId: string, deviceId: string | null): DirectRoute | null {
+  const summary = useConversations().items.find((item) => item.id === conversationId)
+  if (!summary)
+    return null
+  if (deviceId === null || deviceId === executionFor(summary).deviceId)
+    return directRoute(conversationId)
+  const attached = summary.attachedDevices.shown.value?.find((each) => each.deviceId === deviceId)
+  const device = useProduct().snapshot?.devices?.find((candidate) => candidate.id === deviceId)
+  if (!attached || device?.kind !== 'user' || device.state !== 'online')
+    return null
+  const home = attached.cwd ?? device.home
+  if (!home)
+    return null
+  const used = use(deviceId)
+  return { device: used.direct, live: used.live, scope: { conversation: conversationId, cwd: home } }
+}
+
+/**
  * Starts the use of paired device `deviceId` while its runner is
  * connected, so that Settings → Devices says how this page reaches it even
  * before a conversation used it.

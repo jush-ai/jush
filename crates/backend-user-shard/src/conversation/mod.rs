@@ -202,6 +202,13 @@ pub(crate) fn conversation_parts(
                     if tree.is_none() {
                         shard.project_files().release(&conversation);
                     }
+                    // Its tree opened, or its subagents may have left a
+                    // device it no longer reaches.
+                    let devices = shard.device_shard().this();
+                    let conversation = conversation.clone();
+                    shard.tasks().spawn_local(async move {
+                        devices.release_unreached(&conversation).await;
+                    });
                 }
                 marks.mark(Part::Conversation(conversation));
             })

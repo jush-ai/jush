@@ -31,10 +31,9 @@ const pins = ref<readonly string[]>(readPins())
  */
 export function gallerySessionWork(
   work: GalleryWork,
-  { keep, beforeFirstMessage = () => false, deviceOffline = () => null }: {
+  { keep, beforeFirstMessage = () => false }: {
     keep?: string
     beforeFirstMessage?: () => boolean
-    deviceOffline?: () => string | null
   } = {},
 ): ComputedRef<SessionWork> {
   const layout = keep === undefined ? null : readStage(readKept(LAYOUT_KEY + keep))
@@ -44,7 +43,7 @@ export function gallerySessionWork(
     kinds: work.kinds.value,
     tabsRead: true,
     beforeFirstMessage: beforeFirstMessage(),
-    deviceOffline: deviceOffline(),
+    devices: work.devices.value,
     request: work.request.value,
     took: work.took,
     inFront: work.inFront,

@@ -91,9 +91,10 @@ export function decodedTarget(value: string): string {
 
 /**
  * Where a message's paths start: the working directory, and the device's home for
- * `~/`, while it is known.
+ * `~/`, while it is known; and the conversation's device, whose files a
+ * `device:` link names as any other link does.
  */
-export type MessagePlaces = Pick<MessageFiles, 'cwd' | 'home'>
+export type MessagePlaces = Pick<MessageFiles, 'cwd' | 'home' | 'device'>
 
 /**
  * The Device path a message's link or image target names, its query and
@@ -137,10 +138,31 @@ export function targetLine(target: string): number | null {
 }
 
 /**
+ * The file of another device a link's target names as
+ * `device:<id>/abs/path`, by the device's id and the absolute path, its query
+ * and fragment dropped; null for any other target. The id is the device's,
+ * which outlives a rename. A Windows path is written after a slash, as a
+ * `file:` URL writes it: `device:<id>/C:/Users/alex/report.md`.
+ */
+export function linkedDeviceFile(target: string): { device: string; path: string } | null {
+  const match = /^device:([^/\s]+)(\/[^?#]*)/.exec(target.trim())
+  if (!match)
+    return null
+  const written = decodedTarget(normalizeFilePath(match[2]!))
+  const path = /^\/[A-Za-z]:[\\/]/.test(written) ? written.slice(1) : written
+  return path === '' ? null : { device: decodedTarget(match[1]!), path }
+}
+
+/**
  * The Device file a link's target names, resolved from `places`, with its line;
  * null for a target that names none.
  */
 export function messageFileTarget(target: string, places: MessagePlaces): MessageFileTarget | null {
+  const elsewhere = linkedDeviceFile(target)
+  if (elsewhere) {
+    const line = targetLine(target)
+    return elsewhere.device === places.device ? { path: elsewhere.path, line } : { path: elsewhere.path, line, device: elsewhere.device }
+  }
   const path = messageDevicePath(target, places)
   return path === null ? null : { path, line: targetLine(target) }
 }
@@ -179,12 +201,17 @@ export function isLikelyFilePath(rawPath: string): boolean {
 /**
  * Where an image a message names loads from: a web image or a `data:` URL
  * from its `url`, a device image from the file at `path`, in the version the
- * page keeps of it (`useDeviceImagesAt`). Null for a target that loads nothing,
- * which shows its alt text. A click on it shows it large in the media viewer.
+ * page keeps of it (`useDeviceImagesAt`), and another device's from its
+ * `device` alone, which only the reply's copy of it shows. Null for a target
+ * that loads nothing, which shows its alt text. A click on it shows it large
+ * in the media viewer.
  */
-export function messageImage(target: string, files: MessageFiles | undefined): { url: string } | { path: string } | null {
+export function messageImage(target: string, files: MessageFiles | undefined): { url: string } | { path: string; device?: string } | null {
   if (isHttpUrl(target) || target.startsWith('data:'))
     return { url: target }
+  const elsewhere = linkedDeviceFile(target)
+  if (elsewhere)
+    return elsewhere.device === files?.device ? { path: elsewhere.path } : elsewhere
   if (!files)
     return null
   const path = messageDevicePath(target, files)

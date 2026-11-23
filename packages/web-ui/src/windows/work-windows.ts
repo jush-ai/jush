@@ -29,13 +29,19 @@ export interface ShownTab {
   subject: string
   /** It is its kind's one tab, which no Close closes. */
   pinned: boolean
+  /** The device the work's tab names; absent for one that follows the primary device. */
+  device?: string
   /** The key of the kind's opening it is, until the work holds the tab it becomes; null for a tab of the work. */
   opening: string | null
 }
 
-/** The strip's id of the opening `key` of `kind`, which no work tab's id takes. */
+/**
+ * The strip's id of the opening `key` of `kind`, which no work tab's id
+ * takes; a kind bound to a device numbers its openings apart from the same
+ * kind on another device, so the id names the device.
+ */
 export function openingTabId(kind: BoundTabKind, key: string): string {
-  return `opening:${kind.kind}:${key}`
+  return `opening:${kind.kind}${kind.device === undefined ? '' : `@${kind.device}`}:${key}`
 }
 
 export interface WorkWindow {
@@ -89,7 +95,16 @@ export function workWindows(
     const resolved = resolveTab(tab, kinds)
     if (resolved.kind && !cancelled.has(tab.id)) {
       const { kind, data, title } = resolved
-      windowOf(kind).tabs.push({ id: tab.id, kind, data, title, subject: kind.subject?.(data) ?? title, pinned: false, opening: null })
+      windowOf(kind).tabs.push({
+        id: tab.id,
+        kind,
+        data,
+        title,
+        subject: kind.subject?.(data) ?? title,
+        pinned: false,
+        ...(tab.device === undefined ? {} : { device: tab.device }),
+        opening: null,
+      })
     }
   }
   const held = new Set(tabsState.tabs.map((tab) => tab.id))

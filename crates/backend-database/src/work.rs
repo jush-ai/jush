@@ -8,7 +8,7 @@
 use std::collections::HashMap;
 
 use jush_plugin_host::store::{MirrorOutcome, WorkOutcome};
-use jush_web_api_protocol::ids::{ConversationId, UserId};
+use jush_web_api_protocol::ids::{ConversationId, DeviceId, UserId};
 use jush_web_api_protocol::work::{CreateWorkTab, WorkChange, WorkDocument, Refused, Work};
 use rusqlite::{Connection, OptionalExtension, params};
 
@@ -92,13 +92,14 @@ impl ControlService {
         .await
     }
 
-    /// Makes the tabs of `kind` in `conversation`'s work the tabs `listed`,
-    /// as one change (`WorkDocument::mirror`), and answers the listed ids
-    /// whose tabs the user closed.
+    /// Makes the tabs of `kind` on `device` in `conversation`'s work the tabs
+    /// `listed`, as one change (`WorkDocument::mirror`), and answers the
+    /// listed ids whose tabs the user closed.
     pub async fn mirror_work(
         &self,
         conversation: ConversationId,
         kind: String,
+        device: DeviceId,
         listed: Vec<CreateWorkTab>,
     ) -> Result<MirrorOutcome, StorageError> {
         self.call(move |connection, now| {
@@ -114,7 +115,7 @@ impl ControlService {
                 return Ok(MirrorOutcome::Missing);
             }
             let (revision, mut document) = stored(&transaction, &conversation)?;
-            let mirrored = document.mirror(&kind, listed);
+            let mirrored = document.mirror(&kind, &device, listed);
             let changed = !mirrored.effects.is_empty();
             if changed {
                 store(&transaction, &conversation, revision + 1, &document, now.as_millisecond())?;
@@ -214,7 +215,7 @@ impl ControlService {
 }
 
 /// Writes the conversation's work at `revision`.
-fn store(
+pub(crate) fn store(
     connection: &Connection,
     conversation: &ConversationId,
     revision: u64,
@@ -236,7 +237,7 @@ fn store(
 
 /// The conversation's revision and document; 0 and the empty one before
 /// its first change.
-fn stored(
+pub(crate) fn stored(
     connection: &Connection,
     conversation: &ConversationId,
 ) -> Result<(u64, WorkDocument), StorageError> {

@@ -18,7 +18,7 @@ import {
 import { schemaRefusal } from '@jush-ai/protocol'
 import type { Pinia } from 'pinia'
 import { z } from 'zod'
-import type { BoundTabKind, KindOpening, WindowKind, TabCommand } from '../agent/tab-kinds/kind'
+import { deviceWindowId, type BoundTabKind, type KindOpening, type WindowKind, type TabCommand } from '../agent/tab-kinds/kind'
 import type { DeviceArtifact, DeviceDownload } from '../devices/installed'
 import type { ChangeSetSource, ReadCallChange } from '../files/changes'
 import type { CommitHistorySource } from '../files/history'
@@ -132,6 +132,8 @@ export interface PluginCallOptions {
 export interface ConversationFileService {
   /** The device's file tree and file contents, while the conversation's device is known. */
   readonly tree: { source: FileBrowserSource; root: string; name?: string } | null
+  /** The files of `device`, another device the conversation reaches, as its attachment picker reads them. */
+  deviceSource(device: string): FileBrowserSource
   /** Where the conversation's work runs, which a retained edit's paths are relative to. */
   readonly root: string | null
   /**
@@ -251,8 +253,9 @@ export interface PageHost {
   /** Follows the plugin's state of `conversation`, by its revision, until `stop`. */
   followState(plugin: string, conversation: string): StateFeed
   /**
-   * Calls `method` of `plugin` for the user, or for `conversation`, and answers its
-   * JSON result. A refusal rejects with a `PluginCallError`.
+   * Calls `method` of `plugin` for the user, or for `conversation` and its
+   * `device`, and answers its JSON result. A refusal rejects with a
+   * `PluginCallError`.
    *
    * - A call that cannot reach the backend, as while it restarts, waits until it can
    *   and goes then, so it never rejects for the connection.
@@ -262,23 +265,23 @@ export interface PageHost {
     plugin: string,
     method: string,
     params: object,
-    conversation: string | null,
+    conversation: DeviceScope | null,
     options?: PluginCallOptions,
   ): Promise<unknown>
-  /** The user stream `name` of `conversation`'s primary device. */
-  stream(name: string, conversation: string): OpenUserStream
-  /** What `conversation`'s primary device holds of `plugin`'s packages, read reactively. */
-  installed(plugin: string, conversation: string): readonly DeviceArtifact[]
-  /** What `conversation`'s primary device downloads of `plugin`'s packages now, read reactively. */
-  downloading(plugin: string, conversation: string): readonly DeviceDownload[]
-  /** Whether `conversation`'s primary device is the user's Cloud while it does not run, read reactively. */
-  deviceStarting(conversation: string): boolean
+  /** The user stream `name` on a device of a conversation. */
+  stream(name: string, on: DeviceScope): OpenUserStream
+  /** What a device of a conversation holds of `plugin`'s packages, read reactively. */
+  installed(plugin: string, on: DeviceScope): readonly DeviceArtifact[]
+  /** What a device of a conversation downloads of `plugin`'s packages now, read reactively. */
+  downloading(plugin: string, on: DeviceScope): readonly DeviceDownload[]
+  /** Whether a device of a conversation is the user's Cloud while it does not run, read reactively. */
+  deviceStarting(on: DeviceScope): boolean
   files(conversation: string): ConversationFileService
   intents: IntentService
   /** The work tabs of one conversation. */
   work: {
-    /** The `data` of the work's tabs of `kind`, as saved. */
-    tabs(conversation: string, kind: string): unknown[]
+    /** The `data` of the work's tabs of `kind`, as saved, on `device` when it names one. */
+    tabs(conversation: string, kind: string, device?: string | null): unknown[]
     /**
      * Brings the window of the tab `id` of `kind` to the front on it, as a
      * browser selects the tab a click opened; a tab the work does not have
@@ -346,20 +349,29 @@ export interface PluginState<T> {
   read(): void
 }
 
-/** The page's plugin for one conversation. */
+/**
+ * A conversation and the device of it a call, a stream or a package is of:
+ * `device` null for its primary device, whichever that is now.
+ */
+export interface DeviceScope {
+  conversation: string
+  device: string | null
+}
+
+/** The page's plugin for one conversation, and one device of it. */
 export interface ConversationPlugin {
   /** The conversation state, followed while the calling scope lives. */
   state<T>(schema: z.ZodType<T>): PluginState<T>
   /** Calls a method of the conversation scope. */
   call<T>(method: string, params: object, result: z.ZodType<T>, options?: PluginCallOptions): Promise<T>
   stream(name: string): OpenUserStream
-  /** What the conversation's primary device holds of the plugin's packages, kept while it is offline. */
+  /** What the device holds of the plugin's packages, kept while it is offline. */
   readonly installed: ComputedRef<readonly DeviceArtifact[]>
-  /** What the conversation's primary device downloads of the plugin's packages now, and how far each came. */
+  /** What the device downloads of the plugin's packages now, and how far each came. */
   readonly downloading: ComputedRef<readonly DeviceDownload[]>
   /**
-   * Whether the conversation's primary device is the user's Cloud while it
-   * does not run: work the user starts there waits for it to start first.
+   * Whether the device is the user's Cloud while it does not run: work the
+   * user starts there waits for it to start first.
    */
   readonly deviceStarting: ComputedRef<boolean>
 }
@@ -379,7 +391,8 @@ export interface PagePlugin {
   setFeature(feature: string, enabled: boolean): Promise<void>
   /** Calls a method of the user scope. */
   call<T>(method: string, params: object, result: z.ZodType<T>, options?: PluginCallOptions): Promise<T>
-  conversation(id: string): ConversationPlugin
+  /** The plugin for the conversation `id` and its `device`, its primary device without one. */
+  conversation(id: string, device?: string | null): ConversationPlugin
   /** Where the page's reply block `tag` of `id` loads as a page of its own. */
   blockDocument(tag: string, id: string): string
 }
@@ -422,6 +435,12 @@ export interface PageContext {
 /** A kind's tab as the page's functions see it. */
 export interface KindTab {
   conversation: string
+  /**
+   * The device of a per-device window's kind (`WindowKind.perDevice`), whose
+   * tabs alone it shows; null for any other kind, whose tabs follow the
+   * conversation's primary device or name their own (`device` of a content).
+   */
+  device: string | null
   /** The page's context, whose stores hold what the page keeps live (`./stores.ts`). */
   page: PageContext
 }
@@ -478,6 +497,13 @@ export interface TabKind<Data, Opens = Data> {
    * own.
    */
   key?(data: Data): string
+  /**
+   * The device whose thing a tab an intent opens shows, which the work's tab
+   * names, as a file of another device is; without it, the tab follows the
+   * conversation's primary device. A kind of a device's own windows
+   * (`WindowKind.perDevice`) has its plugin name the device instead.
+   */
+  deviceOf?(data: Data): string
   /** The strip's mark. Props: `data`. */
   mark: Component
   /**
@@ -493,9 +519,10 @@ export interface TabKind<Data, Opens = Data> {
   /**
    * The tab's content.
    *
-   * - Props: `conversation`, `tabId`, `data`, and `shown`, whether the tab is
-   *   the one its window shows, on screen. What it keeps live beyond its mount
-   *   is in its page's stores.
+   * - Props: `conversation`, `device`, the tab's device or null for the
+   *   primary device's, `tabId`, `data`, and `shown`, whether the tab is the
+   *   one its window shows, on screen. What it keeps live beyond its mount is
+   *   in its page's stores.
    * - Emits `update` with the tab's next `data` and, for a change that is no
    *   step of the history, a `TabUpdate` that says so; and `close` to have its
    *   window close the tab as its user would.
@@ -528,14 +555,15 @@ export interface TabKind<Data, Opens = Data> {
   badge?: Component
   /**
    * The rows of its window's entry in the taskbar's Open, as a submenu's
-   * `MenuItem`s, such as the simulators a device has. Props: `conversation`.
-   * Emits `opened` once the user chose one, which shows the window.
+   * `MenuItem`s, such as the simulators a device has. Props: `conversation`,
+   * and `device` as `KindTab.device`. Emits `opened` once the user chose one,
+   * which shows the window.
    */
   openMenu?: Component
   /**
    * The content of an opening's tab, such as a simulator that boots. Props:
-   * `conversation`, `opening`, its key, and `shown`, whether its window is on
-   * screen.
+   * `conversation`, `device` as `KindTab.device`, `opening`, its key, and
+   * `shown`, whether its window is on screen.
    */
   opening?: Component
   /**
@@ -544,6 +572,7 @@ export interface TabKind<Data, Opens = Data> {
    */
   intents?: {
     file?(payload: IntentPayloads['file'], current: Data | null): Opens
+    deviceFile?(payload: IntentPayloads['deviceFile'], current: Data | null): Opens
     edit?(payload: IntentPayloads['edit'], current: Data | null): Opens
     commit?(payload: IntentPayloads['commit'], current: Data | null): Opens
     branch?(payload: IntentPayloads['branch'], current: Data | null): Opens
@@ -705,7 +734,7 @@ async function validatedCall<T>(
   method: string,
   params: object,
   result: z.ZodType<T>,
-  conversation: string | null,
+  conversation: DeviceScope | null,
   options?: PluginCallOptions,
 ): Promise<T> {
   const read = result.safeParse(await host.call(plugin, method, params, conversation, options))
@@ -715,11 +744,11 @@ async function validatedCall<T>(
   return read.data
 }
 
-/** `plugin` for `conversation`, over `host`. */
-function conversationPlugin(host: PageHost, plugin: string, conversation: string): ConversationPlugin {
+/** `plugin` for a device of a conversation, `on`, over `host`. */
+function conversationPlugin(host: PageHost, plugin: string, on: DeviceScope): ConversationPlugin {
   return {
     state<T>(schema: z.ZodType<T>): PluginState<T> {
-      const feed = host.followState(plugin, conversation)
+      const feed = host.followState(plugin, on.conversation)
       onScopeDispose(() => feed.stop())
       const state = readState(() => feed.value(), schema)
       return {
@@ -729,11 +758,11 @@ function conversationPlugin(host: PageHost, plugin: string, conversation: string
       }
     },
     call: (method, params, result, options) =>
-      validatedCall(host, plugin, method, params, result, conversation, options),
-    stream: (name) => host.stream(name, conversation),
-    installed: computed(() => host.installed(plugin, conversation)),
-    downloading: computed(() => host.downloading(plugin, conversation)),
-    deviceStarting: computed(() => host.deviceStarting(conversation)),
+      validatedCall(host, plugin, method, params, result, on, options),
+    stream: (name) => host.stream(name, on),
+    installed: computed(() => host.installed(plugin, on)),
+    downloading: computed(() => host.downloading(plugin, on)),
+    deviceStarting: computed(() => host.deviceStarting(on)),
   }
 }
 
@@ -851,14 +880,14 @@ export function pageContext(host: PageHost, page: AnyPluginPage): PageContext {
       setFeature: (feature, enabled) => host.setFeature(page.plugin, feature, enabled),
       call: (method, params, result, options) =>
         validatedCall(host, page.plugin, method, params, result, null, options),
-      conversation: (id) => conversationPlugin(host, page.plugin, id),
+      conversation: (id, device = null) => conversationPlugin(host, page.plugin, { conversation: id, device }),
       blockDocument: (tag, id) => host.blockDocument(page.plugin, tag, id),
     },
     intents: host.intents,
     work: {
-      tabs(conversation, kind) {
+      tabs(conversation, kind, device) {
         own(kind)
-        return host.work.tabs(conversation, kind)
+        return host.work.tabs(conversation, kind, device)
       },
       select(conversation, kind, id) {
         own(kind)
@@ -910,53 +939,96 @@ export const PageScope = defineComponent({
   },
 })
 
+/** One page's kinds bound to a conversation, by the device each is bound to: `''` for the kinds of no one device. */
+type BoundPage = Map<string, BoundTabKind[]>
+
 /**
- * The work's kinds of `page` for `conversation`: each kind's functions and
- * components bound to the conversation and the page's context.
+ * The work's kinds of `page` for `conversation` and the devices it reaches,
+ * `devices`, its primary device first: each kind's functions and components
+ * bound to the conversation and the page's context, a per-device window's
+ * kinds once for each device, onto that device's copy of the window. `kept`
+ * holds the kinds bound before, which a device still reached keeps.
  */
-export function bindPage(page: AnyPluginPage, host: PageHost, conversation: string): BoundTabKind[] {
+function bindPage(
+  page: AnyPluginPage,
+  host: PageHost,
+  conversation: string,
+  devices: readonly string[],
+  kept: BoundPage | undefined,
+  windows: Map<string, WindowKind>,
+): BoundPage {
   const context = pageContext(host, page)
-  const tab: KindTab = { conversation, page: context }
-  return (page.kinds ?? []).map((kind) => bindKind(kind, tab, context))
+  const kinds = page.kinds ?? []
+  const bound: BoundPage = new Map()
+  const primary = devices[0]
+  // Before the conversation's device exists, as a Cloud never started, a
+  // per-device window is the primary device's, whichever comes.
+  const once = kinds.filter((kind) => !kind.window.perDevice || primary === undefined)
+  bound.set('', kept?.get('') ?? once.map((kind) => bindKind(kind, { conversation, device: null, page: context }, context, kind.window)))
+  const perDevice = kinds.filter((kind) => kind.window.perDevice)
+  if (perDevice.length > 0 && primary !== undefined) {
+    for (const device of devices) {
+      bound.set(device, kept?.get(device) ?? perDevice.map((kind) => {
+        // The kinds of one window share its copy, as they share the window.
+        const id = deviceWindowId(kind.window, device, primary)
+        const key = `${id}\n${device}`
+        let window = windows.get(key)
+        if (!window) {
+          window = { ...kind.window, id, device }
+          windows.set(key, window)
+        }
+        return bindKind(kind, { conversation, device, page: context }, context, window)
+      }))
+    }
+  }
+  return bound
 }
 
 /**
  * The work's kinds of the pages `pages()` names now, in their order, for
- * `conversation()`. Each page is bound apart (`bindPage`): a page that joins is
+ * `conversation()` and the devices it reaches, `devices()`, its primary
+ * device first. Each page is bound apart (`bindPage`): a page that joins is
  * bound, and the others keep the kinds they had, so turning one plugin on or
- * off remounts no other's tab; a change of conversation binds every page anew.
+ * off remounts no other's tab, and a device that comes or goes binds or drops
+ * only its own; a change of conversation or of its primary device, whose
+ * window takes the window's own id, binds every page anew.
  */
 export function useBoundKinds(
   pages: () => readonly AnyPluginPage[],
   host: PageHost,
   conversation: () => string | null,
+  devices: () => readonly string[],
 ): ComputedRef<BoundTabKind[]> {
-  const bound = shallowRef(new Map<string, BoundTabKind[]>())
+  const bound = shallowRef(new Map<string, BoundPage>())
+  const windows = new Map<string, WindowKind>()
   let boundFor: string | null = null
   watch(
-    [() => pages().map((page) => page.plugin).join(), conversation],
+    [() => pages().map((page) => page.plugin).join(), conversation, () => devices().join()],
     () => {
       const now = conversation()
-      const kept = now === boundFor ? bound.value : new Map<string, BoundTabKind[]>()
-      const next = new Map<string, BoundTabKind[]>()
+      const at = now === null ? null : `${now}\n${devices()[0] ?? ''}`
+      const kept = at === boundFor ? bound.value : new Map<string, BoundPage>()
+      const next = new Map<string, BoundPage>()
       if (now !== null) {
         for (const page of pages()) {
-          next.set(page.plugin, kept.get(page.plugin) ?? bindPage(page, host, now))
+          next.set(page.plugin, bindPage(page, host, now, devices(), kept.get(page.plugin), windows))
         }
       }
-      boundFor = now
+      boundFor = at
       bound.value = next
     },
     { immediate: true },
   )
-  return computed(() => [...bound.value.values()].flat())
+  return computed(() => [...bound.value.values()].flatMap((page) => [...page.values()].flat()))
 }
 
-/** `kind` as the windows show it for one conversation. */
-function bindKind(kind: TabKind<unknown>, tab: KindTab, context: PageContext): BoundTabKind {
+/** `kind` as the windows show it for one conversation, in `window`. */
+function bindKind(kind: TabKind<unknown>, tab: KindTab, context: PageContext, window: WindowKind): BoundTabKind {
   const content = defineComponent({
     props: {
       tabId: { type: String, required: true },
+      /** The tab's device; absent for one that follows the primary device. */
+      device: { type: String, default: null },
       data: { required: true },
       shown: { type: Boolean, required: true },
     },
@@ -968,6 +1040,7 @@ function bindKind(kind: TabKind<unknown>, tab: KindTab, context: PageContext): B
       return () =>
         h(kind.content, {
           conversation: tab.conversation,
+          device: props.device,
           tabId: props.tabId,
           data: props.data,
           shown: props.shown,
@@ -977,18 +1050,19 @@ function bindKind(kind: TabKind<unknown>, tab: KindTab, context: PageContext): B
     },
   })
   const { badge, icon, busy, commands, subject, openMenu, opening } = kind
-  /** `component` with the page around it and the tab's conversation as its prop. */
+  /** `component` with the page around it and the tab's conversation and device as its props. */
   const inConversation = (component: Component) => defineComponent({
     inheritAttrs: false,
     setup(_props, { attrs }) {
       providePage(context)
-      return () => h(component, { ...attrs, conversation: tab.conversation })
+      return () => h(component, { ...attrs, conversation: tab.conversation, device: tab.device })
     },
   })
   return {
     kind: kind.kind,
     schema: kind.schema,
-    window: kind.window,
+    ...(tab.device === null ? {} : { device: tab.device }),
+    window,
     start: kind.start,
     open: kind.open && ((data) => kind.open?.(data, tab)),
     openings: kind.openings && (() => kind.openings?.(tab) ?? []),

@@ -3,6 +3,7 @@ import { keptComputed } from '@jush-ai/web-ui/infra/keep-same'
 import { computed, onUnmounted, useTemplateRef, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { coded } from '@jush-ai/web-ui/infra/errors'
+import { fileIntent } from '@jush-ai/web-ui/plugins/intents'
 import { viewAbandoned, viewOpened } from '@jush-ai/web-ui/infra/view-timing'
 import { loadRegionRenderers } from '@jush-ai/web-ui/infra/region-load'
 import type { PersistedScrollState } from '@jush-ai/web-ui/composables/useBlockVirtualizer'
@@ -312,10 +313,10 @@ const files = computed<ConversationFiles | undefined>(() => {
     ...(contents ? { contents } : {}),
     ...(device ? { device } : {}),
     open: work.canOpen('file')
-      ? ({ path, line, root }) => work.openIn(current.id, { intent: 'file', payload: { path, ...(line === null ? {} : { line }), ...(root === undefined ? {} : { root }) } })
+      ? (target) => work.openIn(current.id, fileIntent(target))
       : undefined,
     showInFiles: work.canOpen('file')
-      ? ({ path, root }) => work.openIn(current.id, { intent: 'file', payload: { path, tree: true, ...(root === undefined ? {} : { root }) } })
+      ? (target) => work.openIn(current.id, fileIntent(target, true))
       : undefined,
     openConversation: (id) => navigation.open(id),
     openCommit: work.canOpen('commit')

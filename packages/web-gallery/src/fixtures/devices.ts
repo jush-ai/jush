@@ -5,6 +5,9 @@ import { demoDeviceReport, demoDeviceStart } from './device-installation'
 import { ago } from './time'
 import { shownAmong } from './device-marks'
 
+/** The device the gallery's conversations run on, `alex-mbp` (`galleryDevices`). */
+export const GALLERY_DEVICE = 'mac'
+
 /**
  * The paths a demo device's attempts take, one per state its page shows
  * (`packages/web-ui/src/devices/direct.ts`), and the devices of the devices

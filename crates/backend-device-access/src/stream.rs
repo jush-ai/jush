@@ -162,17 +162,19 @@ pub enum UserCallError {
 }
 
 impl dyn DeviceShard + '_ {
-    /// Opens the user stream `binding` names on the conversation's primary
-    /// device. The stream is admitted without waking a stopped Cloud, and open
-    /// until the edge drops its lease, the invocation completes, or a
-    /// transition ends it. Nothing moves before the runner opened it.
+    /// Opens the user stream `binding` names on `device`, one the
+    /// conversation reaches, or on its primary device without one. The stream
+    /// is admitted without waking a stopped Cloud, and open until the edge
+    /// drops its lease, the invocation completes, or a transition ends it.
+    /// Nothing moves before the runner opened it.
     pub async fn open_user_stream(
         &self,
         id: &ConversationId,
+        device: Option<&DeviceId>,
         binding: &ResidentBinding,
         cancel: &CancellationToken,
     ) -> Result<UserStream, StreamError> {
-        let access = self.admit_stream(id, None, Attention::Watches, cancel).await?;
+        let access = self.admit_stream(id, device, Attention::Watches, cancel).await?;
         let request = self
             .resident_request(&access.conversation, &access.admitted, binding, None)
             .await?;
@@ -221,13 +223,15 @@ impl dyn DeviceShard + '_ {
         Err(refused)
     }
 
-    /// Runs a one-shot user call on the conversation's primary device and returns
-    /// its JSON answer. Work the user starts is an ordinary operation of the
-    /// conversation's device access. Any other call is admitted as a user stream
-    /// is, and a transition ends it instead of waiting for it.
+    /// Runs a one-shot user call on `device`, one the conversation reaches, or
+    /// on its primary device without one, and returns its JSON answer. Work
+    /// the user starts is an ordinary operation of the conversation's device
+    /// access. Any other call is admitted as a user stream is, and a
+    /// transition ends it instead of waiting for it.
     pub async fn user_call(
         &self,
         id: &ConversationId,
+        device: Option<&DeviceId>,
         kind: UserCallKind,
         call: &ResidentCall,
         cancel: &CancellationToken,
@@ -236,7 +240,7 @@ impl dyn DeviceShard + '_ {
             UserCallKind::Starts => {
                 let record = self.owned_conversation(id).await?;
                 return self
-                    .with_reading_device(&record.id, None, cancel, async |device| {
+                    .with_reading_device(&record.id, device, cancel, async |device| {
                         let request = self
                             .resident_request(&record.id, device, &call.binding, Some(&call.args))
                             .await?;
@@ -253,7 +257,7 @@ impl dyn DeviceShard + '_ {
         };
         // Registered with the conversation's transfers until the answer is
         // in, so a transition ends the call.
-        let access = self.admit_stream(id, None, attention, cancel).await?;
+        let access = self.admit_stream(id, device, attention, cancel).await?;
         let request = self
             .resident_request(
                 &access.conversation,

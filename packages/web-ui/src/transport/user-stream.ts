@@ -8,10 +8,10 @@ import type { StreamWatched } from '@jush-ai/protocol'
 import type { OpenUserStream, StreamBytes } from '../plugins/streams'
 import { Lane, openLane } from './page-connection'
 
-/** The stream `stream` of the conversation `conversation`. */
-export function userStreamOf(conversation: string, stream: string): OpenUserStream {
+/** The stream `stream` of the conversation `conversation` on its device `device`, its primary device without one. */
+export function userStreamOf(conversation: string, stream: string, device: string | null = null): OpenUserStream {
   return (handlers) => {
-    const lane = openLane({ kind: 'user_stream', conversation, stream }, 'user stream')
+    const lane = openLane({ kind: 'user_stream', conversation, stream, ...(device === null ? {} : { device }) }, 'user stream')
     lane.binaryType = 'arraybuffer'
     const queued: StreamBytes[] = []
     let watched = true

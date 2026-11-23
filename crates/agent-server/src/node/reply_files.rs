@@ -42,7 +42,7 @@ use std::{
 use comrak::{Arena, nodes::NodeValue, parse_document};
 use jush_agent_session::{AgentSession, SessionEvent, Subscription};
 use jush_agent_tools::DeviceResolver;
-use jush_agent_transcript::{has_scheme, markdown_options, picture_path};
+use jush_agent_transcript::{PicturePlace, has_scheme, markdown_options, picture_place};
 use jush_conversation_lane_protocol::TranscriptPatch;
 use jush_shared_types::{Block, BlockId, CodeFile, NodeId, PictureCopy, PictureFailure, TextBlock};
 use futures_util::future::LocalBoxFuture;
@@ -71,11 +71,12 @@ pub trait ReplyFiles {
         paths: Vec<String>,
     ) -> LocalBoxFuture<'a, Option<HashMap<String, String>>>;
 
-    /// Copies the file at `path`, as `picture_path` names it and read against
+    /// Copies the file at `path`, as `picture_place` names it and read against
     /// `cwd`, from the device `device` of the conversation `root` into its
     /// attachments, as the reply of `node` shows it, and answers the
     /// attachment's number, such as `a3`; or why it could not be copied. The
-    /// device is looked at without waking it, and only while it is `device`.
+    /// device is looked at without waking it, and only while the conversation
+    /// reaches it.
     fn copy_picture<'a>(
         &'a self,
         root: &'a NodeId,
@@ -339,20 +340,22 @@ fn keep(session: &jush_agent_session::WeakSession, id: &BlockId, files: Vec<Code
 ///
 /// The transcript named the pictures as being copied when it completed the
 /// text, so a page that sees the complete text never takes a picture for one
-/// that was never asked for. The copies are of the device the node works on
-/// when the copying starts, read against its working directory then.
+/// that was never asked for. A picture of the node's own device is copied
+/// from the device the node works on when the copying starts, read against
+/// its working directory then; one a `device:` target names, from that
+/// device.
 async fn copy<H: DeviceResolver>(
     text: TextBlock,
     session: jush_agent_session::WeakSession,
     runtime: Weak<NodeRuntime<H>>,
     files: Rc<dyn ReplyFiles>,
 ) {
-    let named: Vec<(String, String)> = text
+    let named: Vec<(String, PicturePlace)> = text
         .pictures
         .iter()
         .flatten()
         .filter(|picture| picture.copy == PictureCopy::Copying)
-        .filter_map(|picture| Some((picture.target.clone(), picture_path(&picture.target)?)))
+        .filter_map(|picture| Some((picture.target.clone(), picture_place(&picture.target)?)))
         .collect();
     let Some(runtime) = runtime.upgrade() else {
         return;
@@ -381,11 +384,9 @@ async fn copy<H: DeviceResolver>(
             return;
         }
     };
-    for (target, path) in named {
-        let copy = match files
-            .copy_picture(&runtime.root, &runtime.node, device.as_deref(), &cwd, &path)
-            .await
-        {
+    for (target, place) in named {
+        let on = place.device.as_deref().or(device.as_deref());
+        let copy = match files.copy_picture(&runtime.root, &runtime.node, on, &cwd, &place.path).await {
             Ok(attachment) => PictureCopy::Copied { attachment },
             Err(reason) => PictureCopy::Failed { reason },
         };

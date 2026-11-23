@@ -219,7 +219,7 @@ export {
 // The repositories Commits offers for a conversation's directory.
 export type { Repositories, RepositoryEntry } from '@jush-ai/web-ui/files/repositories'
 export type { FileBrowserSource } from '@jush-ai/web-ui/files/types'
-export { baseName, isAbsoluteDevicePath, joinPath, relativePath } from '@jush-ai/web-ui/files/paths'
+export { baseName, isAbsoluteDevicePath, joinPath, parentPath, relativePath } from '@jush-ai/web-ui/files/paths'
 export { downloadUrl } from '@jush-ai/web-ui/files/download'
 export { formatByteRatio, formatBytes } from '@jush-ai/web-ui/files/format'
 export { treeLayout } from '@jush-ai/web-ui/files/tree-layout'

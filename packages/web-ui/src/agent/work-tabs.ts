@@ -5,13 +5,19 @@ import { intentKind, type AnyPluginPage, type TabKind } from '../plugins/page'
 import type { IntentRequest } from '../plugins/intents'
 
 /**
- * A tab of the work: a fact, `{ id, kind, data }`. What its content is
- * doing is never written here, and `data` means something only to the tab's
- * kind.
+ * A tab of the work: a fact, `{ id, kind, device, data }`. What its content
+ * is doing is never written here, and `data` means something only to the
+ * tab's kind.
  */
 export interface WorkTab {
   id: string
   kind: string
+  /**
+   * The device whose thing it shows, such as a browser's tab or a file of an
+   * attached device; absent for a tab that follows the conversation's
+   * primary device.
+   */
+  device?: string
   data: unknown
 }
 
@@ -96,7 +102,8 @@ export function openIntent(
     if (same) {
       return { selection: same.id, pinned, created: null }
     }
-    const created = { id: crypto.randomUUID(), kind: kind.kind, data }
+    const device = kind.deviceOf?.(data)
+    const created = { id: crypto.randomUUID(), kind: kind.kind, ...(device === undefined ? {} : { device }), data }
     return { selection: created.id, pinned, created }
   }
   const stored = Object.hasOwn(pinned, kind.kind) ? kind.schema.safeParse(pinned[kind.kind]) : null
@@ -139,6 +146,8 @@ function opened(kind: TabKind<unknown>, request: IntentRequest, current: unknown
   switch (request.intent) {
     case 'file':
       return kind.intents?.file?.(request.payload, current)
+    case 'deviceFile':
+      return kind.intents?.deviceFile?.(request.payload, current)
     case 'edit':
       return kind.intents?.edit?.(request.payload, current)
     case 'commit':

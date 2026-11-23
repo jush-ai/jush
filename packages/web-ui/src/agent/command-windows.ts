@@ -3,6 +3,7 @@ import { Activity, CircleStop, SquareTerminal, X } from '@lucide/vue'
 import type { ContextMenuGroup } from '../ui/context-menu'
 import type { OwnWindow } from '../windows/SessionWindows.vue'
 import { t as windowsText } from '../windows/locales/text'
+import { deviceTags, type SessionDevice } from '../windows/device-tags'
 import { commandKindOf, isTerminalRunning, runningOfKind, terminalStatus, type CommandKind, type TerminalRecord } from './terminals'
 import { t } from './locales/text'
 
@@ -15,10 +16,17 @@ import { t } from './locales/text'
  *
  * With any tab, one is selected, as in a web browser: the command picked
  * while its tab stays, else the oldest, so a window never stands on no tab.
+ * A tab is tagged with its command's device among the conversation's
+ * `devices` (`deviceTags`): the device its call named, or the primary
+ * device for the main agent's call that named none, as its live frames say.
+ * A subagent's command that named none runs on that subagent's device, and
+ * one the page knows only from the list of ended commands names no device:
+ * neither is tagged, rather than tagged wrong.
  */
 export function useCommandWindows(
   terminals: () => readonly TerminalRecord[],
   end: (id: string) => void,
+  devices: () => readonly SessionDevice[],
 ): {
   active: Ref<Record<CommandKind, string | null>>
   /** The tabs of the window of `kind`. */
@@ -65,8 +73,20 @@ export function useCommandWindows(
     ]
   }
 
+  /** The device of `terminal` by its id, a device the conversation does not list by the name its call gave; null when not known. */
+  function deviceOf(terminal: TerminalRecord): string | null {
+    const known = devices()
+    if (terminal.device !== undefined) {
+      return known.find((device) => device.name === terminal.device)?.id ?? terminal.device
+    }
+    const mainAgentLive = terminal.subagentId === undefined && terminal.toolUseId !== undefined
+    return mainAgentLive ? known.find((device) => device.primary)?.id ?? null : null
+  }
+
   function window(kind: CommandKind, id: string, icon: typeof Activity, name: string): OwnWindow {
     const count = runningOfKind(terminals(), kind).length
+    const shownTabs = tabs(kind)
+    const tags = deviceTags(shownTabs.map(deviceOf), devices())
     return {
       id,
       icon,
@@ -77,9 +97,10 @@ export function useCommandWindows(
       // in its settled state, so Services has none.
       dot: kind === 'command' && count > 0 ? 'steady' : undefined,
       anchors: true,
-      tabs: tabs(kind).map((terminal) => ({
+      tabs: shownTabs.map((terminal, at) => ({
         id: terminal.id,
         title: terminal.title,
+        tag: tags[at] ?? null,
         busy: terminal.stopping === true,
         status: terminalStatus(terminal.phase),
         closable: terminal.phase !== 'running',

@@ -1,4 +1,5 @@
 import type { RequestEditSelection } from '../files/request-changes'
+import type { MessageFileTarget } from '../markdown/types'
 
 /**
  * What the shell and plugins ask the conversation's windows to show, named by what it
@@ -19,6 +20,12 @@ export interface IntentPayloads {
    *   selected, and keeps the file the view shows; it names no path.
    */
   file: { path: string; line?: number; root?: string; tree?: true; search?: true }
+  /**
+   * A file of another device the conversation reaches, which the File view
+   * of its own device does not show, as a `device:<id>/path` link names it:
+   * the device's id, the file's absolute path, and the line to open it at.
+   */
+  deviceFile: { device: string; path: string; line?: number }
   /**
    * A request's changes, as its line or a file pill under one of its calls
    * names them: the request, its file, and the edit of it or All Changes.
@@ -63,3 +70,17 @@ export type IntentName = keyof IntentPayloads
 
 /** One intent with its payload, as the shell and pages open it. */
 export type IntentRequest = { [Name in IntentName]: { intent: Name; payload: IntentPayloads[Name] } }[IntentName]
+
+/**
+ * The intent that shows the file a message names: `deviceFile` for a file of
+ * another device, `file` otherwise, in the tree too as Show in Files asks
+ * with `tree`.
+ */
+export function fileIntent(target: Pick<MessageFileTarget, 'path' | 'root' | 'device'> & { line?: number | null }, tree = false): IntentRequest {
+  const { path, line, root, device } = target
+  const at = line === null || line === undefined ? {} : { line }
+  if (device !== undefined) {
+    return { intent: 'deviceFile', payload: { device, path, ...at } }
+  }
+  return { intent: 'file', payload: { path, ...(tree ? { tree: true } : at), ...(root === undefined ? {} : { root }) } }
+}

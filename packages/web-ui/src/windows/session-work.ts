@@ -2,6 +2,7 @@ import { shallowRef, watch, type ShallowRef } from 'vue'
 import type { TabsState, PinnedTabs } from '../agent/work-tabs'
 import type { BoundTabKind } from '../agent/tab-kinds/kind'
 import type { TabUpdate } from '../plugins/page'
+import type { SessionDevice } from './device-tags'
 import { useWindowStage, type StageState, type WindowStageModel } from './stage'
 
 /**
@@ -51,8 +52,12 @@ export interface SessionWork {
   tabsRead: boolean
   /** The conversation's first send has not created it yet: Files and Changes say when they come. */
   beforeFirstMessage: boolean
-  /** The name of the primary device while its runner is not connected, which a window says over its tabs. */
-  deviceOffline: string | null
+  /**
+   * The devices the conversation reaches, its primary device first: a
+   * window says over its tabs that its device is offline, and names it in a
+   * tag where it shows beside another device's (`device-tags.ts`).
+   */
+  devices: readonly SessionDevice[]
   /** What the windows have yet to take, while there is something. */
   request: WorkRequest | null
   /** The windows took the request `id`. */

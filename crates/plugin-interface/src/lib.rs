@@ -65,7 +65,7 @@ pub use plugin::{CommandPlugin, NoRequests, Plugin, PluginFactory, PluginFile, P
 pub use port::{
     CallKind, DirectoryFile, DirectoryPath, DeviceDirectory, PluginPort, PluginTransport, PortAnswer, PortFailure, PortMessage, PortRefusal,
     WorkspaceName, Workspaces, DeviceName, GitEntry, GitFile, GitRefusal, GitTree,
-    StoredReport, StoredValue,
+    DeviceReport, StoredReport, StoredValue,
 };
 pub use providers::{
     AskedVideo, AudioAsk, AudioFacts, AudioFileFormat, AudioOption, AudioVoices, MadeAudio, PcmShape, VoiceInfo,

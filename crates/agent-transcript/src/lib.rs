@@ -32,7 +32,7 @@ pub use ids::{IdSource, RandomIds};
 pub use journal::{DirtyRows, PatchBatch};
 pub use log::{AskedEnd, PendingCall, RequestTimes, TranscriptLog, kept};
 pub use replay::{REPLAY_CHARS, Replay, ReplayedBlock, RequestView, bound_text, replay, tool_input};
-pub use reply_markdown::{has_scheme, markdown_options, named_pictures, picture_path};
+pub use reply_markdown::{PicturePlace, has_scheme, markdown_options, named_pictures, picture_place};
 pub use reports::{duration, labelled_output, report_text, reports_text};
 
 use jush_shared_types::{Block, GoneCause, ModelMediaKind, WakeupPlacement};

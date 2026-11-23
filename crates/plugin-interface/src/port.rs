@@ -80,20 +80,34 @@ pub enum PortMessage {
     Changed {
         scope: Scope,
     },
-    /// Runs one operation of a package the plugin's commands bind, on the
-    /// request's conversation's primary device, with `input` as what it reads:
-    /// bulk content, such as a document, goes there rather than in `args`,
-    /// which the command protocol bounds as metadata.
+    /// Runs one operation of a package the plugin's commands bind, on
+    /// `device` or the request's device ([`PluginPort::on`]), with `input` as
+    /// what it reads: bulk content, such as a document, goes there rather
+    /// than in `args`, which the command protocol bounds as metadata.
     PackageCall {
         operation: NativeOperation,
         args: Map<String, Value>,
         #[serde(default, skip_serializing_if = "String::is_empty")]
         input: String,
         kind: CallKind,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        device: Option<DeviceId>,
     },
     /// What the plugin's package last reported of the request's conversation
-    /// on the conversation's primary device.
-    ReadReport,
+    /// on `device` or the request's device.
+    ReadReport {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        device: Option<DeviceId>,
+    },
+    /// What the plugin's package last reported of the request's conversation
+    /// on each device the conversation reaches.
+    ReadReports,
+    /// Which device `device`, or the request's device, is: the conversation's
+    /// primary device when the request names none.
+    ReadDevice {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        device: Option<DeviceId>,
+    },
     /// Keeps `value` as what the plugin's package on the device `device`
     /// reported of the request's conversation, at the package's `revision`.
     WriteReport {
@@ -136,11 +150,14 @@ pub enum PortMessage {
     RemoveWorkTab {
         id: String,
     },
-    /// Makes the tabs of the plugin's tab kind `kind` the tabs a device has
-    /// open, as one change of the work.
+    /// Makes the tabs of the plugin's tab kind `kind` on `device`, or the
+    /// request's device, the tabs that device has open, as one change of the
+    /// work.
     MirrorWorkTabs {
         kind: String,
         tabs: Vec<CreateWorkTab>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        device: Option<DeviceId>,
     },
     /// The plugin's secret `name` for the user.
     ReadSecret {
@@ -259,15 +276,20 @@ pub enum PortAnswer {
     Called {
         result: Value,
     },
-    /// The report is kept; `primary` says whether the device it came from is
-    /// the conversation's primary device, the one its work shows.
-    Kept {
-        primary: bool,
-    },
     /// A report; none before the package made one.
     Report {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         report: Option<StoredReport>,
+    },
+    /// The reports of the devices the conversation reaches, its primary
+    /// device's first; a device whose package never reported has none.
+    Reports {
+        reports: Vec<DeviceReport>,
+    },
+    /// A device; none for a conversation whose device does not exist yet.
+    Device {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        device: Option<DeviceId>,
     },
     Work {
         work: Work,
@@ -344,7 +366,8 @@ impl PortAnswer {
             Self::DeviceFiles { .. } => "device_files",
             Self::Done => "done",
             Self::Called { .. } => "called",
-            Self::Kept { .. } => "kept",
+            Self::Reports { .. } => "reports",
+            Self::Device { .. } => "device",
             Self::Report { .. } => "report",
             Self::Work { .. } => "work",
             Self::Workspaces { .. } => "workspaces",
@@ -375,6 +398,14 @@ pub struct StoredReport {
     /// The package's own count of its changes.
     pub revision: u64,
     pub value: Value,
+}
+
+/// What a plugin's package on `device` last reported of a conversation.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DeviceReport {
+    pub device: DeviceId,
+    pub report: StoredReport,
 }
 
 /// A stored value and the revision a write of it names.
@@ -650,15 +681,30 @@ pub trait PluginTransport {
 }
 
 /// The plugin's side of one request.
+///
+/// Its package calls, its report and the tabs it mirrors are of one device
+/// of the request's conversation: the request's own, unless [`Self::on`]
+/// names another. A command's is the device its job runs on; a page's call
+/// names its device or none; a tab's close is its tab's device; a package's
+/// word is the device it came from. Without one, it is the conversation's
+/// primary device.
 #[derive(Clone)]
 pub struct PluginPort {
     transport: Rc<dyn PluginTransport>,
     cancel: CancellationToken,
+    /// The device [`Self::on`] named; none for the request's own.
+    device: Option<DeviceId>,
 }
 
 impl PluginPort {
     pub fn new(transport: Rc<dyn PluginTransport>, cancel: CancellationToken) -> Self {
-        Self { transport, cancel }
+        Self { transport, cancel, device: None }
+    }
+
+    /// The port of the same request whose package calls, report and
+    /// mirrored tabs are on `device`, which the conversation must reach.
+    pub fn on(&self, device: DeviceId) -> Self {
+        Self { device: Some(device), ..self.clone() }
     }
 
     /// A command request's rpc port, whose operations travel as
@@ -816,6 +862,7 @@ impl PluginPort {
             args,
             input,
             kind,
+            device: self.device.clone(),
         };
         match self.ask(message).await? {
             PortAnswer::Called { result } => Ok(result),
@@ -824,31 +871,46 @@ impl PluginPort {
     }
 
     /// What the plugin's package last reported of the request's conversation
-    /// on its primary device, which the backend keeps; none before it did. It
+    /// on the port's device, which the backend keeps; none before it did. It
     /// asks no device.
     pub async fn report(&self) -> Result<Option<StoredReport>, PortFailure> {
-        match self.ask(PortMessage::ReadReport).await? {
+        match self.ask(PortMessage::ReadReport { device: self.device.clone() }).await? {
             PortAnswer::Report { report } => Ok(report),
             answer => Err(unexpected("read_report", &answer)),
         }
     }
 
+    /// The port's device: the one [`Self::on`] named, the request's, or the
+    /// conversation's primary device; none for a conversation whose device
+    /// does not exist yet. It asks no device.
+    pub async fn device(&self) -> Result<Option<DeviceId>, PortFailure> {
+        match self.ask(PortMessage::ReadDevice { device: self.device.clone() }).await? {
+            PortAnswer::Device { device } => Ok(device),
+            answer => Err(unexpected("read_device", &answer)),
+        }
+    }
+
+    /// What the plugin's package last reported of the request's conversation
+    /// on each device the conversation reaches, its primary device's first.
+    /// It asks no device.
+    pub async fn reports(&self) -> Result<Vec<DeviceReport>, PortFailure> {
+        match self.ask(PortMessage::ReadReports).await? {
+            PortAnswer::Reports { reports } => Ok(reports),
+            answer => Err(unexpected("read_reports", &answer)),
+        }
+    }
+
     /// Keeps what the plugin's package on the device `device` reported of the
-    /// request's conversation, whole, at its `revision`; answers whether the
-    /// device is the conversation's primary one. A report of another device is kept
-    /// for when the conversation moves there, and changes nothing the work
-    /// shows.
+    /// request's conversation, whole, at its `revision`. The report of a device
+    /// the conversation does not reach is kept too, and read once it does.
     pub async fn keep_report(
         &self,
         device: impl Into<String>,
         revision: u64,
         value: Value,
-    ) -> Result<bool, PortFailure> {
+    ) -> Result<(), PortFailure> {
         let message = PortMessage::WriteReport { device: device.into(), revision, value };
-        match self.ask(message).await? {
-            PortAnswer::Kept { primary } => Ok(primary),
-            answer => Err(unexpected("write_report", &answer)),
-        }
+        self.done("write_report", message).await
     }
 
     /// The user's paired devices.
@@ -926,12 +988,13 @@ impl PluginPort {
         self.work_change("remove_tab", message).await
     }
 
-    /// Makes the work's tabs of `kind`, one of the plugin's tab kinds, the
-    /// tabs a device has open, `listed`, in the list's order, as one change:
-    /// each listed tab is created as given or has its data set to the given
-    /// data, and each tab of the kind the list does not name is removed.
-    /// Answers the listed ids whose tabs the user closed, which the plugin
-    /// closes on the device: the device did not hear of it.
+    /// Makes the work's tabs of `kind`, one of the plugin's tab kinds, on the
+    /// port's device the tabs that device has open, `listed`, in the list's
+    /// order, as one change: each listed tab is created on the device as
+    /// given or has its data set to the given data, and each tab of the kind
+    /// on the device the list does not name is removed. Answers the listed
+    /// ids whose tabs the user closed, which the plugin closes on the device:
+    /// the device did not hear of it.
     pub async fn mirror_tabs(
         &self,
         kind: impl Into<String>,
@@ -940,6 +1003,7 @@ impl PluginPort {
         let message = PortMessage::MirrorWorkTabs {
             kind: kind.into(),
             tabs: listed,
+            device: self.device.clone(),
         };
         match self.ask(message).await? {
             PortAnswer::Mirrored { closed } => Ok(closed),

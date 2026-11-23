@@ -23,6 +23,7 @@ import { BrowserTabsError, type BrowserTabList, type StartingPhase } from '@jush
 import type { DeviceDownload } from '@jush-ai/web-ui/devices/installed'
 import type { ControlReason } from '@jush-ai/plugin-browser/generated/plugin'
 import { PROJECT_ROOT } from './project'
+import { GALLERY_DEVICE } from './devices'
 
 /** How often the drawn page is painted and sent: a still page needs few frames. */
 const FPS = 10
@@ -626,6 +627,8 @@ class GalleryBrowserView {
  * - With `page`, its tabs show that page in place of the gallery's own.
  */
 export interface GalleryBrowser {
+  /** The conversation's device the browser runs on. */
+  device: string
   /** The tab list, as the plugin's conversation state last brought it. */
   listed: ShallowRef<BrowserTabList>
   /** Makes a tab of the user's on `url`, or blank, and shows it, as the user's `tab.new` does. */
@@ -692,7 +695,13 @@ export interface GalleryBrowser {
  */
 export function galleryBrowser(
   tabs: LiveTab[] = galleryTabs(),
-  { capture = true, held: holding = null, page = null }: { capture?: boolean; held?: StartingPhase | null; page?: GalleryPage | null } = {},
+  { capture = true, held: holding = null, page = null, device = GALLERY_DEVICE }: {
+    capture?: boolean
+    held?: StartingPhase | null
+    page?: GalleryPage | null
+    /** The conversation's device it runs on; the gallery's own by default. */
+    device?: string
+  } = {},
 ): GalleryBrowser {
   const views = new Set<GalleryBrowserView>()
   /** The viewport of a tab the browser makes: the page's size when it has one. */
@@ -733,11 +742,11 @@ export function galleryBrowser(
   /** Each change of the tabs is a new tab list, numbered as the device numbers them. */
   let lists = 0
 
-  const listed = shallowRef<BrowserTabList>({ list: lists, tabs: tabs.map(info) })
+  const listed = shallowRef<BrowserTabList>({ device, list: lists, tabs: tabs.map(info) })
 
   function changed(): void {
     lists += 1
-    listed.value = { list: lists, tabs: tabs.map(info) }
+    listed.value = { device, list: lists, tabs: tabs.map(info) }
     for (const view of views) {
       view.state()
     }
@@ -1012,6 +1021,7 @@ export function galleryBrowser(
   }
 
   const browser: GalleryBrowser = {
+    device,
     listed,
     newTab: async (url) => {
       await started()

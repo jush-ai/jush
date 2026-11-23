@@ -128,7 +128,8 @@ export function openMessageLink(
     return
   event.preventDefault()
   const line = Number(link.getAttribute('data-line'))
-  files.open({ path: link.getAttribute('href') ?? '', line: line > 0 ? line : null })
+  const device = link.getAttribute('data-device')
+  files.open({ path: link.getAttribute('href') ?? '', line: line > 0 ? line : null, ...(device === null ? {} : { device }) })
 }
 
 /**
@@ -206,8 +207,10 @@ export function messageLinkMenu(
   }
   if (link.matches('a[data-file-link]')) {
     const path = link.getAttribute('href') ?? ''
-    const contents = files?.contents
-    const showInFiles = files?.showInFiles
+    // Files and the download read the conversation's device: another device's file has neither.
+    const own = !link.hasAttribute('data-device')
+    const contents = own ? files?.contents : undefined
+    const showInFiles = own ? files?.showInFiles : undefined
     return () => fileMenu(path, {
       open,
       ...(showInFiles ? { showInFiles: () => showInFiles({ path }) } : {}),

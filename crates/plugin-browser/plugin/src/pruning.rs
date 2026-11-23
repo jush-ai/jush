@@ -1,6 +1,7 @@
 //! The pruning of the agents' tabs: once a conversation stops running and
-//! stays stopped for [`PRUNE_AFTER`], its browser closes the tabs its agents
-//! opened that the user did not make theirs (`browser.tab.prune`).
+//! stays stopped for [`PRUNE_AFTER`], its browser on each device closes the
+//! tabs its agents opened that the user did not make theirs
+//! (`browser.tab.prune`).
 //!
 //! The wait is the backend's, in memory: the device's browser knows nothing
 //! of the agents' activity, and the backend decides when it goes. A restart
@@ -62,10 +63,10 @@ impl Pruning {
     }
 }
 
-/// Prunes the conversation's tabs after [`PRUNE_AFTER`], and every
-/// [`WATCHED_RETRY`] after while a viewer watches one, unless `wait` is
-/// cancelled first. A conversation whose browser has no tab to prune, as
-/// most have none, asks its device nothing.
+/// Prunes the conversation's tabs on each device after [`PRUNE_AFTER`], and
+/// every [`WATCHED_RETRY`] after while a viewer watches one, unless `wait` is
+/// cancelled first. A device whose browser has no tab to prune, as most have
+/// none, is asked nothing.
 async fn prune_after(port: &PluginPort, wait: &CancellationToken) {
     let mut delay = PRUNE_AFTER;
     loop {
@@ -73,23 +74,27 @@ async fn prune_after(port: &PluginPort, wait: &CancellationToken) {
             () = wait.cancelled() => return,
             () = tokio::time::sleep(delay) => {}
         }
-        match crate::page::prunes_any(port).await {
-            Ok(true) => {}
-            Ok(false) => return,
+        let devices = match crate::page::prunable(port).await {
+            Ok(devices) => devices,
             Err(error) => {
                 tracing::info!(event = "browser_tabs.prune_failed", %error, "the browser's tabs were not read");
                 return;
             }
-        }
-        match crate::page::prune(port).await {
-            Ok(pruned) if pruned.watched.is_empty() => return,
-            Ok(_) => delay = WATCHED_RETRY,
-            // A browser on a stopped Cloud or an offline device is out of
-            // reach; its tabs wait for the conversation's next stop.
-            Err(failure) => {
-                tracing::info!(event = "browser_tabs.prune_failed", %failure, "the agents' tabs were not pruned");
-                return;
+        };
+        let mut watched = false;
+        for device in devices {
+            match crate::page::prune(&port.on(device)).await {
+                Ok(pruned) => watched |= !pruned.watched.is_empty(),
+                // A browser on a stopped Cloud or an offline device is out of
+                // reach; its tabs wait for the conversation's next stop.
+                Err(failure) => {
+                    tracing::info!(event = "browser_tabs.prune_failed", %failure, "the agents' tabs were not pruned");
+                }
             }
         }
+        if !watched {
+            return;
+        }
+        delay = WATCHED_RETRY;
     }
 }
