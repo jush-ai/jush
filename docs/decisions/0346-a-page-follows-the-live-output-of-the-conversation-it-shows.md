@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: proposed, superseded in part by 0359
 ---
 
 # A page follows the live output of the conversation it shows

@@ -674,12 +674,6 @@ impl Shard {
             ClientFrame::Open { follows, .. } => follows.clone(),
             _ => Vec::new(),
         };
-        // A refused follow is answered as one the tree took: the page waits
-        // for the end of each answer.
-        let answered = match &frame {
-            ClientFrame::Follow(Follow { value, .. }) => connection.followed(value),
-            _ => None,
-        };
         let handled = match self.prepare_frame(conversation, &frame).await {
             Ok(Prepared::Deliver) => {
                 if opening {
@@ -724,7 +718,7 @@ impl Shard {
                 Handled::Replies(Vec::new())
             }
             Ok(Prepared::Refused(code, message)) => {
-                let replies = std::iter::once(refused_frame(frame, command, code, message)).chain(answered).collect();
+                let replies = vec![refused_frame(frame, command, code, message)];
                 // A conversation whose tree cannot open, as one with no model
                 // yet, is still shown, and follows its changes.
                 if opening {
@@ -748,7 +742,7 @@ impl Shard {
                     ClientFrameKind::Send | ClientFrameKind::SendSaved => ErrorCode::SendFailed,
                     _ => ErrorCode::FrameDeliveryFailed,
                 };
-                Handled::Replies(std::iter::once(refused_frame(frame, command, code, error.to_string())).chain(answered).collect())
+                Handled::Replies(vec![refused_frame(frame, command, code, error.to_string())])
             }
         };
         handled
