@@ -19,7 +19,7 @@ use jush_live_view_protocol::{
     ViewerInput,
 };
 
-use crate::browser::{BrowserCreatedBy, BrowserViewport, DialogType, TabId};
+use crate::browser::{AppRequest, BrowserCreatedBy, BrowserViewport, DialogType, TabId};
 
 /// The declared operation that serves a view (`crates/runner-jobs/src/commands/streams.rs`).
 pub const OPERATION: &str = "browser.live";
@@ -42,6 +42,9 @@ pub const CAPTURE_FAILED: &str = "capture_failed";
 /// A notice's code when even recreating the capture extension failed: the
 /// module stops trying until the viewer asks again (`Recapture`).
 pub const CAPTURE_STOPPED: &str = "capture_stopped";
+/// A notice's code when the device's system could not open a link the
+/// viewer chose to open there in an app.
+pub const APP_NOT_OPENED: &str = "app_not_opened";
 
 /// A paste's largest text and HTML, which together stay within the
 /// live view's largest frame.
@@ -104,6 +107,17 @@ impl TryFrom<String> for ControlToken {
         } else {
             Err(format!("{value:?} is not a control token"))
         }
+    }
+}
+
+closed_set! {
+    /// Where the user opens the link a page asked to open in an app: on the
+    /// browser's device, here, on the computer or phone the user looks from,
+    /// which the page opens itself, or nowhere.
+    pub enum AppAnswer {
+        Device = "device",
+        Here = "here",
+        Cancel = "cancel",
     }
 }
 
@@ -247,6 +261,16 @@ pub enum LiveViewerMessage {
         #[schemars(with = "String")]
         #[garde(length(chars, max = 2000))]
         text: Option<String>,
+    },
+    /// The viewer's answer to the tab's request to open `url` in an app; an
+    /// answer to a request a newer one replaced does nothing.
+    App {
+        #[garde(skip)]
+        tab: TabId,
+        #[garde(skip)]
+        url: String,
+        #[garde(skip)]
+        open: AppAnswer,
     },
     Keyframe(#[garde(dive)] LiveKeyframe),
     Release(#[garde(dive)] LiveRelease),
@@ -525,6 +549,16 @@ pub enum LiveModuleMessage {
         #[schemars(with = "Nullable<LiveDialog>")]
         #[garde(dive)]
         dialog: Option<LiveDialog>,
+    },
+    /// The watched tab's request to open a link in an app, until someone
+    /// answers it or it ends.
+    App {
+        #[garde(skip)]
+        tab: TabId,
+        #[serde(deserialize_with = "Option::deserialize")]
+        #[schemars(with = "Nullable<AppRequest>")]
+        #[garde(dive)]
+        request: Option<AppRequest>,
     },
     /// Whether a choice or an upload reached its control.
     Choice {

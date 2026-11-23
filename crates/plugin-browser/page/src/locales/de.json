@@ -14,6 +14,7 @@
     "not_actionable": "Dieser Teil der Seite kann gerade nicht verwendet werden.",
     "timeout": "Der Browser hat nicht rechtzeitig geantwortet.",
     "dialog_blocked": "Ein Dialog auf der Seite wartet auf eine Antwort.",
+    "app_blocked": "Die Seite wartet darauf, dass du wählst, wo ein Link in einer App geöffnet werden soll.",
     "dialog_not_found": "Auf der Seite wartet kein Dialog auf eine Antwort.",
     "invalid_dialog_action": "Der Dialog kann so nicht beantwortet werden.",
     "history_boundary": "Der Tab hat in dieser Richtung keine Seite.",
@@ -38,6 +39,7 @@
     "capture_unavailable": "Dieses Gerät kann die Seiten des Browsers nicht aufzeichnen.",
     "capture_failed": "Das Gerät konnte die Seite nicht aufzeichnen. Es versucht es erneut.",
     "capture_stopped": "Das Gerät konnte die Seite nicht aufzeichnen.",
+    "app_not_opened": "Das Gerät konnte den Link nicht in einer App öffnen.",
     "conversation_not_found": "Dieser Chat existiert nicht mehr.",
     "conversation_archived": "Dieser Chat ist archiviert.",
     "conversation_busy": "Der Chat ist beschäftigt. Versuche es gleich noch einmal.",
@@ -76,7 +78,8 @@
     "stopLoading": "Laden konnte nicht gestoppt werden",
     "openPage": "Seite konnte nicht geöffnet werden",
     "saveDownload": "Download konnte nicht gespeichert werden",
-    "deviceFilesUnreachable": "Die Dateien des Geräts sind nicht erreichbar."
+    "deviceFilesUnreachable": "Die Dateien des Geräts sind nicht erreichbar.",
+    "openApp": "Link konnte nicht geöffnet werden"
   },
   "region": {
     "couldntShow": "Diese Seite konnte nicht angezeigt werden.",
@@ -117,6 +120,16 @@
     "leave": "Verlassen",
     "cancel": "Abbrechen",
     "ok": "OK"
+  },
+  "app": {
+    "open": "{app} öffnen?",
+    "openLink": "Link in einer App öffnen?",
+    "wants": "{host} möchte diese App öffnen.",
+    "thisPageWants": "Diese Seite möchte diese App öffnen.",
+    "noApp": "Auf {device} gibt es keine App für {scheme}-Links.",
+    "here": "Hier öffnen",
+    "onDevice": "Auf {device} öffnen",
+    "copyLink": "Link kopieren"
   },
   "browserInput": "Browsereingabe"
 }

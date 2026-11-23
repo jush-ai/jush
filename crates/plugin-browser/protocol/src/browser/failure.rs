@@ -24,6 +24,7 @@ closed_set! {
         NotActionable = "not_actionable",
         Timeout = "timeout",
         DialogBlocked = "dialog_blocked",
+        AppBlocked = "app_blocked",
         DialogNotFound = "dialog_not_found",
         InvalidDialogAction = "invalid_dialog_action",
         HistoryBoundary = "history_boundary",

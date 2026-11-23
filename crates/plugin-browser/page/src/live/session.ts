@@ -11,7 +11,7 @@
  * A view whose stream goes silent for as long as the page connection may is broken,
  * and a view that ends opens again after the page's reconnect waits.
  */
-import { liveViewerMessageSchema, controlReasonSchema, type BrowserViewport, type CursorRegion, type LiveControl, type LiveDialog, type LiveDownload, type LiveMenu, type LiveTab, type LiveViewerMessage, type ControlReason } from '../generated/plugin'
+import { liveViewerMessageSchema, controlReasonSchema, type AppAnswer, type AppRequest, type BrowserViewport, type CursorRegion, type LiveControl, type LiveDialog, type LiveDownload, type LiveMenu, type LiveTab, type LiveViewerMessage, type ControlReason } from '../generated/plugin'
 import { LIVE_CAPTURE_FAILED, LIVE_CAPTURE_STOPPED, LIVE_CAPTURE_UNAVAILABLE, LIVE_FILE_CHUNK_BYTES } from '../generated/plugin'
 import { reactive } from 'vue'
 import { LiveLink, type LiveConnection, type LiveVideoFrame, type PictureSink as LivePictureSink } from '@jush-ai/plugin-sdk'
@@ -58,6 +58,8 @@ export interface LiveState {
   tabs: LiveTab[]
   watched: string | null
   dialog: { tab: string; dialog: LiveDialog } | null
+  /** The watched tab's request to open a link in an app, until someone answers it or it ends. */
+  app: { tab: string; request: AppRequest } | null
   /** The browser's menu the viewer's right click asked for, until it is chosen from or dismissed. */
   menu: { tab: string; menu: LiveMenu } | null
   controls: LiveControl[]
@@ -134,6 +136,7 @@ export class LiveSession {
     tabs: [],
     watched: null,
     dialog: null,
+    app: null,
     menu: null,
     controls: [],
     regions: [],
@@ -165,6 +168,7 @@ export class LiveSession {
       received: (frame) => this.receive(frame),
       ended: (reason) => {
         this.state.dialog = null
+        this.state.app = null
         this.state.menu = null
         this.state.pictureless = null
         this.state.controls = []
@@ -295,6 +299,9 @@ export class LiveSession {
       case 'dialog':
         this.state.dialog = message.dialog ? { tab: message.tab, dialog: message.dialog } : null
         break
+      case 'app':
+        this.state.app = message.request ? { tab: message.tab, request: message.request } : null
+        break
       case 'menu':
         this.state.menu = message.tab === this.state.watched ? { tab: message.tab, menu: message.menu } : null
         break
@@ -364,6 +371,7 @@ export class LiveSession {
     this.state.controls = []
     this.state.regions = []
     this.state.dialog = null
+    this.state.app = null
     this.state.menu = null
     // The module says again whether it can capture the tab now watched.
     this.state.pictureless = null
@@ -395,6 +403,19 @@ export class LiveSession {
     }
     this.state.dialog = null
     this.send({ type: 'dialog', tab: dialog.tab, accept, ...(text === undefined ? {} : { text }) })
+  }
+
+  /**
+   * Answers the watched tab's request to open a link in an app: the device
+   * opens it, or nothing does there, the viewer opening it here itself.
+   */
+  answerApp(open: AppAnswer): void {
+    const app = this.state.app
+    if (!app) {
+      return
+    }
+    this.state.app = null
+    this.send({ type: 'app', tab: app.tab, url: app.request.url, open })
   }
 
   /** The browser's menu was chosen from or dismissed. */

@@ -365,6 +365,7 @@ function stop(): void {
         :shown="shown"
         :panel="measured"
         :snap="snap"
+        :device="session.api.deviceName()"
         @history="history"
         @keep="keepPicture"
       />

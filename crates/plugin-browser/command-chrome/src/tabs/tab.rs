@@ -59,6 +59,8 @@ pub struct TabState {
     pub console: crate::tabs::logs::Console,
     /// The open dialog and the input it holds back.
     pub dialog: DialogInput,
+    /// The page's request to open a link in an app, while it waits.
+    pub app: crate::tabs::apps::AppRequests,
     pub viewport: watch::Sender<crate::tabs::viewport::Viewports>,
     /// Keeps the page's captures and its resizes apart.
     pub capture: crate::driver::capture::CaptureGate,
@@ -111,6 +113,7 @@ impl TabState {
             crate::tabs::history::observe(page, ended.clone(), tasks, changes.clone()).await?;
         let favicon =
             crate::tabs::favicon::observe(page, ended.clone(), tasks, changes.clone()).await?;
+        let app = crate::tabs::apps::observe(page, ended.clone(), tasks).await?;
         let dialog = DialogInput::start(page.clone(), opening, ended.clone(), tasks, failure.clone());
         let pointer = crate::tabs::pointer::observe(page, ended, tasks, dialog.watch()).await?;
         Ok(Arc::new(Self {
@@ -119,6 +122,7 @@ impl TabState {
             debug: Default::default(),
             console,
             dialog,
+            app,
             viewport: watch::channel(Default::default()).0,
             capture: Default::default(),
             load,

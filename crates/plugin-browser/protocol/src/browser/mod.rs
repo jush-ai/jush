@@ -732,6 +732,22 @@ pub struct Dialog {
     pub message: String,
 }
 
+/// A page's request to open a link in an app, which the browser hands to no
+/// app until the user answers it in the live view.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, garde::Validate)]
+#[serde(deny_unknown_fields)]
+pub struct AppRequest {
+    /// The link, as the page asked for it.
+    #[garde(skip)]
+    pub url: String,
+    /// The name of the app the browser's device opens such links with; none
+    /// when it has none.
+    #[serde(deserialize_with = "Option::deserialize")]
+    #[schemars(with = "jush_shared_types::Nullable<String>")]
+    #[garde(skip)]
+    pub app: Option<String>,
+}
+
 // Declared after `locator_struct!`, which they use.
 mod failure;
 mod operations;

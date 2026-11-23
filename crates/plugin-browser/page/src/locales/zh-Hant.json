@@ -14,6 +14,7 @@
     "not_actionable": "頁面的該部分目前無法使用。",
     "timeout": "瀏覽器未及時回應。",
     "dialog_blocked": "頁面上的對話框正在等待回應。",
+    "app_blocked": "頁面正在等你選擇要在哪裡用 App 開啟連結。",
     "dialog_not_found": "頁面上沒有等待回應的對話框。",
     "invalid_dialog_action": "無法以該方式回應對話框。",
     "history_boundary": "分頁在該方向上沒有可前往的頁面。",
@@ -38,6 +39,7 @@
     "capture_unavailable": "此裝置無法擷取瀏覽器的頁面。",
     "capture_failed": "裝置無法擷取頁面。正在重試。",
     "capture_stopped": "裝置無法擷取頁面。",
+    "app_not_opened": "裝置無法用 App 開啟此連結。",
     "conversation_not_found": "此對話已不存在。",
     "conversation_archived": "此對話已封存。",
     "conversation_busy": "對話正忙。請稍後再試。",
@@ -76,7 +78,8 @@
     "stopLoading": "無法停止載入",
     "openPage": "無法開啟頁面",
     "saveDownload": "無法儲存下載內容",
-    "deviceFilesUnreachable": "無法存取裝置的檔案。"
+    "deviceFilesUnreachable": "無法存取裝置的檔案。",
+    "openApp": "無法開啟連結"
   },
   "region": {
     "couldntShow": "無法顯示此頁面。",
@@ -117,6 +120,16 @@
     "leave": "離開",
     "cancel": "取消",
     "ok": "確定"
+  },
+  "app": {
+    "open": "要開啟「{app}」嗎？",
+    "openLink": "要用 App 開啟此連結嗎？",
+    "wants": "{host} 想要開啟這個 App。",
+    "thisPageWants": "此頁面想要開啟這個 App。",
+    "noApp": "{device} 上沒有能開啟 {scheme} 連結的 App。",
+    "here": "在此處開啟",
+    "onDevice": "在 {device} 上開啟",
+    "copyLink": "複製連結"
   },
   "browserInput": "瀏覽器輸入"
 }

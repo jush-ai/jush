@@ -14,6 +14,7 @@
     "not_actionable": "ページのその部分は現在使用できません。",
     "timeout": "ブラウザーが時間内に応答しませんでした。",
     "dialog_blocked": "ページ上のダイアログが応答を待っています。",
+    "app_blocked": "リンクをアプリで開く場所の選択を待っています。",
     "dialog_not_found": "ページに応答を待っているダイアログはありません。",
     "invalid_dialog_action": "ダイアログにその方法では応答できません。",
     "history_boundary": "タブにその方向へ移動できるページはありません。",
@@ -38,6 +39,7 @@
     "capture_unavailable": "このデバイスではブラウザーのページをキャプチャできません。",
     "capture_failed": "デバイスがページをキャプチャできませんでした。再試行しています。",
     "capture_stopped": "デバイスがページをキャプチャできませんでした。",
+    "app_not_opened": "デバイスがリンクをアプリで開けませんでした。",
     "conversation_not_found": "このチャットは存在しなくなりました。",
     "conversation_archived": "このチャットはアーカイブされています。",
     "conversation_busy": "チャットは処理中です。しばらくしてからもう一度お試しください。",
@@ -76,7 +78,8 @@
     "stopLoading": "読み込みを停止できませんでした",
     "openPage": "ページを開けませんでした",
     "saveDownload": "ダウンロードを保存できませんでした",
-    "deviceFilesUnreachable": "デバイスのファイルにアクセスできません。"
+    "deviceFilesUnreachable": "デバイスのファイルにアクセスできません。",
+    "openApp": "リンクを開けませんでした"
   },
   "region": {
     "couldntShow": "このページを表示できませんでした。",
@@ -117,6 +120,16 @@
     "leave": "離れる",
     "cancel": "キャンセル",
     "ok": "OK"
+  },
+  "app": {
+    "open": "“{app}”を開きますか？",
+    "openLink": "リンクをアプリで開きますか？",
+    "wants": "{host} がこのアプリを開こうとしています。",
+    "thisPageWants": "このページがこのアプリを開こうとしています。",
+    "noApp": "{device} には {scheme} リンクを開けるアプリがありません。",
+    "here": "ここで開く",
+    "onDevice": "{device} で開く",
+    "copyLink": "リンクをコピー"
   },
   "browserInput": "ブラウザー入力"
 }

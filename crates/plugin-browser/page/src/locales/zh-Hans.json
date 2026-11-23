@@ -14,6 +14,7 @@
     "not_actionable": "页面的该部分当前无法使用。",
     "timeout": "浏览器未及时响应。",
     "dialog_blocked": "页面上的对话框正在等待回应。",
+    "app_blocked": "页面正在等你选择在哪里用应用打开链接。",
     "dialog_not_found": "页面上没有等待回应的对话框。",
     "invalid_dialog_action": "无法以该方式回应对话框。",
     "history_boundary": "标签页在该方向上没有可转到的页面。",
@@ -38,6 +39,7 @@
     "capture_unavailable": "此设备无法捕获浏览器的页面。",
     "capture_failed": "设备无法捕获页面。正在重试。",
     "capture_stopped": "设备无法捕获页面。",
+    "app_not_opened": "设备无法用应用打开此链接。",
     "conversation_not_found": "此对话已不存在。",
     "conversation_archived": "此对话已归档。",
     "conversation_busy": "对话正忙。请稍后重试。",
@@ -76,7 +78,8 @@
     "stopLoading": "无法停止加载",
     "openPage": "无法打开页面",
     "saveDownload": "无法保存下载内容",
-    "deviceFilesUnreachable": "无法访问设备的文件。"
+    "deviceFilesUnreachable": "无法访问设备的文件。",
+    "openApp": "无法打开链接"
   },
   "region": {
     "couldntShow": "无法显示此页面。",
@@ -117,6 +120,16 @@
     "leave": "离开",
     "cancel": "取消",
     "ok": "确定"
+  },
+  "app": {
+    "open": "要打开“{app}”吗？",
+    "openLink": "要用应用打开此链接吗？",
+    "wants": "{host} 想打开此应用。",
+    "thisPageWants": "此页面想打开此应用。",
+    "noApp": "{device} 上没有能打开 {scheme} 链接的应用。",
+    "here": "在此处打开",
+    "onDevice": "在 {device} 上打开",
+    "copyLink": "复制链接"
   },
   "browserInput": "浏览器输入"
 }

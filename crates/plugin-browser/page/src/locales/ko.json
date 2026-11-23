@@ -14,6 +14,7 @@
     "not_actionable": "페이지의 해당 부분을 지금은 사용할 수 없습니다.",
     "timeout": "브라우저가 제때 응답하지 않았습니다.",
     "dialog_blocked": "페이지의 대화 상자가 응답을 기다리고 있습니다.",
+    "app_blocked": "링크를 앱에서 열 위치를 선택하기를 기다리고 있습니다.",
     "dialog_not_found": "페이지에 응답을 기다리는 대화 상자가 없습니다.",
     "invalid_dialog_action": "그 방법으로는 대화 상자에 응답할 수 없습니다.",
     "history_boundary": "탭에 해당 방향으로 이동할 페이지가 없습니다.",
@@ -38,6 +39,7 @@
     "capture_unavailable": "이 기기에서는 브라우저의 페이지를 캡처할 수 없습니다.",
     "capture_failed": "기기에서 페이지를 캡처할 수 없습니다. 다시 시도하는 중입니다.",
     "capture_stopped": "기기에서 페이지를 캡처할 수 없습니다.",
+    "app_not_opened": "기기에서 링크를 앱으로 열 수 없습니다.",
     "conversation_not_found": "이 대화는 더 이상 없습니다.",
     "conversation_archived": "이 대화는 보관되었습니다.",
     "conversation_busy": "대화가 작업 중입니다. 잠시 후 다시 시도하십시오.",
@@ -76,7 +78,8 @@
     "stopLoading": "불러오기를 중지할 수 없습니다",
     "openPage": "페이지를 열 수 없습니다",
     "saveDownload": "다운로드를 저장할 수 없습니다",
-    "deviceFilesUnreachable": "기기의 파일에 액세스할 수 없습니다."
+    "deviceFilesUnreachable": "기기의 파일에 액세스할 수 없습니다.",
+    "openApp": "링크를 열 수 없습니다"
   },
   "region": {
     "couldntShow": "이 페이지를 표시할 수 없습니다.",
@@ -117,6 +120,16 @@
     "leave": "나가기",
     "cancel": "취소",
     "ok": "확인"
+  },
+  "app": {
+    "open": "{app}을(를) 여시겠습니까?",
+    "openLink": "링크를 앱에서 여시겠습니까?",
+    "wants": "{host}에서 이 앱을 열려고 합니다.",
+    "thisPageWants": "이 페이지에서 이 앱을 열려고 합니다.",
+    "noApp": "{device}에 {scheme} 링크를 열 수 있는 앱이 없습니다.",
+    "here": "여기에서 열기",
+    "onDevice": "{device}에서 열기",
+    "copyLink": "링크 복사"
   },
   "browserInput": "브라우저 입력"
 }

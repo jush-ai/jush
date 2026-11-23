@@ -14,6 +14,7 @@
     "not_actionable": "Cette partie de la page ne peut pas être utilisée pour le moment.",
     "timeout": "Le navigateur n’a pas répondu à temps.",
     "dialog_blocked": "Une boîte de dialogue de la page attend une réponse.",
+    "app_blocked": "La page attend que vous choisissiez où ouvrir un lien dans une app.",
     "dialog_not_found": "Aucune boîte de dialogue de la page n’attend de réponse.",
     "invalid_dialog_action": "La boîte de dialogue ne peut pas recevoir cette réponse.",
     "history_boundary": "L’onglet n’a aucune page dans cette direction.",
@@ -38,6 +39,7 @@
     "capture_unavailable": "Cet appareil ne peut pas capturer les pages du navigateur.",
     "capture_failed": "L’appareil n’a pas pu capturer la page. Nouvel essai en cours.",
     "capture_stopped": "L’appareil n’a pas pu capturer la page.",
+    "app_not_opened": "L’appareil n’a pas pu ouvrir le lien dans une app.",
     "conversation_not_found": "Cette conversation n’existe plus.",
     "conversation_archived": "Cette conversation est archivée.",
     "conversation_busy": "La conversation est occupée. Réessayez dans un instant.",
@@ -76,7 +78,8 @@
     "stopLoading": "Impossible d’arrêter le chargement",
     "openPage": "Impossible d’ouvrir la page",
     "saveDownload": "Impossible d’enregistrer le téléchargement",
-    "deviceFilesUnreachable": "Les fichiers de l’appareil sont inaccessibles."
+    "deviceFilesUnreachable": "Les fichiers de l’appareil sont inaccessibles.",
+    "openApp": "Impossible d’ouvrir le lien"
   },
   "region": {
     "couldntShow": "Impossible d’afficher cette page.",
@@ -117,6 +120,16 @@
     "leave": "Quitter",
     "cancel": "Annuler",
     "ok": "OK"
+  },
+  "app": {
+    "open": "Ouvrir {app} ?",
+    "openLink": "Ouvrir le lien dans une app ?",
+    "wants": "{host} souhaite ouvrir cette app.",
+    "thisPageWants": "Cette page souhaite ouvrir cette app.",
+    "noApp": "{device} n’a pas d’app pour les liens {scheme}.",
+    "here": "Ouvrir ici",
+    "onDevice": "Ouvrir sur {device}",
+    "copyLink": "Copier le lien"
   },
   "browserInput": "Saisie du navigateur"
 }

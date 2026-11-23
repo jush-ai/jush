@@ -131,6 +131,10 @@ pub enum BrowserError {
         "browser action is blocked by a JavaScript dialog; inspect and handle the dialog before continuing"
     )]
     DialogBlocked,
+    #[error(
+        "the page asked to open a link in an app, and the tab takes no input until the user answers where to open it in the browser panel; read it with info"
+    )]
+    AppBlocked,
     #[error("the browser tab has no JavaScript dialog")]
     DialogNotFound,
     #[error("this action is not valid for the current JavaScript dialog")]
@@ -377,6 +381,7 @@ impl BrowserError {
             Self::Timeout => BrowserErrorCode::Timeout,
             Self::Busy => BrowserErrorCode::TabBusy,
             Self::DialogBlocked => BrowserErrorCode::DialogBlocked,
+            Self::AppBlocked => BrowserErrorCode::AppBlocked,
             Self::DialogNotFound => BrowserErrorCode::DialogNotFound,
             Self::InvalidDialogAction => BrowserErrorCode::InvalidDialogAction,
             Self::Ambiguous(_) => BrowserErrorCode::AmbiguousTarget,
