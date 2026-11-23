@@ -63,7 +63,7 @@ use jush_agent_store::{
 };
 use jush_agent_tools::{
     CallError, ContextSource, EndOf, Environments, DeviceResolver, ModelIdentity, NodeContext, OwnPlacement,
-    ShellAccess, ShellEnvironmentFactory, Stopper, StoreNumbers, definitions, end_report,
+    SeenBlock, ShellAccess, ShellEnvironmentFactory, Stopper, StoreNumbers, definitions, end_report,
     fill_output, interrupted_look, progress_report, report_media, runs_together, stored_running_commands,
     system_prompt, whole_status,
 };
@@ -886,10 +886,10 @@ impl<H: DeviceResolver> SessionRuntime for NodeRuntime<H> {
             let node = self.context_in(placement.as_ref());
             let asked = self.context.iter().map(|source| async move {
                 let name = source.name();
-                let own: Vec<&str> = seen
+                let own: Vec<SeenBlock<'_>> = seen
                     .iter()
                     .filter(|seen| seen.source == name)
-                    .map(|seen| seen.text)
+                    .map(|seen| SeenBlock { text: seen.text, current: seen.current })
                     .collect();
                 (name, source.context(node, turn, &own).await)
             });

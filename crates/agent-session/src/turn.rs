@@ -524,12 +524,17 @@ async fn request(
     // Only the context the model receives counts as seen: a block before
     // the last compaction boundary or clear is gone, so its source tells
     // the model again.
+    // A block is current when the running action wrote it.
     let (seen, turn) = s.read(|core| {
-        let seen: Vec<(String, String)> = core
+        let seen: Vec<(String, String, bool)> = core
             .replayed()
             .iter()
             .filter_map(|block| match block {
-                Block::Context(context) => Some((context.source.clone(), context.text.clone())),
+                Block::Context(context) => Some((
+                    context.source.clone(),
+                    context.text.clone(),
+                    core.action_wrote(&context.id),
+                )),
                 _ => None,
             })
             .collect();
@@ -537,7 +542,7 @@ async fn request(
     });
     let seen: Vec<SeenContext<'_>> = seen
         .iter()
-        .map(|(source, text)| SeenContext { source, text })
+        .map(|(source, text, current)| SeenContext { source, text, current: *current })
         .collect();
     let news = cancel.guard(s.runtime.context(&seen, &turn)).await?;
     if !news.is_empty() {

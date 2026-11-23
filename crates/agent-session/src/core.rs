@@ -313,6 +313,9 @@ pub(super) struct ActionRun {
     start: Option<StartedAction>,
     /// When the action started, for its end's line.
     began: Timestamp,
+    /// The context blocks the action wrote, which its context sources see as
+    /// current.
+    contexts: Vec<BlockId>,
     /// How long the message that started the action waited in the queue.
     queued_ms: u64,
     /// When the user stopped the action, until it records the stop.
@@ -1163,6 +1166,7 @@ impl SessionCore {
             giving_back: false,
             send_now: None,
             began: self.clock.now(),
+            contexts: Vec::new(),
             queued_ms,
             stop_at: None,
             kind_name,
@@ -1422,6 +1426,12 @@ impl SessionCore {
             Activity::Running(run) => Some(run.turn.clone()),
             _ => None,
         }
+    }
+
+    /// Whether the running action wrote the context block `id`: a resume, a
+    /// retry and a rerun start an action of their own, as a turn does.
+    pub(super) fn action_wrote(&self, id: &BlockId) -> bool {
+        matches!(&self.activity, Activity::Running(run) if run.contexts.contains(id))
     }
 
     /// The running action takes over `turn`, as a retry does the turn it
@@ -2564,7 +2574,7 @@ impl SessionCore {
 
     pub(super) fn push_context(&mut self, news: crate::runtime::NewContext) {
         let turn = self.turn();
-        self.transcript.push_context(
+        let id = self.transcript.push_context(
             turn,
             &self.model,
             news.source,
@@ -2572,6 +2582,9 @@ impl SessionCore {
             news.instructions,
             news.cwd,
         );
+        if let Activity::Running(run) = &mut self.activity {
+            run.contexts.push(id);
+        }
         self.commit();
     }
 

@@ -28,7 +28,7 @@ use std::collections::HashSet;
 use std::fmt::Write as _;
 use std::rc::{Rc, Weak};
 
-use jush_agent_tools::{ContextAnswer, ContextSource, NodeContext};
+use jush_agent_tools::{ContextAnswer, ContextSource, NodeContext, SeenBlock};
 use jush_backend_database::StorageError;
 use jush_backend_database::pins::{PinRecord, Pinned, Unpinner};
 use jush_backend_device_access::device_commands::conversation_of;
@@ -416,7 +416,7 @@ impl ContextSource for Pins {
         &'a self,
         node: NodeContext<'a>,
         _: &'a TurnId,
-        seen: &'a [&'a str],
+        seen: &'a [SeenBlock<'a>],
     ) -> LocalBoxFuture<'a, Result<Option<ContextAnswer>, String>> {
         Box::pin(async move {
             if node.node != node.root {
@@ -425,8 +425,9 @@ impl ContextSource for Pins {
             let Some(shard) = self.shard.upgrade() else {
                 return Ok(None);
             };
+            let seen: Vec<&str> = seen.iter().map(|block| block.text).collect();
             shard
-                .pins_context(&conversation_of_root(node.root), seen)
+                .pins_context(&conversation_of_root(node.root), &seen)
                 .await
                 .map(|text| text.map(ContextAnswer::from))
                 .map_err(|error| format!("the pinned documents cannot be read: {error}"))
