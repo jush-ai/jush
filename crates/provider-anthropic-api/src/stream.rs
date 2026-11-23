@@ -52,12 +52,13 @@ pub(crate) fn run(
         // A body with images is megabytes of base64, built off the core.
         let form = shared.models.of(&request.model_id).thinking_form;
         let ttl = shared.cache_ttl.clone();
-        let body = match encode_body(LABEL, move || {
-            request::encode(&request, form, ttl.as_ref().map(CacheTtl::as_str))
+        let controls = shared.binding_controls;
+        let encoded = match encode_body(LABEL, move || {
+            request::encode(&request, form, ttl.as_ref().map(CacheTtl::as_str), controls)
         })
         .await
         {
-            Ok(body) => body,
+            Ok(encoded) => encoded,
             Err(failure) => {
                 yield ProviderEvent::Error(failure);
                 return;
@@ -67,11 +68,14 @@ pub(crate) fn run(
         if let Some(key) = &shared.api_key {
             send = send.header("x-api-key", key.clone());
         }
+        if encoded.binding {
+            send = send.header("anthropic-beta", request::THINKING_BINDING_BETA);
+        }
         let send = send
             .header("anthropic-version", ANTHROPIC_VERSION)
             .header(CONTENT_TYPE, "application/json")
             .header(ACCEPT, "text/event-stream")
-            .body(body)
+            .body(encoded.body)
             .send();
         let sent = tokio::select! {
             biased;

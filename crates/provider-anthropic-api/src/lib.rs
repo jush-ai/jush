@@ -40,6 +40,11 @@ pub struct AnthropicConfig {
     /// as Anthropic's own does; another vendor's Messages API may list
     /// fewer than it serves, or none.
     pub lists_models: bool,
+    /// Whether the entry is Anthropic's own, whose API takes what a request
+    /// says a replayed thinking block whose prefix changed does. The provider
+    /// sends it only to Anthropic's own address: another vendor's Messages
+    /// API, or a gateway that drops the beta header, refuses the setting.
+    pub binding_controls: bool,
 }
 
 impl AnthropicConfig {
@@ -76,14 +81,15 @@ struct Shared {
     messages_url: Url,
     models: ModelWires,
     cache_ttl: Option<CacheTtl>,
+    binding_controls: bool,
     clock: Arc<dyn Clock>,
 }
 
 impl AnthropicProvider {
     pub fn new(config: AnthropicConfig, clock: Arc<dyn Clock>) -> Self {
-        let base = config.base_url.unwrap_or_else(|| {
-            Url::parse(AnthropicConfig::DEFAULT_BASE_URL).expect("the default base URL parses")
-        });
+        let default = Url::parse(AnthropicConfig::DEFAULT_BASE_URL).expect("the default base URL parses");
+        let base = config.base_url.unwrap_or_else(|| default.clone());
+        let binding_controls = config.binding_controls && base.host_str() == default.host_str();
         Self {
             shared: Arc::new(Shared {
                 api_key: config.api_key.as_ref().map(Secret::header_value),
@@ -91,6 +97,7 @@ impl AnthropicProvider {
                 messages_url: endpoint_url(&base, "/messages"),
                 models: config.models,
                 cache_ttl: config.cache_ttl,
+                binding_controls,
                 clock,
             }),
         }
