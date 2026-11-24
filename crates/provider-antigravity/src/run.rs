@@ -11,15 +11,22 @@
 //! takes it, and takes a seat among its machine's idle processes, which may
 //! close it meanwhile (`crates/provider-subscription-cli/src/idle.rs`).
 //!
-//! `agy` reports each model request's tokens when it ends, input, cache and
-//! output together, and a turn's split into them only at the turn's end,
-//! summed over its requests. A run reports its last request's as its input:
-//! the context the next request carries, which the agent compacts by. The
-//! turn's last run also reports the turn's output, and splits its input as the
-//! turn's is split. The agent sums a turn's output and speed over its runs, so
-//! both are the turn's; the input the usage ledger counts misses the requests
-//! `agy` makes inside a run, such as one that reads a saved result, since
-//! counting two requests in one response would read as twice the context.
+//! A run reports its last model request's tokens, uncached input, cache read
+//! and output, as the session's transcript holds them (`live.rs`): the
+//! context the next request carries, which the agent compacts by. A run that
+//! made no request, as one that delivers a result while `agy` runs the next
+//! call of the same response, reports none. The input the usage ledger
+//! counts misses the requests `agy` makes inside a run, such as one that
+//! reads a saved result, since counting two requests in one response would
+//! read as twice the context. A run whose transcript was not read reports
+//! what ACP gives: each request's tokens together, and a turn's split into
+//! them only at its end, summed over its requests, so its last run splits its
+//! input as the turn's is split and reports the turn's output.
+//!
+//! The model's context window is no larger than the limit at which `agy`
+//! compacts by itself (`models.rs`), so the agent compacts first. A
+//! compaction `agy` makes anyway shows in the transcript, and is logged, so a
+//! limit that moved is seen.
 
 use std::rc::Rc;
 use std::sync::Arc;
@@ -35,7 +42,7 @@ use jush_provider_common::{
 use jush_provider_subscription_cli::{Placement, ProcessSlot};
 use jush_shared_types::{Model, TokenUsage};
 
-use crate::live::{Live, Next, TurnUsage};
+use crate::live::{Live, Next, Parking, StepLine, TurnUsage};
 use crate::{CLI, Shared};
 
 /// A session's runtime.
@@ -44,6 +51,8 @@ pub(crate) struct AgyRuntime {
     placement: Rc<dyn Placement>,
     /// The process kept from the last run.
     slot: ProcessSlot<Live>,
+    /// The directory the last process closed between turns left.
+    parking: Parking,
 }
 
 impl AgyRuntime {
@@ -52,6 +61,7 @@ impl AgyRuntime {
             shared,
             placement,
             slot: ProcessSlot::default(),
+            parking: Parking::default(),
         }
     }
 }
@@ -115,7 +125,7 @@ fn run(runtime: &mut AgyRuntime, request: InferenceRequest) -> impl Stream<Item 
                 if let Some(previous) = previous {
                     previous.close().await;
                 }
-                let started = Live::start(&runtime.shared, &*runtime.placement, &request);
+                let started = Live::start(&runtime.shared, &*runtime.placement, &request, &runtime.parking);
                 match cancel.run_until_cancelled(started).await {
                     // Giving the start up drops what it started, which
                     // closes it.
@@ -128,6 +138,9 @@ fn run(runtime: &mut AgyRuntime, request: InferenceRequest) -> impl Stream<Item 
                 }
             }
         };
+        // The tokens of the request before the run's, for a compaction `agy`
+        // makes before the run's first request.
+        let before = live.context();
         loop {
             match live.next(&runtime.shared, &cancel).await {
                 Next::Text(text) => yield ProviderEvent::TextDelta(text),
@@ -139,14 +152,20 @@ fn run(runtime: &mut AgyRuntime, request: InferenceRequest) -> impl Stream<Item 
                 }
                 Next::Step(step) => yield ProviderEvent::Opaque(step),
                 Next::Called(call) => {
-                    let usage = usage(live.context(), None);
+                    let usage = match live.transcript().await {
+                        Some(lines) => read_usage(&lines, &request, before),
+                        None => usage(live.context(), None),
+                    };
                     runtime.slot.keep(live);
                     yield ProviderEvent::ToolCall(call);
                     yield ProviderEvent::response(usage, CLI.name, &request.model_id);
                     return;
                 }
                 Next::Answered => {
-                    let usage = usage(live.context(), live.turn());
+                    let usage = match live.transcript().await {
+                        Some(lines) => read_usage(&lines, &request, before),
+                        None => usage(live.context(), live.turn()),
+                    };
                     runtime.slot.keep(live);
                     yield ProviderEvent::response(usage, CLI.name, &request.model_id);
                     return;
@@ -163,6 +182,36 @@ fn run(runtime: &mut AgyRuntime, request: InferenceRequest) -> impl Stream<Item 
             }
         }
     }
+}
+
+/// The tokens of the last model request among `lines`, the run's lines of the
+/// session's transcript; none when they hold no request. A compaction `agy`
+/// made by itself among them is logged, with the tokens it compacted: its
+/// own, else those of the request before it, the run's previous one or
+/// `before`.
+fn read_usage(lines: &[StepLine], request: &InferenceRequest, before: Option<u64>) -> Option<TokenUsage> {
+    let mut last: Option<TokenUsage> = None;
+    for line in lines {
+        if line.is_compaction() {
+            let context = |usage: &TokenUsage| usage.input_tokens + usage.cache_read_tokens + usage.output_tokens;
+            let tokens = line
+                .usage()
+                .map(|usage| context(&usage))
+                .filter(|tokens| *tokens > 0)
+                .or(last.as_ref().map(context))
+                .or(before);
+            tracing::warn!(
+                event = "antigravity.agy_compacted",
+                node = %request.session_id,
+                model = %request.model_id,
+                tokens,
+                "agy compacted the conversation by itself"
+            );
+        } else if line.is_response() {
+            last = line.usage().or(last);
+        }
+    }
+    last
 }
 
 /// The usage a run reports, whose tokens add up to `held`, the tokens of its
