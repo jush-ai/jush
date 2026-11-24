@@ -15,11 +15,13 @@ use chromiumoxide::{
     cdp::browser_protocol::dom::DescribeNodeParams,
     cdp::js_protocol::runtime::{
         CallArgument, CallFunctionOnParams, EvaluateParams, ExecutionContextId,
-        ReleaseObjectGroupParams, RemoteObject, RemoteObjectSubtype, RemoteObjectType, TimeDelta,
+        ReleaseObjectGroupParams, RemoteObject, RemoteObjectSubtype, RemoteObjectType,
+        TerminateExecutionParams, TimeDelta,
     },
     error::CdpError,
 };
 use serde_json::{Map, Value};
+use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
 
 use crate::driver::operation::{BrowserError, Result};
@@ -42,10 +44,11 @@ const CONSOLE_GROUP: &str = "console";
 /// Runs `script` read-only, Chrome enforcing the whole run's read-only scope:
 /// the value of its last statement, or none when that is `undefined`.
 /// The script runs as one block, whose
-/// completion value is its last expression statement's value.
-pub(crate) async fn read_only(page: &Page, script: &str) -> Result<Option<Value>> {
+/// completion value is its last expression statement's value, and Chrome
+/// stops it at `deadline`.
+pub(crate) async fn read_only(page: &Page, script: &str, deadline: Instant) -> Result<Option<Value>> {
     checked_size(script)?;
-    let value = block(page, None, format!("{{\n{script}\n}}"), false).await?;
+    let value = block(page, None, format!("{{\n{script}\n}}"), false, deadline).await?;
     copy(page, None, &value).await
 }
 
@@ -59,6 +62,7 @@ pub(crate) async fn targeted(
     script: &str,
     elements: &[TargetElement],
     all: bool,
+    deadline: Instant,
 ) -> Result<Option<Value>> {
     checked_size(script)?;
     let first = elements.first().ok_or(BrowserError::TargetNotFound)?;
@@ -111,6 +115,7 @@ pub(crate) async fn targeted(
             context,
             format!("{{ const {{ {bound}, document }} = $_; {{\n{script}\n}} }}"),
             true,
+            deadline,
         )
         .await?;
         copy(page, context, &value).await
@@ -155,12 +160,16 @@ async fn context_of(element: &TargetElement) -> Result<Option<ExecutionContextId
 }
 
 /// Evaluates `block` read-only in `context`, keeping its value in Chrome.
+/// Chrome stops the script at `deadline`, the command's own, and when the
+/// command is cancelled before.
 async fn block(
     page: &Page,
     context: Option<ExecutionContextId>,
     block: String,
     command_line: bool,
+    deadline: Instant,
 ) -> Result<RemoteObject> {
+    let left = deadline.saturating_duration_since(Instant::now()).as_millis().max(1);
     let mut request = EvaluateParams::builder()
         .expression(block)
         .throw_on_side_effect(true)
@@ -168,16 +177,43 @@ async fn block(
         .await_promise(false)
         .object_group(OBJECT_GROUP)
         .include_command_line_api(command_line)
-        .timeout(TimeDelta::new(1000.0))
+        .timeout(TimeDelta::new(left as f64))
         .build()
         .map_err(BrowserError::Configuration)?;
     request.context_id = context;
-    Ok(page
-        .evaluate_expression(request)
-        .await
-        .map_err(evaluation_error)?
+    let stopping = StopOnDrop(Some(page.clone()));
+    let evaluated = page.evaluate_expression(request).await;
+    stopping.disarm();
+    Ok(evaluated
+        .map_err(|error| match &error {
+            // V8 stopped the script at the deadline.
+            CdpError::Chrome(chrome) if chrome.message == "Execution was terminated" => {
+                BrowserError::Timeout
+            }
+            _ => evaluation_error(error),
+        })?
         .object()
         .clone())
+}
+
+/// Stops the page's running script once dropped armed, as an evaluation
+/// whose command was cancelled is.
+struct StopOnDrop(Option<Page>);
+
+impl StopOnDrop {
+    fn disarm(mut self) {
+        self.0 = None;
+    }
+}
+
+impl Drop for StopOnDrop {
+    fn drop(&mut self) {
+        if let Some(page) = self.0.take() {
+            tokio::spawn(async move {
+                let _stopped = page.execute(TerminateExecutionParams::default()).await;
+            });
+        }
+    }
 }
 
 /// Copies `value` into the JSON `read-only.js` writes, `{}` for `undefined`
@@ -273,8 +309,9 @@ pub async fn evaluate(
     timeout: Duration,
 ) -> Result<Value> {
     let _session = tab.state().gate.try_checkout().ok_or(BrowserError::Busy)?;
-    tab.operation(cancellation, tokio::time::Instant::now() + timeout)
-        .run(read_only(tab.page(), script))
+    let deadline = Instant::now() + timeout;
+    tab.operation(cancellation, deadline)
+        .run(read_only(tab.page(), script, deadline))
         .await
         .map(|value| value.unwrap_or(Value::Null))
 }

@@ -543,6 +543,7 @@ async fn command_run(
                         &input.expression,
                         &elements,
                         input.all == Some(true),
+                        deadline,
                     )
                     .await?
                 } else {
@@ -551,7 +552,7 @@ async fn command_run(
                             "eval --all requires an element locator".into(),
                         ));
                     }
-                    evaluation::read_only(tab.page(), &input.expression).await?
+                    evaluation::read_only(tab.page(), &input.expression, deadline).await?
                 };
                 Ok(TabResult::Eval(EvalResult { value }))
             }),
