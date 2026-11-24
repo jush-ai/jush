@@ -3,7 +3,8 @@
 //! It holds these layers, in this order:
 //!
 //! 1. the identity;
-//! 2. the guidelines;
+//! 2. the guidelines, which a program's system prompt replaces with the
+//!    identity, as its conversation names it;
 //! 3. the capability index of the node's commands;
 //! 4. the model identity;
 //! 5. the instructions a subagent profile added.

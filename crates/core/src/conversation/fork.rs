@@ -179,11 +179,11 @@ impl Core {
                         // The destination inherits the source's model
                         // settings, the selection its record holds.
                         model: source.model.clone(),
-                        // And its workflow, browser profile, identity and
+                        // And its workflow, browser profile, system prompt and
                         // the commands it names.
                         workflow: source.workflow.clone(),
                         browser_profile: source.browser_profile.clone(),
-                        identity: source.identity.clone(),
+                        system_prompt: source.system_prompt.clone(),
                         commands: source.commands.clone(),
                         created_at: services.clock.now(),
                         attached_devices: store.attached_devices(source.id.clone())

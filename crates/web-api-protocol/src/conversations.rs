@@ -149,9 +149,8 @@ pub struct CreateConversation {
     #[schemars(with = "BrowserProfileName")]
     #[garde(skip)]
     pub browser_profile: Option<BrowserProfileName>,
-    /// The sentences that open its agents' system prompts in place of
-    /// Jush's, such as "You are the help desk's assistant."; Jush's when
-    /// absent.
+    /// The system prompt its agents read in place of Jush's, such as "You
+    /// are the help desk's assistant. …"; Jush's when absent.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -159,7 +158,7 @@ pub struct CreateConversation {
     )]
     #[schemars(with = "String")]
     #[garde(inner(custom(crate::not_blank)))]
-    pub identity: Option<String>,
+    pub system_prompt: Option<String>,
     /// The commands its agents have, by path without `jush`, such as
     /// `browser` or `conversation history`; every command when absent.
     #[serde(
@@ -301,10 +300,11 @@ pub struct ConversationMetadata {
     #[serde(deserialize_with = "Option::deserialize")]
     #[schemars(with = "Nullable<BrowserProfileName>")]
     pub browser_profile: Option<BrowserProfileName>,
-    /// The sentences that open its agents' system prompts; null for Jush's.
+    /// The system prompt its agents read in place of Jush's; null for
+    /// Jush's.
     #[serde(deserialize_with = "Option::deserialize")]
     #[schemars(with = "Nullable<String>")]
-    pub identity: Option<String>,
+    pub system_prompt: Option<String>,
     /// The commands its agents have, by path without `jush`; null for every
     /// command.
     #[serde(deserialize_with = "Option::deserialize")]
@@ -929,8 +929,8 @@ pub struct ConversationPatch {
     #[schemars(with = "Option<BrowserProfileName>")]
     #[garde(skip)]
     pub browser_profile: Option<Option<BrowserProfileName>>,
-    /// The sentences that open its agents' system prompts in place of
-    /// Jush's, from each agent's next request; null for Jush's.
+    /// The system prompt its agents read in place of Jush's, from each
+    /// agent's next request; null for Jush's.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -938,7 +938,7 @@ pub struct ConversationPatch {
     )]
     #[schemars(with = "Option<String>")]
     #[garde(inner(inner(custom(crate::not_blank))))]
-    pub identity: Option<Option<String>>,
+    pub system_prompt: Option<Option<String>>,
     /// The commands its agents have, by path without `jush`, from each
     /// agent's next command; null for every command.
     #[serde(
@@ -982,7 +982,7 @@ pub enum PatchField {
     ServiceTierId,
     Workflow,
     BrowserProfile,
-    Identity,
+    SystemPrompt,
     Commands,
     Target,
 }

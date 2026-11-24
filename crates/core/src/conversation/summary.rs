@@ -171,7 +171,7 @@ impl Core {
             model: record.model.as_ref().map(settings).transpose()?,
             workflow: record.workflow,
             browser_profile: record.browser_profile,
-            identity: record.identity,
+            system_prompt: record.system_prompt,
             commands: record.commands,
             cwd: resolved.path().to_owned(),
             last_turn: facts.last_turn.as_ref().map(last_turn),

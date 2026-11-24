@@ -376,9 +376,8 @@ CREATE TABLE conversations (
   -- earlier one from a later one's.
   browser_profile TEXT,
   browser_profile_revision INTEGER NOT NULL DEFAULT 0 CHECK (browser_profile_revision >= 0),
-  -- The sentences that open its agents' system prompts in place of Jush's;
-  -- null for Jush's.
-  identity TEXT,
+  -- The system prompt its agents read in place of Jush's; null for Jush's.
+  system_prompt TEXT,
   -- The commands its agents have, a JSON array of their paths without
   -- `jush`; null for every command.
   commands TEXT,

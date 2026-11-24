@@ -7,10 +7,13 @@
 //!   each taken for the name of its plugin's group. A plugin whose group is
 //!   named otherwise is the program's to name again; a list of no plugins
 //!   keeps Jush's commands of then, and none a later release adds.
-//! - A pending fork's metadata, which keeps its source's list, turns the
-//!   same way.
-//! - The column's name and comment change in the table's text, as SQLite's
-//!   procedure for a change of the text alone gives it
+//! - A conversation's identity, the sentences that opened its system prompt
+//!   before Jush's guide, becomes its whole system prompt: the identity, and
+//!   the guide it read then after it, so its agents read what they read.
+//! - A pending fork's metadata, which keeps its source's list and identity,
+//!   turns the same way.
+//! - The two columns' names and comments change in the table's text, as
+//!   SQLite's procedure for a change of the text alone gives it
 //!   (lang_altertable.html § 7), which keeps the rows; the integrity check
 //!   proves the table reads as before.
 
@@ -25,15 +28,28 @@ pub(super) const MIGRATION: Migration = Migration::Code(core_from_0_2_6320);
 /// array.
 const JUSH_COMMANDS: &str = r#"["agent","attachment","audio","browser","conversation","credentials","device","file","image","mobile","notify","pin","providers","schedule","shell","skills","video","web","widget"]"#;
 
-/// The column's text, and what it becomes.
-const COLUMN_TEXT: (&str, &str) = (
-    "  -- The program's plugins its agents have, a JSON array of their ids; null
+/// The guide a conversation with an identity read after it then, the two
+/// a blank line apart in its prompt.
+const GUIDE: &str = "\n\nGuidelines:\n- Commands run on the conversation's primary device, in its working directory; a context block names both. The directory stays between turns; to work in another directory, move there with `jush device move` first.\n- To wait for a command or a subagent, end your turn: its end or its message wakes you, and you continue then. Never wait with sleep or a loop.\n- The user reads only your replies, rendered as Markdown. Be concise.\n- Deliver a file as an attachment: `jush attachment upload`, then `<attachment id=\"a3\" />` on its own line; a medium a tool result showed you has its `attachment_id` already.\n- Link what the user can open: a device file `[runner.md](docs/runner.md#L438)`, or `device:<id>/abs/path` on an attached device, a subagent `[File icons](agent:4)`, a commit `[Fix the cart total](commit:3f2a9c1)`, or `commit:src/v8@86229da` in another repository, a conversation `[Login test](conversation:<id>)`.";
+
+/// Each column's text, and what it becomes.
+const COLUMN_TEXT: [(&str, &str); 2] = [
+    (
+        "  -- The sentences that open its agents' system prompts in place of Jush's;
+  -- null for Jush's.
+  identity TEXT,",
+        "  -- The system prompt its agents read in place of Jush's; null for Jush's.
+  system_prompt TEXT,",
+    ),
+    (
+        "  -- The program's plugins its agents have, a JSON array of their ids; null
   -- for all of them.
   plugins TEXT,",
-    "  -- The commands its agents have, a JSON array of their paths without
+        "  -- The commands its agents have, a JSON array of their paths without
   -- `jush`; null for every command.
   commands TEXT,",
-);
+    ),
+];
 
 fn core_from_0_2_6320(transaction: &Transaction<'_>, _: &()) -> rusqlite::Result<()> {
     transaction.execute(
@@ -61,18 +77,32 @@ fn core_from_0_2_6320(transaction: &Transaction<'_>, _: &()) -> rusqlite::Result
          WHERE json_type(metadata, '$.plugins') = 'array'",
         [JUSH_COMMANDS],
     )?;
+    transaction.execute(
+        "UPDATE conversations SET identity = identity || ?1 WHERE identity IS NOT NULL",
+        [GUIDE],
+    )?;
+    transaction.execute(
+        "UPDATE conversation_fork_operations SET metadata = json_remove(
+           json_set(metadata, '$.systemPrompt', json_extract(metadata, '$.identity') || ?1),
+           '$.identity'
+         )
+         WHERE json_type(metadata, '$.identity') = 'text'",
+        [GUIDE],
+    )?;
     let version: i64 = transaction.pragma_query_value(None, "schema_version", |row| row.get(0))?;
     transaction.pragma_update(None, "writable_schema", true)?;
-    let (before, after) = COLUMN_TEXT;
-    let changed = transaction.execute(
-        "UPDATE sqlite_schema SET sql = replace(sql, ?1, ?2)
-           WHERE type = 'table' AND name = 'conversations' AND instr(sql, ?1) > 0",
-        [before, after],
-    )?;
+    let mut changed = 0;
+    for (before, after) in COLUMN_TEXT {
+        changed += transaction.execute(
+            "UPDATE sqlite_schema SET sql = replace(sql, ?1, ?2)
+               WHERE type = 'table' AND name = 'conversations' AND instr(sql, ?1) > 0",
+            [before, after],
+        )?;
+    }
     transaction.pragma_update(None, "schema_version", version + 1)?;
     transaction.pragma_update(None, "writable_schema", false)?;
-    if changed != 1 {
-        return Err(corrupt_text("the conversations table holds no plugins column to rename"));
+    if changed != COLUMN_TEXT.len() {
+        return Err(corrupt_text("the conversations table holds no identity and plugins columns to rename"));
     }
     let problems: Vec<String> = transaction
         .prepare("PRAGMA integrity_check")?
