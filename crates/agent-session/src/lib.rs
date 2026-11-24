@@ -1160,6 +1160,7 @@ impl AgentSession {
             content,
             comments: Vec::new(),
             schedule: None,
+            sender_id: None,
         })
     }
 
@@ -1268,18 +1269,20 @@ impl AgentSession {
     /// Adds input to the running turn at its next boundary, or starts a turn
     /// with it when no turn takes it.
     pub fn steer(&self, content: Vec<UserContentBlock>, id: BlockId) -> Result<(), SteerError> {
-        self.steer_with_comments(content, Vec::new(), id)
+        self.steer_message(content, Vec::new(), None, id)
     }
 
-    /// A steer that carries comments on the reply's words, which the model
-    /// reads before its content.
-    pub fn steer_with_comments(
+    /// A steer as a page or a program sends it: with comments on the
+    /// reply's words, which the model reads before its content, and who sent
+    /// it.
+    pub fn steer_message(
         &self,
         content: Vec<UserContentBlock>,
         comments: Vec<MessageComment>,
+        sender_id: Option<String>,
         id: BlockId,
     ) -> Result<(), SteerError> {
-        self.shared.update(|core| core.steer(id, content, comments))
+        self.shared.update(|core| core.steer(id, content, comments, sender_id))
     }
 
     /// Withdraws a pending steer; an id that is not pending changes nothing.

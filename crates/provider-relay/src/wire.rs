@@ -233,6 +233,9 @@ impl RunRequest {
             affinity: self.affinity,
             conversation: self.conversation,
             turn_id: self.turn_id,
+            // The borrower's senders are its program's ids, which the
+            // lender's ledger has no use for: the request does not carry them.
+            sender_id: None,
             request_id: self.request_id,
             model_id: self.model_id,
             output_limit: self.output_limit,

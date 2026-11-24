@@ -1074,6 +1074,11 @@ pub struct SubagentMessage {
     pub id: Option<BlockId>,
     #[garde(custom(crate::not_blank))]
     pub text: String,
+    /// Who sent it, as a message's sender
+    /// (`crates/conversation-lane-protocol/src/client.rs`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[garde(length(chars, min = 1, max = jush_shared_types::SENDER_ID_LIMIT))]
+    pub sender_id: Option<String>,
 }
 
 /// What a message to a subagent answers: its id, the one it named or the one

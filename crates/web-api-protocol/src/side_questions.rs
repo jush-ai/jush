@@ -32,6 +32,11 @@ pub struct AskRequest {
     /// What is asked, a message's content, as a frame names it.
     #[garde(dive, custom(says_something))]
     pub question: Vec<ClientContent>,
+    /// Who asked, as a message's sender
+    /// (`crates/conversation-lane-protocol/src/client.rs`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[garde(length(chars, min = 1, max = jush_shared_types::SENDER_ID_LIMIT))]
+    pub sender_id: Option<String>,
 }
 
 /// `POST /conversations/:id/side-questions/:sideId/messages`: a follow-up.
@@ -41,6 +46,10 @@ pub struct SideFollowUp {
     /// A message's content, as a frame names it.
     #[garde(dive, custom(says_something))]
     pub content: Vec<ClientContent>,
+    /// Who sent it, as a message's sender.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[garde(length(chars, min = 1, max = jush_shared_types::SENDER_ID_LIMIT))]
+    pub sender_id: Option<String>,
 }
 
 /// `PATCH /conversations/:id/side-questions/:sideId`: folds its card to

@@ -277,7 +277,9 @@ CREATE INDEX schedule_runs_by_schedule ON schedule_runs (schedule_id, at);
 -- The wakes a message to another conversation asked for (`jush conversation
 -- send --wake-when-done`), each kept until its sender is woken: the
 -- recipient and the message's block there, the sending conversation and
--- agent, which the end of the work the message started wakes, and once that
+-- agent, which the end of the work the message started wakes, whom the
+-- message's work is for, by the id its program gave its sender, null when
+-- it named no one or the wake was kept before wakes kept it, and once that
 -- work ended, the notice to deliver, as JSON, an agent message of the shared
 -- types, which a failed delivery keeps for the next try. Either
 -- conversation's deletion drops it.
@@ -287,6 +289,7 @@ CREATE TABLE pending_wakes (
   sender_id    TEXT NOT NULL COLLATE NOCASE REFERENCES conversations (id) ON DELETE CASCADE,
   sender_node  TEXT NOT NULL,
   notice       TEXT,
+  message_sender_id TEXT,
   PRIMARY KEY (recipient_id, message_id)
 ) STRICT;
 CREATE INDEX pending_wakes_by_sender ON pending_wakes (sender_id);
@@ -722,6 +725,10 @@ CREATE TABLE usage_ledger (
   -- The SHA-256 of the video a video call made, in hex; null for any other
   -- call, and for a video call written before the ledger kept it.
   media_digest          TEXT,
+  -- Whom the call's agent worked for, by the id the program gave its
+  -- sender; null when no one was named, for a call outside a session, and
+  -- for a row written before the ledger kept it.
+  sender_id             TEXT,
   CHECK ((cost IS NULL) = (cost_currency IS NULL))
 ) STRICT;
 

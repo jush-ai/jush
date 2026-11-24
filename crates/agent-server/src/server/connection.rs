@@ -599,6 +599,7 @@ impl<H: DeviceResolver> Connection<H> {
                 message_id,
                 content,
                 comments,
+                sender_id,
             }) => {
                 // Input the session took already under the id is acknowledged
                 // before its files are resolved, so a request sent again,
@@ -631,6 +632,7 @@ impl<H: DeviceResolver> Connection<H> {
                     content,
                     comments,
                     schedule: None,
+                    sender_id,
                 };
                 if let Err(error) = session.send_message(message) {
                     self.reject(kind, error.refusal());
@@ -640,7 +642,7 @@ impl<H: DeviceResolver> Connection<H> {
                 self.send(ServerFrame::SendResult { message_id, at });
                 return Taken::Now;
             }
-            ClientFrame::Steer { steer_id, content, comments } => {
+            ClientFrame::Steer { steer_id, content, comments, sender_id } => {
                 // As a message's: input taken already under the id reads no
                 // file, before and after the resolution.
                 if session.took(&steer_id) {
@@ -657,7 +659,7 @@ impl<H: DeviceResolver> Connection<H> {
                     Ok((content, comments, media)) => {
                         session.hold_media(media);
                         session
-                            .steer_with_comments(content, comments, steer_id.clone())
+                            .steer_message(content, comments, sender_id, steer_id.clone())
                             .map_err(|error| error.refusal())
                     }
                     Err(error) => Err(error.refusal()),

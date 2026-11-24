@@ -588,6 +588,7 @@ fn agent_message(id: &str) -> AgentMessage {
         content: format!("Result {id}"),
         event: AgentMessageEvent::Message {},
         origin: None,
+        sender_id: None,
     }
 }
 
@@ -649,6 +650,7 @@ fn test_report(command: &str, title: &str, event: ReportEvent) -> CommandReport 
         event,
         output: String::new(),
         media: Vec::new(),
+        sender_id: None,
     }
 }
 
@@ -788,6 +790,7 @@ async fn an_edit_gives_its_version_the_comments_it_carries_and_keeps_them_withou
             content: Vec::new(),
             comments: vec![first, second.clone()],
             schedule: None,
+            sender_id: None,
         })
         .unwrap()
         .await

@@ -674,13 +674,14 @@ impl<H: DeviceResolver> AgentServer<H> {
     /// resumed with it, as `jush agent resume` resumes one for its parent.
     /// One whose history or queue holds `id` took it already and takes
     /// nothing, so a message sent again after its answer was lost runs no
-    /// second turn and resumes nothing.
+    /// second turn and resumes nothing. `sender_id` names who sent it.
     pub async fn message_subagent(
         &self,
         root: &NodeId,
         node: &NodeId,
         id: BlockId,
         text: String,
+        sender_id: Option<String>,
     ) -> Result<(), SubagentMessageError> {
         let tree = self
             .tree(root)
@@ -696,7 +697,7 @@ impl<H: DeviceResolver> AgentServer<H> {
         let parent = record.parent.ok_or(SubagentMessageError::MainAgent)?;
         // Before any start, which a closed parent refuses: a subagent that
         // took the message took it whatever its parent did since.
-        if let Some(taken) = tree.take_message(node, &id, &text).await {
+        if let Some(taken) = tree.take_message(node, &id, &text, sender_id.clone()).await {
             return taken;
         }
         if &parent != root && !tree.is_live(&parent) {
@@ -716,6 +717,7 @@ impl<H: DeviceResolver> AgentServer<H> {
             number: record.number,
             message_id: id,
             text,
+            sender_id,
         };
         tree.start(&parent, input)
             .await
@@ -760,20 +762,29 @@ impl<H: DeviceResolver> AgentServer<H> {
     /// root in one step. The root goes on with whatever it does, and never
     /// learns of it. The same question again under its id asks nothing; answers
     /// whether this call asked it.
-    pub async fn ask(&self, root: &NodeId, side: NodeId, of: SideOf, media: HeldMedia) -> Result<bool, AskError> {
-        self.tree(root).ok_or(AskError::NotOpen)?.ask(side, of, media).await
+    pub async fn ask(
+        &self,
+        root: &NodeId,
+        side: NodeId,
+        of: SideOf,
+        sender_id: Option<String>,
+        media: HeldMedia,
+    ) -> Result<bool, AskError> {
+        self.tree(root).ok_or(AskError::NotOpen)?.ask(side, of, sender_id, media).await
     }
 
-    /// Sends the follow-up `content` to the side question `side` of the
-    /// conversation `root`, whose tree is open, with the bytes of its media.
+    /// Sends the follow-up `content` from `sender_id` to the side question
+    /// `side` of the conversation `root`, whose tree is open, with the bytes
+    /// of its media.
     pub async fn ask_more(
         &self,
         root: &NodeId,
         side: NodeId,
         content: Vec<UserContentBlock>,
+        sender_id: Option<String>,
         media: HeldMedia,
     ) -> Result<(), AskError> {
-        self.tree(root).ok_or(AskError::NotOpen)?.ask_more(side, content, media).await
+        self.tree(root).ok_or(AskError::NotOpen)?.ask_more(side, content, sender_id, media).await
     }
 
     /// Runs the failed turn of the side question `side` of the conversation

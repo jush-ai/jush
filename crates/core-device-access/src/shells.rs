@@ -458,6 +458,7 @@ impl Keeper {
             job: job.to_owned(),
             tool_use_id: start.caller.tool_use_id.clone(),
             turn: start.caller.turn.clone(),
+            sender_id: start.caller.sender_id.clone(),
             title: start.title.clone(),
             script: start.script.clone(),
             service: start.service,
@@ -699,6 +700,7 @@ impl CommandKeeper for Keeper {
         &'a self,
         command: &'a CommandId,
         title: &'a str,
+        sender_id: Option<&'a str>,
         end: CommandEnd,
         output: &'a WholeOutput,
         media: &'a [CommandMedium],
@@ -718,6 +720,8 @@ impl CommandKeeper for Keeper {
             let row = CommandOutput {
                 command: command.clone(),
                 title: title.to_owned(),
+                sender_id: sender_id.map(str::to_owned),
+                // Its record as running gives its start.
                 started: None,
                 ended,
                 end,
@@ -775,6 +779,10 @@ impl ShellEnvironment for Registered {
 
     fn title(&self, command: &CommandId) -> Option<String> {
         self.environment.title(command)
+    }
+
+    fn sender_id(&self, command: &CommandId) -> Option<String> {
+        self.environment.sender_id(command)
     }
 
     fn quiet(&self, command: &CommandId) -> Result<std::time::Duration, ShellError> {

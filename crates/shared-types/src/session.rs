@@ -133,6 +133,15 @@ pub struct QueuedMessage {
     #[schemars(with = "crate::ScheduleMark")]
     #[garde(dive)]
     pub schedule: Option<crate::ScheduleMark>,
+    /// Who sent it, which its `user` block keeps.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "serde_with::rust::unwrap_or_skip"
+    )]
+    #[schemars(with = "String")]
+    #[garde(length(chars, min = 1, max = crate::SENDER_ID_LIMIT))]
+    pub sender_id: Option<String>,
 }
 
 /// A call the model is writing: the provider opened it and has not handed
@@ -176,4 +185,13 @@ pub struct PendingSteer {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[garde(dive)]
     pub comments: Vec<crate::MessageComment>,
+    /// Who sent it, which its `steer` block keeps.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "serde_with::rust::unwrap_or_skip"
+    )]
+    #[schemars(with = "String")]
+    #[garde(length(chars, min = 1, max = crate::SENDER_ID_LIMIT))]
+    pub sender_id: Option<String>,
 }

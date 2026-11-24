@@ -18,7 +18,7 @@ use super::store::CoreStore;
 
 const TABLE: &str = "pending_wakes";
 
-const COLUMNS: &str = "recipient_id, message_id, sender_id, sender_node, notice";
+const COLUMNS: &str = "recipient_id, message_id, sender_id, sender_node, notice, message_sender_id";
 
 /// A wake a message asked for, until its sender is woken.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -31,6 +31,9 @@ pub struct PendingWake {
     pub sender_node: NodeId,
     /// The notice to deliver, once the work the message started ended.
     pub notice: Option<AgentMessage>,
+    /// Whom the message's work is for, by the id its program gave its
+    /// sender, whom the notice's turn is then counted for.
+    pub message_sender_id: Option<String>,
 }
 
 impl CoreStore {
@@ -38,14 +41,15 @@ impl CoreStore {
     pub async fn keep_wake(&self, wake: PendingWake) -> Result<(), StorageError> {
         self.call(move |connection, _| {
             connection.execute(
-                "INSERT OR IGNORE INTO pending_wakes (recipient_id, message_id, sender_id, sender_node, notice)
-                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                "INSERT OR IGNORE INTO pending_wakes (recipient_id, message_id, sender_id, sender_node, notice, message_sender_id)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
                 params![
                     wake.recipient.as_str(),
                     wake.message.as_str(),
                     wake.sender.as_str(),
                     wake.sender_node.as_str(),
                     wake.notice.as_ref().map(to_json),
+                    wake.message_sender_id,
                 ],
             )?;
             Ok(())
@@ -127,5 +131,6 @@ fn wake(row: &Row<'_>) -> Result<PendingWake, StorageError> {
             .get::<_, Option<String>>("notice")?
             .map(|text| json(TABLE, "notice", &text))
             .transpose()?,
+        message_sender_id: row.get("message_sender_id")?,
     })
 }

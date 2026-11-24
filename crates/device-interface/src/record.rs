@@ -32,6 +32,9 @@ pub struct CommandRecord {
     /// That call's title, its `description`, which every report of the
     /// command names, whatever became of the call (`crates/agent-session/src/reports.rs`).
     title: String,
+    /// Whom that call's work is for, which every report of the command
+    /// names; none when no one was named.
+    sender_id: Option<String>,
     /// That call's script, which the pages' view of the command carries
     /// with its title.
     script: Arc<str>,
@@ -209,6 +212,7 @@ impl CommandRecord {
             script: Arc::from(script),
             service,
             device: None,
+            sender_id: None,
             started: now.checked_sub(running).unwrap_or(now),
             ended: None,
             last_output: now,
@@ -237,6 +241,11 @@ impl CommandRecord {
     /// call had none.
     pub fn title(&self) -> &str {
         &self.title
+    }
+
+    /// Whom its call's work is for.
+    pub fn sender_id(&self) -> Option<&str> {
+        self.sender_id.as_deref()
     }
 
     /// Whether its call started it as a service.
@@ -501,6 +510,13 @@ impl CommandRecord {
     #[must_use]
     pub fn on_device(mut self, device: Option<Arc<str>>) -> Self {
         self.device = device;
+        self
+    }
+
+    /// The command, as one whose call's work is for `sender_id`.
+    #[must_use]
+    pub fn for_sender(mut self, sender_id: Option<String>) -> Self {
+        self.sender_id = sender_id;
         self
     }
 

@@ -1,5 +1,14 @@
 /** The models a core's entries offer, and what their calls used. */
-import { modelSearchResultsSchema, usageTotalsSchema, type ModelMatch, type UsageGroup } from '@jush-agent/protocol'
+import {
+  modelSearchResultsSchema,
+  usageReportSchema,
+  usageTotalsSchema,
+  type ModelMatch,
+  type UsageBucketSize,
+  type UsageDimension,
+  type UsageGroup,
+  type UsageReport,
+} from '@jush-agent/protocol'
 import { query, type CoreRoutes } from './routes'
 
 export interface Models {
@@ -16,13 +25,38 @@ export function models(routes: CoreRoutes): Models {
   }
 }
 
+/** A report of the calls that ended from `from` until `to`. */
+export interface UsageReportOptions {
+  from: Date
+  to: Date
+  /** How long a bucket is. */
+  bucket: UsageBucketSize
+  /** The IANA zone a bucket's hour or day is counted in; UTC when absent. */
+  timeZone?: string
+  /** What each bucket's calls are grouped by; none sums each bucket whole. */
+  groupBy?: UsageDimension[]
+}
+
 export interface Usage {
   /** The core's usage, totalled by provider and model. */
   totals(): Promise<UsageGroup[]>
+  /** The calls of a period, in buckets of an hour or a day, grouped by what `groupBy` names. */
+  report(options: UsageReportOptions): Promise<UsageReport>
 }
 
 export function usage(routes: CoreRoutes): Usage {
   return {
     totals: async () => (await routes.json('GET', '/usage', usageTotalsSchema)).totals,
+    report: async (options) => routes.json(
+      'GET',
+      `/usage/report${query({
+        from: options.from.toISOString(),
+        to: options.to.toISOString(),
+        bucket: options.bucket,
+        timeZone: options.timeZone,
+        groupBy: options.groupBy !== undefined && options.groupBy.length > 0 ? options.groupBy.join(',') : undefined,
+      })}`,
+      usageReportSchema,
+    ),
   }
 }

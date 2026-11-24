@@ -94,6 +94,10 @@ pub enum ClientFrame {
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         #[garde(dive)]
         comments: Vec<ClientComment>,
+        /// Who sent it, as a message's sender.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[garde(length(chars, min = 1, max = jush_shared_types::SENDER_ID_LIMIT))]
+        sender_id: Option<String>,
     },
     /// Send a message saved for later as the composer would, as the message
     /// `turn_id`, and remove it from the list in the same step. The backend handles it;
@@ -326,6 +330,13 @@ pub struct SendMessage {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[garde(dive)]
     pub comments: Vec<ClientComment>,
+    /// Who sent it, by a program's own id, such as a person of a team's
+    /// chat, which its `user` block keeps: the calls its agent makes after
+    /// reading it are that sender's in the usage ledger. Absent for the
+    /// core's own user, as the web app sends.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[garde(length(chars, min = 1, max = jush_shared_types::SENDER_ID_LIMIT))]
+    pub sender_id: Option<String>,
 }
 
 /// The stage of a message the web app sends, a frame's.

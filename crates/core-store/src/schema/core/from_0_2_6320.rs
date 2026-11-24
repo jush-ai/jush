@@ -12,6 +12,9 @@
 //!   the guide it read then after it, so its agents read what they read.
 //! - A pending fork's metadata, which keeps its source's list and identity,
 //!   turns the same way.
+//! - The usage ledger's rows name whom their agent worked for, null for
+//!   every row before: no message named one. A kept wake names whom its
+//!   message's work is for, null for every wake kept before.
 //! - The two columns' names and comments change in the table's text, as
 //!   SQLite's procedure for a change of the text alone gives it
 //!   (lang_altertable.html § 7), which keeps the rows; the integrity check
@@ -104,6 +107,10 @@ fn core_from_0_2_6320(transaction: &Transaction<'_>, _: &()) -> rusqlite::Result
     if changed != COLUMN_TEXT.len() {
         return Err(corrupt_text("the conversations table holds no identity and plugins columns to rename"));
     }
+    transaction.execute_batch(
+        "ALTER TABLE usage_ledger ADD COLUMN sender_id TEXT;
+         ALTER TABLE pending_wakes ADD COLUMN message_sender_id TEXT;",
+    )?;
     let problems: Vec<String> = transaction
         .prepare("PRAGMA integrity_check")?
         .query_map([], |row| row.get(0))?

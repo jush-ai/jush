@@ -796,6 +796,7 @@ async fn send(
             comments: Vec::new(),
             message_id: id.clone(),
             content: client_text(text),
+            sender_id: None,
         }),
     )
     .await;
