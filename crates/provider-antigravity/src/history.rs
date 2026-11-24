@@ -26,7 +26,7 @@ use std::collections::HashMap;
 
 use bytes::Bytes;
 use jush_provider_common::{InferenceItem, Medium, ResultPart, UserPart};
-use jush_shared_types::ModelMediaKind;
+use jush_shared_types::{ModelMediaKind, text_tokens};
 use rusqlite::{Connection, MAIN_DB, OptionalExtension};
 use serde_json::Value;
 
@@ -195,6 +195,25 @@ fn read_varint(rest: &mut &[u8]) -> Option<u64> {
         }
     }
     None
+}
+
+/// The estimate of the tokens `agy` counts for the steps of `items`: their
+/// words, a token for each 4 bytes, as Jush's estimates count text.
+pub(crate) fn tokens(items: &[InferenceItem]) -> u64 {
+    items
+        .iter()
+        .map(|item| match item {
+            InferenceItem::UserMessage { content } | InferenceItem::UserSteer { content } => {
+                text_tokens(&user_text(content))
+            }
+            InferenceItem::AssistantText { text, .. } => text_tokens(text),
+            InferenceItem::ToolUse { tool_name, input, .. } => {
+                text_tokens(tool_name) + text_tokens(&input.to_string())
+            }
+            InferenceItem::ToolResult { output, .. } => text_tokens(&result_text(output)),
+            InferenceItem::AssistantThinking { .. } | InferenceItem::Opaque { .. } => 0,
+        })
+        .sum()
 }
 
 /// The steps of `items`, each its type and its payload.

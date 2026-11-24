@@ -185,9 +185,14 @@ fn catalog_model(offered: Offered, listing: ModelsDevMatch, levels: &[&str]) -> 
 /// `window`, the context window models.dev lists for `agy`'s model `id`, no
 /// larger than the limit at which `agy` compacts by itself.
 fn within_agy_limit(id: &str, window: Option<u32>) -> Option<u32> {
-    let limit = AGY_LIMITS
+    let limit = agy_limit(id);
+    Some(window.map_or(limit, |window| window.min(limit)))
+}
+
+/// The tokens at which `agy` compacts a conversation of its model `id`.
+pub(crate) fn agy_limit(id: &str) -> u32 {
+    AGY_LIMITS
         .iter()
         .find(|(prefix, _)| id.starts_with(prefix))
-        .map_or(AGY_DEFAULT_LIMIT, |(_, limit)| *limit);
-    Some(window.map_or(limit, |window| window.min(limit)))
+        .map_or(AGY_DEFAULT_LIMIT, |(_, limit)| *limit)
 }

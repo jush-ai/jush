@@ -25,8 +25,9 @@
 //!
 //! The model's context window is no larger than the limit at which `agy`
 //! compacts by itself (`models.rs`), so the agent compacts first. A
-//! compaction `agy` makes anyway shows in the transcript, and is logged, so a
-//! limit that moved is seen.
+//! compaction `agy` makes anyway fails the run as too long (`live.rs`); one
+//! the run does not see until the transcript's lines are read at its end is
+//! logged, so a limit that moved is seen.
 
 use std::rc::Rc;
 use std::sync::Arc;

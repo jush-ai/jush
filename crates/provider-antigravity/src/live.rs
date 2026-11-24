@@ -21,6 +21,15 @@
 //! machine is up when its process closes, and a directory lasts no longer
 //! than its process, as before.
 //!
+//! `agy` never answers from a summary of its own: a history at or over the
+//! limit at which it compacts by itself is refused as too long, which the
+//! agent answers by compacting and asking again. The provider refuses a
+//! history it estimates over the limit before writing it into a session, and
+//! a run whose `agy` compacted the session: a `usage_update` that comes
+//! before the model said anything of its request, with tokens over the limit
+//! or with a compaction among the transcript's new lines. The run's failure
+//! closes the process, so no later one loads the summarized session.
+//!
 //! Each run reads the lines `agy` added to the session's transcript since the
 //! last read (`transcript.jsonl`, only the new bytes), for the tokens of each
 //! model request, which ACP reports only summed over a turn.
@@ -63,14 +72,14 @@ use jush_device_interface::{Process, ProcessEnd};
 use jush_provider_common::openai_request::reasoning_effort;
 use jush_provider_common::quota::ProbeAsk;
 use jush_provider_common::{
-    InferenceItem, InferenceRequest, Medium, OpaqueStep, ProviderFailure, ResultPart, ToolCall,
+    ErrorCode, InferenceItem, InferenceRequest, Medium, OpaqueStep, ProviderFailure, ResultPart, ToolCall,
     UserPart, encode_body,
 };
 use jush_provider_subscription_cli::{
     CliStarter, CliWork, ConfigDir, HeldProcess, KeptProcess, Placed, Placement, Unanswered, exit_message,
     tool_result,
 };
-use jush_shared_types::{OpaqueStatus, OpaqueView, Timestamp};
+use jush_shared_types::{OpaqueStatus, OpaqueView, Timestamp, text_tokens};
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 
@@ -78,6 +87,7 @@ use crate::acp::{self, Line, Output, Refusal};
 use crate::failure::{self, Reported};
 use crate::history;
 use crate::media;
+use crate::models;
 use crate::start::{self, CONVERSATIONS};
 use crate::tools::{self, Channel, ChannelEvent};
 use crate::{CLI, Shared};
@@ -134,6 +144,13 @@ pub(crate) struct Live {
     /// was given since: the session's database then holds a conversation the
     /// next process can go on with.
     settled: bool,
+    /// Whether the model said anything of its request since the process was
+    /// last given input or ran a call of its own: a `usage_update` before it
+    /// may be a compaction's.
+    answering: bool,
+    /// The tokens of a `usage_update` that came before the model said
+    /// anything, which the run checks for a compaction.
+    unanswered_usage: Option<u64>,
     /// Where the session's directory goes when the process is closed.
     parking: Parking,
     /// How far the session's transcript was read.
@@ -347,6 +364,8 @@ impl Live {
             steps: HashMap::new(),
             turn: None,
             settled: false,
+            answering: false,
+            unanswered_usage: None,
             parking: parking.clone(),
             transcript: Transcript {
                 first,
@@ -418,6 +437,7 @@ impl Live {
     ) -> Result<(), ProviderFailure> {
         self.channel.offer(request.tools.clone());
         self.settled = false;
+        self.answering = false;
         match self.held_call.take() {
             Some(call) => {
                 let (output, is_error) = result_of(&request.items, &call.tool_use_id)
@@ -513,6 +533,23 @@ impl Live {
                     if let Some(next) = self.update(&params) {
                         return next;
                     }
+                    if let Some(used) = self.unanswered_usage.take() {
+                        if let Some(prompt) = &self.prompting
+                            && self.compacted(used, &prompt.model_id).await
+                        {
+                            let limit = models::agy_limit(&prompt.model_id);
+                            tracing::warn!(
+                                event = "antigravity.compaction_refused",
+                                node = %self.node,
+                                model = %prompt.model_id,
+                                tokens = used,
+                                limit,
+                                "agy compacted the conversation by itself; the run refuses it as too long"
+                            );
+                            return Next::Failed(over_limit(used, limit));
+                        }
+                        self.context = Some(used);
+                    }
                 }
                 Line::Notification { .. } => {}
                 Line::Request { id, method, params } => {
@@ -554,6 +591,7 @@ impl Live {
             "agent_message_chunk" => {
                 let text = text()?;
                 self.thinking = false;
+                self.answering = true;
                 if failure::warns(&text) {
                     return self.warning.replace(text).map(Next::Text);
                 }
@@ -564,16 +602,29 @@ impl Live {
             }
             "agent_thought_chunk" => {
                 let text = text()?;
+                self.answering = true;
                 let opens = !std::mem::replace(&mut self.thinking, true);
                 Some(Next::Reasoning { opens, text })
             }
             "usage_update" => {
-                self.context = update.get("used").and_then(Value::as_u64).or(self.context);
+                let used = update.get("used").and_then(Value::as_u64);
+                // `agy` reports the tokens of the request that summarizes the
+                // session as soon as it wrote the summary, before the model
+                // says anything of the request it compacted for (measured).
+                match used {
+                    Some(used) if !self.answering && self.prompting.is_some() => {
+                        self.unanswered_usage = Some(used);
+                    }
+                    _ => self.context = used.or(self.context),
+                }
                 None
             }
             "tool_call" | "tool_call_update" => {
                 let step = self.step(update)?;
                 self.thinking = false;
+                // A call of `agy`'s own that ended starts the model's next
+                // request.
+                self.answering = step.status == OpaqueStatus::Running;
                 Some(Next::Step(step))
             }
             // `agy`'s title of the session and the settings it offers.
@@ -747,26 +798,54 @@ impl Live {
     }
 
     async fn read_transcript(&mut self) -> Result<Vec<StepLine>, String> {
+        let (read, lines) = self.new_lines().await?;
+        self.transcript.offset += read;
+        if let Some(line) = lines.last() {
+            self.transcript.last = Some(line.step_index);
+        }
+        Ok(lines)
+    }
+
+    /// The whole lines `agy` added to the session's transcript since the last
+    /// read, of steps after the last one taken, and the bytes they span,
+    /// without taking them.
+    async fn new_lines(&self) -> Result<(u64, Vec<StepLine>), String> {
         let dir = own_dir(&self.held).map_err(|failure| failure.message)?;
         let path = transcript_path(&self.session);
         let from = (self.transcript.offset + 1).to_string();
         let read = dir.output("tail", &["-c", &format!("+{from}"), &path]).await?;
         // Only whole lines: one being written is read whole next time.
         let whole = read.iter().rposition(|byte| *byte == b'\n').map_or(0, |end| end + 1);
-        self.transcript.offset += whole as u64;
+        let mut after = self.transcript.last.map_or(self.transcript.first, |last| last + 1);
         let mut lines = Vec::new();
         for text in read[..whole].split(|byte| *byte == b'\n').filter(|text| !text.is_empty()) {
             let Ok(line) = serde_json::from_slice::<StepLine>(text) else {
                 continue;
             };
-            let after = self.transcript.last.map_or(self.transcript.first, |last| last + 1);
             if line.step_index < after {
                 continue;
             }
-            self.transcript.last = Some(line.step_index);
+            after = line.step_index + 1;
             lines.push(line);
         }
-        Ok(lines)
+        Ok((whole as u64, lines))
+    }
+
+    /// Whether `agy` compacted the session for the request in flight, which
+    /// reported `used` tokens before the model said anything of it: the
+    /// tokens at or over the model's limit, or a compaction among the
+    /// transcript's new lines, which also shows one under a limit `agy` moved.
+    async fn compacted(&self, used: u64, model_id: &str) -> bool {
+        if used >= u64::from(models::agy_limit(model_id)) {
+            return true;
+        }
+        match self.new_lines().await {
+            Ok((_, lines)) => lines.iter().any(StepLine::is_compaction),
+            Err(error) => {
+                tracing::warn!(event = "antigravity.transcript_unread", node = %self.node, %error, "a session's transcript was not read");
+                false
+            }
+        }
     }
 
     /// The size of the session's transcript now; none when it has none yet.
@@ -856,6 +935,21 @@ async fn make_session(
     request: &InferenceRequest,
     input: usize,
 ) -> Result<(String, Bytes, u64), ProviderFailure> {
+    // A history `agy` would compact before the first request is refused
+    // before `agy` spends a summary on it.
+    let limit = models::agy_limit(&request.model_id);
+    let estimate = text_tokens(&request.system_prompt) + history::tokens(&request.items);
+    if estimate >= u64::from(limit) {
+        tracing::warn!(
+            event = "antigravity.history_refused",
+            node = %request.session_id,
+            model = %request.model_id,
+            tokens = estimate,
+            limit,
+            "a history over agy's limit was refused as too long before it was written"
+        );
+        return Err(over_limit(estimate, limit));
+    }
     let system_prompt = request.system_prompt.clone();
     let Placed {
         process,
@@ -900,6 +994,20 @@ async fn make_session(
         .await?
         .map_err(failure)?;
     Ok((session, filled, steps))
+}
+
+/// The refusal of a history of `tokens`, at or over `limit`, the tokens at
+/// which `agy` compacts by itself: the agent compacts and asks again, so the
+/// conversation keeps one history, Jush's.
+fn over_limit(tokens: u64, limit: u32) -> ProviderFailure {
+    ProviderFailure {
+        message: format!(
+            "The conversation has about {tokens} tokens, at or over the {limit} at which Antigravity summarizes it by itself."
+        ),
+        code: Some(ErrorCode::ContextLengthExceeded),
+        diagnostics: None,
+        retry_after: None,
+    }
 }
 
 /// The directory of the process `held`, which every turn's process has.
