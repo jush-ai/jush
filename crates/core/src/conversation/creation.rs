@@ -122,7 +122,7 @@ impl Core {
             workflow: request.workflow.unwrap_or_default(),
             browser_profile: request.browser_profile,
             identity: request.identity,
-            plugins: request.plugins,
+            commands: request.commands,
         })
     }
 }

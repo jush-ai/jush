@@ -17,6 +17,7 @@
 //! node once.
 
 use jush_core_store::StorageError;
+use jush_device_interface::CommandList;
 use jush_core_store::conversation_index::{
     AttachedDevice, ExecutionTarget, TargetSwitch,
 };
@@ -108,6 +109,17 @@ impl Core {
         }
         let primary = self.device_core().resolve_target(&record).await?;
         let attached = store.attached_devices(record.id.clone()).await?;
+        // A sentence that tells of a command the conversation's list leaves
+        // out goes with it.
+        let list = record.commands.as_deref().map(CommandList::new);
+        let has = |path: &[&str]| {
+            list.as_ref()
+                .is_none_or(|list| list.names(&path.iter().map(|word| (*word).to_owned()).collect::<Vec<_>>()))
+        };
+        let tells = Tells {
+            device_list: has(&["jush", "device", "list"]),
+            device_shell: has(&["jush", "device", "shell"]),
+        };
         let mut lines = vec![marker, self.primary_device_line(&primary).await?];
         // A Cloud reset is announced to a node once
         // (`crates/backend-cloud/src/reset.rs`).
@@ -131,7 +143,7 @@ impl Core {
                     self.describe(&switch.to).await?,
                     switch.to.path()
                 );
-                Some(switch_lines(&switch, description, &attached))
+                Some(switch_lines(&switch, description, &attached, tells))
             }
             _ => None,
         };
@@ -147,7 +159,7 @@ impl Core {
             }
             None => {}
         }
-        lines.push(self.attached_devices_line(&attached));
+        lines.push(self.attached_devices_line(&attached, tells));
         Ok(Some(lines.join("\n")))
     }
 
@@ -282,10 +294,11 @@ impl Core {
 
     /// The attached devices as one line: each one's name, connection and
     /// directory, and how to reach them.
-    fn attached_devices_line(&self, attached: &[AttachedDevice]) -> String {
-        const LIST: &str = "`jush device list` shows all of the user's devices; a `shell` call with `device` runs on any of them, attaching it first.";
+    fn attached_devices_line(&self, attached: &[AttachedDevice], tells: Tells) -> String {
+        const LIST: &str = " `jush device list` shows all of the user's devices; a `shell` call with `device` runs on any of them, attaching it first.";
+        let list = if tells.device_list { LIST } else { "" };
         if attached.is_empty() {
-            return format!("{ATTACHED}none. {LIST}");
+            return format!("{ATTACHED}none.{list}");
         }
         let entries: Vec<String> = attached
             .iter()
@@ -303,8 +316,16 @@ impl Core {
                 format!("{}{state}{STARTS_IN}{directory})", entry(each))
             })
             .collect();
-        format!("{ATTACHED}{}. {LIST}", entries.join(", "))
+        format!("{ATTACHED}{}.{list}", entries.join(", "))
     }
+}
+
+/// Which of the context's sentences that tell of a command the
+/// conversation has.
+#[derive(Clone, Copy)]
+struct Tells {
+    device_list: bool,
+    device_shell: bool,
 }
 
 /// The revision the context block `text` describes, which its first line
@@ -350,6 +371,7 @@ fn switch_lines(
     switch: &TargetSwitch,
     description: String,
     attached: &[AttachedDevice],
+    tells: Tells,
 ) -> Vec<String> {
     let mut lines = vec![
         SWITCHED.to_owned(),
@@ -363,9 +385,15 @@ fn switch_lines(
     if let Some(departed) = departed {
         let name = &departed.name;
         let from = switch.from.path();
-        lines.push(format!(
-            "The previous device stays attached as \"{name}\": a `shell` call with `device: {name}` runs there, starting in {from}, and `jush device shell --device {name}` streams bytes between it and here (e.g. `jush device shell --device {name} \"tar c -C {from} .\" | tar x` pulls its files into the current directory)."
-        ));
+        lines.push(if tells.device_shell {
+            format!(
+                "The previous device stays attached as \"{name}\": a `shell` call with `device: {name}` runs there, starting in {from}, and `jush device shell --device {name}` streams bytes between it and here (e.g. `jush device shell --device {name} \"tar c -C {from} .\" | tar x` pulls its files into the current directory)."
+            )
+        } else {
+            format!(
+                "The previous device stays attached as \"{name}\": a `shell` call with `device: {name}` runs there, starting in {from}."
+            )
+        });
     }
     if let (
         ExecutionTarget::Project {

@@ -39,7 +39,7 @@ mod rpc;
 
 pub use files::{EntryKind, DeviceEntry, DeviceFile, DeviceRead};
 pub use builders::{Call, GroupBuilder, LeafBuilder, TypedRpc};
-pub use commands::{Checked, CommandSet, JUSH_ROOT, Declared, RegisterError};
+pub use commands::{Checked, CommandList, CommandSet, JUSH_ROOT, Declared, RegisterError};
 pub use jush_command_declarations::{CapabilityIndex, IndexGroup};
 pub use environment::{
     BinaryOutput, CommandState, CommandStatus, DEFAULT_BINARY_LIMIT_BYTES,

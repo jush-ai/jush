@@ -140,6 +140,16 @@ pub fn named_browser_profile(home: &std::path::Path, name: &str) -> std::path::P
     home.join(".jush").join("browser-profiles").join(name)
 }
 
+/// Whether `name` can name a command or an input: an ASCII letter or digit,
+/// then letters, digits, `_` and `-`.
+pub fn is_command_name(name: &str) -> bool {
+    let mut bytes = name.bytes();
+    bytes
+        .next()
+        .is_some_and(|byte| byte.is_ascii_alphanumeric())
+        && bytes.all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+}
+
 /// Whether `name` can name a browser profile: a directory's name that every
 /// system a device runs reads as itself alone. So 1 to 64 lowercase ASCII
 /// letters, digits, `-` and `_`, none of the names Windows keeps for its

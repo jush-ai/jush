@@ -180,11 +180,11 @@ impl Core {
                         // settings, the selection its record holds.
                         model: source.model.clone(),
                         // And its workflow, browser profile, identity and
-                        // the program's plugins it names.
+                        // the commands it names.
                         workflow: source.workflow.clone(),
                         browser_profile: source.browser_profile.clone(),
                         identity: source.identity.clone(),
-                        plugins: source.plugins.clone(),
+                        commands: source.commands.clone(),
                         created_at: services.clock.now(),
                         attached_devices: store.attached_devices(source.id.clone())
                             .await?

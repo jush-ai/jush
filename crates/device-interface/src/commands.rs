@@ -69,6 +69,10 @@ pub const JUSH_ROOT: &str = "jush";
 pub struct CommandSet {
     roots: Vec<Node<NativeOperation>>,
     handlers: HashMap<Vec<String>, Rc<dyn RpcHandler>>,
+    /// The list the set was narrowed to ([`CommandSet::named`]). A command
+    /// registered or grafted after is beyond it until whoever added it
+    /// narrows the set again, as the agent server does to its own groups.
+    list: Option<Rc<CommandList>>,
 }
 
 impl CommandSet {
@@ -182,6 +186,26 @@ impl CommandSet {
         self.handlers.extend(grafted.handlers);
         self.roots[index] = grafted.tree;
         Ok(())
+    }
+
+    /// The commands `list` names, as [`CommandList::names`] tells; the set
+    /// keeps the list ([`CommandSet::list`]).
+    pub fn named(&self, list: Rc<CommandList>) -> CommandSet {
+        let mut named = self.filter(|path| list.names(path));
+        named.list = Some(list);
+        named
+    }
+
+    /// The list the set was narrowed to, if it was.
+    pub fn list(&self) -> Option<&Rc<CommandList>> {
+        self.list.as_ref()
+    }
+
+    /// Whether the set has a command at `prefix` or below it.
+    pub fn has(&self, prefix: &[&str]) -> bool {
+        self.handlers
+            .keys()
+            .any(|path| path.len() >= prefix.len() && path.iter().zip(prefix).all(|(word, wanted)| word == wanted))
     }
 
     /// The commands whose leaf paths `keep` accepts; a group left without
@@ -418,6 +442,75 @@ fn walk_leaves(
     result
 }
 
+/// The commands a conversation's agents have: each a command's path without
+/// `jush`, a group's naming every command under it, such as `browser`, and a
+/// leaf's that one, such as `conversation list`. A program's command placed
+/// at the root is named by its own path.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct CommandList(Vec<Vec<String>>);
+
+impl CommandList {
+    /// The list of `entries`, each words a single space parts.
+    pub fn new(entries: &[String]) -> Self {
+        Self(
+            entries
+                .iter()
+                .map(|entry| entry.split(' ').map(str::to_owned).collect())
+                .collect(),
+        )
+    }
+
+    /// Whether the list names the command at `path`, its whole path from
+    /// the root, `jush` included where it is under `jush`.
+    pub fn names(&self, path: &[String]) -> bool {
+        let below_jush = match path.split_first() {
+            Some((root, rest)) if root == JUSH_ROOT => rest,
+            _ => path,
+        };
+        self.0.iter().any(|entry| below_jush.starts_with(entry))
+    }
+
+    /// Whether the list names a command of `tree`, a top-level group or
+    /// command, which sits under `jush` when `under_jush`.
+    pub fn names_any<O>(&self, tree: &Node<O>, under_jush: bool) -> bool {
+        let mut path = if under_jush { vec![JUSH_ROOT.to_owned()] } else { Vec::new() };
+        self.names_a_leaf(tree, &mut path)
+    }
+
+    fn names_a_leaf<O>(&self, node: &Node<O>, path: &mut Vec<String>) -> bool {
+        path.push(node.name().to_owned());
+        let named = match node {
+            Node::Leaf(_) => self.names(path),
+            Node::Group(group) => group.subcommands.iter().any(|child| self.names_a_leaf(child, path)),
+        };
+        path.pop();
+        named
+    }
+
+    /// The list with `entries` too.
+    pub fn and(&self, entries: &[&str]) -> CommandList {
+        let mut joined = self.clone();
+        joined.0.extend(entries.iter().map(|entry| entry.split(' ').map(str::to_owned).collect()));
+        joined
+    }
+}
+
+/// The list as its entries, a comma between two: `browser,conversation history`.
+impl std::fmt::Display for CommandList {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let entries: Vec<String> = self.0.iter().map(|entry| entry.join(" ")).collect();
+        formatter.write_str(&entries.join(","))
+    }
+}
+
+/// The number of leaves `node` is, or holds.
+fn leaves<O>(node: &Node<O>) -> usize {
+    match node {
+        Node::Leaf(_) => 1,
+        Node::Group(group) => group.subcommands.iter().map(leaves).sum(),
+    }
+}
+
 fn keep_leaves(
     node: &Node<NativeOperation>,
     path: &mut Vec<String>,
@@ -432,11 +525,21 @@ fn keep_leaves(
                 .iter()
                 .filter_map(|child| keep_leaves(child, path, keep))
                 .collect();
+            // A top-level group that lost commands, its own or those of a
+            // group below it, says in the index the ones it kept, since its
+            // own entry tells of the others too.
+            let lost = subcommands.iter().map(leaves).sum::<usize>() < group.subcommands.iter().map(leaves).sum();
+            let index_entry = match &group.index_entry {
+                Some(_) if lost => Some(
+                    subcommands.iter().map(|child| child.name().to_owned()).collect::<Vec<_>>().join(", "),
+                ),
+                entry => entry.clone(),
+            };
             (!subcommands.is_empty()).then(|| {
                 Node::Group(Group {
                     name: group.name.clone(),
                     summary: group.summary.clone(),
-                    index_entry: group.index_entry.clone(),
+                    index_entry,
                     details: group.details.clone(),
                     permissions: group.permissions.clone(),
                     subcommands,
