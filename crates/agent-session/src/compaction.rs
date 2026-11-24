@@ -70,11 +70,12 @@ Paths, names, ids, commands, numbers and error text needed to go on.
 
 Write \"(none)\" for an empty section, and keep every identifier exact. If the conversation starts with an earlier summary, update it: keep what still holds, change what changed, and drop what no longer holds.";
 
-/// How many passes a model switch runs to fit the new model's window.
+/// How many passes a model switch runs to fit the new model's window, and how
+/// many a request the vendor refuses for its tokens runs before it fails.
 ///
-/// Bounded so a switch whose summaries do not shrink the history enough ends
-/// instead of looping without end.
-const MAX_FIT_PASSES: usize = 8;
+/// Bounded so summaries that do not shrink the history enough end instead of
+/// looping without end.
+pub(super) const MAX_FIT_PASSES: usize = 8;
 
 /// The share of the window in use, in percent, from which the user may
 /// compact: below it there is too little to summarize for a summary to free

@@ -4,9 +4,9 @@
 //! A turn does these in order:
 //!
 //! 1. Write waiting input.
-//! 2. Request the provider, retry what waiting can fix, compact once after a
-//!    refusal for its tokens, and go on after a few replies the vendor's
-//!    filter stopped, as a Resume does.
+//! 2. Request the provider, retry what waiting can fix, compact after each
+//!    refusal for its tokens while a pass compacts, and go on after a few
+//!    replies the vendor's filter stopped, as a Resume does.
 //! 3. Apply the events to the transcript as they stream.
 //! 4. Save, and run the requested tools in steps.
 //! 5. Compact when the usage reached the threshold.
@@ -26,7 +26,8 @@
 //!   |
 //!   +-> write waiting input at the boundary
 //!   |   request the provider, retrying what waiting can fix
-//!   |     refused for its tokens: compact once, request again
+//!   |     refused for its tokens: compact, request again, while a pass
+//!   |       compacts
 //!   |     stopped by a filter: end its calls, append `resume`, request
 //!   |       again, at most three times a turn
 //!   |     refused for its size: the turn fails
@@ -363,9 +364,9 @@ enum Streamed {
 /// One provider request, from building it to the end of its stream.
 ///
 /// It retries transient failures while everything the attempt wrote can be
-/// unwound. A request refused for its tokens compacts once and goes again; one
-/// refused for its size does not. `continues` says it continues a running turn,
-/// so a pass is followed by a `resume` block.
+/// unwound. A request refused for its tokens compacts and goes again, while a
+/// pass compacts; one refused for its size does not. `continues` says it
+/// continues a running turn, so the first pass is followed by a `resume` block.
 ///
 /// Returns the trigger of a pass when the usage of a response that requested a
 /// tool reached the compaction threshold, or, when `resumes`, the vendor's
@@ -383,7 +384,7 @@ async fn stream(
     s.update(|core| core.set_stage(TurnStage::Streaming));
     let policy = s.config.retry;
     let mut attempt = 1;
-    let mut refusal_compacted = false;
+    let mut refusal_passes = 0;
     loop {
         // A retry, or the request after a refusal's pass, is built with the
         // facts the entry states when it goes.
@@ -398,7 +399,7 @@ async fn stream(
             .update(|core| core.take_runtime())
             .expect("the provider runtime is in its slot between runs");
         let request_cancel = request.cancel.clone();
-        let retry = attempt > 1 || refusal_compacted;
+        let retry = attempt > 1 || refusal_passes > 0;
         s.update(|core| core.start_output(request_id.clone(), retry));
         let read = read(s, cancel, window, &model, runtime.run(request), &request_cancel).await;
         // However the request ended, no call of it is being written, and
@@ -431,16 +432,25 @@ async fn stream(
             None => core.transcript.start() > 0,
         });
         // The same request would be refused again. Refused for its tokens:
-        // one pass, then the request built from the compacted history.
+        // a pass, then the request built from the compacted history, again
+        // while a pass compacts, since a pass whose summary request was
+        // halved summarizes only part of a history several times the limit.
         let too_long = failure.code == Some(ErrorCode::ContextLengthExceeded);
-        if too_long && unwindable && !refusal_compacted && s.config.compaction.automatic() {
-            refusal_compacted = true;
+        if too_long
+            && unwindable
+            && refusal_passes < compaction::MAX_FIT_PASSES
+            && s.config.compaction.automatic()
+        {
             drop_attempt(s, start).await?;
             let trigger = Trigger::TokenRefusal {
                 request_id: request_id.clone(),
                 message: failure.message.clone(),
             };
-            if compact_before_request(s, cancel, continues, &trigger).await? {
+            // The passes after the first leave its `resume` block where it
+            // is, after every boundary.
+            let resume = continues && refusal_passes == 0;
+            refusal_passes += 1;
+            if compact_before_request(s, cancel, resume, &trigger).await? {
                 continue;
             }
         }
@@ -487,17 +497,17 @@ async fn stream(
 
 /// One compaction pass, started by `trigger`, before a request.
 ///
-/// A pass that compacted inside a running turn appends a `resume` block, while
-/// before a turn's first request its new input is last already. Returns whether
-/// it compacted.
+/// A pass that compacted appends a `resume` block when `resume` says so: inside
+/// a running turn, while before a turn's first request its new input is last
+/// already. Returns whether it compacted.
 async fn compact_before_request(
     s: &Rc<SessionShared>,
     cancel: &TurnCancel,
-    continues: bool,
+    resume: bool,
     trigger: &Trigger,
 ) -> Result<bool, TurnError> {
     let compacted = compaction::compacting(s, compaction::run_pass(s, cancel, trigger)).await?;
-    if compacted && continues {
+    if compacted && resume {
         s.update(|core| core.push_resume(None));
     }
     Ok(compacted)

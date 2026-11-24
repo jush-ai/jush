@@ -2851,8 +2851,7 @@ async fn a_summary_request_gives_the_claude_code_cli_its_instruction_inside_the_
 }
 
 #[tokio::test(flavor = "local")]
-async fn a_request_refused_for_its_tokens_compacts_once_and_goes_again_and_a_second_refusal_fails_the_turn()
- {
+async fn a_request_refused_for_its_tokens_compacts_and_goes_again_while_it_is_refused() {
     let provider = ScriptedRuntime::new([
         answer("first"),
         too_long(),
@@ -2861,6 +2860,8 @@ async fn a_request_refused_for_its_tokens_compacts_once_and_goes_again_and_a_sec
         too_long(),
         answer("summary of the second message"),
         too_long(),
+        answer("summary of the second answer"),
+        answer("third"),
     ]);
     let store = MemoryTreeStore::new();
     let session = small_session(&provider, Vec::new(), &store).await;
@@ -2922,20 +2923,31 @@ async fn a_request_refused_for_its_tokens_compacts_once_and_goes_again_and_a_sec
     assert_eq!(retries.get(), 0);
     assert!(!kinds(&session.history().await.unwrap().blocks).contains(&"error".to_owned()));
 
-    // Refused again after its pass, the request fails the turn.
-    let failed = session.send(text("three"), turn("t3")).unwrap().await;
+    // Refused again after its pass, the request goes again after another
+    // pass, which summarizes the answer the first one left after its
+    // boundary.
+    session
+        .send(text("three"), turn("t3"))
+        .unwrap()
+        .await
+        .unwrap();
 
-    assert_eq!(
-        failed.unwrap_err().code.as_deref(),
-        Some("context_length_exceeded")
-    );
     assert_eq!(provider.remaining(), 0);
-    assert_eq!(
-        kinds(&session.history().await.unwrap().blocks)
-            .last()
-            .map(String::as_str),
-        Some("error")
+    let requests = provider.requests();
+    let [.., refused_again, second_pass, last] = &requests[..] else {
+        panic!("{requests:?}");
+    };
+    assert_eq!(requests.len(), 9, "{requests:?}");
+    assert!(
+        refused_again
+            .items
+            .contains(&answer_item("small-model", "second"))
     );
+    assert_eq!(second_pass.items.last(), Some(&instructed_item("three")));
+    assert!(!last.items.contains(&answer_item("small-model", "second")));
+    assert_eq!(last.items.last(), Some(&user_item("three")));
+    assert_eq!(retries.get(), 0);
+    assert!(!kinds(&session.history().await.unwrap().blocks).contains(&"error".to_owned()));
 }
 
 /// A round that calls `work` and reports `input_tokens` of usage.
