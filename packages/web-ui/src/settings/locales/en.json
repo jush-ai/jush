@@ -1138,7 +1138,14 @@
     "code": "Code",
     "signingIn": "Signing in…",
     "waitingCode": "Waiting for the code",
-    "waitingCodeExpires": "Waiting for the code · expires in {left}"
+    "waitingCodeExpires": "Waiting for the code · expires in {left}",
+    "methodBrowser": "Browser",
+    "methodToken": "Refresh Token",
+    "tokenHint": "Paste a refresh token from another app signed in to {vendor}, such as an account manager.",
+    "pasteToken": "Paste the refresh token",
+    "token": "Refresh token",
+    "waitingToken": "Waiting for the refresh token",
+    "waitingTokenExpires": "Waiting for the refresh token · expires in {left}"
   },
   "provider": {
     "endpointInvalid": "Enter an http or https address."

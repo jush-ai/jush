@@ -1138,7 +1138,14 @@
     "code": "コード",
     "signingIn": "サインイン中…",
     "waitingCode": "コードを待っています",
-    "waitingCodeExpires": "コードを待っています · 有効期限まであと {left}"
+    "waitingCodeExpires": "コードを待っています · 有効期限まであと {left}",
+    "methodBrowser": "ブラウザー",
+    "methodToken": "リフレッシュトークン",
+    "tokenHint": "{vendor} にサインインしている別のアプリ（アカウントマネージャなど）のリフレッシュトークンを貼り付けてください。",
+    "pasteToken": "リフレッシュトークンを貼り付け",
+    "token": "リフレッシュトークン",
+    "waitingToken": "リフレッシュトークンを待っています",
+    "waitingTokenExpires": "リフレッシュトークンを待っています · 有効期限まであと {left}"
   },
   "provider": {
     "endpointInvalid": "http または https のアドレスを入力してください。"

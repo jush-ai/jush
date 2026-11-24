@@ -786,6 +786,22 @@ pub struct SubscriptionFamily {
     /// Whether its vendor's terms forbid it through third-party software,
     /// which Settings says before an account is added.
     pub forbids_third_party: bool,
+    /// The ways its accounts sign in, the first the one a sign-in starts
+    /// with; a family with more lets the user choose.
+    pub login_methods: Vec<LoginMethod>,
+}
+
+/// How a sign-in proves the account.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub enum LoginMethod {
+    /// At the vendor's page, in a web browser: a device code the user
+    /// confirms, or a code the page shows that the user pastes.
+    #[default]
+    Browser,
+    /// With a refresh token another app of the vendor's holds, which the
+    /// user pastes as a code.
+    RefreshToken,
 }
 
 /// The shapes a compatible entry may choose for each kind of media it can
@@ -865,7 +881,7 @@ pub struct RemovedAccount {
 }
 
 /// `POST /providers/subscription-login`: the first account of a family's
-/// entry, by device login.
+/// entry, by its sign-in.
 #[derive(Debug, Deserialize, JsonSchema, Validate)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SubscriptionLogin {
@@ -876,6 +892,21 @@ pub struct SubscriptionLogin {
     #[schemars(with = "Trimmed")]
     #[garde(length(chars, min = 1))]
     pub label: Option<Trimmed>,
+    /// One of the family's `loginMethods`; `browser` without it.
+    #[serde(default)]
+    #[garde(skip)]
+    pub method: LoginMethod,
+}
+
+/// `POST /providers/:id/accounts/login`: another account of the entry, by
+/// its sign-in.
+#[derive(Debug, Default, Deserialize, JsonSchema, Validate)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AccountLogin {
+    /// One of the family's `loginMethods`; `browser` without it.
+    #[serde(default)]
+    #[garde(skip)]
+    pub method: LoginMethod,
 }
 
 /// `POST /providers/subscription-login/:id/code`: the code the vendor's
@@ -947,7 +978,9 @@ pub enum LoginState {
     /// the vendor names them. With `needs_code`, the user signs in at the
     /// address instead and pastes the code the page shows, which the login
     /// now takes, numbering them in `codes_taken`, and `code_error` says why
-    /// it refused the last of them, never an earlier one. The
+    /// it refused the last of them, never an earlier one. A sign-in with a
+    /// refresh token waits for the user with no address and `needs_code`,
+    /// and takes the token as a code. The
     /// login ends at `expires_at` unless the user finishes it first.
     Pending {
         stage: LoginStage,
@@ -1009,6 +1042,8 @@ pub struct ListedLogin {
     pub provider_id: Option<ProviderId>,
     /// The entry's family, or the family of the entry the login makes.
     pub provider_type: String,
+    /// The way it signs in.
+    pub method: LoginMethod,
     /// As `GET /providers/subscription-login/:id` answers it.
     pub login: LoginState,
 }

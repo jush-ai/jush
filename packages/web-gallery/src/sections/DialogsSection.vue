@@ -18,7 +18,7 @@ import { DEVICE_REPORTS } from '../fixtures/device-reports'
 import type { DeviceReport } from '@jush-ai/web-ui/auth/device-unlock'
 import GalleryDeviceReport from '../components/GalleryDeviceReport.vue'
 import { galleryPasswordChoice, type PasswordChoiceScript } from '../fixtures/password-choice'
-import ProviderLoginDialog, { type ProviderLoginPhase } from '@jush-ai/web-ui/settings/ProviderLoginDialog.vue'
+import ProviderLoginDialog, { type ProviderLoginMethod, type ProviderLoginPhase } from '@jush-ai/web-ui/settings/ProviderLoginDialog.vue'
 import AddModelDialog from '@jush-ai/web-ui/settings/AddModelDialog.vue'
 import AddProviderDialog from '@jush-ai/web-ui/settings/AddProviderDialog.vue'
 import ModelDialog from '@jush-ai/web-ui/settings/ModelDialog.vue'
@@ -289,10 +289,59 @@ const providerCatalogs: { variant: string; vendors: SettingsVendor[]; load: 'loa
   { variant: 'catalog loaded', vendors: mockVendors, load: 'ready' },
   { variant: 'catalog loading', vendors: [], load: 'loading' },
 ]
-const loginPhases = [
+/** Antigravity's sign-in shows its two ways under the title: a web browser, or a refresh token. */
+const antigravityPhases: {
+  variant: string
+  phase: ProviderLoginPhase
+  methods: ProviderLoginMethod[]
+  method: ProviderLoginMethod
+  methodLocked?: boolean
+}[] = [
+  {
+    variant: 'Antigravity · contacting · its way kept until the sign-in has started',
+    phase: { kind: 'starting', stage: 'preparing' },
+    methods: ['browser', 'refreshToken'],
+    method: 'browser',
+    methodLocked: true,
+  },
+  {
+    variant: 'Antigravity · web browser · link and code',
+    phase: { kind: 'code', url: 'https://accounts.google.com/o/oauth2/auth?access_type=offline', expiresAt: Date.now() + 15 * 60_000, submitted: false },
+    methods: ['browser', 'refreshToken'],
+    method: 'browser',
+  },
+  {
+    variant: 'Antigravity · refresh token',
+    phase: { kind: 'token', expiresAt: Date.now() + 15 * 60_000, submitted: false },
+    methods: ['browser', 'refreshToken'],
+    method: 'refreshToken',
+  },
+  { variant: 'Antigravity · refresh token · signing in', phase: { kind: 'token', submitted: true }, methods: ['browser', 'refreshToken'], method: 'refreshToken' },
+  {
+    variant: 'Antigravity · refresh token refused',
+    phase: { kind: 'failed', ...requestFailure('Antigravity did not accept this refresh token.') },
+    methods: ['browser', 'refreshToken'],
+    method: 'refreshToken',
+  },
+  {
+    variant: 'Antigravity · done · the ways go',
+    phase: { kind: 'done', account: 'alex@example.com · Google AI Pro', active: true },
+    methods: ['browser', 'refreshToken'],
+    method: 'refreshToken',
+  },
+]
+const loginPhases: {
+  variant: string
+  phase: ProviderLoginPhase
+  vendor: string
+  methods?: ProviderLoginMethod[]
+  method?: ProviderLoginMethod
+  methodLocked?: boolean
+}[] = [
   ...claudePhases.map((item) => ({ ...item, vendor: 'Claude Code' })),
   ...codexPhases.map((item) => ({ ...item, vendor: 'Codex' })),
   ...grokPhases.map((item) => ({ ...item, vendor: 'Grok Build' })),
+  ...antigravityPhases.map((item) => ({ ...item, vendor: 'Antigravity' })),
 ]
 /** A match models.dev lists, as choosing it in Add Model adds it and Edit Model opens it. */
 const matchedModel = mockModelMatches[0]!.model
@@ -634,7 +683,7 @@ const resetPhases: {
           </GallerySpecimen>
         </div>
       </GallerySection>
-      <GallerySection title="Sign In" note="Each subscription signs in the way its vendor does: a token from a CLI, or a device code confirmed in the browser. The code and the link copy separately, each with its own tick, so the link can go to a browser on another machine.">
+      <GallerySection title="Sign In" note="Each subscription signs in the way its vendor does: a token from a CLI, or a device code confirmed in the browser. The code and the link copy separately, each with its own tick, so the link can go to a browser on another machine. Antigravity also signs in with a refresh token another app holds: its two ways stand under the title, the one in use chosen, until the account is added; choosing the other ends the sign-in and starts one that way, and a click on the chosen one does nothing. While a sign-in is starting its way is kept. The panel hangs from the top, so the choice stays put as the phases below it change.">
         <div class="grid items-start gap-6 lg:grid-cols-2">
           <GallerySpecimen v-for="item in loginPhases" :key="item.variant" wide :variant="item.variant">
             <GalleryDialogFrame v-slot="{ open, close }">
@@ -643,8 +692,12 @@ const resetPhases: {
                 :overlay-store="appOverlayStore"
                 :vendor-name="item.vendor"
                 :phase="item.phase"
+                :methods="item.methods"
+                :method="item.method"
+                :method-locked="item.methodLocked"
                 @close="close"
-                @submit-code="productWould(`Give the Code to the ${item.vendor} Sign-In`)"
+                @switch-method="(method) => productWould(method === 'refreshToken' ? `End the ${item.vendor} Sign-In and Start One with a Refresh Token` : `End the ${item.vendor} Sign-In and Start One in a Web Browser`)"
+                @submit-code="productWould(item.phase.kind === 'token' ? `Give the Refresh Token to the ${item.vendor} Sign-In` : `Give the Code to the ${item.vendor} Sign-In`)"
                 @open="(url) => productWould(`Open ${url} in a New Browser Tab`)"
                 @retry="productWould(`Start the ${item.vendor} Sign-In Again`)"
               />

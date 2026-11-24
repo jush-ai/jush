@@ -1138,7 +1138,14 @@
     "code": "Código",
     "signingIn": "Entrando…",
     "waitingCode": "Aguardando o código",
-    "waitingCodeExpires": "Aguardando o código · expira em {left}"
+    "waitingCodeExpires": "Aguardando o código · expira em {left}",
+    "methodBrowser": "Navegador",
+    "methodToken": "Token de atualização",
+    "tokenHint": "Cole um token de atualização de outro app conectado ao {vendor}, como um gerenciador de contas.",
+    "pasteToken": "Cole o token de atualização",
+    "token": "Token de atualização",
+    "waitingToken": "Aguardando o token de atualização",
+    "waitingTokenExpires": "Aguardando o token de atualização · expira em {left}"
   },
   "provider": {
     "endpointInvalid": "Digite um endereço http ou https."

@@ -64,7 +64,7 @@ impl CodexKit {
     ) -> Result<NewAccount, LoginError> {
         let code = self.user_code().await?;
         pending(LoginPending {
-            verification_url: self.url("/codex/device").to_string(),
+            verification_url: Some(self.url("/codex/device").to_string()),
             user_code: Some(code.user_code.clone()),
             code_error: None,
         });

@@ -59,7 +59,7 @@ import type { SentenceText, TitleText } from './ui-text'
  *
  * - Two options are one toggle: a click anywhere on the control, the chosen
  *   segment and the frame around and between the segments included, switches to
- *   the other.
+ *   the other, unless `exact`.
  * - With three or more, a click chooses the clicked segment.
  */
 export interface SegmentedOption<T extends string> {
@@ -78,6 +78,12 @@ const props = withDefaults(defineProps<{
   disabled?: boolean
   /** Why it is disabled, as a tooltip; only read while `disabled`. */
   disabledReason?: SentenceText
+  /**
+   * Two options are not a toggle: a click chooses the segment clicked, and one
+   * on the chosen segment or the frame does nothing, for a choice whose change
+   * ends work under way, such as a sign-in's way.
+   */
+  exact?: boolean
 }>(), {
   size: 'md',
 })
@@ -179,7 +185,7 @@ function choose(clicked: T | undefined) {
   if (props.disabled)
     return
   const values = props.options.map((option) => option.value)
-  model.value = clickedChoice(values, model.value, clicked)
+  model.value = clickedChoice(values, model.value, clicked, props.exact)
 }
 </script>
 

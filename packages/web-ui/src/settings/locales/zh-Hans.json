@@ -1138,7 +1138,14 @@
     "code": "代码",
     "signingIn": "正在登录…",
     "waitingCode": "正在等待代码",
-    "waitingCodeExpires": "正在等待代码 · {left} 后过期"
+    "waitingCodeExpires": "正在等待代码 · {left} 后过期",
+    "methodBrowser": "浏览器",
+    "methodToken": "Refresh Token",
+    "tokenHint": "粘贴另一个已登录 {vendor} 的 App（如账户管理器）中的 Refresh Token。",
+    "pasteToken": "粘贴 Refresh Token",
+    "token": "Refresh Token",
+    "waitingToken": "正在等待 Refresh Token",
+    "waitingTokenExpires": "正在等待 Refresh Token · {left} 后过期"
   },
   "provider": {
     "endpointInvalid": "输入 http 或 https 地址。"

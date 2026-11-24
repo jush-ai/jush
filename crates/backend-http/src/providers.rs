@@ -151,6 +151,7 @@ pub(super) async fn catalog(
             name: family_name(family).to_owned(),
             connects_through: provider_registry.families().connects_through(family),
             forbids_third_party: provider_registry.families().forbids_third_party(family),
+            login_methods: provider_registry.families().login_methods(family).to_vec(),
         })
         .collect();
     let vendors = provider_registry

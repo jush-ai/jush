@@ -490,8 +490,11 @@ pub struct DownloadProgress {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct LoginPending {
-    /// The address the user opens to confirm the login.
-    pub verification_url: String,
+    /// The address the user opens to confirm the login; null for a login
+    /// that waits for a refresh token the user pastes.
+    #[serde(deserialize_with = "Option::deserialize")]
+    #[schemars(with = "Nullable<String>")]
+    pub verification_url: Option<String>,
     /// The one-time code the user enters there; null when the address
     /// carries it.
     #[serde(deserialize_with = "Option::deserialize")]

@@ -6,7 +6,7 @@ import { appOverlayStore } from '@jush-ai/web-ui/overlay/appOverlay'
 import ProviderLoginDialog, {
   type ProviderLoginPhase,
 } from '@jush-ai/web-ui/settings/ProviderLoginDialog.vue'
-import type { ProviderLoginStage } from '@jush-ai/web-ui/settings/types'
+import type { ProviderLoginMethod, ProviderLoginStage } from '@jush-ai/web-ui/settings/types'
 import SettingsProvidersPage from '@jush-ai/web-ui/settings/SettingsProvidersPage.vue'
 import {
   type SettingsModelDraft,
@@ -512,22 +512,31 @@ function searchModels(_providerId: string, query: string, signal: AbortSignal) {
 const login = ref<{
   provider: SettingsProviderEntry
   phase: ProviderLoginPhase
+  method: ProviderLoginMethod
 } | null>(null)
+/** The ways the family signs in, as the product offers them: Antigravity's two, another family's one. */
+const loginMethods = computed<ProviderLoginMethod[]>(() =>
+  login.value && (login.value.provider as MockProvider).family === 'antigravity'
+    ? ['browser', 'refreshToken']
+    : ['browser'],
+)
 const loginOpen = ref(false)
 let loginTimer = 0
 
 /**
  * Claude Code and Antigravity sign in on their vendor's page, whose code the
  * user pastes back; Codex and Grok Build confirm a device code in a web
- * browser. The mock walks each to done.
+ * browser. Antigravity also takes a refresh token, pasted once its sign-in has
+ * started. The mock walks each to done.
  */
-function beginLogin(p: SettingsProviderEntry) {
+function beginLogin(p: SettingsProviderEntry, method: ProviderLoginMethod = 'browser') {
   window.clearTimeout(loginTimer)
   loginOpen.value = true
   const mock = p as MockProvider
   login.value = {
     provider: p,
     phase: { kind: 'starting', stage: 'preparing' },
+    method,
   }
   // As the product's: a sign-in on the Subscriptions machine waits for it and the command-line tool's start first.
   const onMachine = mock.family === 'claude-code' || mock.family === 'antigravity'
@@ -540,6 +549,10 @@ function beginLogin(p: SettingsProviderEntry) {
     if (stage) {
       login.value.phase = { kind: 'starting', stage }
       loginTimer = window.setTimeout(next, 1200)
+      return
+    }
+    if (method === 'refreshToken') {
+      login.value.phase = { kind: 'token', expiresAt: Date.now() + 15 * 60_000, submitted: false }
       return
     }
     if (onMachine) {
@@ -584,6 +597,10 @@ function beginLogin(p: SettingsProviderEntry) {
  */
 function submitCode(code: string) {
   const phase = login.value?.phase
+  if (phase?.kind === 'token') {
+    submitToken(code, phase.expiresAt)
+    return
+  }
   if (phase?.kind !== 'code') {
     return
   }
@@ -620,6 +637,24 @@ function submitCode(code: string) {
     const signedOut = login.value.provider.accounts.find((a) => a.signedOut)
     const plan = family === 'antigravity' ? 'Google AI Pro' : 'max'
     finishLogin(signedOut ? `${signedOut.label} · ${signedOut.plan}` : `alex@example.com · ${plan}`)
+  }, 1500)
+}
+
+/**
+ * As the product's token sign-in does: `agy` renews the token with Google, which refuses
+ * one that does not start with `1//`, and the account it belongs to is there.
+ */
+function submitToken(token: string, expiresAt: number | undefined) {
+  login.value!.phase = { kind: 'token', expiresAt, submitted: true }
+  loginTimer = window.setTimeout(() => {
+    if (login.value?.phase.kind !== 'token') {
+      return
+    }
+    if (!token.startsWith('1//')) {
+      login.value.phase = { kind: 'failed', ...requestFailure('Antigravity did not accept this refresh token.') }
+      return
+    }
+    finishLogin('alex@example.com · Google AI Pro')
   }, 1500)
 }
 
@@ -729,9 +764,12 @@ function closeLogin() {
     :overlay-store="appOverlayStore"
     :vendor-name="login.provider.name"
     :phase="login.phase"
+    :methods="loginMethods"
+    :method="login.method"
     @close="closeLogin"
     @open="openUrl"
-    @retry="beginLogin(login.provider)"
+    @retry="beginLogin(login.provider, login.method)"
     @submit-code="submitCode"
+    @switch-method="(method) => beginLogin(login!.provider, method)"
   />
 </template>

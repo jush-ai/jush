@@ -42,7 +42,9 @@ import {
   type SearchPatch,
   type ProviderOrder,
   type ProviderPatch,
+  type AccountLogin,
   type ListedLogin,
+  type LoginMethod,
   type LoginState,
   type LoginCode,
   type QuotaRequest,
@@ -835,8 +837,10 @@ export const useProviderSettings = defineStore('provider-settings', () => {
    * running one the vault announced, as after a reload. The vault announces each
    * change of it on the channel, which the dialog follows.
    *
+   * - `method` is the way this page asked it to sign in, until the channel
+   *   lists the way it does (`methodOf`).
    * - `failure` is why this page could not start or answer it.
-   * - `pasted` is the code this page pasted last.
+   * - `pasted` is the code, or the refresh token, this page pasted last.
    * - `sending` stays until the sign-in answers the number it gave it.
    * - `seen` is whether the channel has listed it.
    * - `done` is the account it added, as listed when the page learned it
@@ -845,6 +849,7 @@ export const useProviderSettings = defineStore('provider-settings', () => {
   const opened = ref<{
     provider: ProductProvider
     id: string | null
+    method: LoginMethod
     failure: ShownError | null
     pasted: 'sending' | number | null
     seen: boolean
@@ -874,7 +879,7 @@ export const useProviderSettings = defineStore('provider-settings', () => {
     for (const login of logins.value) {
       const provider = login.login.status === 'pending' && !dismissed.value.includes(login.id) ? providerOf(login) : undefined
       if (provider) {
-        return { id: login.id, provider }
+        return { id: login.id, provider, method: login.method }
       }
     }
     return null
@@ -941,10 +946,20 @@ export const useProviderSettings = defineStore('provider-settings', () => {
     }
   }
 
+  /** The way the opened sign-in signs in: as the channel lists it, else as this page asked. */
+  function methodOf(shown: NonNullable<typeof opened.value>): LoginMethod {
+    return followed.value?.method ?? shown.method
+  }
+
   /** What the dialog shows of a sign-in that waits as `state` says. */
   function pendingPhase(shown: NonNullable<typeof opened.value>, state: PendingLogin): ProviderLoginPhase {
     // No expiry while the sign-in prepares: it does not know its lifetime yet.
     const expiry = state.expiresAt === null ? {} : { expiresAt: Date.parse(state.expiresAt) }
+    // A refresh token's sign-in takes the token as a code and judges it once:
+    // a refusal ends it.
+    if (methodOf(shown) === 'refreshToken' && state.needsCode) {
+      return { kind: 'token', ...expiry, submitted: shown.pasted !== null || state.codesTaken > 0 }
+    }
     if (state.verificationUrl && state.needsCode) {
       // A refusal shows only of the code this page pasted, by the number
       // the sign-in answered for it: the vault's refusal is always of code
@@ -970,6 +985,13 @@ export const useProviderSettings = defineStore('provider-settings', () => {
   const login = computed(() => opened.value && {
     provider: opened.value.provider,
     phase: phaseOf(opened.value),
+    // The family's ways, which the dialog lets the user choose between.
+    methods: product.vendors?.subscriptions.find(
+      (family) => family.providerType === opened.value!.provider.providerType,
+    )?.loginMethods ?? [],
+    method: methodOf(opened.value),
+    // Started, and not yet known to end: a choice now would start a second.
+    methodLocked: opened.value.id === null && !opened.value.failure,
   })
 
   /**
@@ -980,6 +1002,11 @@ export const useProviderSettings = defineStore('provider-settings', () => {
   async function closeLogin(): Promise<void> {
     const shown = opened.value
     opened.value = null
+    await endLogin(shown)
+  }
+
+  /** Cancels the sign-in `shown` stood for, once the dialog no longer shows it, and resolves once it has ended. */
+  async function endLogin(shown: typeof opened.value): Promise<void> {
     const id = shown?.id
     if (!id) {
       return
@@ -999,17 +1026,44 @@ export const useProviderSettings = defineStore('provider-settings', () => {
   }
 
   /**
-   * Starts a sign-in into `entry`, after the one the dialog showed is
-   * cancelled and has ended. A start the entry's running sign-in holds
-   * opens that one instead.
+   * Starts a sign-in into `entry` the way `method` says, after the one the
+   * dialog showed is cancelled and has ended. A start the entry's running
+   * sign-in holds opens that one instead.
    */
   async function beginLogin(entry: SettingsProviderEntry): Promise<void> {
     await closeLogin()
     const provider = providers.value.find(
       (provider) => provider.id === entry.id,
     )!
-    opened.value = { provider, id: null, failure: null, pasted: null, seen: false, done: null }
+    await startLogin(provider, 'browser')
+  }
+
+  /**
+   * Starts the dialog's sign-in again the way `method` says, as Retry or a
+   * choice of another way does: the dialog stays open on the new one while
+   * the one it showed is cancelled. A sign-in this page has started and not
+   * yet learnt the id of keeps its way (`methodLocked`).
+   */
+  async function restartLogin(method: LoginMethod): Promise<void> {
     const shown = opened.value
+    if (!shown || (shown.id === null && !shown.failure)) {
+      return
+    }
+    const provider = shown.provider
+    opened.value = { provider, id: null, method, failure: null, pasted: null, seen: false, done: null }
+    const next = opened.value
+    await endLogin(shown)
+    if (opened.value === next) {
+      await startLogin(provider, method, next)
+    }
+  }
+
+  /** Starts a sign-in into `provider` the way `method` says, which the dialog shows as `shown`, a new one without it. */
+  async function startLogin(provider: ProductProvider, method: LoginMethod, shown?: NonNullable<typeof opened.value>): Promise<void> {
+    if (!shown) {
+      opened.value = { provider, id: null, method, failure: null, pasted: null, seen: false, done: null }
+      shown = opened.value
+    }
     starts.value++
     try {
       const response = await apiRequest(
@@ -1019,8 +1073,8 @@ export const useProviderSettings = defineStore('provider-settings', () => {
         {
           method: 'POST',
           ...(provider.configured
-            ? {}
-            : jsonBody({ providerType: provider.providerType, label: provider.name } satisfies SubscriptionLogin)),
+            ? jsonBody({ method } satisfies AccountLogin)
+            : jsonBody({ providerType: provider.providerType, label: provider.name, method } satisfies SubscriptionLogin)),
         },
       )
       const result = await readResponse(response, loginStartedSchema)
@@ -1044,11 +1098,12 @@ export const useProviderSettings = defineStore('provider-settings', () => {
     }
   }
 
-  /** Hands the code the user pasted to the sign-in, which then finishes on its own. */
+  /** Hands the code, or the refresh token, the user pasted to the sign-in, which then finishes on its own. */
   async function submitCode(code: string): Promise<void> {
     const shown = opened.value
     const id = shown?.id
-    if (!shown || !id || login.value?.phase.kind !== 'code') {
+    const kind = login.value?.phase.kind
+    if (!shown || !id || (kind !== 'code' && kind !== 'token')) {
       return
     }
     shown.pasted = 'sending'
@@ -1104,6 +1159,7 @@ export const useProviderSettings = defineStore('provider-settings', () => {
     shareService,
     removeProvider,
     beginLogin,
+    restartLogin,
     closeLogin,
     test,
     refresh,

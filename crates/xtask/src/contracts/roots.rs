@@ -210,6 +210,7 @@ pub fn web() -> Vec<Root> {
         receives::<providers::ActiveAccount>(),
         receives::<providers::RemovedAccount>(),
         sends::<providers::SubscriptionLogin>(),
+        sends::<providers::AccountLogin>(),
         receives::<providers::LoginStarted>(),
         receives::<providers::LoginAnswer>(),
         receives::<providers::CodeTaken>(),

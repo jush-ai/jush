@@ -19,10 +19,10 @@ use jush_backend_providers::vault::logins::CodeRefusal;
 use jush_provider_common::Secret;
 use jush_web_api_protocol::providers::{
     AccountOrder, Accounts, ActivateAccount, ActiveAccount, CodeTaken, CredentialKind, LoginAnswer, LoginCode,
-    LoginStarted, PendingStatus, RemovedAccount, StartedLogin, SubscriptionLogin,
+    AccountLogin, LoginStarted, PendingStatus, RemovedAccount, StartedLogin, SubscriptionLogin,
 };
 
-use super::body::JsonBody;
+use super::body::{JsonBody, OptionalJsonBody};
 use super::error::ApiError;
 use super::gate::AuthUser;
 use super::request_id;
@@ -106,7 +106,7 @@ pub(super) async fn start_login(
     let request = request_id::current_or_new();
     let id = services
         .logins
-        .start(user.id, family, label, None, request)
+        .start(user.id, family, label, None, login.method, request)
         .await?;
     Ok(started(id))
 }
@@ -117,7 +117,9 @@ pub(super) async fn login_into(
     State(services): State<Arc<Services>>,
     AuthUser(user): AuthUser,
     Path(id): Path<String>,
+    OptionalJsonBody(login): OptionalJsonBody<AccountLogin>,
 ) -> Result<(StatusCode, Json<LoginStarted>), ApiError> {
+    let method = login.method;
     let entry = managed(&services, &user, &id).await?;
     if entry.kind() != CredentialKind::Subscription {
         return Err(ApiError::new(
@@ -131,7 +133,7 @@ pub(super) async fn login_into(
     let request = request_id::current_or_new();
     let id = services
         .logins
-        .start(user.id, family, label, Some(entry), request)
+        .start(user.id, family, label, Some(entry), method, request)
         .await?;
     Ok(started(id))
 }

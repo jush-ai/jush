@@ -86,7 +86,7 @@ impl GrokKit {
     ) -> Result<NewAccount, LoginError> {
         let device = self.device_code().await?;
         pending(LoginPending {
-            verification_url: device.verification_url.clone(),
+            verification_url: Some(device.verification_url.clone()),
             user_code: Some(device.user_code.clone()),
             code_error: None,
         });

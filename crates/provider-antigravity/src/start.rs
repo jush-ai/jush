@@ -2,6 +2,10 @@
 //!
 //! - A sign-in runs `agy acp --login` with its new directory as its `HOME`,
 //!   where `agy` writes the sign-in (`login.rs`).
+//! - A sign-in with a refresh token runs `sh` there, which reads the token
+//!   from its input, writes it as `agy`'s sign-in, expired, and runs a usage
+//!   read, whose `agy` renews the sign-in and writes it back whole, with the
+//!   account's email (measured).
 //! - Every other process runs `agy` with its own directory as its `HOME`
 //!   and its working directory, so everything `agy` keeps of the process goes
 //!   with the directory. The directory's sign-in is a link to the account's,
@@ -62,6 +66,49 @@ pub(crate) fn login(site: &CliSite) -> CliStart {
         args: ["acp", "--login", "--disable-telemetry"].map(String::from).to_vec(),
         cwd: Some(site.config_dir.clone()),
         env: SpawnEnv::Overlay(environment(&site.config_dir)),
+        descriptors: Vec::new(),
+        retained: false,
+        process_group: true,
+    };
+    CliStart {
+        spawn,
+        companion: None,
+        files: Vec::new(),
+        links: Vec::new(),
+    }
+}
+
+/// The script of a sign-in with a refresh token, in the sign-in's directory,
+/// with `agy`'s usage read as its arguments. It takes one line, refuses
+/// anything but a token's characters, so the sign-in it writes is JSON, and
+/// gives `agy` no input: print mode would read it as its prompt.
+///
+/// The sign-in has the token alone, with no access token and an expiry long
+/// past, which `agy` renews before anything else. `agy` prints its own
+/// sign-in link instead when Google refuses the token.
+const REFRESH_TOKEN_SIGN_IN: &str = r#"umask 077
+IFS= read -r token || exit 1
+case $token in
+  '' | *[!A-Za-z0-9/_.-]*) echo "This is not a refresh token."; exit 1 ;;
+esac
+mkdir -p "$(dirname "$SIGN_IN")"
+printf '{"token":{"access_token":"","token_type":"Bearer","refresh_token":"%s","expiry":"2000-01-01T00:00:00Z"},"auth_method":"consumer"}' "$token" > "$SIGN_IN"
+exec "$@" < /dev/null
+"#;
+
+/// The request that starts a sign-in with a refresh token at `site`, in its
+/// new directory: [`REFRESH_TOKEN_SIGN_IN`].
+pub(crate) fn refresh_token_login(site: &CliSite) -> CliStart {
+    let mut env = environment(&site.config_dir);
+    env.insert("SIGN_IN".to_owned(), Some(SIGN_IN.to_owned()));
+    let args = ["-c", REFRESH_TOKEN_SIGN_IN, "sh", &site.executable, "--print", "/usage", "--output-format", "json"]
+        .map(String::from)
+        .to_vec();
+    let spawn = SpawnRequest {
+        command: "sh".to_owned(),
+        args,
+        cwd: Some(site.config_dir.clone()),
+        env: SpawnEnv::Overlay(env),
         descriptors: Vec::new(),
         retained: false,
         process_group: true,
