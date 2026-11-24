@@ -156,7 +156,7 @@
     "signedOut": "{provider} cerró la sesión de {account}. Vuelve a iniciarla en Configuración › Proveedores.",
     "deviceOffline": "{device} está sin conexión.",
     "opaque": {
-      "other": "{name} en {vendor}",
+      "builtin": "Herramienta integrada",
       "search": {
         "web": "Búsqueda web",
         "open_page": "Abrir página",
@@ -192,7 +192,8 @@
       "searchedWeb": "{count} búsqueda web | {count} búsquedas web",
       "openedPages": "{count} página abierta | {count} páginas abiertas",
       "searchedX": "{count} búsqueda en X | {count} búsquedas en X",
-      "viewedMedia": "{count} imagen o video visto | {count} imágenes o videos vistos"
+      "viewedMedia": "{count} imagen o video visto | {count} imágenes o videos vistos",
+      "usedBuiltin": "herramienta integrada {tools} usada | herramientas integradas {tools} usadas"
     },
     "copyMessage": "Copiar mensaje",
     "sendToConversation": "Enviar a un chat",

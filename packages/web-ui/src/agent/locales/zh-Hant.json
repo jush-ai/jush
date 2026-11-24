@@ -156,7 +156,7 @@
     "signedOut": "{provider} 已將 {account} 登出。請在「設定 › 供應商」中重新登入。",
     "deviceOffline": "{device} 處於離線狀態。",
     "opaque": {
-      "other": "{vendor} 的 {name}",
+      "builtin": "內建工具",
       "search": {
         "web": "網頁搜尋",
         "open_page": "開啟網頁",
@@ -192,7 +192,8 @@
       "searchedWeb": "搜尋了 {count} 次網頁",
       "openedPages": "開啟了 {count} 個網頁",
       "searchedX": "搜尋了 {count} 次 X",
-      "viewedMedia": "查看了 {count} 個圖片或影片"
+      "viewedMedia": "查看了 {count} 個圖片或影片",
+      "usedBuiltin": "使用了內建工具 {tools}"
     },
     "copyMessage": "複製訊息",
     "sendToConversation": "傳送到對話",

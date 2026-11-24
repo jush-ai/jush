@@ -3151,7 +3151,7 @@ onBeforeUnmount(() => {
             />
           </div>
         </GallerySpecimen>
-        <GallerySpecimen variant="steps a vendor ran: one ended, one failed beside a command, one running" wide>
+        <GallerySpecimen variant="steps a vendor ran: one ended, one failed beside a command, a run of two tools, one running" wide>
           <div class="gallery-frame h-[28rem] bg-surface">
             <AgentMessageList
               class="h-full"

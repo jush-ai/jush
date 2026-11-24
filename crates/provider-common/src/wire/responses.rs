@@ -473,7 +473,7 @@ fn unknown_item(event: &str) -> Option<serde_json::Value> {
 }
 
 /// The provider whose records a run's items are: the tag that owns them, and
-/// the name a step its vendor ran shows under, its entry's.
+/// the vendor a step it ran records, its entry's name.
 #[derive(Debug, Clone)]
 pub struct RecordOwner {
     pub tag: Arc<str>,
