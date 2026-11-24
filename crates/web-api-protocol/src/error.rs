@@ -413,10 +413,10 @@ pub enum ErrorCode {
     /// not cause; the fields applied stay applied.
     OperationFailed,
     /// The Fork's id belongs to another creation attempt: another source or
-    /// another text.
+    /// another end.
     ForkConflict,
-    /// The Fork's text is not a completed assistant text of the source's
-    /// history.
+    /// The Fork's end is not a completed assistant text of the source's
+    /// history, nor a turn a message started there.
     InvalidForkTarget,
     /// The conversation has no side question of that id.
     SideQuestionNotFound,

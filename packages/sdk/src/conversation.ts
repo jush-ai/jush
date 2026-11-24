@@ -83,6 +83,8 @@ interface TurnEnd {
 
 /** A turn that ended: how, the blocks it wrote after its message, and their text. */
 export interface Turn {
+  /** The turn's id, its message's, which `fork({ before })` names it by. */
+  id: string
   outcome: TurnOutcome
   blocks: Block[]
   text: string
@@ -98,6 +100,15 @@ export interface Permission {
 
 /** What `events()` yields: the lane's events, and each new permission request. */
 export type ConversationEvent = ClientSessionEvent | { type: 'permission'; permission: Permission }
+
+/**
+ * Where a fork's history ends, one of the two: `through` a completed text of
+ * the main agent, by its block's id, or `before` a turn of it, by the id of
+ * the message that started it. `id` is the new conversation's.
+ */
+export type ForkOptions =
+  | { through: string; before?: undefined; id?: string }
+  | { before: string; through?: undefined; id?: string }
 
 /**
  * A conversation's schedules, as `jush schedule` acts on them; each call is
@@ -381,11 +392,16 @@ export class Conversation {
     this.registry.removed(this.id)
   }
 
-  /** A new conversation holding this one's history through the completed text `through`. */
-  async fork(options: { through: string; id?: string }): Promise<Conversation> {
+  /**
+   * A new conversation holding this one's history through the completed text
+   * `through`, or everything before the turn `before`, which the message of
+   * that id started; under `id`, made unless named, which a retry repeats.
+   */
+  async fork(options: ForkOptions): Promise<Conversation> {
     const answer = await this.routes.json('POST', `/conversations/${segment(this.id)}/fork`, forkAnswerSchema, {
       id: options.id ?? randomUUID(),
       blockId: options.through,
+      beforeTurn: options.before,
     })
     return this.registry.open(answer.conversation.id)
   }
@@ -631,7 +647,7 @@ export class Conversation {
     }
     const after = blocks.slice(at + 1, end + 1)
     const text = after.flatMap((block) => (block.type === 'text' ? [block.text] : [])).join('\n\n')
-    return { outcome: ending.outcome, blocks: after, text }
+    return { id: messageId, outcome: ending.outcome, blocks: after, text }
   }
 
   /**
