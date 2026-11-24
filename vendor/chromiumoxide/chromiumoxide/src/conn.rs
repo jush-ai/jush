@@ -157,7 +157,17 @@ impl<T: EventMessage + Unpin> Stream for Connection<T> {
                 // An error names the text as parsed, so a diagnosis reads
                 // what failed rather than a surrogate this already mended.
                 let text = surrogates::well_formed(&text);
-                let ready = match serde_json::from_str::<Message<T>>(&text) {
+                // A DOM tree nests about two levels for each element, past
+                // serde_json's limit of 128 on an ordinary page; Chrome's own
+                // limit, 300 levels, is the one that holds, and the stack
+                // grows as the message nests.
+                let mut deserializer = serde_json::Deserializer::from_str(&text);
+                deserializer.disable_recursion_limit();
+                let decoded = serde::Deserialize::deserialize(serde_stacker::Deserializer::new(
+                    &mut deserializer,
+                ))
+                .and_then(|message: Message<T>| deserializer.end().map(|()| message));
+                let ready = match decoded {
                     Ok(msg) => {
                         tracing::trace!("Received {:?}", msg);
                         Ok(msg)

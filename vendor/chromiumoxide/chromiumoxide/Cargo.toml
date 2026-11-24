@@ -165,6 +165,10 @@ features = ["derive"]
 
 [dependencies.serde_json]
 version = "1"
+features = ["unbounded_depth"]
+
+[dependencies.serde_stacker]
+version = "0.1"
 
 [dependencies.thiserror]
 version = "2"
