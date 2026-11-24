@@ -2,7 +2,7 @@ import type { TranscriptReveal } from '@jush-agent/web-ui/agent/history'
 import { errorMessage } from '@jush-agent/web-ui/infra/errors'
 import { isAbortError } from '@jush-agent/utils'
 import { apiRequest, readResponse } from '../api/client'
-import { commandCallSchema, endedOutputSchema } from '@jush-agent/protocol'
+import { commandOriginSchema, endedOutputSchema } from '@jush-agent/protocol'
 import type { Conversation } from '../state/types'
 import { readNodeBlocks } from '../state/offline'
 import { createHistoryReads } from './history-reads'
@@ -37,7 +37,7 @@ export function createConversationHistoryReads(
         `/conversations/${encodeURIComponent(conversation.id)}/commands/${encodeURIComponent(commandId)}`,
         { signal: signal() },
       )
-      const call = await readResponse(response, commandCallSchema)
+      const call = await readResponse(response, commandOriginSchema)
       return { node: call.node === conversation.id ? null : call.node, blockId: call.blockId }
     },
     /**

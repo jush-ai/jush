@@ -837,7 +837,7 @@ pub struct WholeBlock {
 /// started a command lies, which a report's title brings into view.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct CommandCall {
+pub struct CommandOrigin {
     pub command_id: CommandId,
     /// The agent that ran it.
     pub node: NodeId,

@@ -23,7 +23,7 @@ use jush_core::conversation::{attachment_facts, failure_facts, named_blocks, rep
 use jush_conversation_lane_protocol::{PAGE_BLOCKS, STORED_EPOCH, Version, index_u32, light};
 use jush_shared_types::{Block, BlockId, CommandId, NodeId, TurnId};
 use jush_web_api_protocol::conversations::{
-    CommandCall, EndedOutput, TranscriptPage, TranscriptQuery, TurnState, WholeBlock,
+    CommandOrigin, EndedOutput, TranscriptPage, TranscriptQuery, TurnState, WholeBlock,
 };
 use jush_web_api_protocol::error::ErrorCode;
 
@@ -357,7 +357,7 @@ pub(crate) async fn command(
     State(state): State<Api>,
     Principal(user): Principal,
     Path((id, command)): Path<(String, String)>,
-) -> Result<Json<CommandCall>, ApiError> {
+) -> Result<Json<CommandOrigin>, ApiError> {
     let services = &state.services;
     let record = owned(services, &user, &id).await?;
     let no_command = || {
@@ -375,7 +375,7 @@ pub(crate) async fn command(
         .map_err(ApiError::conversation_unreadable)?
         .flatten()
         .ok_or_else(no_command)?;
-    Ok(Json(CommandCall {
+    Ok(Json(CommandOrigin {
         command_id,
         node,
         block_id: call.id,

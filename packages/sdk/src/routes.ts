@@ -51,7 +51,7 @@ export class CoreRoutes {
 
   /** The process's path of the core's route `path`, such as `/conversations`. */
   path(path: string): string {
-    return `/cores/${encodeURIComponent(this.id)}/api${path}`
+    return `/cores/${segment(this.id)}/api${path}`
   }
 
   /**
@@ -92,4 +92,60 @@ export class CoreRoutes {
     const response = await this.request(method, path, body)
     await response.body?.cancel()
   }
+
+  /** The bytes the route `path` answers. */
+  async bytes(method: string, path: string, body?: unknown, signal?: AbortSignal): Promise<Uint8Array> {
+    const response = await this.request(method, path, body, signal)
+    return new Uint8Array(await response.arrayBuffer())
+  }
+
+  /** Each JSON value the route `path` answers, one a line, read with `schema` as it comes. */
+  async *lines<T>(method: string, path: string, schema: z.ZodType<T>, body?: unknown, signal?: AbortSignal): AsyncGenerator<T> {
+    const response = await this.request(method, path, body, signal)
+    if (response.body === null) {
+      return
+    }
+    const decoder = new TextDecoder()
+    let held = ''
+    for await (const chunk of response.body) {
+      held += decoder.decode(chunk, { stream: true })
+      let end = held.indexOf('\n')
+      while (end >= 0) {
+        const line = held.slice(0, end).trim()
+        held = held.slice(end + 1)
+        if (line !== '') {
+          yield parsed(schema, line)
+        }
+        end = held.indexOf('\n')
+      }
+    }
+    const last = (held + decoder.decode()).trim()
+    if (last !== '') {
+      yield parsed(schema, last)
+    }
+  }
 }
+
+/** `line`, one JSON value, read with `schema`. */
+function parsed<T>(schema: z.ZodType<T>, line: string): T {
+  const read = schema.safeParse(JSON.parse(line))
+  if (!read.success) {
+    throw new Error(schemaRefusal(read.error))
+  }
+  return read.data
+}
+
+/** The query of `values`, `?a=1&b=x`, leaving out each one undefined; empty for none. */
+export function query(values: Record<string, string | number | boolean | undefined>): string {
+  const search = new URLSearchParams()
+  for (const [name, value] of Object.entries(values)) {
+    if (value !== undefined) {
+      search.set(name, String(value))
+    }
+  }
+  const text = search.toString()
+  return text === '' ? '' : `?${text}`
+}
+
+/** `segment` as one segment of a route's path. */
+export const segment = encodeURIComponent

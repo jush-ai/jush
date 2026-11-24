@@ -656,6 +656,46 @@ core.on('notify', async (message) => {
 `{ type: 'shown' }` says every place that would show it shows its
 conversation already.
 
+## Everything else a core does
+
+Every capability of a core has a method, on the object it acts on, and its
+input and answer types are exported from `@jush-agent/sdk`:
+
+```ts
+// The root agent's transcript, whose id is the conversation's.
+const page = await conversation.history.transcript(conversation.id, { latest: true })
+const changed = await conversation.changes.status()
+const token = await core.credentials.create({
+  name: 'Deploy Token',
+  fields: [{ name: 'token', label: 'Token', kind: 'secret', value: deployToken }],
+  keep: 'always',
+})
+```
+
+| Object | Methods |
+| --- | --- |
+| `core.conversations` | `list({ archived })`, `get(id)`, `create`, `open`, `remove(id)`, `updateMany(items)` |
+| `conversation` | `get()`, `update`, `remove()`, `fork`, `reloadPlugins()`, `search(text)`, `cost('hour' \| 'day')`, `workflows()`, `unpin(pin)`, `detach(device)` |
+| `conversation.history` | `transcript(agent, page)`, `block(agent, id)`, `turn(id)`, `commandOrigin(id)`, `commandOutput(id)` |
+| `conversation.sideQuestions` | `ask`, `followUp`, `retry`, `stop`, `fold`, `remove` |
+| `conversation.files` | `list`, `lists`, `read`, `readBytes`, `write`, `makeDirectory`, `remove`, `search` |
+| `conversation.changes` | `status`, `file`, `committed`, `branches`, `repositories`, `log`, `show(commit)` |
+| `conversation.plugins` | `state(plugin)`, `call(plugin, method, input)` |
+| `core` | `search(text)`, `blob(sha256)`, `upload` |
+| `core.usage` | `totals()` |
+| `core.models` | `search(text)`, `refresh()` |
+| `core.providers` | `list`, `create`, `update`, `remove`, `catalog`, `order`, `status`, `quota`, `test`, `cli`, `installCli`, `accounts(id)`, `signIn` |
+| `core.credentials` | `list`, `create`, `update`, `remove`, `reveal(id, field)` |
+| `core.instructions` | `get()`, `set(text)` |
+| `core.subagents` | `get()`, `update(patch)`, `profiles.create`, `profiles.update`, `profiles.remove` |
+| `core.plugins` | `enable(plugin, on)`, `enableFeature(plugin, feature, on)`, `call(plugin, method, input)` |
+| `core.workspaces` | `list`, `create`, `update`, `remove`, `order`, `move` |
+| `core.projects` | `list`, `create`, `update`, `remove` |
+| `core.devices` | `list`, `create`, `claim`, `of(listed)` |
+| `device` | `connect`, `spawn`, `exec`, `revoke`, `update`, `elevate`, `workflows(directory)` |
+| `device.files` | `list(path)`, `makeDirectory(path)` |
+| `core.portForwards` | `list`, `create`, `update`, `remove`, `retry` |
+
 ## Showing conversations on your pages
 
 [`@jush-agent/web-components`](../web-components/README.md) shows a

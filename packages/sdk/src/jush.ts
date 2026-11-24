@@ -9,7 +9,7 @@ import { binaries } from './binaries'
 import { Core } from './core'
 import type { Plugin } from './plugin'
 import { Process } from './process'
-import { below, PROCESS_ORIGIN, refusal } from './routes'
+import { below, PROCESS_ORIGIN, refusal, segment } from './routes'
 
 /** What Jush starts with. */
 export interface JushOptions {
@@ -95,7 +95,7 @@ export class Jush {
       { process: this.process, id, dir: path, plugins: this.plugins, runner: this.runner },
       async () => {
         this.cores.delete(id)
-        await (await this.call('DELETE', `/cores/${encodeURIComponent(id)}`)).body?.cancel()
+        await (await this.call('DELETE', `/cores/${segment(id)}`)).body?.cancel()
       },
     )
     this.cores.set(id, core)
@@ -137,7 +137,7 @@ export class Jush {
    */
   private async greet(fetch: (request: Request) => Promise<Response>): Promise<void> {
     for (const plugin of this.plugins) {
-      const response = await this.call('PUT', `/plugins/${encodeURIComponent(plugin.manifest.id)}`, plugin.manifest, fetch)
+      const response = await this.call('PUT', `/plugins/${segment(plugin.manifest.id)}`, plugin.manifest, fetch)
       await response.body?.cancel()
     }
     for (const core of this.cores.values()) {

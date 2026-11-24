@@ -27,6 +27,11 @@ import {
   conversationDetailSchema,
   conversationFrameSchema,
   conversationUpdateSchema,
+  conversationWorkflowListSchema,
+  forkAnswerSchema,
+  messageResultsSchema,
+  pluginStateAnswerSchema,
+  recentCostSchema,
   scheduleAnswerSchema,
   scheduleDtoSchema,
   scheduleRunDtoSchema,
@@ -37,10 +42,15 @@ import {
   type AbortResult,
   type AgentEntry,
   type Block,
-  type ClientContent,
+  type ConversationDetail,
   type ConversationMetadata,
   type ConversationPatch,
   type ConversationUpdate,
+  type ConversationWorkflowList,
+  type CostWindow,
+  type MessageResults,
+  type PluginStateAnswer,
+  type RecentCost,
   type PermissionRequest,
   type RequestedValues,
   type ScheduleAnswer,
@@ -51,10 +61,19 @@ import {
   type TurnState,
 } from '@jush-agent/protocol'
 import { randomUUID } from 'node:crypto'
-import { JushError, type CoreRoutes } from './routes'
+import { z } from 'zod'
+import { conversationChanges, conversationFiles, type ConversationChanges, type ConversationFiles } from './files'
+import { conversationHistory, type ConversationHistory } from './history'
+import { content, type Input } from './input'
+import { JushError, query, segment, type CoreRoutes } from './routes'
+import { sideQuestions, type SideQuestions } from './side-questions'
 
-/** What a program sends: text, or the content blocks a page sends. */
-export type Input = string | ClientContent[]
+/** A plugin's part of one conversation: its state, and its methods about it. */
+export interface ConversationPlugins {
+  state(plugin: string): Promise<PluginStateAnswer>
+  /** Calls the plugin's method `method` about the conversation, of its attached `device` when named. */
+  call(plugin: string, method: string, input?: unknown, options?: { device?: string }): Promise<unknown>
+}
 
 /** The block that ended a turn, and how. */
 interface TurnEnd {
@@ -108,17 +127,44 @@ export class Conversation {
   private readonly told = new Set<string>()
   private readonly listeners = new Set<(event: ConversationEvent) => void>()
   /** What waits for a change of the transcript or the metadata, and fails once the conversation closes. */
-  private readonly changes = new Set<{ changed: () => void; closed: () => void }>()
+  private readonly waiters = new Set<{ changed: () => void; closed: () => void }>()
   /** Whether the lane is being opened again after it dropped. */
   private reopening = false
   /** Whether the lane dropped again while it was being opened again. */
   private droppedAgain = false
 
   readonly schedules: ConversationSchedules
+  /** Any agent's transcript by pages, and the turns and commands it names. */
+  readonly history: ConversationHistory
+  readonly sideQuestions: SideQuestions
+  /** The files of the conversation's devices. */
+  readonly files: ConversationFiles
+  /** The working tree's changes. */
+  readonly changes: ConversationChanges
+  readonly plugins: ConversationPlugins
 
-  constructor(readonly id: string, private readonly routes: CoreRoutes) {
-    const path = `/conversations/${encodeURIComponent(id)}/schedules`
-    const one = (schedule: string) => `${path}/${encodeURIComponent(schedule)}`
+  constructor(
+    readonly id: string,
+    private readonly routes: CoreRoutes,
+    /** The core's conversations, which give one for each id and forget a deleted one. */
+    private readonly registry: { open(id: string): Conversation; removed(id: string): void },
+  ) {
+    this.history = conversationHistory(routes, id)
+    this.sideQuestions = sideQuestions(routes, id)
+    this.files = conversationFiles(routes, id)
+    this.changes = conversationChanges(routes, id)
+    const plugin = (name: string) => `/conversations/${segment(id)}/plugins/${segment(name)}`
+    this.plugins = {
+      state: (name) => routes.json('GET', `${plugin(name)}/state`, pluginStateAnswerSchema),
+      call: (name, method, input = {}, options = {}) => routes.json(
+        'POST',
+        `${plugin(name)}/calls/${segment(method)}${query({ device: options.device })}`,
+        z.unknown(),
+        input,
+      ),
+    }
+    const path = `/conversations/${segment(id)}/schedules`
+    const one = (schedule: string) => `${path}/${segment(schedule)}`
     this.schedules = {
       create: (patch) => routes.json('POST', path, scheduleAnswerSchema, patch),
       get: (schedule) => routes.json('GET', one(schedule), scheduleDtoSchema),
@@ -126,8 +172,7 @@ export class Conversation {
       remove: (schedule) => routes.send('DELETE', one(schedule)),
       run: (schedule, task) => routes.json('POST', `${one(schedule)}/runs`, scheduleRunDtoSchema, task === undefined ? {} : { task }),
       runs: async (schedule, before) => {
-        const query = before === undefined ? '' : `?before=${encodeURIComponent(before)}`
-        return (await routes.json('GET', `${one(schedule)}/runs${query}`, scheduleRunsSchema)).runs
+        return (await routes.json('GET', `${one(schedule)}/runs${query({ before })}`, scheduleRunsSchema)).runs
       },
     }
   }
@@ -143,7 +188,7 @@ export class Conversation {
   }
 
   private async connect(): Promise<ConversationClient> {
-    const path = `/conversations/${encodeURIComponent(this.id)}`
+    const path = `/conversations/${segment(this.id)}`
     const client = createConversationClient(this.routes.connection, this.id, {
       reader: {
         conversation: async (signal) => {
@@ -152,7 +197,7 @@ export class Conversation {
           return { agents: detail.agents, entries: detail.entries, tags: { metadata: detail.metadataTag } }
         },
         transcript: async (node, signal) => {
-          const page = await this.routes.json('GET', `${path}/agents/${encodeURIComponent(node)}/transcript?latest=true`, transcriptPageSchema, undefined, signal)
+          const page = await this.routes.json('GET', `${path}/agents/${segment(node)}/transcript${query({ latest: true })}`, transcriptPageSchema, undefined, signal)
           if (!page.version) {
             throw new Error('The latest page names no version of its transcript')
           }
@@ -266,13 +311,13 @@ export class Conversation {
   }
 
   private changed(): void {
-    for (const change of [...this.changes]) {
-      change.changed()
+    for (const waiter of [...this.waiters]) {
+      waiter.changed()
     }
   }
 
   private permission(request: PermissionRequest): Permission {
-    const decide = (body: unknown) => this.routes.send('POST', `/conversations/${encodeURIComponent(this.id)}/permissions/requests/${encodeURIComponent(request.id)}`, body)
+    const decide = (body: unknown) => this.routes.send('POST', `/conversations/${segment(this.id)}/permissions/requests/${segment(request.id)}`, body)
     return {
       request,
       allow: (values) => decide({ decision: 'allow', ...(values === undefined ? {} : { credential: values }) }),
@@ -321,7 +366,58 @@ export class Conversation {
    * refused while the others apply.
    */
   async update(patch: ConversationPatch): Promise<ConversationUpdate> {
-    return this.routes.json('PATCH', `/conversations/${encodeURIComponent(this.id)}`, conversationUpdateSchema, patch)
+    return this.routes.json('PATCH', `/conversations/${segment(this.id)}`, conversationUpdateSchema, patch)
+  }
+
+  /** The conversation as the list shows it, with its metadata and its agents. */
+  get(): Promise<ConversationDetail> {
+    return this.routes.json('GET', `/conversations/${segment(this.id)}`, conversationDetailSchema)
+  }
+
+  /** Deletes the conversation, with its history and its files. */
+  async remove(): Promise<void> {
+    await this.routes.send('DELETE', `/conversations/${segment(this.id)}`)
+    this.close()
+    this.registry.removed(this.id)
+  }
+
+  /** A new conversation holding this one's history through the completed text `through`. */
+  async fork(options: { through: string; id?: string }): Promise<Conversation> {
+    const answer = await this.routes.json('POST', `/conversations/${segment(this.id)}/fork`, forkAnswerSchema, {
+      id: options.id ?? randomUUID(),
+      blockId: options.through,
+    })
+    return this.registry.open(answer.conversation.id)
+  }
+
+  /** Opens the conversation's agents again with the core's plugins as they are now, as after `core.plugins.enable`. */
+  reloadPlugins(): Promise<void> {
+    return this.routes.send('POST', `/conversations/${segment(this.id)}/reload`)
+  }
+
+  /** The conversation's messages that match `text`. */
+  search(text: string): Promise<MessageResults> {
+    return this.routes.json('GET', `/conversations/${segment(this.id)}/search${query({ q: text })}`, messageResultsSchema)
+  }
+
+  /** What the calls of the last hour or day cost, by agent. */
+  cost(window: CostWindow): Promise<RecentCost> {
+    return this.routes.json('GET', `/conversations/${segment(this.id)}/cost/recent${query({ window })}`, recentCostSchema)
+  }
+
+  /** The workflows the conversation's agents can start, as its directory keeps them. */
+  workflows(): Promise<ConversationWorkflowList> {
+    return this.routes.json('GET', `/conversations/${segment(this.id)}/workflows`, conversationWorkflowListSchema)
+  }
+
+  /** Takes the pinned document `pin`, one of the metadata's `pins`, back from the conversation's agents. */
+  unpin(pin: number): Promise<void> {
+    return this.routes.send('DELETE', `/conversations/${segment(this.id)}/pins/${pin}`)
+  }
+
+  /** Detaches the device `device` the conversation brought in. */
+  detach(device: string): Promise<void> {
+    return this.routes.send('DELETE', `/conversations/${segment(this.id)}/devices/${segment(device)}`)
   }
 
   /**
@@ -332,7 +428,7 @@ export class Conversation {
    * `messageId` is absent.
    */
   async sendToAgent(node: string, text: string, messageId?: string): Promise<string> {
-    const path = `/conversations/${encodeURIComponent(this.id)}/agents/${encodeURIComponent(node)}/messages`
+    const path = `/conversations/${segment(this.id)}/agents/${segment(node)}/messages`
     const { id } = await this.routes.json('POST', path, subagentMessageAnswerSchema, { id: messageId, text })
     return id
   }
@@ -384,12 +480,12 @@ export class Conversation {
     let reading = false
     // The reads in a row that failed, whose backoff the next one waits.
     let failures = 0
-    let change = { changed: () => {}, closed: () => {} }
+    let waiter = { changed: () => {}, closed: () => {} }
     const ended = new Promise<Turn>((resolve, reject) => {
       // What a read brings is taken while the run still waits.
       const again = () => {
-        if (this.changes.has(change)) {
-          change.changed()
+        if (this.waiters.has(waiter)) {
+          waiter.changed()
         }
       }
       // A read that failed, as across a drop, is made again after the
@@ -407,7 +503,7 @@ export class Conversation {
               return
             }
             if (state === null) {
-              this.changes.delete(change)
+              this.waiters.delete(waiter)
               reject(new Error('The message left the queue without running'))
             } else if (state.state === 'ended') {
               failures = 0
@@ -443,14 +539,14 @@ export class Conversation {
           },
         )
       }
-      change = {
+      waiter = {
         changed: () => {
           const last = this.metadata?.lastTurn
           const end = last?.turnId === messageId ? { end: last.id, outcome: last.outcome } : answered
           if (end) {
             const turn = this.turnOf(messageId, end)
             if (turn) {
-              this.changes.delete(change)
+              this.waiters.delete(waiter)
               resolve(turn)
               return
             }
@@ -470,16 +566,16 @@ export class Conversation {
     // Its failure is the caller's once the message is sent, and nobody's
     // when the send fails, as a close while it sends fails both.
     ended.catch(() => {})
-    this.changes.add(change)
+    this.waiters.add(waiter)
     try {
       await this.send(input, messageId)
     } catch (error) {
       // A message never sent starts no turn to wait for.
-      this.changes.delete(change)
+      this.waiters.delete(waiter)
       throw error
     }
     sent = true
-    change.changed()
+    waiter.changed()
     return ended
   }
 
@@ -510,7 +606,7 @@ export class Conversation {
 
   /** Where the turn `messageId` stands, as the conversation answers; null when it holds no turn of it. */
   private async turnState(messageId: string): Promise<TurnState | null> {
-    const path = `/conversations/${encodeURIComponent(this.id)}/turns/${encodeURIComponent(messageId)}`
+    const path = `/conversations/${segment(this.id)}/turns/${segment(messageId)}`
     try {
       return await this.routes.json('GET', path, turnStateSchema)
     } catch (error) {
@@ -547,8 +643,8 @@ export class Conversation {
 
   /** Reads the page of the root's transcript before `window` into what the conversation holds. */
   private async readBefore(window: TranscriptWindow): Promise<void> {
-    const root = encodeURIComponent(this.id)
-    const edge = encodeURIComponent(window.blocks[0]!.id)
+    const root = segment(this.id)
+    const edge = segment(window.blocks[0]!.id)
     const path = `/conversations/${root}/agents/${root}/transcript?before=${window.start}&edge=${edge}`
     const page = await this.routes.json('GET', path, transcriptPageSchema)
     this.transcript = addPage(this.transcript, page, true)
@@ -566,7 +662,7 @@ export class Conversation {
       waiting.push(event)
       wake?.()
     }
-    const change = {
+    const waiter = {
       changed: () => {},
       closed: () => {
         closed = true
@@ -574,7 +670,7 @@ export class Conversation {
       },
     }
     this.listeners.add(listener)
-    this.changes.add(change)
+    this.waiters.add(waiter)
     try {
       await this.open()
       for (;;) {
@@ -591,7 +687,7 @@ export class Conversation {
       }
     } finally {
       this.listeners.delete(listener)
-      this.changes.delete(change)
+      this.waiters.delete(waiter)
     }
   }
 
@@ -605,13 +701,9 @@ export class Conversation {
     this.client = null
     this.opening = null
     client?.dispose()
-    for (const change of [...this.changes]) {
-      this.changes.delete(change)
-      change.closed()
+    for (const waiter of [...this.waiters]) {
+      this.waiters.delete(waiter)
+      waiter.closed()
     }
   }
-}
-
-function content(input: Input): ClientContent[] {
-  return typeof input === 'string' ? [{ type: 'text', text: input }] : input
 }
