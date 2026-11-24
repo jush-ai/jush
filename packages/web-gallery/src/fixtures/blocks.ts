@@ -1749,7 +1749,8 @@ export function commandLookBlocks(): Block[] {
 
 /**
  * Steps a vendor ran on its side, of a kind Jush does not know: one that
- * ended, one that failed beside a command, and one still running.
+ * ended, one that failed beside a command, a run of two tools, one of them
+ * used twice, and one still running.
  */
 export function vendorStepBlocks(): Block[] {
   const user = (id: string, at: number, text: string): Block => ({
@@ -1779,6 +1780,13 @@ export function vendorStepBlocks(): Block[] {
     user('vendor-chart', 700_000, 'Draw them as a chart.'),
     ...inRun(step('vendor-failed', 690_000, 'failed', 'code_interpreter'), run('vendor-run', 680_000)),
     reply('vendor-drawn', 670_000, 'The vendor’s interpreter failed, so I drew the chart here: chart.png.'),
+    user('vendor-notes', 500_000, 'Which notes mention the launch?'),
+    ...inRun(
+      step('vendor-read', 490_000, 'completed', 'read_file'),
+      step('vendor-grep', 485_000, 'completed', 'grep_search'),
+      step('vendor-reread', 480_000, 'completed', 'read_file'),
+    ),
+    reply('vendor-found', 470_000, 'Two notes mention it: plan.md and todo.md.'),
     user('vendor-again', 300_000, 'Check the mean once more.'),
     ...inRun(step('vendor-running', 290_000, 'running', 'code_interpreter')),
   ])

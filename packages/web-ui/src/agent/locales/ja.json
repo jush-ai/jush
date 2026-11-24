@@ -156,7 +156,7 @@
     "signedOut": "{provider} が {account} をサインアウトしました。設定 › プロバイダーでもう一度サインインしてください。",
     "deviceOffline": "{device} はオフラインです。",
     "opaque": {
-      "other": "{vendor} の {name}",
+      "builtin": "組み込みツール",
       "search": {
         "web": "ウェブ検索",
         "open_page": "ページを開く",
@@ -192,7 +192,8 @@
       "searchedWeb": "ウェブを {count} 回検索",
       "openedPages": "{count} ページを開く",
       "searchedX": "X を {count} 回検索",
-      "viewedMedia": "画像・動画を {count} 件確認"
+      "viewedMedia": "画像・動画を {count} 件確認",
+      "usedBuiltin": "組み込みツール {tools} を使用"
     },
     "copyMessage": "メッセージをコピー",
     "sendToConversation": "チャットに送る",

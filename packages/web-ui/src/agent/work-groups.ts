@@ -41,6 +41,7 @@ import type { ShownBlock } from './whole-blocks'
 import { upperFirst } from '@jush-ai/utils'
 import { formatSpan } from '../ui/dates'
 import { t } from './locales/text'
+import { pageLanguage } from '../i18n/text'
 import { parseToolCallInput } from './block-helpers'
 import type { LiveCallLookup } from './live-calls'
 import { isTerminalRunning, shellRowRunning, shellRowTime } from './terminals'
@@ -479,12 +480,13 @@ export function workRowId(first: WorkStep): string {
  * What a call did, as a group's row counts it: a `shell` call whose script
  * only runs `jush shell status` checks the commands it names; any other
  * `shell` call, or one still being written, runs a command of its own; a call
- * of another tool uses that tool.
+ * of another tool uses that tool; a vendor's step of a kind Jush does not
+ * know uses that built-in tool.
  */
 type CallKind =
   | { kind: 'run' }
   | { kind: 'check', commands: string[] }
-  | { kind: 'generic', tool: string }
+  | { kind: 'generic' | 'builtin', tool: string }
   | { kind: 'web' | 'page' | 'x' | 'media' }
 
 function callKind(step: CallStep): CallKind {
@@ -499,14 +501,14 @@ function callKind(step: CallStep): CallKind {
 /**
  * What a vendor's step did, as a group's row counts it: a search of the web,
  * a page read, a search of X, or, of a kind Jush does not know, a use of that
- * tool at its vendor.
+ * built-in tool.
  */
 function opaqueKind(step: Extract<WorkStep, { type: 'opaque' }>): CallKind {
   switch (step.view.kind) {
     case 'search':
       return { kind: searchKind(step.view.action) }
     case 'other':
-      return { kind: 'generic', tool: step.view.name }
+      return { kind: 'builtin', tool: step.view.name }
     case 'reasoning':
       return { kind: 'generic', tool: '' }
   }
@@ -514,7 +516,7 @@ function opaqueKind(step: Extract<WorkStep, { type: 'opaque' }>): CallKind {
 
 /**
  * A run's calls by what they did, in the order the run first did each, with the
- * commands each kind touched.
+ * commands each kind touched, or the built-in tools it used.
  */
 interface CallGroup {
   kind: CallKind['kind']
@@ -525,8 +527,8 @@ interface CallGroup {
 /**
  * The run's calls by what they did, in the order the run first did each:
  * a run counts a command per call, a check the commands its calls looked
- * at, each once, and another tool its calls. A failed call counts as any
- * other.
+ * at, each once, the built-in tools their names, each once, and another
+ * tool its calls. A failed call counts as any other.
  */
 function callGroups(steps: readonly WorkStep[]): CallGroup[] {
   const groups = new Map<string, CallGroup>()
@@ -538,6 +540,8 @@ function callGroups(steps: readonly WorkStep[]): CallGroup[] {
     const group = groups.get(key) ?? { kind: call.kind, tool: call.kind === 'generic' ? call.tool : '', touched: new Set<string>() }
     if (call.kind === 'check')
       call.commands.forEach((command) => group.touched.add(command))
+    else if (call.kind === 'builtin')
+      group.touched.add(call.tool)
     else
       group.touched.add(stepKey(step))
     groups.set(key, group)
@@ -554,7 +558,20 @@ const WORDS = {
   page: (count: number) => t('transcript.work.openedPages', { count }, count),
   x: (count: number) => t('transcript.work.searchedX', { count }, count),
   media: (count: number) => t('transcript.work.viewedMedia', { count }, count),
+  builtin: (count: number, tools: string) => t('transcript.work.usedBuiltin', { tools }, count),
 } satisfies Record<CallKind['kind'], (count: number, tool: string) => string>
+
+/**
+ * Tools' names listed as the language lists things. A Chinese conjunction
+ * between them, 和, gets the spaces Chinese text puts between its own words
+ * and Latin ones, which Intl leaves out: read_file 和 grep_search.
+ */
+function listNames(names: Iterable<string>): string {
+  return new Intl.ListFormat(pageLanguage(), { type: 'conjunction' })
+    .formatToParts(names)
+    .map((part) => part.type === 'literal' && /^\p{Script=Han}+$/u.test(part.value) ? ` ${part.value} ` : part.value)
+    .join('')
+}
 
 /** The phrases of a row joined, as the language lists clauses. */
 function joinPhrases(parts: readonly string[]): string {
@@ -566,7 +583,8 @@ function joinPhrases(parts: readonly string[]): string {
  * as one phrase.
  */
 function describeCalls(steps: readonly WorkStep[]): string {
-  const parts = callGroups(steps).map((group) => WORDS[group.kind](group.touched.size, group.tool))
+  const parts = callGroups(steps).map((group) =>
+    WORDS[group.kind](group.touched.size, group.kind === 'builtin' ? listNames(group.touched) : group.tool))
   return parts.length === 0 ? '' : upperFirst(joinPhrases(parts))
 }
 

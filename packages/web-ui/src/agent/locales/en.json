@@ -156,7 +156,7 @@
     "signedOut": "{provider} signed {account} out. Sign it in again in Settings › Providers.",
     "deviceOffline": "{device} is offline.",
     "opaque": {
-      "other": "{name} at {vendor}",
+      "builtin": "Built-in tool",
       "search": {
         "web": "Web search",
         "open_page": "Open page",
@@ -192,7 +192,8 @@
       "searchedWeb": "searched the web {count} time | searched the web {count} times",
       "openedPages": "opened {count} page | opened {count} pages",
       "searchedX": "searched X {count} time | searched X {count} times",
-      "viewedMedia": "viewed {count} image or video | viewed {count} images or videos"
+      "viewedMedia": "viewed {count} image or video | viewed {count} images or videos",
+      "usedBuiltin": "used built-in tool {tools} | used built-in tools {tools}"
     },
     "copyMessage": "Copy Message",
     "sendToConversation": "Send to Conversation",

@@ -156,7 +156,7 @@
     "signedOut": "{provider} hat {account} abgemeldet. Melde es unter Einstellungen › Anbieter erneut an.",
     "deviceOffline": "{device} ist offline.",
     "opaque": {
-      "other": "{name} bei {vendor}",
+      "builtin": "Integriertes Werkzeug",
       "search": {
         "web": "Websuche",
         "open_page": "Seite öffnen",
@@ -192,7 +192,8 @@
       "searchedWeb": "{count}-mal im Web gesucht | {count}-mal im Web gesucht",
       "openedPages": "{count} Seite geöffnet | {count} Seiten geöffnet",
       "searchedX": "{count}-mal auf X gesucht | {count}-mal auf X gesucht",
-      "viewedMedia": "{count} Bild oder Video angesehen | {count} Bilder oder Videos angesehen"
+      "viewedMedia": "{count} Bild oder Video angesehen | {count} Bilder oder Videos angesehen",
+      "usedBuiltin": "integriertes Werkzeug {tools} verwendet | integrierte Werkzeuge {tools} verwendet"
     },
     "copyMessage": "Nachricht kopieren",
     "sendToConversation": "An Chat senden",

@@ -156,7 +156,7 @@
     "signedOut": "{provider} 已将 {account} 退出登录。请在“设置 › 供应商”中重新登录。",
     "deviceOffline": "{device} 处于离线状态。",
     "opaque": {
-      "other": "{vendor} 的 {name}",
+      "builtin": "内置工具",
       "search": {
         "web": "网页搜索",
         "open_page": "打开网页",
@@ -192,7 +192,8 @@
       "searchedWeb": "搜索了 {count} 次网页",
       "openedPages": "打开了 {count} 个网页",
       "searchedX": "搜索了 {count} 次 X",
-      "viewedMedia": "查看了 {count} 个图片或视频"
+      "viewedMedia": "查看了 {count} 个图片或视频",
+      "usedBuiltin": "使用了内置工具 {tools}"
     },
     "copyMessage": "复制消息",
     "sendToConversation": "发送到对话",

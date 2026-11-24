@@ -156,7 +156,7 @@
     "signedOut": "{provider} a déconnecté {account}. Reconnectez-le dans Paramètres › Fournisseurs.",
     "deviceOffline": "{device} est hors ligne.",
     "opaque": {
-      "other": "{name} chez {vendor}",
+      "builtin": "Outil intégré",
       "search": {
         "web": "Recherche web",
         "open_page": "Ouvrir la page",
@@ -192,7 +192,8 @@
       "searchedWeb": "{count} recherche web | {count} recherches web",
       "openedPages": "{count} page ouverte | {count} pages ouvertes",
       "searchedX": "{count} recherche sur X | {count} recherches sur X",
-      "viewedMedia": "{count} image ou vidéo consultée | {count} images ou vidéos consultées"
+      "viewedMedia": "{count} image ou vidéo consultée | {count} images ou vidéos consultées",
+      "usedBuiltin": "outil intégré {tools} utilisé | outils intégrés {tools} utilisés"
     },
     "copyMessage": "Copier le message",
     "sendToConversation": "Envoyer à une conversation",

@@ -156,7 +156,7 @@
     "signedOut": "{provider}에서 {account} 계정을 로그아웃했습니다. 설정 › 제공업체에서 다시 로그인하세요.",
     "deviceOffline": "{device}이(가) 오프라인 상태입니다.",
     "opaque": {
-      "other": "{vendor}의 {name}",
+      "builtin": "기본 제공 도구",
       "search": {
         "web": "웹 검색",
         "open_page": "페이지 열기",
@@ -192,7 +192,8 @@
       "searchedWeb": "웹 {count}회 검색",
       "openedPages": "페이지 {count}개 열기",
       "searchedX": "X {count}회 검색",
-      "viewedMedia": "이미지·동영상 {count}개 확인"
+      "viewedMedia": "이미지·동영상 {count}개 확인",
+      "usedBuiltin": "기본 제공 도구 {tools} 사용"
     },
     "copyMessage": "메시지 복사",
     "sendToConversation": "대화로 보내기",
