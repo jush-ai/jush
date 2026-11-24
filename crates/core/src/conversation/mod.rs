@@ -77,6 +77,7 @@ use jush_web_api_protocol::ids::UserId;
 pub use self::attachment_facts::{attachment_facts, named_blocks, replies, reply_block_facts};
 pub use self::failure_facts::failure_facts;
 pub use self::fork::{ForkRefusal, recover_forks};
+pub use jush_core_store::forks::ForkPoint;
 pub use self::announcement::AgentsError;
 pub(crate) use self::lane::TreeRefusal;
 pub(crate) use self::product::CoreDevices;

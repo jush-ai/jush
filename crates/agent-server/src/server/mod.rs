@@ -31,12 +31,12 @@ use jush_agent_tools::{
     CALL_WINDOW_MS, ContextSources, DeviceResolver, ProfileModel, ShellEnvironmentFactory,
     SubagentSource, Toolset, ToolsetSource, Unavailable,
 };
-use jush_agent_transcript::{ForkEnd, IdSource};
+use jush_agent_transcript::{CutError, ForkEnd, IdSource};
 
 use jush_provider_common::{Ahead, ProviderRuntime};
 use jush_device_interface::{CommandSet, RegisterError};
 use jush_shared_gates::KeyedSerialGate;
-use jush_shared_types::{AgentMessage, BlockId, Clock, ModelSelection, NodeId, SessionPhase, UserContentBlock};
+use jush_shared_types::{AgentMessage, Block, BlockId, Clock, ModelSelection, NodeId, SessionPhase, TurnId, UserContentBlock};
 use futures_util::future::{LocalBoxFuture, join_all};
 use tokio_util::task::TaskTracker;
 
@@ -151,7 +151,7 @@ fn fork_store(error: StoreError) -> ForkError {
 }
 
 /// A Fork's seed from the committed checkpoint of the stored node `source`,
-/// through the completed text `end` names: a closed conversation's root, or
+/// ending where `end` says: a closed conversation's root, or
 /// an archived child (`crates/agent-server/src/server/tree/supervisor.rs`).
 pub(crate) async fn stored_fork_seed(
     store: &dyn AgentTreeStore,
@@ -732,8 +732,8 @@ impl<H: DeviceResolver> AgentServer<H> {
         self.tree(root)?.node(node)
     }
 
-    /// A Fork's seed from the root `source` through its completed text
-    /// `target`.
+    /// A Fork's seed from the root `source` through its completed text or
+    /// before its message `end` names.
     ///
     /// It is captured from the live session in one step when the conversation
     /// is open, else read from its committed checkpoint. The source keeps
@@ -741,9 +741,8 @@ impl<H: DeviceResolver> AgentServer<H> {
     pub async fn prepare_fork(
         &self,
         source: &NodeId,
-        target: &BlockId,
+        end: ForkEnd<'_>,
     ) -> Result<ForkSeed, ForkError> {
-        let end = ForkEnd::At(target);
         if let Some(tree) = self.tree(source) {
             return tree.root().session().prepare_fork(end).await;
         }
@@ -753,6 +752,37 @@ impl<H: DeviceResolver> AgentServer<H> {
             return Err(ForkError::NotRoot);
         }
         stored_fork_seed(store.as_ref(), source, end).await
+    }
+
+    /// The `user` block of the message that started the turn `turn` of the
+    /// main agent of the conversation `root`, where a Fork before that turn
+    /// ends. A turn whose message waits in the queue has not started, and
+    /// no message started a turn that continued after a command.
+    ///
+    /// A live session holds its newest blocks before they are stored, and
+    /// the store the blocks before its window.
+    pub async fn turn_message(&self, root: &NodeId, turn: &TurnId) -> Result<BlockId, ForkError> {
+        let tree = self.tree(root);
+        let live = tree.as_ref().map(|tree| tree.root().session());
+        if let Some(block) = live.and_then(|session| session.turn_message(turn)) {
+            return Ok(block);
+        }
+        let session = (self.deps.stores)(root).session_store(root);
+        if let Some(at) = session.turn_position(turn).await.map_err(fork_store)? {
+            let read = session.blocks(at..at + 1).await.map_err(fork_store)?;
+            if let Some(Block::User(user)) = read.blocks.first() {
+                return Ok(user.id.clone());
+            }
+        }
+        let queue = match &live {
+            Some(session) => session.queued_messages(),
+            None => session.load().await.map_err(fork_store)?.map(|checkpoint| checkpoint.state.queue).unwrap_or_default(),
+        };
+        Err(ForkError::Target(if queue.iter().any(|message| &message.id == turn) {
+            CutError::TurnNotStarted
+        } else {
+            CutError::NotTurnMessage
+        }))
     }
 
     /// Asks the side question `side` of the conversation `root`, whose tree is

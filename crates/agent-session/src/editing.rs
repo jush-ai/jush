@@ -515,8 +515,8 @@ pub enum ForkError {
     Store(String),
 }
 
-/// A Fork's seed: the history through the completed text a [`ForkEnd`] names,
-/// idle, with nothing waiting.
+/// A Fork's seed: the history through the completed text or before the
+/// message a [`ForkEnd`] names, idle, with nothing waiting.
 ///
 /// It seeds a new root or a side question
 /// (`crates/agent-server/src/server/tree/sides.rs`). The blocks the
@@ -562,8 +562,9 @@ impl ForkSeed {
 /// The seed of a source whose path holds `window` from `start` on, the blocks
 /// before it in `store`, with the checkpoint state `state`.
 ///
-/// What a Fork through `end` keeps is checked against the window, and against
-/// the store for the blocks before it, which it names without reading them.
+/// What a Fork ending at `end` keeps is checked against the window, and
+/// against the store for the blocks before it, which it names without
+/// reading them.
 pub async fn fork_seed(
     store: &dyn SessionStore,
     start: usize,
@@ -603,19 +604,26 @@ pub async fn fork_seed(
         Ok::<_, ForkError>(store.last_of(Kind::ExecutingCall, before).await.map_err(store_error)?.is_some())
     };
     let target = match end {
-        ForkEnd::At(target) | ForkEnd::Side(target) => target,
+        ForkEnd::Through(target) | ForkEnd::Side(target) | ForkEnd::Before(target) => target,
     };
     let (length, tail) = if window.iter().any(|block| block.id() == target) {
         let kept = fork_prefix(window, end)?;
         (start, kept.to_vec())
     } else {
-        let at = store.position(target).await.map_err(store_error)?.ok_or(CutError::NotCompletedText)?;
+        // The block the end names is before the window, a row of the store.
+        let (kind, refused) = match end {
+            ForkEnd::Before(_) => (Kind::User, CutError::NotTurnMessage),
+            ForkEnd::Through(_) | ForkEnd::Side(_) => (Kind::CompletedText, CutError::NotCompletedText),
+        };
+        let at = store.position(target).await.map_err(store_error)?.ok_or_else(|| refused.clone())?;
         let read = store.blocks(at..at + 1).await.map_err(store_error)?;
-        if !read.blocks.first().is_some_and(|block| Kind::CompletedText.holds(block)) {
-            return Err(CutError::NotCompletedText.into());
+        if !read.blocks.first().is_some_and(|block| kind.holds(block)) {
+            return Err(refused.into());
         }
         let path_end = start + window.len();
         match end {
+            // The rows before the message.
+            ForkEnd::Before(_) => (at, Vec::new()),
             // A `clear` followed the text: the side question's history ends
             // before it, where `side_end` ends it among the blocks from the
             // text to the clear, as it does in the window.
@@ -626,10 +634,11 @@ pub async fn fork_seed(
             // The side question's history goes on through the window, which
             // starts with the compaction that summarized its text.
             ForkEnd::Side(_) => (start, window[..=side_end(window, 0)].to_vec()),
-            ForkEnd::At(_) => (at + 1, Vec::new()),
+            ForkEnd::Through(_) => (at + 1, Vec::new()),
         }
     };
-    // The rows named end at the window or before it, at the text.
+    // The rows named end at the window or before it, at the text or before
+    // the message.
     if unfinished_before(length).await? || tail.iter().any(|block| Kind::ExecutingCall.holds(block)) {
         return Err(CutError::UnfinishedToolCalls.into());
     }

@@ -37,7 +37,7 @@ use crate::error::ApiError;
 use crate::caller::Principal;
 use crate::attached_devices;
 use crate::query::QueryParams;
-use jush_core::conversation::{AgentsError, ForkRefusal};
+use jush_core::conversation::{AgentsError, ForkPoint, ForkRefusal};
 use jush_core::conversation::subagent_messages::SubagentMessageRefusal;
 use jush_shared_types::NodeId;
 use jush_core::services::CoreServices;
@@ -387,21 +387,28 @@ pub(crate) async fn message_subagent(
     })
 }
 
-/// `POST /conversations/:id/fork { id, blockId }`: the conversation `id`
-/// with this conversation's history through the assistant text `blockId`,
-/// 201; the same attempt again, 200.
+/// `POST /conversations/:id/fork { id, blockId | beforeTurn }`: the
+/// conversation `id` with this conversation's history through the assistant
+/// text `blockId` or before the turn `beforeTurn`, 201; the same attempt
+/// again, 200.
 pub(crate) async fn fork(
     State(state): State<Api>,
     Principal(user): Principal,
     Path(source): Path<String>,
-    JsonBody(ForkRequest { id, block_id }): JsonBody<ForkRequest>,
+    JsonBody(ForkRequest { id, block_id, before_turn }): JsonBody<ForkRequest>,
 ) -> Result<(StatusCode, Json<ForkAnswer>), ApiError> {
     let source = ConversationId::try_from(source).map_err(|_| not_found())?;
+    // The body's check let one of the two through.
+    let point = match (block_id, before_turn) {
+        (Some(block), _) => ForkPoint::Through(block),
+        (None, Some(turn)) => ForkPoint::Before(turn),
+        (None, None) => unreachable!("a fork's body names one end"),
+    };
     let (forked, conversation, metadata) = state
         .shards
         .of(&user)
         .call(move |core, _| async move {
-            let forked = core.fork(source, id, block_id).await?;
+            let forked = core.fork(source, id, point).await?;
             let conversation = core.conversation_summary(forked.record.clone()).await?;
             let metadata = core.conversation_metadata(forked.record.clone()).await?;
             Ok::<_, ForkRefusal>((forked, conversation, metadata))

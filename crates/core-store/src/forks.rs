@@ -1,13 +1,14 @@
 //! Fork creation attempts in the control store.
 //!
-//! Each attempt reserves its destination's id with its owner, source, text and
-//! creation metadata. A control transaction publishes the destination into the
-//! conversation index once its root is committed in its own database.
+//! Each attempt reserves its destination's id with its owner, source, where
+//! its history ends and creation metadata. A control transaction publishes
+//! the destination into the conversation index once its root is committed in
+//! its own database.
 //!
 //! Publication is the public conversation row; a reservation without one stays
 //! hidden.
 
-use jush_shared_types::{BlockId, ModelSelection, Timestamp, WorkflowChoice};
+use jush_shared_types::{BlockId, ModelSelection, Timestamp, TurnId, WorkflowChoice};
 use jush_web_api_protocol::conversations::ConversationTarget;
 use jush_web_api_protocol::ids::{BrowserProfileName, ConversationId};
 use rusqlite::{Connection, OptionalExtension, Row, params};
@@ -30,9 +31,19 @@ pub struct ForkOperation {
     /// The destination's id, which the attempt reserves.
     pub id: ConversationId,
     pub source: ConversationId,
-    /// The completed text the history is kept through.
-    pub block: BlockId,
+    pub end: ForkPoint,
     pub metadata: ForkMetadata,
+}
+
+/// Where a Fork's history ends, as its request names it: an attempt is its
+/// source and this, whatever the source's history became since.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ForkPoint {
+    /// Through a completed text of the source's main agent.
+    Through(BlockId),
+    /// Before a turn of the source's main agent, by the id of the message
+    /// that started it: the history ends where the turn before it ended.
+    Before(TurnId),
 }
 
 /// What the destination is published with.
@@ -86,9 +97,9 @@ pub struct ForkMetadata {
 }
 
 impl ForkOperation {
-    /// Whether `other` is this same creation attempt: its source and text.
-    pub fn same_attempt(&self, source: &ConversationId, block: &BlockId) -> bool {
-        same_id(&self.source, source) && self.block == *block
+    /// Whether `other` is this same creation attempt: its source and end.
+    pub fn same_attempt(&self, source: &ConversationId, end: &ForkPoint) -> bool {
+        same_id(&self.source, source) && self.end == *end
     }
 }
 
@@ -97,7 +108,7 @@ fn same_id(one: &ConversationId, other: &ConversationId) -> bool {
     one.as_str().eq_ignore_ascii_case(other.as_str())
 }
 
-const OPERATION_COLUMNS: &str = "id, source_id, block_id, metadata";
+const OPERATION_COLUMNS: &str = "id, source_id, block_id, before_turn, metadata";
 
 impl CoreStore {
     /// The creation attempt that reserved `id`, in whichever case it is
@@ -120,19 +131,24 @@ impl CoreStore {
         self.call(move |connection, _| {
             let transaction = connection.transaction()?;
             if let Some(existing) = operation_by_id(&transaction, &operation.id)? {
-                let same = existing.same_attempt(&operation.source, &operation.block);
+                let same = existing.same_attempt(&operation.source, &operation.end);
                 return Ok(same.then_some(existing));
             }
             if conversation_by_id(&transaction, &operation.id)?.is_some() {
                 return Ok(None);
             }
+            let (block, turn) = match &operation.end {
+                ForkPoint::Through(block) => (Some(block.as_str()), None),
+                ForkPoint::Before(turn) => (None, Some(turn.as_str())),
+            };
             transaction.execute(
-                "INSERT INTO conversation_fork_operations (id, source_id, block_id, metadata)
-                 VALUES (?1, ?2, ?3, ?4)",
+                "INSERT INTO conversation_fork_operations (id, source_id, block_id, before_turn, metadata)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
                 params![
                     operation.id.as_str(),
                     operation.source.as_str(),
-                    operation.block.as_str(),
+                    block,
+                    turn,
                     to_json(&operation.metadata)
                 ],
             )?;
@@ -146,7 +162,7 @@ impl CoreStore {
     pub async fn pending_forks(&self) -> Result<Vec<ForkOperation>, StorageError> {
         self.call(|connection, _| {
             let mut statement = connection.prepare(
-                "SELECT f.id, f.source_id, f.block_id, f.metadata
+                "SELECT f.id, f.source_id, f.block_id, f.before_turn, f.metadata
                  FROM conversation_fork_operations f LEFT JOIN conversations c ON c.id = f.id
                  WHERE c.id IS NULL ORDER BY f.rowid",
             )?;
@@ -270,11 +286,17 @@ fn operation_row(row: &Row<'_>) -> Result<ForkOperation, StorageError> {
             "source_id",
             ConversationId::try_from(row.get::<_, String>("source_id")?),
         )?,
-        block: decode(
-            TABLE,
-            "block_id",
-            BlockId::try_from(row.get::<_, String>("block_id")?),
-        )?,
+        end: match (row.get::<_, Option<String>>("block_id")?, row.get::<_, Option<String>>("before_turn")?) {
+            (Some(block), None) => ForkPoint::Through(decode(TABLE, "block_id", BlockId::try_from(block))?),
+            (None, Some(turn)) => ForkPoint::Before(decode(TABLE, "before_turn", TurnId::try_from(turn))?),
+            _ => {
+                return Err(StorageError::Corrupt {
+                    table: TABLE,
+                    column: "block_id",
+                    reason: "the row names both ends or neither".to_owned(),
+                });
+            }
+        },
         metadata: json(TABLE, "metadata", &metadata)?,
     })
 }
