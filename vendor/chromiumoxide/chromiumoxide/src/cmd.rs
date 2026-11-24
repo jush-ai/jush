@@ -19,7 +19,10 @@ pub(crate) fn to_command_response<T: Command>(
     method: MethodId,
 ) -> Result<CommandResponse<T::Response>> {
     if let Some(res) = resp.result {
-        let result = serde_json::from_value(res)?;
+        // A result nests as deep as its message (`crate::conn`): a DOM tree at
+        // Chrome's limit outgrows a worker thread's stack as typed nodes in a
+        // build without optimizations, so the stack grows as it nests.
+        let result = serde::Deserialize::deserialize(serde_stacker::Deserializer::new(res))?;
         Ok(CommandResponse {
             id: resp.id,
             result,
