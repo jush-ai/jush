@@ -392,7 +392,7 @@ shared-types -> none
 command-protocol -> none
 conversation-lane-protocol -> shared-types
 command-sdk -> shared-artifacts, command-protocol, shared-types
-command-declarations -> none
+command-declarations -> command-protocol
 command-package-file-protocol -> shared-types
 command-package-fetch-protocol -> shared-types
 command-package-browser-protocol -> shared-types, live-view-protocol, shared-recording-protocol

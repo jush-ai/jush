@@ -379,9 +379,9 @@ CREATE TABLE conversations (
   -- The sentences that open its agents' system prompts in place of Jush's;
   -- null for Jush's.
   identity TEXT,
-  -- The program's plugins its agents have, a JSON array of their ids; null
-  -- for all of them.
-  plugins TEXT,
+  -- The commands its agents have, a JSON array of their paths without
+  -- `jush`; null for every command.
+  commands TEXT,
   CHECK (
     (target_kind = 'cloud'
       AND target_device_id IS NULL AND target_project_id IS NULL)

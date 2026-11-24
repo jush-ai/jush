@@ -5249,6 +5249,7 @@ version = "0.1.65"
 dependencies = [
  "clap",
  "jsonschema",
+ "jush-command-protocol",
  "schemars",
  "serde",
  "serde_json",

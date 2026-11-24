@@ -343,21 +343,36 @@ await refunds.update({ browserProfile: null })
 
 An agent introduces itself as Jush unless its conversation names an
 `identity`, the sentences that open its system prompt instead. Jush's rules
-for running commands and replying still follow them. `plugins` lists which
-of your program's plugins the conversation's agents have, by id; without it
-they have all of them. Jush's own plugins follow the user's switches either
-way. A change made with `update` reaches each agent from its next request.
+for running commands and replying still follow them. A change of the
+identity made with `update` reaches each agent from its next request.
+
+`commands` lists the commands the conversation's agents have, Jush's and
+your plugins' alike, each by its path without `jush`: a group, such as
+`browser`, names every command under it, and a leaf, such as
+`conversation list`, names that one. Your plugin's commands are named by
+their group's name, not by the plugin's id. A command the list does not name
+is not in the agent's prompt, and running it answers as for a command that
+does not exist; a plugin the list names no command of gives no context
+either. `jush shell`, which reads what the shell tool cut short, stays
+whatever the list says. Without a list the agents have every command; with
+one, a command Jush adds later reaches the conversation only once its list
+names it. A command still follows the core's own switches. A change of the
+list reaches each agent from its next command.
 
 ```ts
 const desk = await core.conversations.create({
   model,
   target,
   identity: "You are the help desk's assistant. You answer the team's questions about their accounts.",
-  plugins: ['tickets'],
+  commands: ['browser', 'schedule', 'tickets'],
 })
 // Try the next version of the commands in this conversation alone:
-await desk.update({ plugins: ['tickets-next'] })
+await desk.update({ commands: ['browser', 'schedule', 'tickets-next'] })
 ```
+
+A core an earlier release made kept a list of plugin ids, `plugins`, which
+opens as `commands`: Jush's groups of then and those ids, each taken for its
+plugin's group name. Name again a plugin whose group is named otherwise.
 
 `conversation.run(input)` sends a message and resolves once the turn it
 starts ended, with that turn's blocks and outcome, also when your program's

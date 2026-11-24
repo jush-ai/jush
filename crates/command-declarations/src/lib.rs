@@ -77,6 +77,7 @@ use std::{
     sync::Arc,
 };
 
+use jush_command_protocol::is_command_name;
 use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value;
@@ -838,16 +839,6 @@ impl<B> Leaf<B> {
     fn property_type(&self, field: &str) -> Option<&str> {
         self.properties()?.get(field)?.get("type")?.as_str()
     }
-}
-
-/// Whether `name` can name a command or an input: an ASCII letter or digit,
-/// then letters, digits, `_` and `-`.
-pub fn is_command_name(name: &str) -> bool {
-    let mut bytes = name.bytes();
-    bytes
-        .next()
-        .is_some_and(|byte| byte.is_ascii_alphanumeric())
-        && bytes.all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
 }
 
 /// Whether `field` is one of `leaf`'s named options: a declared input that

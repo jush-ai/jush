@@ -1,9 +1,9 @@
 //! What the backend's conversations are assembled from.
 //!
 //! - The product's instructions, or the identity a conversation names.
-//! - The toolset of the plugins the user has on, less the program's plugins
-//!   the conversation does not name, with the product's `jush device` and
-//!   `jush attachment` groups.
+//! - The toolset of the plugins the user has on, with the product's
+//!   `jush device` and `jush attachment` groups, narrowed to the commands
+//!   the conversation names.
 //! - The user's subagent settings, which each spawn reads.
 //! - The device each node reaches, and the conversation's current primary device.
 //! - The execution context source, which tells a node that the conversation's
@@ -37,7 +37,7 @@ use jush_plugin_host::ContextAsk;
 use jush_runner_client::RemoteDevice;
 use jush_agent_store::Placement;
 use jush_web_api_protocol::ids::DeviceId;
-use jush_device_interface::{Device as _, DeviceError, DeviceErrorKind};
+use jush_device_interface::{CommandList, Device as _, DeviceError, DeviceErrorKind};
 use jush_plugin_interface::{EXECUTION_SOURCE, PluginId};
 use jush_shared_types::TurnId;
 use jush_core_store::StorageError;
@@ -57,14 +57,40 @@ const INSTRUCTIONS: &str = "You are Jush, an agent that works for the user on th
 
 /// The harness guide every node's system prompt carries after its identity,
 /// a profile's node too, around the words of the web app's Files view, which
-/// a conversation with an identity of its own goes without.
+/// a conversation with an identity of its own goes without. A sentence that
+/// tells of a command is left out where the conversation's list does not
+/// name it.
 const GUIDE_START: &str = "Guidelines:\n- Commands run on the conversation's primary device, in its working directory; a context block names both. The directory stays between turns";
 const GUIDE_FILES: &str = ", and Files shows it";
-const GUIDE_END: &str = "; to work in another directory, move there with `jush device move` first.\n- To wait for a command or a subagent, end your turn: its end or its message wakes you, and you continue then. Never wait with sleep or a loop.\n- The user reads only your replies, rendered as Markdown. Be concise.\n- Deliver a file as an attachment: `jush attachment upload`, then `<attachment id=\"a3\" />` on its own line; a medium a tool result showed you has its `attachment_id` already.\n- Link what the user can open: a device file `[runner.md](docs/runner.md#L438)`, or `device:<id>/abs/path` on an attached device, a subagent `[File icons](agent:4)`, a commit `[Fix the cart total](commit:3f2a9c1)`, or `commit:src/v8@86229da` in another repository, a conversation `[Login test](conversation:<id>)`.";
+const GUIDE_MOVE: &str = "; to work in another directory, move there with `jush device move` first";
+const GUIDE_WAIT: &str = ".\n- To wait for a command or a subagent, end your turn: its end or its message wakes you, and you continue then. Never wait with sleep or a loop.\n- The user reads only your replies, rendered as Markdown. Be concise.";
+const GUIDE_ATTACHMENT: &str = "\n- Deliver a file as an attachment: `jush attachment upload`, then `<attachment id=\"a3\" />` on its own line; a medium a tool result showed you has its `attachment_id` already.";
+const GUIDE_LINKS: &str = "\n- Link what the user can open: a device file `[runner.md](docs/runner.md#L438)`, or `device:<id>/abs/path` on an attached device, a subagent `[File icons](agent:4)`, a commit `[Fix the cart total](commit:3f2a9c1)`, or `commit:src/v8@86229da` in another repository, a conversation `[Login test](conversation:<id>)`.";
+
+/// The guide of a conversation with or without an identity of its own,
+/// whose list names `commands`, every command when none.
+fn guide(own_identity: bool, commands: Option<&CommandList>) -> String {
+    let has = |path: &[&str]| {
+        commands.is_none_or(|list| list.names(&path.iter().map(|word| (*word).to_owned()).collect::<Vec<_>>()))
+    };
+    let mut guide = GUIDE_START.to_owned();
+    if !own_identity {
+        guide.push_str(GUIDE_FILES);
+    }
+    if has(&["jush", "device", "move"]) {
+        guide.push_str(GUIDE_MOVE);
+    }
+    guide.push_str(GUIDE_WAIT);
+    if has(&["jush", "attachment", "upload"]) {
+        guide.push_str(GUIDE_ATTACHMENT);
+    }
+    guide.push_str(GUIDE_LINKS);
+    guide
+}
 
 /// The product's layers of a conversation's system prompts: Jush's
 /// identity and the whole guide, or the identity it names and the guide
-/// without the Files view.
+/// without the Files view; each guide without what its list leaves out.
 pub(crate) struct CorePrompts {
     /// Weak: the core owns the agent server that holds the source.
     pub(crate) core: Weak<Core>,
@@ -82,14 +108,18 @@ impl PromptSource for CorePrompts {
                 .conversation(conversation_of(root))
                 .await
                 .map_err(|error| error.to_string())?;
-            Ok(match record.and_then(|record| record.identity) {
+            let (identity, commands) = match record {
+                Some(record) => (record.identity, record.commands.as_deref().map(CommandList::new)),
+                None => (None, None),
+            };
+            Ok(match identity {
                 Some(identity) => ProductPrompt {
                     identity: Rc::from(identity),
-                    guide: Rc::from(format!("{GUIDE_START}{GUIDE_END}")),
+                    guide: Rc::from(guide(true, commands.as_ref())),
                 },
                 None => ProductPrompt {
                     identity: Rc::from(INSTRUCTIONS),
-                    guide: Rc::from(format!("{GUIDE_START}{GUIDE_FILES}{GUIDE_END}")),
+                    guide: Rc::from(guide(false, commands.as_ref())),
                 },
             })
         })
@@ -97,9 +127,9 @@ impl PromptSource for CorePrompts {
 }
 
 impl Core {
-    /// The program's plugins the conversation of `root` names, none for all
-    /// of them, as is the user's with no root.
-    async fn named_plugins(&self, root: Option<&NodeId>) -> Result<Option<Vec<String>>, StorageError> {
+    /// The commands the conversation of `root` names, none for every
+    /// command, as the user's are with no root.
+    async fn named_commands(&self, root: Option<&NodeId>) -> Result<Option<CommandList>, StorageError> {
         let Some(root) = root else {
             return Ok(None);
         };
@@ -107,7 +137,17 @@ impl Core {
             .store()
             .conversation(conversation_of(root))
             .await?
-            .and_then(|record| record.plugins))
+            .and_then(|record| record.commands)
+            .map(|commands| CommandList::new(&commands)))
+    }
+}
+
+/// A toolset's revision: the plugins' and, when the conversation names its
+/// commands, the list, so two conversations of two lists never share a set.
+pub(crate) fn toolset_revision(plugins: String, commands: Option<&CommandList>) -> String {
+    match commands {
+        Some(list) => format!("{plugins};{list}"),
+        None => plugins,
     }
 }
 
@@ -127,13 +167,13 @@ impl ToolsetSource for CoreToolsets {
                 .core
                 .upgrade()
                 .ok_or_else(|| "the backend is shutting down".to_owned())?;
-            let named = core.named_plugins(root).await.map_err(|error| error.to_string())?;
+            let named = core.named_commands(root).await.map_err(|error| error.to_string())?;
             let revision = core
                 .plugins()
-                .revision(named.as_deref())
+                .revision(named.as_ref())
                 .await
                 .map_err(|error| error.to_string())?;
-            Ok(Rc::from(revision))
+            Ok(Rc::from(toolset_revision(revision, named.as_ref())))
         })
     }
 
@@ -143,7 +183,7 @@ impl ToolsetSource for CoreToolsets {
                 .core
                 .upgrade()
                 .ok_or_else(|| "the backend is shutting down".to_owned())?;
-            let named = core.named_plugins(root).await.map_err(|error| error.to_string())?;
+            let named = core.named_commands(root).await.map_err(|error| error.to_string())?;
             let devices: Weak<dyn DeviceCore> = self.core.clone();
             let toolset = core
                 .plugins()
@@ -156,12 +196,17 @@ impl ToolsetSource for CoreToolsets {
                     schedule_group(self.core.clone()),
                     providers_group(self.core.clone()),
                     notify_group(self.core.clone()),
-                ], named.as_deref())
+                ], named.as_ref())
                 .await
                 .map_err(|error| error.to_string())?;
+            let revision = toolset_revision(toolset.revision, named.as_ref());
+            let commands = match named {
+                Some(list) => toolset.commands.named(Rc::new(list)),
+                None => toolset.commands,
+            };
             Ok(Toolset {
-                commands: Rc::new(toolset.commands),
-                revision: Rc::from(toolset.revision),
+                commands: Rc::new(commands),
+                revision: Rc::from(revision),
             })
         })
     }
@@ -538,10 +583,10 @@ impl ContextSource for PluginContext {
             let Some(core) = self.core.upgrade() else {
                 return Ok(None);
             };
-            // A program's plugin the conversation does not name is neither
+            // A plugin the conversation names no command of is neither
             // searched nor asked, as it gives the conversation no commands.
             let named = core
-                .named_plugins(Some(node.root))
+                .named_commands(Some(node.root))
                 .await
                 .map_err(|error| format!("the plugin {} was not asked: {error}", self.plugin))?;
             let conversation = conversation_of(node.root);
@@ -557,7 +602,7 @@ impl ContextSource for PluginContext {
             // A plugin the user has off keeps nothing, and is not asked.
             let searches = core
                 .plugins()
-                .searches_projects(&self.plugin, named.as_deref())
+                .searches_projects(&self.plugin, named.as_ref())
                 .await
                 .map_err(|error| format!("the plugin {} was not asked: {error}", self.plugin))?;
             let project = if searches {
@@ -578,7 +623,7 @@ impl ContextSource for PluginContext {
             // drops this future.
             core
                 .plugins()
-                .context(&self.plugin, named.as_deref(), asked, CancellationToken::new())
+                .context(&self.plugin, named.as_ref(), asked, CancellationToken::new())
                 .await
                 .map(|text| text.map(ContextAnswer::from))
                 .map_err(|error| format!("the plugin {} gave no context: {error}", self.plugin))

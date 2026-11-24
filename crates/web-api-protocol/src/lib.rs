@@ -82,6 +82,20 @@ pub const MAX_PAGE_MESSAGE_BYTES: usize = 1024 * 1024;
 /// without end.
 pub const MAX_PLUGIN_MESSAGE_BYTES: usize = 64 * 1024 * 1024;
 
+/// A command's path as a conversation's list names it: command names, a
+/// single space between two, such as `conversation list`, without a first
+/// `jush`.
+fn command_path(text: &str, _: &()) -> garde::Result {
+    let mut words = text.split(' ');
+    if words.clone().all(jush_command_protocol::is_command_name) && words.next() != Some("jush") {
+        Ok(())
+    } else {
+        Err(garde::Error::new(
+            "is not a command's path: command names, a single space between two, without `jush`",
+        ))
+    }
+}
+
 /// A check of a text that must say something: whitespace alone says
 /// nothing.
 fn not_blank(text: &str, _: &()) -> garde::Result {

@@ -352,9 +352,9 @@ impl<H: DeviceResolver> AgentServer<H> {
         let roots: Vec<NodeId> = self.trees.borrow().keys().cloned().collect();
         let mut failed = None;
         for root in roots {
-            // Under the root's order, as a change of the conversation's own
-            // plugins adopts: the later of the two reads what the record
-            // holds last, and never puts back what the other replaced.
+            // Under the root's order, as a change of the commands the
+            // conversation names adopts: the later of the two reads what the
+            // record holds last, and never puts back what the other replaced.
             let _turn = self.opening.acquire(root.clone()).await;
             let Some(tree) = self.tree(&root) else {
                 continue;
@@ -375,7 +375,7 @@ impl<H: DeviceResolver> AgentServer<H> {
     }
 
     /// Gives the live tree of the conversation `root`, if it has one, the
-    /// toolset the product now has for it alone, as a change of the plugins
+    /// toolset the product now has for it alone, as a change of the commands
     /// it names asks: each node runs them from its next command and lists
     /// them in its system prompt from its next request.
     pub async fn adopt_commands_of(self: &Rc<Self>, root: &NodeId) -> Result<(), String> {

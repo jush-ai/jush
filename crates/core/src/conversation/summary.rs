@@ -16,6 +16,7 @@
 //! conversations takes no writer from a running one.
 
 use jush_core_store::StorageError;
+use jush_device_interface::CommandList;
 use jush_core_store::columns::decode;
 use jush_core_store::conversation_index::ConversationRecord;
 use jush_core_store::{tree::{self, EndedTurn, SummaryFacts, Terminal}};
@@ -132,7 +133,9 @@ impl Core {
         let tree = self.agent().tree(&root_of(&record.id));
         let plugins_changed = match &tree {
             Some(tree) => {
-                *tree.toolset() != *self.plugins().revision(record.plugins.as_deref()).await.map_err(StorageError::from)?
+                let named = record.commands.as_deref().map(CommandList::new);
+                let plugins = self.plugins().revision(named.as_ref()).await.map_err(StorageError::from)?;
+                *tree.toolset() != *super::product::toolset_revision(plugins, named.as_ref())
             }
             None => false,
         };
@@ -169,7 +172,7 @@ impl Core {
             workflow: record.workflow,
             browser_profile: record.browser_profile,
             identity: record.identity,
-            plugins: record.plugins,
+            commands: record.commands,
             cwd: resolved.path().to_owned(),
             last_turn: facts.last_turn.as_ref().map(last_turn),
             turn_speed: facts.turn_speed,

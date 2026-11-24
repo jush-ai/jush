@@ -241,7 +241,11 @@ impl NodeCommandSets {
 
 /// A node's commands: the product's, with the `jush agent` and `jush shell`
 /// groups grafted under a `jush` group, replacing any `agent` or `shell`
-/// child the product declared, or under a new `jush` root.
+/// child the product declared, or under a new `jush` root; narrowed to the
+/// list the product's set was narrowed to, the conversation's. `jush shell`
+/// stays whatever the list says, as the shell tool's own reader of what it
+/// cut short, and so does `jush agent cwd` where the list names a command of
+/// `agent`, since a child's working directory block points at it.
 pub(crate) fn with_runtime_groups<H: DeviceResolver>(
     product_commands: &CommandSet,
     server: &Rc<AgentServer<H>>,
@@ -264,7 +268,14 @@ pub(crate) fn with_runtime_groups<H: DeviceResolver>(
         );
         commands.register(jush)?;
     }
-    Ok(commands)
+    Ok(match product_commands.list() {
+        Some(list) => {
+            let agent = commands.named(list.clone()).has(&[JUSH_ROOT, "agent"]);
+            let runtime: &[&str] = if agent { &["shell", "agent cwd"] } else { &["shell"] };
+            commands.named(Rc::new(list.and(runtime)))
+        }
+        None => commands,
+    })
 }
 
 /// The `agent` group of a node: every verb, or communication and reads only

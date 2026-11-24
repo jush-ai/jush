@@ -413,8 +413,8 @@ impl<H: DeviceResolver> Tree<H> {
     /// Gives every live node of the tree, the root, each child and each side
     /// question, the commands of `toolset` with its own runtime groups, as
     /// the user's switch of a plugin or the product's change of the
-    /// conversation's plugins asks, and the list in their system prompts as
-    /// `list` says.
+    /// commands the conversation names asks, and the list in their system
+    /// prompts as `list` says.
     pub(crate) fn adopt_commands(
         &self,
         server: &Rc<AgentServer<H>>,

@@ -12,6 +12,7 @@ doctest = false
 bench = false
 
 [dependencies]
+jush-command-protocol = { path = "../command-protocol" }
 # Feature `string` names arguments at run time, from the declaration.
 clap = { version = "4", default-features = false, features = ["std", "color", "help", "usage", "error-context", "suggestions", "string"] }
 jsonschema = { version = "0.56", default-features = false }

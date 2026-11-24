@@ -157,7 +157,7 @@ impl Core {
             }
             ConversationChange::Record(change) if !change_is_transition(&change) => {
                 let prompt = matches!(change, RecordChange::Identity(_));
-                let commands = matches!(change, RecordChange::Plugins(_));
+                let commands = matches!(change, RecordChange::Commands(_));
                 {
                     // A field update waits while a transition holds the
                     // conversation, and applies as if it arrived afterwards.
@@ -178,10 +178,14 @@ impl Core {
                 // The record holds the change, which a tree that opens later
                 // reads; a live tree takes it from its agents' next requests.
                 let root = root_of(&record.id);
+                // A list of commands changes the guide's sentences too.
                 let adopted = if prompt {
                     self.agent().adopt_prompt(&root).await
                 } else if commands {
-                    self.agent().adopt_commands_of(&root).await
+                    match self.agent().adopt_commands_of(&root).await {
+                        Ok(()) => self.agent().adopt_prompt(&root).await,
+                        failed => failed,
+                    }
                 } else {
                     Ok(())
                 };
@@ -598,10 +602,10 @@ impl Core {
                 RecordChange::Identity(identity).into(),
             ));
         }
-        if let Some(plugins) = patch.plugins {
+        if let Some(commands) = patch.commands {
             changes.push((
-                vec![PatchField::Plugins],
-                RecordChange::Plugins(plugins).into(),
+                vec![PatchField::Commands],
+                RecordChange::Commands(commands).into(),
             ));
         }
         if let Some(target) = patch.target {

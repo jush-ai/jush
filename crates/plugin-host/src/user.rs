@@ -31,9 +31,9 @@ use crate::store::StoreError;
 use crate::store::{MirrorOutcome, WorkOutcome};
 use crate::store::{PluginChanges, PluginStore, ValueWrite, Written};
 use jush_command_declarations::NativeOperation;
-use jush_device_interface::{CommandSet, GroupBuilder, JobCaller, PortError, RpcPort};
+use jush_device_interface::{CommandList, CommandSet, GroupBuilder, JobCaller, PortError, RpcPort};
 use jush_plugin_interface::{
-    AskedVideo, AudioAsk, AudioVoices, Feature, ImageAsk, MadeAudio, MadeImage, MediaListing, MediaRefusal, VideoAsk,
+    AskedVideo, AudioAsk, AudioVoices, Feature, Placement, ImageAsk, MadeAudio, MadeImage, MediaListing, MediaRefusal, VideoAsk,
     VideoStep, CallKind, DirectoryPath, DeviceDirectory, Plugin, PluginError, PluginId, PluginPort,
     PluginTransport, PortAnswer, PortFailure, PortMessage, PortRefusal, Reply, Request, Scope, DeviceReport, StoredReport,
     StoredValue, UserWorkspaces, DeviceName, GitTree,
@@ -1072,11 +1072,11 @@ impl UserPlugins {
     }
 
     /// The toolset of the plugins the user has on: their commands, with the
-    /// product's `product` groups under `jush`. `named` is the program's
-    /// plugins a conversation has, by id; none has them all.
-    pub async fn toolset(&self, product: Vec<GroupBuilder>, named: Option<&[String]>) -> Result<PluginToolset, StoreError> {
+    /// product's `product` groups under `jush`, of the plugins a
+    /// conversation's list `commands` reaches; none reaches them all.
+    pub async fn toolset(&self, product: Vec<GroupBuilder>, commands: Option<&CommandList>) -> Result<PluginToolset, StoreError> {
         let registry = self.0.registry();
-        let enabled = Self::named(&registry, self.enabled(&registry).await?, named);
+        let enabled = Self::reached(&registry, self.enabled(&registry).await?, commands);
         let features = self.0.features(&registry).await?;
         let on = |index: usize, feature: &Feature| {
             let declared = &registry.plugins[index].factory.manifest().features;
@@ -1093,24 +1093,29 @@ impl UserPlugins {
         })
     }
 
-    /// The revision of the toolset the user's plugins give now, with the
-    /// program's plugins `named` ([`toolset`](Self::toolset)).
-    pub async fn revision(&self, named: Option<&[String]>) -> Result<String, StoreError> {
+    /// The revision of the toolset the user's plugins give now, of the
+    /// plugins `commands` reaches ([`toolset`](Self::toolset)).
+    pub async fn revision(&self, commands: Option<&CommandList>) -> Result<String, StoreError> {
         let registry = self.0.registry();
-        let enabled = Self::named(&registry, self.enabled(&registry).await?, named);
+        let enabled = Self::reached(&registry, self.enabled(&registry).await?, commands);
         let features = self.0.features(&registry).await?;
         Ok(Self::revision_of(&registry, &enabled, &features))
     }
 
-    /// `enabled`, the plugins the user has on, less the program's plugins
-    /// that `named` leaves out; the release's own follow the user's
-    /// switches alone.
-    fn named(registry: &Registry, mut enabled: Vec<bool>, named: Option<&[String]>) -> Vec<bool> {
-        let Some(named) = named else {
+    /// `enabled`, the plugins the user has on, less those with commands
+    /// that `commands` names none of; a plugin of no command is not the
+    /// list's.
+    fn reached(registry: &Registry, mut enabled: Vec<bool>, commands: Option<&CommandList>) -> Vec<bool> {
+        let Some(commands) = commands else {
             return enabled;
         };
         for (on, registered) in enabled.iter_mut().zip(&registry.plugins) {
-            if registered.declaration.is_some() && !named.iter().any(|id| id == registered.id().as_str()) {
+            if !registered.commands.is_empty()
+                && !registered
+                    .commands
+                    .iter()
+                    .any(|declared| commands.names_any(&declared.tree, declared.placement == Placement::Jush))
+            {
                 *on = false;
             }
         }
@@ -1146,12 +1151,12 @@ impl UserPlugins {
     }
 
     /// Asks the context source `plugin` for a node's new context block;
-    /// nothing while the user has it off, nor for a program's plugin the
-    /// conversation's list `named` leaves out.
+    /// nothing while the user has it off, nor for a plugin the
+    /// conversation's list `commands` names no command of.
     pub async fn context(
         &self,
         plugin: &PluginId,
-        named: Option<&[String]>,
+        commands: Option<&CommandList>,
         asked: ContextAsk,
         cancel: CancellationToken,
     ) -> Result<Option<String>, PluginError> {
@@ -1159,7 +1164,7 @@ impl UserPlugins {
         let Some((index, _)) = registry.plugin(plugin.as_str()) else {
             return Ok(None);
         };
-        let enabled = Self::named(&registry, self.enabled(&registry).await.map_err(PluginError::failed)?, named);
+        let enabled = Self::reached(&registry, self.enabled(&registry).await.map_err(PluginError::failed)?, commands);
         if !enabled[index] {
             return Ok(None);
         }
@@ -1186,14 +1191,14 @@ impl UserPlugins {
     }
 
     /// Whether `plugin` declares a project search and is on for a
-    /// conversation: the user has it on, and it is not a program's plugin
-    /// the conversation's list `named` leaves out.
-    pub async fn searches_projects(&self, plugin: &PluginId, named: Option<&[String]>) -> Result<bool, StoreError> {
+    /// conversation: the user has it on, and the conversation's list
+    /// `commands` names a command of it.
+    pub async fn searches_projects(&self, plugin: &PluginId, commands: Option<&CommandList>) -> Result<bool, StoreError> {
         let registry = self.0.registry();
         let Some((index, registered)) = registry.plugin(plugin.as_str()) else {
             return Ok(false);
         };
-        Ok(registered.factory.manifest().project_search && Self::named(&registry, self.enabled(&registry).await?, named)[index])
+        Ok(registered.factory.manifest().project_search && Self::reached(&registry, self.enabled(&registry).await?, commands)[index])
     }
 
     /// Asks `plugin`, which declares a project search, to search
