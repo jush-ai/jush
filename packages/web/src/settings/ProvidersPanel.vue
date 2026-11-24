@@ -30,6 +30,7 @@ const {
   shareService,
   removeProvider,
   beginLogin,
+  restartLogin,
   closeLogin,
   test,
   refresh,
@@ -145,9 +146,13 @@ watch(
     :overlay-store="appOverlayStore"
     :vendor-name="login.provider.name"
     :phase="login.phase"
+    :methods="login.methods"
+    :method="login.method"
+    :method-locked="login.methodLocked"
     @close="closeLogin"
     @open="openUrl"
-    @retry="beginLogin(login.provider)"
+    @retry="restartLogin(login.method)"
     @submit-code="submitCode"
+    @switch-method="restartLogin"
   />
 </template>

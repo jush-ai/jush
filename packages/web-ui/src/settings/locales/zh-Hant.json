@@ -1138,7 +1138,14 @@
     "code": "代碼",
     "signingIn": "正在登入…",
     "waitingCode": "正在等待代碼",
-    "waitingCodeExpires": "正在等待代碼 · {left} 後過期"
+    "waitingCodeExpires": "正在等待代碼 · {left} 後過期",
+    "methodBrowser": "瀏覽器",
+    "methodToken": "Refresh Token",
+    "tokenHint": "貼上另一個已登入 {vendor} 的 App（如帳號管理工具）中的 Refresh Token。",
+    "pasteToken": "貼上 Refresh Token",
+    "token": "Refresh Token",
+    "waitingToken": "正在等待 Refresh Token",
+    "waitingTokenExpires": "正在等待 Refresh Token · {left} 後過期"
   },
   "provider": {
     "endpointInvalid": "請輸入 http 或 https 網址。"

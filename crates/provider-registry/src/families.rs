@@ -39,7 +39,7 @@ use jush_provider_common::quota::QuotaSnapshotStore;
 use jush_provider_common::{Provider, ProviderRuntime, Secret};
 use jush_provider_subscription_cli::{Cli, Placement};
 use jush_shared_types::{AudioShape, CacheTtl, Clock, ImageShape, VideoShape, WireApi};
-use jush_web_api_protocol::providers::CredentialKind;
+use jush_web_api_protocol::providers::{CredentialKind, LoginMethod};
 use url::Url;
 
 /// A provider family: `anthropic`, `codex`, or a test's scripted one.
@@ -76,6 +76,13 @@ pub trait ProviderFamily: Send + Sync + 'static {
     /// is added.
     fn forbids_third_party(&self) -> bool {
         false
+    }
+
+    /// The ways an account of a subscription family signs in, the first
+    /// the one a sign-in starts with: in a web browser, unless the family's
+    /// login also takes a refresh token another app of its vendor's holds.
+    fn login_methods(&self) -> &'static [LoginMethod] {
+        &[LoginMethod::Browser]
     }
 
     /// The subscription's CLI the family's requests run as a process on the
@@ -336,6 +343,12 @@ impl FamilyRegistry {
     /// false for a family not registered.
     pub fn forbids_third_party(&self, name: &str) -> bool {
         self.get(name).is_some_and(|family| family.forbids_third_party())
+    }
+
+    /// The ways an account of the family `name` signs in
+    /// ([`ProviderFamily::login_methods`]); none for a family not registered.
+    pub fn login_methods(&self, name: &str) -> &'static [LoginMethod] {
+        self.get(name).map_or(&[], |family| family.login_methods())
     }
 
     /// The registry with `audio` making a compatible entry's speech.

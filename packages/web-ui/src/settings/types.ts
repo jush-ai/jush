@@ -612,6 +612,9 @@ export interface SettingsModelEditor {
  */
 export type ProviderLoginStage = 'preparing' | 'waiting_for_machine' | 'installing' | 'starting' | 'waiting_for_user'
 
+/** How a sign-in proves the account: at the vendor's page in a web browser, or with a refresh token the user pastes. */
+export type ProviderLoginMethod = 'browser' | 'refreshToken'
+
 export type ProviderLoginPhase =
   /** `download` says how far the command-line tool's download came while it is `installing`. */
   | { kind: 'starting'; stage: ProviderLoginStage; download?: DownloadProgress | null }
@@ -638,6 +641,14 @@ export type ProviderLoginPhase =
       taken?: number
       /** Why the sign-in refused the last code, in the vendor's words; it waits for another. */
       error?: SentenceText
+    }
+  | {
+      /** A sign-in with a refresh token another app of the vendor's holds, which the user pastes. */
+      kind: 'token'
+      /** As a device sign-in's. */
+      expiresAt?: number
+      /** The pasted token is with the sign-in, which is finishing. */
+      submitted: boolean
     }
   | {
       kind: 'done'

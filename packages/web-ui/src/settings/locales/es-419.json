@@ -1138,7 +1138,14 @@
     "code": "Código",
     "signingIn": "Iniciando sesión…",
     "waitingCode": "Esperando el código",
-    "waitingCodeExpires": "Esperando el código · vence en {left}"
+    "waitingCodeExpires": "Esperando el código · vence en {left}",
+    "methodBrowser": "Navegador",
+    "methodToken": "Token de actualización",
+    "tokenHint": "Pega un token de actualización de otra app con sesión iniciada en {vendor}, como un administrador de cuentas.",
+    "pasteToken": "Pega el token de actualización",
+    "token": "Token de actualización",
+    "waitingToken": "Esperando el token de actualización",
+    "waitingTokenExpires": "Esperando el token de actualización · vence en {left}"
   },
   "provider": {
     "endpointInvalid": "Escribe una dirección http o https."

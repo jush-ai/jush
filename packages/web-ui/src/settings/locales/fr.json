@@ -1138,7 +1138,14 @@
     "code": "Code",
     "signingIn": "Connexion…",
     "waitingCode": "En attente du code",
-    "waitingCodeExpires": "En attente du code · expire dans {left}"
+    "waitingCodeExpires": "En attente du code · expire dans {left}",
+    "methodBrowser": "Navigateur",
+    "methodToken": "Jeton d’actualisation",
+    "tokenHint": "Collez un jeton d’actualisation provenant d’une autre app connectée à {vendor}, comme un gestionnaire de comptes.",
+    "pasteToken": "Collez le jeton d’actualisation",
+    "token": "Jeton d’actualisation",
+    "waitingToken": "En attente du jeton d’actualisation",
+    "waitingTokenExpires": "En attente du jeton d’actualisation · expire dans {left}"
   },
   "provider": {
     "endpointInvalid": "Saisissez une adresse http ou https."

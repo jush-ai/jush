@@ -465,7 +465,7 @@ impl From<LoginRefusal> for ApiError {
     fn from(refusal: LoginRefusal) -> Self {
         let message = refusal.to_string();
         match refusal {
-            LoginRefusal::NoLoginFlow(_) => {
+            LoginRefusal::NoLoginFlow(_) | LoginRefusal::NoRefreshToken(_) => {
                 Self::new(StatusCode::BAD_REQUEST, ErrorCode::NoLoginFlow, message)
             }
             LoginRefusal::NotOffered => Self::forbidden(message),

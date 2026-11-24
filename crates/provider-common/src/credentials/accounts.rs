@@ -51,8 +51,11 @@ pub trait SubscriptionAccounts: Send + Sync {
 /// How a family adds an account.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct AccountsCapability {
-    /// The family's login; none for a family whose provider cannot log in,
-    /// such as one built without the machine its login runs on.
+    /// The family's login at the vendor's page; none for a family whose
+    /// provider cannot log in, such as one built without the machine its
+    /// login runs on. A family that also takes a refresh token says so in
+    /// its descriptor (`crates/provider-registry/src/families.rs`), and
+    /// logs in with one only when it has this login too.
     pub login: Option<LoginKind>,
 }
 
@@ -65,11 +68,17 @@ pub enum LoginKind {
     /// The user signs in at the vendor's page on any device and pastes the
     /// code the page shows back into Jush, which hands it to the login.
     PastedCode,
+    /// The user pastes a refresh token another app of the vendor's holds,
+    /// which Jush hands to the login as it hands a code.
+    RefreshToken,
 }
 
-/// What a login works with: where it reports what the user must do, the
-/// codes the user pastes, and when to stop.
+/// What a login works with: the way it signs in, where it reports what the
+/// user must do, the codes the user pastes, and when to stop.
 pub struct LoginIo<'a> {
+    /// The way the user chose: the family's login, or
+    /// [`LoginKind::RefreshToken`].
+    pub kind: LoginKind,
     pub pending: &'a (dyn Fn(LoginPending) + Send + Sync),
     /// What the login waits for before it has anything to show, for a family
     /// whose login prepares in steps the user should see.
@@ -82,8 +91,8 @@ pub struct LoginIo<'a> {
     /// How far a download the login's stage waits for came, such as a
     /// Claude sign-in's CLI while it is `installing`.
     pub download: &'a (dyn Fn(DownloadProgress) + Send + Sync),
-    /// The codes the user pastes, in order; a login that takes none leaves
-    /// them.
+    /// The codes the user pastes, in order, or the refresh token; a login
+    /// that takes none leaves them.
     pub codes: mpsc::UnboundedReceiver<Secret>,
     /// Fires when the login is cancelled or its time is up.
     pub stop: CancellationToken,
@@ -192,12 +201,12 @@ impl<K: AccountKit> Accounts<K> {
         Self { pool, kit, clock }
     }
 
-    /// Stores the account a login made.
+    /// Stores the account a login made, which signed in the way `kind` says.
     ///
     /// An account with the same identity key is replaced, keeping its id. A new
     /// one gets an id derived from its identity, and the first account of an
     /// entry without an active one becomes its active account.
-    async fn import(&self, account: NewAccount) -> Result<AccountInfo, LoginError> {
+    async fn import(&self, account: NewAccount, kind: LoginKind) -> Result<AccountInfo, LoginError> {
         let stored = |error: PoolError| LoginError::Failed(AccountsError::from(error).to_string());
         let NewAccount { secret, label } = account;
         let existing = match &label.identity_key {
@@ -213,9 +222,10 @@ impl<K: AccountKit> Accounts<K> {
             label: label.label,
             detail: label.detail,
             updated_at: self.clock.now(),
-            source: match self.kit.capability().login {
-                Some(LoginKind::PastedCode) => "login:code",
-                Some(LoginKind::Device) | None => "login:device",
+            source: match kind {
+                LoginKind::PastedCode => "login:code",
+                LoginKind::Device => "login:device",
+                LoginKind::RefreshToken => "login:refresh_token",
             }
             .to_owned(),
             identity_key: label.identity_key,
@@ -252,11 +262,12 @@ impl<K: AccountKit> SubscriptionAccounts for Accounts<K> {
 
     fn login<'a>(&'a self, io: LoginIo<'a>) -> BoxFuture<'a, Result<AccountInfo, LoginError>> {
         Box::pin(async move {
+            let kind = io.kind;
             let Some(login) = self.kit.login(io) else {
                 return Err(LoginError::Unsupported);
             };
             let account = login.await?;
-            self.import(account).await
+            self.import(account, kind).await
         })
     }
 

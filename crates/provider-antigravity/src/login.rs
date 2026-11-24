@@ -6,6 +6,9 @@
 //! - Jush reads the account it signed in, its email, which `sed` takes out
 //!   of `agy`'s sign-in on the machine, and nothing else of it: the
 //!   sign-in's tokens never leave the machine.
+//! - A refresh token the user pastes reaches the machine on a process's
+//!   input and is written there as `agy`'s sign-in, which `agy` renews
+//!   (`start.rs`); Jush keeps no copy of it.
 
 use futures_util::future::LocalBoxFuture;
 use jush_provider_common::credentials::{AccountLabel, LoginError};
@@ -29,6 +32,10 @@ impl CliLogin for AgyLogin {
 
     fn request(&self, site: &CliSite) -> CliStart {
         start::login(site)
+    }
+
+    fn refresh_token_request(&self) -> Option<fn(&CliSite) -> CliStart> {
+        Some(start::refresh_token_login)
     }
 
     fn says_failure_on(&self) -> StreamKind {

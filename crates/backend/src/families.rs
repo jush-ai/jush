@@ -32,7 +32,7 @@ use jush_provider_relay::borrow::{Borrowed, server_name};
 use jush_provider_relay::key::ShareKey;
 use jush_backend_runners::public_url::PublicUrl;
 use jush_shared_types::{AudioShape, CacheTtl, ImageShape, VideoShape, WireApi};
-use jush_web_api_protocol::providers::CredentialKind;
+use jush_web_api_protocol::providers::{CredentialKind, LoginMethod};
 
 /// The families built into the backend, whose CLI families read their machine
 /// from `machine`.
@@ -626,6 +626,12 @@ impl ProviderFamily for AntigravityFamily {
     /// breach that may suspend the account.
     fn forbids_third_party(&self) -> bool {
         true
+    }
+
+    /// `agy` also signs in with a refresh token another Antigravity app
+    /// holds (`crates/provider-antigravity/src/login.rs`).
+    fn login_methods(&self) -> &'static [LoginMethod] {
+        &[LoginMethod::Browser, LoginMethod::RefreshToken]
     }
 
     fn cli(&self) -> Option<&'static Cli> {

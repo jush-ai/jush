@@ -1138,7 +1138,14 @@
     "code": "코드",
     "signingIn": "로그인 중…",
     "waitingCode": "코드를 기다리는 중",
-    "waitingCodeExpires": "코드를 기다리는 중 · {left} 후 만료"
+    "waitingCodeExpires": "코드를 기다리는 중 · {left} 후 만료",
+    "methodBrowser": "브라우저",
+    "methodToken": "리프레시 토큰",
+    "tokenHint": "{vendor}에 로그인된 다른 앱(예: 계정 관리자)의 리프레시 토큰을 붙여넣으세요.",
+    "pasteToken": "리프레시 토큰 붙여넣기",
+    "token": "리프레시 토큰",
+    "waitingToken": "리프레시 토큰을 기다리는 중",
+    "waitingTokenExpires": "리프레시 토큰을 기다리는 중 · {left} 후 만료"
   },
   "provider": {
     "endpointInvalid": "http 또는 https 주소를 입력하십시오."

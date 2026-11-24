@@ -1138,7 +1138,14 @@
     "code": "Code",
     "signingIn": "Anmeldung läuft …",
     "waitingCode": "Warten auf den Code",
-    "waitingCodeExpires": "Warten auf den Code · läuft ab in {left}"
+    "waitingCodeExpires": "Warten auf den Code · läuft ab in {left}",
+    "methodBrowser": "Browser",
+    "methodToken": "Refresh-Token",
+    "tokenHint": "Füge ein Refresh-Token aus einer anderen bei {vendor} angemeldeten App ein, etwa einem Account-Manager.",
+    "pasteToken": "Refresh-Token einfügen",
+    "token": "Refresh-Token",
+    "waitingToken": "Warten auf das Refresh-Token",
+    "waitingTokenExpires": "Warten auf das Refresh-Token · läuft ab in {left}"
   },
   "provider": {
     "endpointInvalid": "Gib eine http- oder https-Adresse ein."

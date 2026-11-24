@@ -12,7 +12,14 @@
 //!   the user sees its words and pastes another. A CLI that ends on a refused
 //!   code ends the sign-in with its words.
 //!
-//! Jush never writes a vendor's OAuth flow itself, and never logs the code.
+//! A CLI that can also sign in with a refresh token another app of the
+//! vendor's holds starts a process that reads the token from its input, as
+//! the CLI's login reads a code, makes the CLI's sign-in of it and has the
+//! CLI renew it. The token is the vendor's to judge: a CLI that prints its
+//! sign-in link instead has been refused it, and the sign-in ends.
+//!
+//! Jush never writes a vendor's OAuth flow itself, and never logs the code
+//! or the token.
 
 use std::sync::Arc;
 
@@ -32,8 +39,8 @@ use tokio_util::sync::CancellationToken;
 
 use crate::process::{HeldProcess, Tail, exit_message};
 use crate::{
-    AccountMachine, AccountWork, Cli, CliSite, CliStart, CliWork, ConfigDir, Placed, Placement,
-    StartStage,
+    AccountMachine, AccountWork, Cli, CliSite, CliStart, CliStarter, CliWork, ConfigDir, Placed,
+    Placement, StartStage,
 };
 
 /// What one CLI's login differs in.
@@ -45,6 +52,14 @@ pub trait CliLogin: Send + Sync + 'static {
     /// configuration directory. It prints the link to sign in at, reads the
     /// code the page shows from its input, and opens no web browser.
     fn request(&self, site: &CliSite) -> CliStart;
+
+    /// How the CLI signs in with a refresh token: the request that starts it
+    /// at a site, in its new configuration directory, which reads the token
+    /// from its input and ends once the CLI renewed it, or prints the CLI's
+    /// sign-in link when the vendor refuses it. None for a CLI that cannot.
+    fn refresh_token_request(&self) -> Option<fn(&CliSite) -> CliStart> {
+        None
+    }
 
     /// Whether `line`, a line the CLI wrote after its link, refuses the code
     /// the user pasted while the CLI waits for another. A CLI that ends on a
@@ -100,9 +115,22 @@ impl AccountKit for CliKit {
         io: LoginIo<'a>,
     ) -> Option<BoxFuture<'a, Result<NewAccount, LoginError>>> {
         let machine = self.machine.clone()?;
+        let request: CliStarter = match io.kind {
+            LoginKind::RefreshToken => {
+                let Some(request) = self.login.refresh_token_request() else {
+                    return Some(Box::pin(async { Err(LoginError::Unsupported) }));
+                };
+                Arc::new(request)
+            }
+            LoginKind::PastedCode | LoginKind::Device => {
+                let login = self.login.clone();
+                Arc::new(move |site: &CliSite| login.request(site))
+            }
+        };
         Some(Box::pin(sign_in(
             machine,
             self.login.clone(),
+            request,
             self.entry.clone(),
             self.pool.clone(),
             io,
@@ -132,11 +160,14 @@ enum Shown {
     Download(DownloadProgress),
     /// The link the CLI printed.
     Link(String),
+    /// The process that takes a refresh token started, and waits for it.
+    WaitingForToken,
     /// The CLI refused a code the user pasted, and waits for another.
     CodeRefused(RefusedCode),
 }
 
-/// Runs the CLI's sign-in on `machine` and relays it.
+/// Runs the CLI's sign-in on `machine`, which `request` starts, and relays
+/// it.
 ///
 /// What the start waits for goes to `io.stage`, the link the CLI prints to
 /// `io.pending`, and the codes the user pastes go to the CLI. It ends with the
@@ -145,11 +176,13 @@ enum Shown {
 async fn sign_in(
     machine: Arc<dyn AccountMachine>,
     login: Arc<dyn CliLogin>,
+    request: CliStarter,
     entry: String,
     pool: Arc<dyn CredentialPool>,
     io: LoginIo<'_>,
 ) -> Result<NewAccount, LoginError> {
     let LoginIo {
+        kind,
         pending,
         stage,
         download,
@@ -163,9 +196,18 @@ async fn sign_in(
         let login = login.clone();
         Box::new(move |placement, abandoned| {
             Box::pin(async move {
-                let adopted =
-                    sign_in_at(&*placement, login, &*pool, shown_to, codes, stop, abandoned)
-                        .await;
+                let adopted = sign_in_at(
+                    &*placement,
+                    login,
+                    request,
+                    kind == LoginKind::RefreshToken,
+                    &*pool,
+                    shown_to,
+                    codes,
+                    stop,
+                    abandoned,
+                )
+                .await;
                 // A login that gave up waiting has stopped the sign-in already.
                 let _ = answer.send(adopted);
             })
@@ -179,17 +221,22 @@ async fn sign_in(
         Shown::Download(progress) => download(progress),
         Shown::Link(url) => {
             pending(LoginPending {
-                verification_url: url.clone(),
+                verification_url: Some(url.clone()),
                 user_code: None,
                 code_error: None,
             });
             link_url = Some(url);
         }
+        Shown::WaitingForToken => pending(LoginPending {
+            verification_url: None,
+            user_code: None,
+            code_error: None,
+        }),
         Shown::CodeRefused(refused) => {
             // The CLI reads codes only after it printed its link.
             if let Some(url) = &link_url {
                 pending(LoginPending {
-                    verification_url: url.clone(),
+                    verification_url: Some(url.clone()),
                     user_code: None,
                     code_error: Some(refused),
                 });
@@ -223,8 +270,9 @@ async fn sign_in(
     Ok(account)
 }
 
-/// The sign-in on the machine `placement` stands for, whose account takes its
-/// id among `pool`'s.
+/// The sign-in on the machine `placement` stands for, which `request` starts,
+/// whose account takes its id among `pool`'s. `with_token` is whether the
+/// process takes a refresh token rather than printing a link for a code.
 ///
 /// It ends early when `stop` fires or nobody waits for it any more
 /// (`abandoned`), and removes its directory however it ends but with success,
@@ -232,6 +280,8 @@ async fn sign_in(
 async fn sign_in_at(
     placement: &dyn Placement,
     login: Arc<dyn CliLogin>,
+    request: CliStarter,
+    with_token: bool,
     pool: &dyn CredentialPool,
     shown: mpsc::UnboundedSender<Shown>,
     codes: mpsc::UnboundedReceiver<Secret>,
@@ -258,10 +308,6 @@ async fn sign_in_at(
             });
         }
     };
-    let request = {
-        let login = login.clone();
-        Arc::new(move |site: &CliSite| login.request(site))
-    };
     // A start given up removes what it made.
     let Placed {
         process, config, ..
@@ -280,8 +326,12 @@ async fn sign_in_at(
     // The process is held apart from what stops, and closed, SIGTERM
     // first, unless it ended by itself.
     let mut held = HeldProcess::of(control, exit.clone(), None);
+    if with_token {
+        // As above.
+        let _ = shown.send(Shown::WaitingForToken);
+    }
     let relayed = tokio::select! {
-        relayed = relay(output, held.control(), &*login, shown, codes) => relayed,
+        relayed = relay(output, held.control(), &*login, with_token, shown, codes) => relayed,
         () = stopped() => Err(LoginError::Stopped),
     };
     let ended = match relayed {
@@ -317,10 +367,15 @@ async fn sign_in_at(
 /// `shown` in the CLI's words. Answers what the CLI said last, on the stream
 /// it says a failure on, else on the other: the tail of its standard error,
 /// or its last line of standard output other than its link.
+///
+/// `with_token`: the input takes a refresh token, and a link the CLI prints,
+/// on either stream, is its sign-in asked for once the vendor refused the
+/// token, which ends the sign-in.
 async fn relay(
     mut output: LocalBoxStream<'static, ProcessOutput>,
     control: &dyn ProcessControl,
     login: &dyn CliLogin,
+    with_token: bool,
     shown: mpsc::UnboundedSender<Shown>,
     mut codes: mpsc::UnboundedReceiver<Secret>,
 ) -> Result<String, LoginError> {
@@ -354,6 +409,9 @@ async fn relay(
                         while let Some(end) = stdout.iter().position(|byte| *byte == b'\n') {
                             let line: Vec<u8> = stdout.drain(..=end).collect();
                             let line = String::from_utf8_lossy(&line).trim().to_owned();
+                            if with_token && link(&line).is_some() {
+                                return Err(token_refused(login));
+                            }
                             if !linked && let Some(url) = link(&line) {
                                 linked = true;
                                 // The login is gone once it stopped waiting.
@@ -380,6 +438,9 @@ async fn relay(
                         while let Some(end) = stderr_line.iter().position(|byte| *byte == b'\n') {
                             let line: Vec<u8> = stderr_line.drain(..=end).collect();
                             let line = String::from_utf8_lossy(&line).trim().to_owned();
+                            if with_token && link(&line).is_some() {
+                                return Err(token_refused(login));
+                            }
                             if login.refuses(&line) {
                                 refused += 1;
                                 // As above.
@@ -400,14 +461,21 @@ async fn relay(
                 let mut line = code.expose().as_bytes().to_vec();
                 line.push(b'\n');
                 control.write_stdin(Bytes::from(line)).await.map_err(|error| {
+                    let what = if with_token { "refresh token" } else { "code" };
                     LoginError::Failed(format!(
-                        "The code could not be given to {}: {error}",
+                        "The {what} could not be given to {}: {error}",
                         login.cli().name
                     ))
                 })?;
             }
         }
     }
+}
+
+/// Why a sign-in with a refresh token ended once the CLI printed its sign-in
+/// link, on either stream: the vendor refused the token.
+fn token_refused(login: &dyn CliLogin) -> LoginError {
+    LoginError::Failed(format!("{} did not accept this refresh token.", login.cli().name))
 }
 
 /// The sign-in link a line of the CLI's output names: its first `https`

@@ -35,7 +35,7 @@ use jush_provider_common::Secret;
 use jush_provider_common::credentials::{LoginError, LoginIo, LoginKind, MemoryCredentialPool};
 use jush_shared_types::{Clock, DownloadProgress, LoginPending, LoginStage, RequestId, Timestamp};
 use jush_web_api_protocol::ids::{CredentialId, LoginId, ProviderId, UserId};
-use jush_web_api_protocol::providers::{CredentialKind, ListedLogin, LoginState};
+use jush_web_api_protocol::providers::{CredentialKind, ListedLogin, LoginMethod, LoginState};
 use tokio::sync::{mpsc, watch};
 use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
@@ -75,7 +75,7 @@ impl LoginTiming {
     fn lifetime(&self, kind: LoginKind) -> Duration {
         match kind {
             LoginKind::Device => self.device_lifetime,
-            LoginKind::PastedCode => self.code_lifetime,
+            LoginKind::PastedCode | LoginKind::RefreshToken => self.code_lifetime,
         }
     }
 }
@@ -86,6 +86,9 @@ pub enum LoginRefusal {
     /// The family has no login.
     #[error("{0} has no login")]
     NoLoginFlow(String),
+    /// The family's login takes no refresh token.
+    #[error("{0} does not sign in with a refresh token")]
+    NoRefreshToken(String),
     /// The starter infers with the master's subscriptions, which a shared
     /// instance gives every user when `JUSH_SHARED_SUBSCRIPTIONS` says so.
     #[error("Subscriptions are shared by the instance owner")]
@@ -124,7 +127,8 @@ pub struct LoginFlows {
 pub enum CodeRefusal {
     #[error("No such login")]
     NotFound,
-    /// The login takes no pasted code, has shown no link yet, or ended.
+    /// The login takes no pasted code, has shown no link yet, took its
+    /// refresh token already, or ended.
     #[error("This sign-in is not waiting for a code")]
     NotWaiting,
 }
@@ -133,6 +137,8 @@ struct Flow {
     /// The user who started it, the only one who reads, answers and
     /// cancels it.
     owner: UserId,
+    /// The way it signs in, which the user chose.
+    method: LoginMethod,
     /// How the user finishes it, once the family's login is made; none
     /// while the login prepares it.
     kind: Option<LoginKind>,
@@ -159,6 +165,7 @@ impl Flow {
             id: id.clone(),
             provider_id: self.provider_id.clone(),
             provider_type: self.family.clone(),
+            method: self.method,
             login: self.state.clone(),
         }
     }
@@ -200,6 +207,8 @@ fn millis(duration: Duration) -> u64 {
 /// How a login's family login ends: at `deadline`, when `cancel` fires, or
 /// when the flow finishes; with the codes the user pastes meanwhile.
 struct Ending {
+    /// The way the login signs in.
+    kind: LoginKind,
     deadline: Instant,
     cancel: CancellationToken,
     codes: mpsc::UnboundedReceiver<Secret>,
@@ -257,9 +266,10 @@ impl LoginFlows {
         self.sync.mark(owner, Part::Logins);
     }
 
-    /// Starts `starter`'s login of `family`, which the request `request`
-    /// asked for: into `existing`, or into a new entry of the starter's
-    /// labelled `label`. A login that runs a process runs it on the
+    /// Starts `starter`'s login of `family` the way `method` says, one of
+    /// the family's, which the request `request` asked for: into
+    /// `existing`, or into a new entry of the starter's labelled `label`. A
+    /// login that runs a process runs it on the
     /// Subscriptions machine. Only `starter` reads, answers and cancels it.
     pub async fn start(
         self: &Arc<Self>,
@@ -267,6 +277,7 @@ impl LoginFlows {
         family: String,
         label: String,
         existing: Option<ProviderEntry>,
+        method: LoginMethod,
         request: RequestId,
     ) -> Result<LoginId, LoginRefusal> {
         if self.closing.is_cancelled() {
@@ -275,6 +286,9 @@ impl LoginFlows {
         let registered = self.provider_registry.family(&family)?;
         if registered.credential() != CredentialKind::Subscription {
             return Err(LoginRefusal::NoLoginFlow(family));
+        }
+        if !registered.login_methods().contains(&method) {
+            return Err(LoginRefusal::NoRefreshToken(family));
         }
         let owners = self
             .vault
@@ -328,6 +342,7 @@ impl LoginFlows {
         );
         let flow = Flow {
             owner: starter.clone(),
+            method,
             kind: None,
             provider_id,
             family: family.clone(),
@@ -385,9 +400,15 @@ impl LoginFlows {
                     )
                 }
             };
+            // A refresh token goes to the family's login, which takes one
+            // only when it can sign in at all.
             let kind = accounts
                 .accounts()
                 .and_then(|accounts| accounts.capability().login)
+                .map(|login| match method {
+                    LoginMethod::Browser => login,
+                    LoginMethod::RefreshToken => LoginKind::RefreshToken,
+                })
                 .ok_or_else(|| LoginRefusal::NoLoginFlow(family.clone()))?;
             Ok((accounts, target, kind))
         }
@@ -423,6 +444,7 @@ impl LoginFlows {
         }
         self.announce(&starter);
         let ending = Ending {
+            kind,
             deadline,
             cancel,
             codes: pasted,
@@ -463,7 +485,11 @@ impl LoginFlows {
         else {
             return Err(CodeRefusal::NotWaiting);
         };
-        if flow.cancel.is_cancelled() {
+        // A refresh token is judged once: the process reads one line, and
+        // a refusal ends the sign-in.
+        if flow.cancel.is_cancelled()
+            || (flow.kind == Some(LoginKind::RefreshToken) && *codes_taken > 0)
+        {
             return Err(CodeRefusal::NotWaiting);
         }
         flow.codes
@@ -605,6 +631,7 @@ impl LoginFlows {
         ending: Ending,
     ) -> Result<(ProviderId, CredentialId), Unfinished> {
         let Ending {
+            kind,
             deadline,
             cancel,
             codes,
@@ -630,6 +657,7 @@ impl LoginFlows {
             .expect("a login's provider has account operations");
         let stop = CancellationToken::new();
         let login = accounts.login(LoginIo {
+            kind,
             pending: &pending,
             stage: &stage,
             download: &download,
@@ -754,9 +782,9 @@ impl LoginFlows {
         let state = LoginState::Pending {
             stage: LoginStage::WaitingForUser,
             download: None,
-            verification_url: Some(pending.verification_url),
+            verification_url: pending.verification_url,
             user_code: pending.user_code,
-            needs_code: flow.kind == Some(LoginKind::PastedCode),
+            needs_code: matches!(flow.kind, Some(LoginKind::PastedCode | LoginKind::RefreshToken)),
             codes_taken,
             code_error,
             expires_at,
