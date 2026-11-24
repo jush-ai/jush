@@ -26,6 +26,12 @@
 //
 // The SDK writes no client of its own: what a page and a program both need
 // is in `@jush-agent/protocol` and `@jush-agent/conversation-client`.
+//
+// The routes and lanes are how the SDK reaches its core, and a program calls
+// none of them itself. Every capability of a core a program can use is a
+// method here, on the object it acts on, its input and answer typed and
+// exported below; a route that serves only the web app's own screens, such
+// as the sidebar's order or a composer's draft, has no method.
 
 export { Jush, type JushConnection, type JushOptions } from './jush'
 export {
@@ -43,7 +49,26 @@ export {
   type ProviderAccounts,
   type SignIn,
 } from './core'
-export { Conversation, type ConversationEvent, type ConversationSchedules, type Input, type Permission, type Turn } from './conversation'
+export {
+  Conversation,
+  type ConversationEvent,
+  type ConversationPlugins,
+  type ConversationSchedules,
+  type Permission,
+  type Turn,
+} from './conversation'
+export type { ConversationChanges, ConversationFiles, DeviceFiles } from './files'
+export type { ConversationHistory, TranscriptPageOptions } from './history'
+export type { Input } from './input'
+export type { Models, Usage } from './models'
+export type { Projects, Workspaces } from './organize'
+export type { PortForwards } from './port-forwards'
+export type { CorePlugins, Credentials, Instructions, Subagents } from './settings'
+export type { SideQuestionAsk, SideQuestions } from './side-questions'
+// The types the methods take and answer, which `@jush-agent/protocol`
+// defines from the core's own; a name the SDK gives a class of its own,
+// such as `Conversations`, is the SDK's.
+export type * from '@jush-agent/protocol'
 export {
   definePlugin,
   leaf,

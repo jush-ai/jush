@@ -254,7 +254,7 @@ pub fn web() -> Vec<Root> {
         sends::<conversations::CostWindow>(),
         receives::<conversations::RecentCost>(),
         receives::<conversations::ConversationFrame>(),
-        receives::<conversations::CommandCall>(),
+        receives::<conversations::CommandOrigin>(),
         receives::<conversations::EndedOutput>(),
         sends::<conversations::ConversationPatch>(),
         receives::<conversations::ConversationUpdate>(),

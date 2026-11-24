@@ -13,41 +13,80 @@ import {
   accountsSchema,
   activeAccountSchema,
   attachmentAnswerSchema,
+  batchAnswerSchema,
   clientContentSchema,
   codeTakenSchema,
+  conversationDetailSchema,
+  conversationsSchema,
   coreStateSchema,
   createdConversationSchema,
   deviceAnswerSchema,
+  deviceElevationSchema,
   deviceExecResultSchema,
+  devicesSchema,
+  keptWorkflowListSchema,
   loginStartedSchema,
   providerAnswerSchema,
+  providerCliSchema,
+  providerDetailsSchema,
   providersSchema,
+  quotaAnswerSchema,
   removedAccountSchema,
   schemaRefusal,
+  searchResultsSchema,
   starterRequestSchema,
   syncEventSchema,
+  testResultSchema,
   userPreferencesSchema,
+  vendorCatalogSchema,
   withPart,
   type Accounts,
+  type BatchItem,
+  type BatchResult,
+  type ChangeDevice,
   type ClientContent,
+  type ConversationDetail,
+  type ConversationSummary,
   type CoreState,
   type CreateConversation,
   type CreateProvider,
   type DeviceDto,
   type DeviceExec,
+  type ElevationOutcome,
+  type KeptWorkflowList,
+  type NewestVersion,
   type Preferences,
   type PreferencesPatch,
+  type ProviderDetails,
   type ProviderDto,
   type ProviderPatch,
   type PushMessage,
+  type QuotaSnapshot,
+  type SearchResult,
   type StarterAnswer,
   type SubscriptionLogin,
+  type TestResult,
+  type VendorCatalog,
 } from '@jush-agent/protocol'
 import { randomUUID } from 'node:crypto'
 import { Conversation } from './conversation'
+import { deviceFiles, type DeviceFiles } from './files'
+import { models, usage, type Models, type Usage } from './models'
+import { projects, workspaces, type Projects, type Workspaces } from './organize'
 import { servePlugin, type Plugin } from './plugin'
-import { below, PROCESS_ORIGIN, CoreRoutes } from './routes'
+import { portForwards, type PortForwards } from './port-forwards'
 import type { Process } from './process'
+import { below, PROCESS_ORIGIN, CoreRoutes, query, segment } from './routes'
+import {
+  corePlugins,
+  credentials,
+  instructions,
+  subagents,
+  type CorePlugins,
+  type Credentials,
+  type Instructions,
+  type Subagents,
+} from './settings'
 import { StreamSocket } from './socket'
 
 /** How a notification went, as the program answers the core: `id` aside. */
@@ -82,6 +121,15 @@ export class Core {
   readonly conversations: Conversations
   readonly providers: Providers
   readonly devices: Devices
+  readonly credentials: Credentials
+  readonly instructions: Instructions
+  readonly subagents: Subagents
+  readonly plugins: CorePlugins
+  readonly models: Models
+  readonly usage: Usage
+  readonly workspaces: Workspaces
+  readonly projects: Projects
+  readonly portForwards: PortForwards
   private readonly routes: CoreRoutes
   private readonly connection: PageConnection
   // Read by `follow`, which opening the core awaits before it hands the core over.
@@ -95,12 +143,21 @@ export class Core {
   constructor(opening: CoreOpening, private readonly closing: () => Promise<void>) {
     this.id = opening.id
     this.dir = opening.dir
-    this.connection = new PageConnection(processConnection(opening.process, `/cores/${encodeURIComponent(opening.id)}/api/connect`))
+    this.connection = new PageConnection(processConnection(opening.process, `/cores/${segment(opening.id)}/api/connect`))
     this.connection.start()
     this.routes = new CoreRoutes(opening.process, opening.id, this.connection)
     this.conversations = new Conversations(this.routes, () => this.stateRead)
     this.providers = new Providers(this.routes)
     this.devices = new Devices(this.routes, opening.process, opening.runner, opening.dir, (id, ended) => this.online(id, ended))
+    this.credentials = credentials(this.routes)
+    this.instructions = instructions(this.routes)
+    this.subagents = subagents(this.routes)
+    this.plugins = corePlugins(this.routes)
+    this.models = models(this.routes)
+    this.usage = usage(this.routes)
+    this.workspaces = workspaces(this.routes)
+    this.projects = projects(this.routes)
+    this.portForwards = portForwards(this.routes)
     for (const plugin of opening.plugins) {
       this.servePlugin(plugin)
     }
@@ -159,6 +216,16 @@ export class Core {
     const query = new URLSearchParams({ name: file.name })
     const { attachment } = await this.routes.json('POST', `/attachments?${query}`, attachmentAnswerSchema, new Blob([file.bytes], { type }))
     return { type: 'upload', ref: attachment.id, fileName: file.name }
+  }
+
+  /** The conversations whose titles and messages match `text`, of the workspace `workspace` alone when named. */
+  async search(text: string, options: { workspace?: string } = {}): Promise<SearchResult[]> {
+    return (await this.routes.json('GET', `/search${query({ q: text, workspace: options.workspace })}`, searchResultsSchema)).results
+  }
+
+  /** The bytes of the blob `sha256`, such as a medium a block names. */
+  blob(sha256: string): Promise<Uint8Array> {
+    return this.routes.bytes('GET', `/blobs/${segment(sha256)}`)
   }
 
   /**
@@ -415,11 +482,34 @@ export class Conversations {
     return this.open(created.conversation.id)
   }
 
+  /** The core's conversations that are not archived, or with `archived` the ones that are. */
+  async list(options: { archived?: boolean } = {}): Promise<ConversationSummary[]> {
+    return (await this.routes.json('GET', `/conversations${query({ archived: options.archived })}`, conversationsSchema)).conversations
+  }
+
+  /** The conversation `id` as the list shows it, with its metadata and its agents. */
+  get(id: string): Promise<ConversationDetail> {
+    return this.open(id).get()
+  }
+
+  /** Deletes the conversation `id`, with its history and its files. */
+  remove(id: string): Promise<void> {
+    return this.open(id).remove()
+  }
+
+  /** Changes several conversations at once, such as archiving them; each item answers apart. */
+  async updateMany(items: BatchItem[]): Promise<BatchResult[]> {
+    return (await this.routes.json('POST', '/conversations/batch', batchAnswerSchema, { items })).results
+  }
+
   /** The conversation `id`, whose lane opens at its first use. */
   open(id: string): Conversation {
     let conversation = this.opened.get(id)
     if (conversation === undefined) {
-      conversation = new Conversation(id, this.routes)
+      conversation = new Conversation(id, this.routes, {
+        open: (other) => this.open(other),
+        removed: (gone) => this.opened.delete(gone),
+      })
       this.opened.set(id, conversation)
     }
     return conversation
@@ -466,20 +556,55 @@ export class Providers {
   }
 
   async update(id: string, patch: ProviderPatch): Promise<ProviderDto> {
-    return (await this.routes.json('PATCH', `/providers/${encodeURIComponent(id)}`, providerAnswerSchema, patch)).provider
+    return (await this.routes.json('PATCH', `/providers/${segment(id)}`, providerAnswerSchema, patch)).provider
   }
 
   async remove(id: string): Promise<void> {
-    await this.routes.send('DELETE', `/providers/${encodeURIComponent(id)}`)
+    await this.routes.send('DELETE', `/providers/${segment(id)}`)
+  }
+
+  /** The vendors and subscriptions an entry can be made of, and the shapes of a compatible endpoint. */
+  catalog(): Promise<VendorCatalog> {
+    return this.routes.json('GET', '/providers/catalog', vendorCatalogSchema)
+  }
+
+  /** Orders the entries, each once. */
+  order(providerIds: string[]): Promise<void> {
+    return this.routes.send('PUT', '/providers/order', { providerIds })
+  }
+
+  /** The entry `id` as Settings shows it: its models, accounts and state. */
+  status(id: string): Promise<ProviderDetails> {
+    return this.routes.json('GET', `/providers/${segment(id)}/status`, providerDetailsSchema)
+  }
+
+  /** The quota of the entry's subscription, its active account's or `credentialId`'s, read now. */
+  async quota(id: string, options: { credentialId?: string } = {}): Promise<QuotaSnapshot | null> {
+    return (await this.routes.json('POST', `/providers/${segment(id)}/quota`, quotaAnswerSchema, options)).quota
+  }
+
+  /** Calls the entry's model, or `modelId`, once, with its active account or `credentialId`. */
+  test(id: string, options: { modelId?: string; credentialId?: string } = {}): Promise<TestResult> {
+    return this.routes.json('POST', `/providers/${segment(id)}/test`, testResultSchema, options)
+  }
+
+  /** The newest version of the command-line program the entry's subscription runs, read again with `refresh`. */
+  async cli(id: string, options: { refresh?: boolean } = {}): Promise<NewestVersion> {
+    return (await this.routes.json('GET', `/providers/${segment(id)}/cli${query({ refresh: options.refresh })}`, providerCliSchema)).newest
+  }
+
+  /** Starts installing that program's newest version; the entry's status says when it is in place. */
+  installCli(id: string): Promise<void> {
+    return this.routes.send('POST', `/providers/${segment(id)}/cli/install`)
   }
 
   accounts(id: string): ProviderAccounts {
-    const path = `/providers/${encodeURIComponent(id)}/accounts`
+    const path = `/providers/${segment(id)}/accounts`
     return {
       list: () => this.routes.json('GET', path, accountsSchema),
       activate: async (credentialId) => void (await this.routes.json('PUT', `${path}/active`, activeAccountSchema, { credentialId })),
       order: (credentialIds) => this.routes.send('PUT', `${path}/order`, { credentialIds }),
-      remove: async (credentialId) => void (await this.routes.json('DELETE', `${path}/${encodeURIComponent(credentialId)}`, removedAccountSchema)),
+      remove: async (credentialId) => void (await this.routes.json('DELETE', `${path}/${segment(credentialId)}`, removedAccountSchema)),
       signIn: async () => this.signInOf((await this.routes.json('POST', `${path}/login`, loginStartedSchema)).login.id),
     }
   }
@@ -490,7 +615,7 @@ export class Providers {
   }
 
   private signInOf(id: string): SignIn {
-    const path = `/providers/subscription-login/${encodeURIComponent(id)}`
+    const path = `/providers/subscription-login/${segment(id)}`
     return {
       id,
       submitCode: async (code) => void (await this.routes.json('POST', `${path}/code`, codeTakenSchema, { code })),
@@ -545,7 +670,7 @@ export class Device {
    * channel ends before the device came online.
    */
   async connect(stream: { readable: Readable; writable: Writable }): Promise<{ ended: Promise<void> }> {
-    const channel = await this.process.connect(this.routes.path(`/devices/${encodeURIComponent(this.id)}/runner`), 'h2c')
+    const channel = await this.process.connect(this.routes.path(`/devices/${segment(this.id)}/runner`), 'h2c')
     stream.readable.pipe(channel)
     channel.pipe(stream.writable)
     const ended = new Promise<void>((resolve) => {
@@ -617,7 +742,7 @@ export class Device {
     // fraction rounds up.
     const limited = timeout !== undefined && timeout !== 0 && Number.isFinite(timeout)
     const body: DeviceExec = { script, ...where, ...(limited ? { timeoutMs: Math.ceil(timeout) } : {}) }
-    const ran = await this.routes.json('POST', `/devices/${encodeURIComponent(this.id)}/exec`, deviceExecResultSchema, body, signal)
+    const ran = await this.routes.json('POST', `/devices/${segment(this.id)}/exec`, deviceExecResultSchema, body, signal)
     return { exitCode: ran.exitCode, ...ran.output }
   }
 
@@ -630,7 +755,27 @@ export class Device {
    * or is a filesystem's root, such as a volume's mount point.
    */
   async revoke(): Promise<void> {
-    await this.routes.send('DELETE', `/devices/${encodeURIComponent(this.id)}`)
+    await this.routes.send('DELETE', `/devices/${segment(this.id)}`)
+  }
+
+  /** Renames the device, or changes how the core reaches it. */
+  async update(patch: ChangeDevice): Promise<DeviceDto> {
+    return (await this.routes.json('PATCH', `/devices/${segment(this.id)}`, deviceAnswerSchema, patch)).device
+  }
+
+  /** Asks the device's runner to run as an administrator, as the user allows on the device. */
+  async elevate(): Promise<ElevationOutcome> {
+    return (await this.routes.json('POST', `/devices/${segment(this.id)}/elevation`, deviceElevationSchema)).outcome
+  }
+
+  /** The device's files, by absolute paths. */
+  get files(): DeviceFiles {
+    return deviceFiles(this.routes, this.id)
+  }
+
+  /** The workflows a new conversation working in the absolute `directory` on the device would offer. */
+  workflows(directory: string): Promise<KeptWorkflowList> {
+    return this.routes.json('GET', `/devices/${segment(this.id)}/workflows${query({ directory })}`, keptWorkflowListSchema)
   }
 }
 
@@ -642,6 +787,11 @@ export class Devices {
     private readonly dir: string,
     private readonly online: (id: string, ended: Promise<void>) => Promise<void>,
   ) {}
+
+  /** The core's devices, as the product state lists them; `of` gives the one a listing names. */
+  async list(): Promise<DeviceDto[]> {
+    return (await this.routes.json('GET', '/devices', devicesSchema)).devices
+  }
 
   /** Creates a device, which serves the core once a runner connects to it. */
   async create(): Promise<Device> {
