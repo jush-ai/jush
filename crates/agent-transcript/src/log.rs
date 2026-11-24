@@ -179,6 +179,16 @@ impl TranscriptLog {
             .or_else(|| self.earlier.user_input().cloned())
     }
 
+    /// Whom the agent works for ([`Block::sender_id`]), by the latest block
+    /// that handed it work: none when it names no one or there is none.
+    pub fn sender_id(&self) -> Option<&str> {
+        self.blocks
+            .iter()
+            .rev()
+            .find_map(Block::sender_id)
+            .unwrap_or_else(|| self.earlier.sender_id())
+    }
+
     /// Holds `blocks` too, the path's from `start` up to the window, with
     /// the versions at their places and what `earlier` keeps of the blocks
     /// before them, as an edit of a message before the window reads them.
@@ -245,6 +255,7 @@ impl TranscriptLog {
         comments: Vec<MessageComment>,
         preamble: Option<String>,
         schedule: Option<ScheduleMark>,
+        sender_id: Option<String>,
     ) {
         let (id, created_at) = self.stamp();
         self.append(Block::User(UserBlock {
@@ -257,6 +268,7 @@ impl TranscriptLog {
             comments,
             preamble,
             schedule,
+            sender_id,
             entries: Vec::new(),
         }));
     }
@@ -294,6 +306,7 @@ impl TranscriptLog {
         model: &ModelSelection,
         content: Vec<UserContentBlock>,
         comments: Vec<MessageComment>,
+        sender_id: Option<String>,
     ) {
         let created_at = self.clock.now();
         self.append(Block::Steer(SteerBlock {
@@ -304,6 +317,7 @@ impl TranscriptLog {
             model: model.clone(),
             content,
             comments,
+            sender_id,
             entries: Vec::new(),
         }));
     }
@@ -331,13 +345,15 @@ impl TranscriptLog {
         }));
     }
 
-    /// An agent message, under the message's id.
+    /// An agent message, under the message's id; `opens_turn` when it opens
+    /// its turn.
     pub fn push_agent_message(
         &mut self,
         turn_id: TurnId,
         model: &ModelSelection,
         message: AgentMessage,
         sender_below: bool,
+        opens_turn: bool,
     ) {
         let created_at = self.clock.now();
         self.append_received(Block::AgentMessage(AgentMessageBlock {
@@ -348,6 +364,7 @@ impl TranscriptLog {
             request: None,
             model: model.clone(),
             message,
+            opens_turn,
             entries: Vec::new(),
         }), sender_below);
     }

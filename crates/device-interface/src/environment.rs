@@ -61,6 +61,12 @@ pub trait ShellEnvironment {
     /// environment does not hold.
     fn title(&self, command: &CommandId) -> Option<String>;
 
+    /// Whom the work of the call that started the command is for, which its
+    /// record keeps from its start and its reports name; none for a command
+    /// the environment does not hold, or whose call's work is for no one
+    /// named.
+    fn sender_id(&self, command: &CommandId) -> Option<String>;
+
     /// The media the command's job viewed, once it exited, which moves no
     /// place in its output (`crates/agent-tools/src/result.rs`).
     fn media(&self, command: &CommandId) -> Result<Vec<CommandMedium>, ShellError>;
@@ -196,6 +202,11 @@ pub struct JobCaller {
     /// records kept it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub turn: Option<TurnId>,
+    /// Whom the call's agent worked for, by its program's id, whom a
+    /// command's call to a vendor is counted for; none when no one was
+    /// named.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sender_id: Option<String>,
 }
 
 /// How long a running command's device has been unreachable, as far as Jush

@@ -256,7 +256,13 @@ fn sender_of<A>(core: &Core, call: &Call<A>, sending: &ConversationRecord, wakes
         title: sending.title.clone(),
         wakes,
     });
-    Ok(Sender { sending: sending.id.clone(), node: caller.node.clone(), agent: sender, origin })
+    Ok(Sender {
+        sending: sending.id.clone(),
+        node: caller.node.clone(),
+        agent: sender,
+        origin,
+        sender_id: caller.sender_id.clone(),
+    })
 }
 
 /// Who sends a message to another conversation, as [`sender_of`] checked it.
@@ -265,6 +271,9 @@ struct Sender {
     node: NodeId,
     agent: AgentSender,
     origin: Option<BlockId>,
+    /// Whom the call that ran the command worked for, whom the recipient's
+    /// work is then counted for.
+    sender_id: Option<String>,
 }
 
 /// Admits `content` into the main agent of the user's conversation `to`, an
@@ -285,6 +294,7 @@ async fn deliver(core: &Core, sender: &Sender, to: &ConversationId, content: &st
         content: content.to_owned(),
         event: AgentMessageEvent::Message {},
         origin: sender.origin.clone(),
+        sender_id: sender.sender_id.clone(),
     };
     core.permission_core().admit(to, &root_of(to), &message).await?;
     if sender.agent.conversation.as_ref().is_some_and(|conversation| conversation.wakes) {
@@ -294,6 +304,7 @@ async fn deliver(core: &Core, sender: &Sender, to: &ConversationId, content: &st
             sender: sender.sending.clone(),
             sender_node: sender.node.clone(),
             notice: None,
+            message_sender_id: sender.sender_id.clone(),
         };
         core
             .store()

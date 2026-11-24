@@ -350,7 +350,7 @@ impl Candidate {
                         .collect::<Result<Vec<MessageComment>, EditError>>()?,
                     None => target.comments.to_vec(),
                 };
-                candidate.push_user(turn.clone(), &model, content, comments, preamble, None);
+                candidate.push_user(turn.clone(), &model, content, comments, preamble, None, None);
                 candidate.blocks().to_vec()
             }
             // The message stays, and the new answer follows it.

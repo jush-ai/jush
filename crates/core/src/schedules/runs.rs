@@ -299,6 +299,7 @@ impl Core {
                     name: schedule.name.clone(),
                     at: fired.at,
                 }),
+                sender_id: None,
             })
             .map_err(|error| error.to_string())?;
         // A message that waits behind a running turn reaches it, as the

@@ -919,6 +919,7 @@ pub async fn deliver(core: Rc<dyn PermissionCore>, request: StoredRequest) {
             pairing: false,
         },
         origin: None,
+        sender_id: None,
     };
     let admitted = core
         .admit(&request.conversation, &request.agent.node, &message)

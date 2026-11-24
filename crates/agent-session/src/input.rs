@@ -255,15 +255,21 @@ impl InputQueue {
         withdrawn
     }
 
-    /// Takes the command reports: the input a continuation opens with.
+    /// Takes the command reports: the input a continuation opens with, those
+    /// that open a turn first, each in the order they arrived, so the first
+    /// names whom the turn is for (`Block::sender_id`).
     pub(super) fn take_reports(&mut self) -> Vec<CommandReport> {
-        self.entries
+        let mut taken: Vec<(CommandReport, Opens)> = self
+            .entries
             .extract_if(.., |input| matches!(input, Input::Report(..)))
             .filter_map(|input| match input {
-                Input::Report(report, _) => Some(report),
+                Input::Report(report, opens) => Some((report, opens)),
                 _ => None,
             })
-            .collect()
+            .collect();
+        // A stable sort keeps each kind's order.
+        taken.sort_by_key(|(_, opens)| *opens == Opens::Nothing);
+        taken.into_iter().map(|(report, _)| report).collect()
     }
 
     /// Takes the first human steer that waits, which opens the next turn

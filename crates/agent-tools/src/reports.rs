@@ -28,29 +28,34 @@ pub enum EndOf {
     Unrecorded,
 }
 
-/// The report of `command`, which still runs and has printed nothing for a long
-/// time: how long it has run and been silent.
+/// The report of `command`, whose work is for `sender_id`, which still runs
+/// and has printed nothing for a long time: how long it has run and been
+/// silent.
 ///
 /// Its output is read when the report is written ([`fill_output`]), which moves
 /// the node's place then.
 pub fn progress_report(
     command: &CommandId,
     title: &str,
+    sender_id: Option<String>,
     running_ms: u64,
     idle_ms: u64,
 ) -> CommandReport {
     report(
         command,
         title,
+        sender_id,
         ReportEvent::Running { running_ms, idle_ms },
     )
 }
 
-/// The report of `command`'s end, `end`; its output is read from
-/// `status` once it ended, or when the report is written ([`fill_output`]).
+/// The report of `command`'s end, `end`, whose work is for `sender_id`; its
+/// output is read from `status` once it ended, or when the report is written
+/// ([`fill_output`]).
 pub fn end_report(
     command: &CommandId,
     title: &str,
+    sender_id: Option<String>,
     end: EndOf,
     status: Option<&CommandStatus>,
 ) -> CommandReport {
@@ -68,7 +73,7 @@ pub fn end_report(
         EndOf::Lost(reason) => ReportEvent::Lost { reason },
         EndOf::Unrecorded => ReportEvent::Ended { exit_code: None },
     };
-    let mut report = report(command, title, event);
+    let mut report = report(command, title, sender_id, event);
     if let Some(status) = status {
         fill_output(&mut report, status);
     }
@@ -85,12 +90,13 @@ pub fn fill_output(report: &mut CommandReport, status: &CommandStatus) {
 }
 
 /// A report of `event`, without output yet.
-fn report(command: &CommandId, title: &str, event: ReportEvent) -> CommandReport {
+fn report(command: &CommandId, title: &str, sender_id: Option<String>, event: ReportEvent) -> CommandReport {
     CommandReport {
         command_id: command.clone(),
         title: title.to_owned(),
         event,
         output: String::new(),
         media: Vec::new(),
+        sender_id,
     }
 }

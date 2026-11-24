@@ -126,8 +126,8 @@ impl<H: DeviceResolver> Side<H> {
 /// The first message of the side question `of`: the asked words as a
 /// quote, or the asked picture as an image the message carries, the
 /// instruction, then the question's content, its first text joined to the
-/// instruction by a blank line.
-fn first_message(id: TurnId, of: &SideOf) -> QueuedMessage {
+/// instruction by a blank line, from `sender_id`.
+fn first_message(id: TurnId, of: &SideOf, sender_id: Option<String>) -> QueuedMessage {
     let mut content = match &of.picture {
         None => vec![UserContentBlock::Text {
             text: format!("{}\n\n{}", markdown_quote(&of.quote), side_instruction(false)),
@@ -151,6 +151,7 @@ fn first_message(id: TurnId, of: &SideOf) -> QueuedMessage {
         id,
         content,
         schedule: None,
+        sender_id,
     }
 }
 
@@ -193,7 +194,13 @@ impl<H: DeviceResolver> Tree<H> {
     ///
     /// The same question again under its id asks nothing more. Answers whether
     /// this call asked it.
-    pub(crate) async fn ask(self: &Rc<Self>, id: NodeId, of: SideOf, media: HeldMedia) -> Result<bool, AskError> {
+    pub(crate) async fn ask(
+        self: &Rc<Self>,
+        id: NodeId,
+        of: SideOf,
+        sender_id: Option<String>,
+        media: HeldMedia,
+    ) -> Result<bool, AskError> {
         let tree = self.clone();
         let started = self.lifecycle.spawn_local(async move {
             let _turn = tree.starts.acquire(id.clone()).await;
@@ -219,7 +226,7 @@ impl<H: DeviceResolver> Tree<H> {
             // Its first message's turn is the side question's own id, which
             // names that message to a page whatever pages it holds.
             let turn = TurnId::try_from(id.as_str()).map_err(|error| AskError::Target(error.to_string()))?;
-            seed.checkpoint.state.queue.push(first_message(turn, &of));
+            seed.checkpoint.state.queue.push(first_message(turn, &of, sender_id));
             let runtime = tree.side_runtime(&server, &seed.checkpoint.state.model).await?;
             let now = tree.clock.now();
             let record = NodeRecord {
@@ -254,11 +261,17 @@ impl<H: DeviceResolver> Tree<H> {
     /// Sends the follow-up `content` to the side question `id`, with the
     /// bytes of its media: its next turn, after its own history, opening it
     /// again when it closed.
-    pub(crate) async fn ask_more(self: &Rc<Self>, id: NodeId, content: Vec<UserContentBlock>, media: HeldMedia) -> Result<(), AskError> {
+    pub(crate) async fn ask_more(
+        self: &Rc<Self>,
+        id: NodeId,
+        content: Vec<UserContentBlock>,
+        sender_id: Option<String>,
+        media: HeldMedia,
+    ) -> Result<(), AskError> {
         let tree = self.clone();
         let sent = self.lifecycle.spawn_local(async move {
             let _turn = tree.starts.acquire(id.clone()).await;
-            let message = tree.content_message(content);
+            let message = tree.content_message(content, sender_id);
             if let Some(side) = tree.live_side(&id).await {
                 side.node.session().hold_media(media);
                 return side

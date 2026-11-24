@@ -82,6 +82,34 @@ impl Block {
         on_block!(self, block => &block.id)
     }
 
+    /// Whom the work the block hands its agent is for, by the id the
+    /// program gave its sender: a message, a steer, or another agent's
+    /// explicit message, by who sent it; and what opens a turn of its own
+    /// as work ends, by whom that work was for: command reports, by their
+    /// first command's, and the notice of a child's end or of another
+    /// conversation's, by its message's. A call's sender is that of the
+    /// latest such block its agent read
+    /// (`crates/core-store/src/usage_report.rs`). None for any other block:
+    /// a report or a notice read inside a running turn leaves its sender.
+    pub fn sender_id(&self) -> Option<Option<&str>> {
+        match self {
+            Block::User(user) => Some(user.sender_id.as_deref()),
+            Block::Steer(steer) => Some(steer.sender_id.as_deref()),
+            Block::AgentMessage(agent) => match agent.message.event {
+                crate::AgentMessageEvent::Message {} => Some(agent.message.sender_id.as_deref()),
+                crate::AgentMessageEvent::Completion { .. } if agent.opens_turn => {
+                    Some(agent.message.sender_id.as_deref())
+                }
+                _ => None,
+            },
+            Block::Wakeup(wakeup) => match wakeup.placement {
+                WakeupPlacement::NewTurn => Some(wakeup.reports.first().and_then(|report| report.sender_id.as_deref())),
+                WakeupPlacement::Steer => None,
+            },
+            _ => None,
+        }
+    }
+
     /// When the block was written.
     pub fn created_at(&self) -> Timestamp {
         on_block!(self, block => block.created_at)
@@ -422,6 +450,16 @@ pub struct UserBlock {
     #[schemars(with = "ScheduleMark")]
     #[garde(dive)]
     pub schedule: Option<ScheduleMark>,
+    /// Who sent the message, by the id the program that sent it gave
+    /// ([`SENDER_ID_LIMIT`]); absent when it named no one.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "unwrap_or_skip"
+    )]
+    #[schemars(with = "String")]
+    #[garde(length(chars, min = 1, max = SENDER_ID_LIMIT))]
+    pub sender_id: Option<String>,
     /// The entries of the vendor's own record of the session that belong to
     /// this block, as its provider gave them
     /// (`crates/provider-claude-code/src/session.rs`); omitted when there are
@@ -433,6 +471,11 @@ pub struct UserBlock {
     #[garde(skip)]
     pub entries: Vec<Entry>,
 }
+
+/// The most characters a sender's id has: the id is kept on each of the
+/// usage ledger's rows its messages lead to, as a vendor bounds the end
+/// user's id a request names (Anthropic's `metadata.user_id`, 256).
+pub const SENDER_ID_LIMIT: usize = 255;
 
 impl UserBlock {
     /// What the model reads before the message's content, in order: the
@@ -643,7 +686,8 @@ pub struct WakeupBlock {
     pub model: ModelSelection,
     #[garde(skip)]
     pub placement: WakeupPlacement,
-    /// The reports, in the order they arrived.
+    /// The reports, in the order they arrived; for a block that opens its
+    /// turn, those that opened it first.
     #[garde(dive)]
     pub reports: Vec<CommandReport>,
     /// The run of steps the block belongs to: the id of the run's first
@@ -694,6 +738,17 @@ pub struct CommandReport {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[garde(dive)]
     pub media: Vec<ToolResultContentBlock>,
+    /// Whom the command's work is for: the sender of the call that started
+    /// it, which its record keeps; absent when that call's work was for no
+    /// one named.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "unwrap_or_skip"
+    )]
+    #[schemars(with = "String")]
+    #[garde(length(chars, min = 1, max = SENDER_ID_LIMIT))]
+    pub sender_id: Option<String>,
 }
 
 /// What a report tells of its command.
@@ -821,6 +876,15 @@ pub struct SteerBlock {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[garde(dive)]
     pub comments: Vec<MessageComment>,
+    /// Who sent it, as a `user` block names its sender.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "unwrap_or_skip"
+    )]
+    #[schemars(with = "String")]
+    #[garde(length(chars, min = 1, max = SENDER_ID_LIMIT))]
+    pub sender_id: Option<String>,
     /// The entries of the vendor's own record of the session that belong to
     /// this block, as its provider gave them
     /// (`crates/provider-claude-code/src/session.rs`); omitted when there are
@@ -859,6 +923,11 @@ pub struct AgentMessageBlock {
     pub model: ModelSelection,
     #[garde(dive)]
     pub message: AgentMessage,
+    /// The message opened its turn, a continuation of an agent at rest, as
+    /// the first message written there; absent for any other.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[garde(skip)]
+    pub opens_turn: bool,
     /// The run of steps the block belongs to: the id of the run's first
     /// block, which the backend sets as it stores the block and never
     /// changes.

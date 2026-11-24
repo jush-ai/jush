@@ -92,6 +92,9 @@ pub struct UsageRow {
     pub agent: Option<u64>,
     /// None outside a turn.
     pub turn: Option<String>,
+    /// Whom the agent worked for, by its program's id; none when no one was
+    /// named, and outside a session.
+    pub sender_id: Option<String>,
     /// `turn`, `compaction`, `title`, `suggested_replies`, `image`, `video`
     /// or `audio`.
     pub purpose: &'static str,
@@ -901,7 +904,7 @@ fn recent(connection: &Connection, conversation: &str, since: i64) -> Result<Vec
 }
 
 /// The counts of a row of the ledger: none when the vendor reported none.
-fn row_usage(row: &Row<'_>) -> Result<Option<TokenUsage>, StorageError> {
+pub(crate) fn row_usage(row: &Row<'_>) -> Result<Option<TokenUsage>, StorageError> {
     let count = |column: &'static str| -> Result<Option<u64>, StorageError> {
         row.get::<_, Option<i64>>(column)?
             .map(|count| decode("usage_ledger", column, u64::try_from(count)))
@@ -927,7 +930,7 @@ fn row_usage(row: &Row<'_>) -> Result<Option<TokenUsage>, StorageError> {
 
 /// What a row of the ledger says it would cost: the price of each kind of its
 /// tokens, and the vendor's own cost when that is in dollars.
-fn row_prices(row: &Row<'_>) -> Result<(Option<ApiPrice>, Option<f64>), StorageError> {
+pub(crate) fn row_prices(row: &Row<'_>) -> Result<(Option<ApiPrice>, Option<f64>), StorageError> {
     let parts = match [
         row.get::<_, Option<f64>>("api_price_input")?,
         row.get("api_price_cache_write")?,
@@ -943,11 +946,23 @@ fn row_prices(row: &Row<'_>) -> Result<(Option<ApiPrice>, Option<f64>), StorageE
         [None, None, None, None] => None,
         _ => return Err(corrupt("api_price_input", "some of the price's parts only")),
     };
-    let currency: Option<String> = row.get("cost_currency")?;
-    let usd = row
-        .get::<_, Option<f64>>("cost")?
-        .filter(|_| currency == Some(Currency::Usd.to_string()));
+    let usd = row_cost(row)?
+        .filter(|cost| cost.currency == Currency::Usd)
+        .map(|cost| cost.amount);
     Ok((parts, usd))
+}
+
+/// What the vendor said a row's call cost, in the currency it named; none
+/// when it said nothing.
+pub(crate) fn row_cost(row: &Row<'_>) -> Result<Option<Cost>, StorageError> {
+    match (row.get::<_, Option<f64>>("cost")?, row.get::<_, Option<String>>("cost_currency")?) {
+        (Some(amount), Some(currency)) => Ok(Some(Cost {
+            amount,
+            currency: decode("usage_ledger", "cost_currency", currency.parse::<Currency>())?,
+        })),
+        (None, None) => Ok(None),
+        _ => Err(corrupt("cost", "a cost without its currency")),
+    }
 }
 
 /// What writing a usage row changed, which its announcement says.
@@ -996,9 +1011,9 @@ pub(crate) fn write_usage(transaction: &rusqlite::Transaction<'_>, row: &UsageRo
            input_tokens, output_tokens, cache_read_tokens, cache_write_tokens,
            cache_write_1h_tokens, outcome, quota, started_at, ended_at, media_seconds, cost, cost_currency,
            api_price_input, api_price_cache_write, api_price_cache_read, api_price_output,
-           system_hash, tools_hash, call_number, after_compaction, miss, media_digest)
+           system_hash, tools_hash, call_number, after_compaction, miss, media_digest, sender_id)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16,
-           ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32)",
+           ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32, ?33)",
         params![
             id,
             row.conversation.as_str(),
@@ -1032,6 +1047,7 @@ pub(crate) fn write_usage(transaction: &rusqlite::Transaction<'_>, row: &UsageRo
             call.map(|call| call.after_compaction),
             call.and_then(|call| call.miss).map(|miss| miss.to_string()),
             row.media_digest,
+            row.sender_id,
         ],
     )?;
     // Asked after the insert: a transaction that has read cannot wait for

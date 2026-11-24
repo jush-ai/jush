@@ -64,7 +64,7 @@ import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { conversationChanges, conversationFiles, type ConversationChanges, type ConversationFiles } from './files'
 import { conversationHistory, type ConversationHistory } from './history'
-import { content, type Input } from './input'
+import { content, type Input, type MessageOptions } from './input'
 import { JushError, query, segment, type CoreRoutes } from './routes'
 import { sideQuestions, type SideQuestions } from './side-questions'
 
@@ -355,9 +355,9 @@ export class Conversation {
    * The conversation takes it once however often it is sent under
    * `messageId`, which messages and steers share.
    */
-  async send(input: Input, messageId: string = randomUUID()): Promise<void> {
+  async send(input: Input, messageId: string = randomUUID(), options: MessageOptions = {}): Promise<void> {
     const client = await this.open()
-    await client.submit(content(input), messageId)
+    await client.submit(content(input), messageId, [], options.senderId)
   }
 
   /**
@@ -427,9 +427,13 @@ export class Conversation {
    * with it. Resolves with the message's id, the one made for it when
    * `messageId` is absent.
    */
-  async sendToAgent(node: string, text: string, messageId?: string): Promise<string> {
+  async sendToAgent(node: string, text: string, messageId?: string, options: MessageOptions = {}): Promise<string> {
     const path = `/conversations/${segment(this.id)}/agents/${segment(node)}/messages`
-    const { id } = await this.routes.json('POST', path, subagentMessageAnswerSchema, { id: messageId, text })
+    const { id } = await this.routes.json('POST', path, subagentMessageAnswerSchema, {
+      id: messageId,
+      text,
+      senderId: options.senderId,
+    })
     return id
   }
 
@@ -438,9 +442,9 @@ export class Conversation {
    * The conversation takes it once however often it is sent under
    * `steerId`, which messages and steers share.
    */
-  async steer(input: Input, steerId: string = randomUUID()): Promise<void> {
+  async steer(input: Input, steerId: string = randomUUID(), options: MessageOptions = {}): Promise<void> {
     const client = await this.open()
-    await client.steer(content(input), steerId)
+    await client.steer(content(input), steerId, [], options.senderId)
   }
 
   async abort(): Promise<AbortResult> {
@@ -469,7 +473,7 @@ export class Conversation {
    * holds. It fails when the message left the queue without running, as an
    * abort's clearing of the queue removes it.
    */
-  async run(input: Input): Promise<Turn> {
+  async run(input: Input, options: MessageOptions = {}): Promise<Turn> {
     const messageId = randomUUID()
     let sent = false
     // How the turn ended, as the conversation last answered when asked.
@@ -568,7 +572,7 @@ export class Conversation {
     ended.catch(() => {})
     this.waiters.add(waiter)
     try {
-      await this.send(input, messageId)
+      await this.send(input, messageId, options)
     } catch (error) {
       // A message never sent starts no turn to wait for.
       this.waiters.delete(waiter)

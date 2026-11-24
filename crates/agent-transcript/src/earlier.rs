@@ -27,6 +27,8 @@ pub struct Earlier {
     /// left it unfinished, or none for any other record.
     record: Option<Option<ErrorBlock>>,
     user_input: Option<UserInput>,
+    /// Whom the agent worked for there, as [`Block::sender_id`] tells it.
+    sender_id: Option<String>,
 }
 
 impl Earlier {
@@ -55,6 +57,9 @@ impl Earlier {
         if let Some(input) = blocks.iter().rev().find_map(user_input) {
             self.user_input = Some(input);
         }
+        if let Some(sender) = blocks.iter().rev().find_map(Block::sender_id) {
+            self.sender_id = sender.map(str::to_owned);
+        }
     }
 
     /// What the path's blocks before `end` tell, read from `store` in one
@@ -73,6 +78,7 @@ impl Earlier {
             last_turn: rows.last_input.as_ref().and_then(turn_of).cloned(),
             record: rows.last_record.as_ref().map(failure),
             user_input: rows.last_user_input.as_ref().and_then(user_input),
+            sender_id: rows.last_sent.as_ref().and_then(Block::sender_id).flatten().map(str::to_owned),
         }
     }
 
@@ -110,6 +116,10 @@ impl Earlier {
     /// one.
     pub fn user_input(&self) -> Option<&UserInput> {
         self.user_input.as_ref()
+    }
+
+    pub fn sender_id(&self) -> Option<&str> {
+        self.sender_id.as_deref()
     }
 }
 

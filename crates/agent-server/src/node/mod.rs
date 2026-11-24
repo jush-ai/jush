@@ -1100,7 +1100,7 @@ impl<H: DeviceResolver> SessionRuntime for NodeRuntime<H> {
                     .quiet(command)
                     .map_or(0, |quiet| u64::try_from(quiet.as_millis()).unwrap_or(u64::MAX));
                 let title = environment.title(command).unwrap_or_default();
-                return Some(progress_report(command, &title, running_ms, idle_ms));
+                return Some(progress_report(command, &title, environment.sender_id(command), running_ms, idle_ms));
             }
             if self.environments.stopper(command) == Some(Stopper::Itself) {
                 dropped("end", "stopped_by_node");
@@ -1108,20 +1108,22 @@ impl<H: DeviceResolver> SessionRuntime for NodeRuntime<H> {
             }
             let end = self.end_of(command).await;
             // Its record names it by the title of the call that started it,
-            // whatever became of that call (`crates/agent-session/src/reports.rs`).
-            let (title, status) = match self.environments.owning(command) {
-                Some(environment) => (environment.title(command).unwrap_or_default(), None),
+            // whatever became of that call, and whom that call's work is for
+            // (`crates/agent-session/src/reports.rs`).
+            let (title, sender_id, status) = match self.environments.owning(command) {
+                Some(environment) => (environment.title(command).unwrap_or_default(), environment.sender_id(command), None),
                 None => match self.stored(command).await {
                     Some(stored) => {
                         // Its record keeps them without their bytes, so the
                         // report names their attachments.
                         media.clone_from(&stored.media);
-                        (stored.title.clone(), self.stored_status(command, stored))
+                        let (title, sender_id) = (stored.title.clone(), stored.sender_id.clone());
+                        (title, sender_id, self.stored_status(command, stored))
                     }
-                    None => (String::new(), None),
+                    None => (String::new(), None, None),
                 },
             };
-            let mut report = end_report(command, &title, end, status.as_ref());
+            let mut report = end_report(command, &title, sender_id, end, status.as_ref());
             if !media.is_empty() {
                 let parts = report_media(&media, &model.model, limits).await;
                 let session = self.store.session_store(&self.node);

@@ -4,7 +4,7 @@
 //! namespace, in the kept output's records. The conversation's `command_outputs`
 //! table holds one row per command, keyed by its id, which says:
 //!
-//! - when the command ended and how;
+//! - when the command ended and how, and whom its work was for;
 //! - whether its output is stored, or was not stored and why;
 //! - what its result tells of the media its job viewed, without their
 //!   bytes: each one's facts, its attachment or why it has none.
@@ -52,6 +52,9 @@ pub struct CommandOutput {
     /// the reason the row keeps, or [`NOT_KEPT`]; none for a row written
     /// before rows kept them.
     pub media: Vec<CommandMedium>,
+    /// Whom its work was for, as the call that started it named; none when
+    /// no one was named, and for a row written before rows kept it.
+    pub sender_id: Option<String>,
 }
 
 /// Why a medium read back from a row has no bytes when the backend had
@@ -129,7 +132,7 @@ impl KeptMedium {
 }
 
 const COLUMNS: &str =
-    "command_id, ended_at, ending, blob, missing_bytes, missing_reason, not_stored, title, media, started_at";
+    "command_id, ended_at, ending, blob, missing_bytes, missing_reason, not_stored, title, media, started_at, sender_id";
 
 /// Writes `rows` in one transaction; a command that has a row keeps it.
 pub fn insert(connection: &mut Connection, rows: &[CommandOutput]) -> Result<(), StorageError> {
@@ -144,7 +147,7 @@ pub fn insert(connection: &mut Connection, rows: &[CommandOutput]) -> Result<(),
 pub(crate) fn insert_in(transaction: &Connection, rows: &[CommandOutput]) -> Result<(), StorageError> {
     {
         let mut insert = transaction.prepare_cached(&format!(
-            "INSERT INTO command_outputs ({COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+            "INSERT INTO command_outputs ({COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
              ON CONFLICT (command_id) DO NOTHING"
         ))?;
         for row in rows {
@@ -171,6 +174,7 @@ pub(crate) fn insert_in(transaction: &Connection, rows: &[CommandOutput]) -> Res
                 row.title,
                 media,
                 row.started.map(Timestamp::as_millisecond),
+                row.sender_id,
             ])?;
         }
     }
@@ -330,6 +334,7 @@ fn decode_row(row: &Row<'_>) -> Result<CommandOutput, StorageError> {
         end,
         output,
         media,
+        sender_id: row.get("sender_id")?,
     })
 }
 
