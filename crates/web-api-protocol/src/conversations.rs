@@ -1089,14 +1089,29 @@ pub struct SubagentMessageAnswer {
 }
 
 /// `POST /conversations/:id/fork`: the new conversation's id, chosen by the
-/// web app, and the completed assistant text the history is kept through.
+/// web app or the program, and where the history ends, one of the two.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, garde::Validate)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ForkRequest {
     #[garde(skip)]
     pub id: ConversationId,
+    /// The main agent's completed assistant text the history is kept
+    /// through.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[garde(custom(one_fork_end(&self.before_turn)))]
+    pub block_id: Option<BlockId>,
+    /// A turn of the main agent, by the id of the message that started it:
+    /// the history is everything before that message.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[garde(skip)]
-    pub block_id: BlockId,
+    pub before_turn: Option<TurnId>,
+}
+
+fn one_fork_end(before: &Option<TurnId>) -> impl FnOnce(&Option<BlockId>, &()) -> garde::Result + '_ {
+    move |block, _| match (block, before) {
+        (Some(_), None) | (None, Some(_)) => Ok(()),
+        _ => Err(garde::Error::new("name blockId or beforeTurn, one of them")),
+    }
 }
 
 /// The answer of a Fork: the new conversation as the list shows it, and its

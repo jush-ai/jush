@@ -577,10 +577,15 @@ CREATE TABLE conversation_deletions (
 ) STRICT;
 
 CREATE TABLE conversation_fork_operations (
-  id        TEXT PRIMARY KEY COLLATE NOCASE,
-  source_id TEXT NOT NULL,
-  block_id  TEXT NOT NULL,
-  metadata  TEXT NOT NULL
+  id          TEXT PRIMARY KEY COLLATE NOCASE,
+  source_id   TEXT NOT NULL,
+  -- Where the history ends, one of the two: through the completed text
+  -- `block_id`, or before the turn `before_turn`, by the id of the message
+  -- that started it.
+  block_id    TEXT,
+  before_turn TEXT,
+  metadata    TEXT NOT NULL,
+  CHECK ((block_id IS NULL) != (before_turn IS NULL))
 ) STRICT;
 
 CREATE TABLE providers (

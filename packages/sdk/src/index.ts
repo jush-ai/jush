@@ -54,6 +54,7 @@ export {
   type ConversationEvent,
   type ConversationPlugins,
   type ConversationSchedules,
+  type ForkOptions,
   type Permission,
   type Turn,
 } from './conversation'

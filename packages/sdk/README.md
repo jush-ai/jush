@@ -411,6 +411,19 @@ prefix: a steer under the id of one of the conversation's blocks is refused.
 await conversation.steer('Use the staging database instead.', 'steer-ticket-42')
 ```
 
+`conversation.fork` starts a new conversation with this one's history,
+under `id` when you name one, which a retry repeats. `before` takes a turn
+by its message's id, `turn.id` as `run` answers it or the id you sent it
+under, and keeps everything before that message, the turn before it whole,
+its commands' output and its reply among it. `through` keeps everything
+through a completed text of the main agent, by its block's id.
+
+```ts
+const turn = await conversation.run('Draft the reply to the customer.')
+const retry = await conversation.fork({ before: turn.id })
+await retry.run('Draft the reply, in a warmer tone.')
+```
+
 A message is text, or content blocks, such as a file on one of the core's
 devices:
 

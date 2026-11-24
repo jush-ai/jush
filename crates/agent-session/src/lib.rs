@@ -1456,6 +1456,17 @@ impl AgentSession {
         Ok(clear.is_none_or(|clear| position > clear))
     }
 
+    /// The `user` block of the message that started the turn `turn`, when
+    /// the window holds it.
+    pub fn turn_message(&self, turn: &TurnId) -> Option<BlockId> {
+        self.shared.read(|core| {
+            core.transcript.blocks().iter().find_map(|block| match block {
+                Block::User(user) if &user.turn_id == turn => Some(user.id.clone()),
+                _ => None,
+            })
+        })
+    }
+
     /// The latest call still executing: the one a command it runs, such as
     /// `jush agent`, acts for, so a child it starts belongs to that call's
     /// branch.
@@ -1470,8 +1481,7 @@ impl AgentSession {
         })
     }
 
-    /// A Fork's seed from this live session, through the completed text `end`
-    /// names.
+    /// A Fork's seed from this live session, ending where `end` says.
     ///
     /// The seed is captured in one step, with the model a switch the session
     /// accepted would use. The blocks before the window are named as the

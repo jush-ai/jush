@@ -15,6 +15,10 @@
 //! - The usage ledger's rows name whom their agent worked for, null for
 //!   every row before: no message named one. A kept wake names whom its
 //!   message's work is for, null for every wake kept before.
+//! - A Fork's attempt names where its history ends, through a text or
+//!   before a turn: its table is made again, as SQLite's procedure for a
+//!   column that may be null now gives it (lang_altertable.html § 7), and
+//!   every attempt kept is through its text.
 //! - The two columns' names and comments change in the table's text, as
 //!   SQLite's procedure for a change of the text alone gives it
 //!   (lang_altertable.html § 7), which keeps the rows; the integrity check
@@ -34,6 +38,25 @@ const JUSH_COMMANDS: &str = r#"["agent","attachment","audio","browser","conversa
 /// The guide a conversation with an identity read after it then, the two
 /// a blank line apart in its prompt.
 const GUIDE: &str = "\n\nGuidelines:\n- Commands run on the conversation's primary device, in its working directory; a context block names both. The directory stays between turns; to work in another directory, move there with `jush device move` first.\n- To wait for a command or a subagent, end your turn: its end or its message wakes you, and you continue then. Never wait with sleep or a loop.\n- The user reads only your replies, rendered as Markdown. Be concise.\n- Deliver a file as an attachment: `jush attachment upload`, then `<attachment id=\"a3\" />` on its own line; a medium a tool result showed you has its `attachment_id` already.\n- Link what the user can open: a device file `[runner.md](docs/runner.md#L438)`, or `device:<id>/abs/path` on an attached device, a subagent `[File icons](agent:4)`, a commit `[Fix the cart total](commit:3f2a9c1)`, or `commit:src/v8@86229da` in another repository, a conversation `[Login test](conversation:<id>)`.";
+
+/// The Fork attempts' table, made again with the two ends.
+const FORK_ENDS: &str = "
+CREATE TABLE conversation_fork_operations_new (
+  id          TEXT PRIMARY KEY COLLATE NOCASE,
+  source_id   TEXT NOT NULL,
+  -- Where the history ends, one of the two: through the completed text
+  -- `block_id`, or before the turn `before_turn`, by the id of the message
+  -- that started it.
+  block_id    TEXT,
+  before_turn TEXT,
+  metadata    TEXT NOT NULL,
+  CHECK ((block_id IS NULL) != (before_turn IS NULL))
+) STRICT;
+INSERT INTO conversation_fork_operations_new (id, source_id, block_id, metadata)
+  SELECT id, source_id, block_id, metadata FROM conversation_fork_operations;
+DROP TABLE conversation_fork_operations;
+ALTER TABLE conversation_fork_operations_new RENAME TO conversation_fork_operations;
+";
 
 /// Each column's text, and what it becomes.
 const COLUMN_TEXT: [(&str, &str); 2] = [
@@ -111,6 +134,7 @@ fn core_from_0_2_6320(transaction: &Transaction<'_>, _: &()) -> rusqlite::Result
         "ALTER TABLE usage_ledger ADD COLUMN sender_id TEXT;
          ALTER TABLE pending_wakes ADD COLUMN message_sender_id TEXT;",
     )?;
+    transaction.execute_batch(FORK_ENDS)?;
     let problems: Vec<String> = transaction
         .prepare("PRAGMA integrity_check")?
         .query_map([], |row| row.get(0))?

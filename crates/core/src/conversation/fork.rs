@@ -1,5 +1,6 @@
 //! Conversation Fork on the backend: a new conversation holding the source's
-//! history through one of its completed assistant texts.
+//! history through one of its completed assistant texts, or before one of
+//! its turns.
 //!
 //! # Steps
 //!
@@ -58,11 +59,11 @@ use jush_core_store::Selection;
 use jush_agent_session::ForkError;
 use jush_core_store::StorageError;
 use jush_core_store::conversation_index::{AttachedDevice, ConversationRecord};
-use jush_core_store::forks::{ForkMetadata, ForkOperation};
+use jush_core_store::forks::{ForkMetadata, ForkOperation, ForkPoint};
 use jush_core_store::tree;
 use jush_core_store::{command_outputs, conversation_attachments, sequences};
 use jush_core_sync::Part;
-use jush_shared_types::BlockId;
+use jush_agent_transcript::ForkEnd;
 use jush_web_api_protocol::conversations::ConversationTarget;
 use jush_web_api_protocol::ids::ConversationId;
 
@@ -84,7 +85,8 @@ pub enum ForkRefusal {
     Conflict,
     #[error("Conversation id is unavailable")]
     Unavailable,
-    /// The text is not a completed assistant text of the source's history.
+    /// The end is not a completed assistant text of the source's history,
+    /// nor a turn a message started there.
     #[error("{0}")]
     Target(String),
     #[error(transparent)]
@@ -102,13 +104,13 @@ pub enum ForkRefusal {
 const TITLE_SUFFIX: &str = " (Fork)";
 
 impl Core {
-    /// Forks the user's conversation `source` after its assistant text
-    /// `block` into the conversation `destination`.
+    /// Forks the user's conversation `source` into the conversation
+    /// `destination`, its history ending where `point` says.
     pub async fn fork(
         &self,
         source: ConversationId,
         destination: ConversationId,
-        block: BlockId,
+        point: ForkPoint,
     ) -> Result<Forked, ForkRefusal> {
         // Ids compare without case, so one destination takes one turn.
         let _turn = self
@@ -123,7 +125,7 @@ impl Core {
             .ok_or(ForkRefusal::SourceNotFound)?;
         let reserved = store.fork_operation(destination.clone()).await?;
         if let Some(operation) = &reserved
-            && !operation.same_attempt(&source.id, &block)
+            && !operation.same_attempt(&source.id, &point)
         {
             return Err(ForkRefusal::Conflict);
         }
@@ -152,9 +154,23 @@ impl Core {
                 });
             }
         }
+        // A turn is cut before its message's `user` block, as the source's
+        // history holds it now.
+        let message;
+        let end = match &point {
+            ForkPoint::Through(block) => ForkEnd::Through(block),
+            ForkPoint::Before(turn) => {
+                message = self
+                    .agent()
+                    .turn_message(&root_of(&source.id), turn)
+                    .await
+                    .map_err(refused)?;
+                ForkEnd::Before(&message)
+            }
+        };
         let mut seed = self
             .agent()
-            .prepare_fork(&root_of(&source.id), &block)
+            .prepare_fork(&root_of(&source.id), end)
             .await
             .map_err(refused)?;
         let operation = match reserved {
@@ -172,7 +188,7 @@ impl Core {
                 let operation = ForkOperation {
                     id: destination.clone(),
                     source: source.id.clone(),
-                    block,
+                    end: point.clone(),
                     metadata: ForkMetadata {
                         title: source.title.as_ref().map(|title| format!("{title}{TITLE_SUFFIX}")),
                         target,

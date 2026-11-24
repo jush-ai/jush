@@ -164,6 +164,10 @@ pub enum CutError {
     NotUserInput,
     #[error("The Fork target must be a completed assistant message")]
     NotCompletedText,
+    #[error("The Fork must end before a message that started a turn")]
+    NotTurnMessage,
+    #[error("The turn has not started: its message waits in the queue")]
+    TurnNotStarted,
     #[error("The Fork boundary contains unfinished tool calls")]
     UnfinishedToolCalls,
 }
@@ -172,10 +176,15 @@ pub enum CutError {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ForkEnd<'a> {
     /// The completed text the user picked, which a conversation Fork names.
-    At(&'a BlockId),
+    Through(&'a BlockId),
     /// The completed text a side question asks about, with the response
     /// that ended it; see [`fork_prefix`].
     Side(&'a BlockId),
+    /// Before the `user` block of the message that started a turn, which a
+    /// conversation Fork names by its turn: the cut an edit of that message
+    /// makes ([`before_input`]), so the history ends where the turn before
+    /// it ended.
+    Before(&'a BlockId),
 }
 
 /// The blocks before the message `target` the user sent, a `user` or a
@@ -189,8 +198,8 @@ pub fn before_input<'a>(blocks: &'a [Block], target: &BlockId) -> Result<&'a [Bl
     Ok(&blocks[..index])
 }
 
-/// The blocks a Fork keeps, through the completed text block `end` names:
-/// none of them may be a call still executing.
+/// The blocks a Fork keeps, through the completed text block `end` names or
+/// before the message it names: none of them may be a call still executing.
 pub fn fork_prefix<'a>(blocks: &'a [Block], end: ForkEnd<'_>) -> Result<&'a [Block], CutError> {
     let at = |target: &BlockId| {
         blocks
@@ -199,8 +208,8 @@ pub fn fork_prefix<'a>(blocks: &'a [Block], end: ForkEnd<'_>) -> Result<&'a [Blo
             .filter(|index| is_completed(&blocks[*index]))
             .ok_or(CutError::NotCompletedText)
     };
-    let index = match end {
-        ForkEnd::At(target) => at(target)?,
+    let prefix = match end {
+        ForkEnd::Through(target) => &blocks[..=at(target)?],
         // A side question's history is what the conversation's next request
         // would have sent after the reply, its response included, so it reads
         // the conversation's prompt cache.
@@ -209,9 +218,17 @@ pub fn fork_prefix<'a>(blocks: &'a [Block], end: ForkEnd<'_>) -> Result<&'a [Blo
         // summary, and the history is the conversation's context as it stands:
         // the summary and what follows it, through the newest completed text,
         // or through the compaction when no text followed it yet.
-        ForkEnd::Side(target) => side_end(blocks, at(target)?),
+        ForkEnd::Side(target) => &blocks[..=side_end(blocks, at(target)?)],
+        ForkEnd::Before(target) => {
+            let prefix = before_input(blocks, target).map_err(|_| CutError::NotTurnMessage)?;
+            // A steer is input inside a turn, which a cut before it leaves
+            // unended.
+            if !matches!(blocks.get(prefix.len()), Some(Block::User(_))) {
+                return Err(CutError::NotTurnMessage);
+            }
+            prefix
+        }
     };
-    let prefix = &blocks[..=index];
     if prefix.iter().any(is_executing) {
         return Err(CutError::UnfinishedToolCalls);
     }
