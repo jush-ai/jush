@@ -202,11 +202,11 @@ async fn execute(
     match kind {
         // The input is written before a recorded switch lands, so a switch
         // that fails or is stopped ends a turn that holds it.
-        ActionKind::Send { content, comments, schedule } => {
+        ActionKind::Send { content, comments, schedule, sender_id } => {
             let preamble = cancel.guard(s.runtime.preamble()).await?;
             s.update(|core| {
                 let turn = core.turn();
-                core.push_user(turn, content.clone(), comments.clone(), preamble, schedule.clone());
+                core.push_user(turn, content.clone(), comments.clone(), preamble, schedule.clone(), sender_id.clone());
             });
             turn::apply_switch(s, cancel).await?;
             compaction::preflight(s, cancel).await?;

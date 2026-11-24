@@ -86,7 +86,7 @@ impl Core {
         );
         let delivered = self
             .agent()
-            .message_subagent(&root_of(id), node, message_id.clone(), message.text)
+            .message_subagent(&root_of(id), node, message_id.clone(), message.text, message.sender_id)
             .await;
         // A close that began after the open disposes the tree under the
         // delivery, which then says why only in the agents' words.

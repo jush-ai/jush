@@ -1091,6 +1091,7 @@ impl Call<'_> {
                 listed,
                 manages: Vault::manages(core.user(), &route.entry),
                 turn: self.caller.and_then(|caller| caller.turn.clone()),
+                sender_id: self.caller.and_then(|caller| caller.sender_id.clone()),
                 route: &route,
                 model: model_of(&name),
                 name,
@@ -1566,6 +1567,8 @@ struct Making<'a> {
     /// The turn whose shell call started the calling job, which the
     /// ledger rows name even after it ended.
     turn: Option<TurnId>,
+    /// Whom that shell call's command is counted for.
+    sender_id: Option<String>,
     /// Whether the user manages the entry, and so may read its accounts.
     manages: bool,
     conversation: ConversationId,
@@ -1621,6 +1624,7 @@ impl Making<'_> {
             conversation: self.conversation.clone(),
             agent: self.agent,
             turn: self.turn.as_ref().map(ToString::to_string),
+            sender_id: self.sender_id.clone(),
             purpose,
             provider: entry.id.clone(),
             account: account.cloned(),

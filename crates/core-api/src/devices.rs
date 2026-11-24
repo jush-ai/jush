@@ -227,6 +227,7 @@ pub(crate) async fn exec(
                     node: NodeId::try_from("program").expect("a name is not empty"),
                     tool_use_id: "exec".into(),
                     turn: None,
+                    sender_id: None,
                 },
             };
             let time = exec.timeout_ms.map(Duration::from_millis);

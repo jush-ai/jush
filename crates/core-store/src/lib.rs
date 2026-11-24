@@ -132,6 +132,7 @@ pub mod suggested_replies;
 pub mod tokens;
 pub mod tree;
 pub mod usage;
+pub mod usage_report;
 pub mod wakes;
 pub mod work;
 pub mod workspaces;

@@ -108,13 +108,16 @@ impl Made {
     }
 }
 
-/// A usage row as `media_jobs.usage` keeps it, format 1.
+/// A usage row as `media_jobs.usage` keeps it, format 2: format 1 and the
+/// call's sender, which a value of format 1 reads as none.
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct KeptUsage {
     conversation: ConversationId,
     agent: Option<u64>,
     turn: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    sender_id: Option<String>,
     provider: ProviderId,
     account: Option<CredentialId>,
     model: String,
@@ -134,6 +137,7 @@ impl KeptUsage {
             conversation: row.conversation.clone(),
             agent: row.agent,
             turn: row.turn.clone(),
+            sender_id: row.sender_id.clone(),
             provider: row.provider.clone(),
             account: row.account.clone(),
             model: row.model.clone(),
@@ -154,6 +158,7 @@ impl KeptUsage {
             conversation: self.conversation,
             agent: self.agent,
             turn: self.turn,
+            sender_id: self.sender_id,
             purpose: purpose(kind),
             provider: self.provider,
             account: self.account,

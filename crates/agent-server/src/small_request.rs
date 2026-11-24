@@ -55,6 +55,7 @@ pub async fn run_small_request(
         affinity: None,
         conversation: Some(session.to_owned()),
         turn_id: format!("{}:{request_id}", request.purpose.as_str()),
+        sender_id: None,
         request_id,
         model_id: selection.model.id.clone(),
         output_limit: selection.model.output_limit.and_then(NonZeroU32::new),

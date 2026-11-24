@@ -361,6 +361,9 @@ pub(super) struct Invoked<H: DeviceResolver, A> {
     pub(super) caller: NodeId,
     /// The node's `shell` call that started the job.
     pub(super) call: String,
+    /// Whom that call worked for (`JobCaller`): a child it starts or
+    /// resumes, or a message it sends, is that sender's.
+    pub(super) sender_id: Option<String>,
     /// The invoking shell's directory, which a relative path an argument
     /// names is read against.
     pub(super) cwd: String,
@@ -403,6 +406,7 @@ where
                 tree,
                 caller: job.node,
                 call: job.tool_use_id,
+                sender_id: job.sender_id,
                 cwd: call.invocation.cwd.clone(),
                 command: call.invocation.path.join(" "),
                 json: call.invocation.json,
@@ -426,6 +430,7 @@ async fn spawn<H: DeviceResolver>(
         profile_name: call.args.profile,
         description: call.args.description.unwrap_or_default(),
         cwd: call.args.cwd,
+        sender_id: call.sender_id,
     };
     match call.tree.start(&call.caller, input).await {
         Ok(child) => started(&port, call.json, child).await,
@@ -467,6 +472,7 @@ async fn resume<H: DeviceResolver>(
         id,
         message: message.to_owned(),
         profile_name: call.args.profile,
+        sender_id: call.sender_id,
     };
     match call.tree.start(&call.caller, input).await {
         Ok(child) => started(&port, call.json, child).await,
@@ -481,7 +487,7 @@ async fn send<H: DeviceResolver>(call: Invoked<H, SendArgs>, port: RpcPort) -> R
     let message = trim(&call.args.message).to_owned();
     match call
         .tree
-        .send_message(&call.caller, &call.call, &call.args.id, message)
+        .send_message(&call.caller, &call.call, &call.args.id, message, call.sender_id)
         .await
     {
         Ok(target) if call.json => {

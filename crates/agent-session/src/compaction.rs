@@ -29,7 +29,7 @@ use jush_provider_common::{ErrorCode, InferenceItem, RequestLimits, ToolDefiniti
 use jush_shared_gates::{ActivityGate, GateLease, Purpose, Reservation};
 use jush_shared_types::{Timestamp, 
     B64Bytes, BlobRef, Block, ContextUsage, EXECUTION_SOURCE, Model, ModelSelection, NodeId, TokenUsage,
-    TurnId, UserContentBlock, kept_words_budget,
+    QueuedMessage, TurnId, UserContentBlock, kept_words_budget,
 };
 use futures_util::future::LocalBoxFuture;
 
@@ -922,8 +922,15 @@ async fn ask_copy(
     }];
     let turn =
         TurnId::try_from(s.ids.next_id()).expect("an id source never gives an empty identity");
+    // The summary is work for whom the session works, as its turns are.
     let handle = copy
-        .send(instruction, turn)
+        .send_message(QueuedMessage {
+            id: turn,
+            content: instruction,
+            comments: Vec::new(),
+            schedule: None,
+            sender_id: s.read(SessionCore::sender_id),
+        })
         .expect("a new session copy admits its one message");
     let answered = cancel.guard(handle).await;
     let outcome = match answered {

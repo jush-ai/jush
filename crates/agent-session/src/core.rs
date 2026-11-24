@@ -449,6 +449,8 @@ pub(super) enum ActionKind {
         comments: Vec<MessageComment>,
         /// The schedule's run that sent it, which its `user` block keeps.
         schedule: Option<ScheduleMark>,
+        /// Who sent it, which its `user` block keeps.
+        sender_id: Option<String>,
     },
     /// Input that arrived while nothing ran, command reports or agent
     /// messages: it opens a turn of its own, never shown in the queue.
@@ -753,6 +755,12 @@ impl SessionCore {
         TurnId::try_from(self.ids.next_id()).expect("an id source never gives an empty identity")
     }
 
+    /// Whom the agent works for (`Block::sender_id`): whom its requests and
+    /// the commands its calls start are counted for.
+    pub(super) fn sender_id(&self) -> Option<String> {
+        self.transcript.sender_id().map(str::to_owned)
+    }
+
     // Admission and the start of actions.
 
     fn refuse_admission(&self) -> Result<(), AdmissionError> {
@@ -1021,7 +1029,7 @@ impl SessionCore {
         message: QueuedMessage,
     ) -> Result<ActionHandle, AdmissionError> {
         self.refuse_admission()?;
-        let QueuedMessage { id, content, comments, schedule } = message;
+        let QueuedMessage { id, content, comments, schedule, sender_id } = message;
         if self.took(&BlockId::try_from(id.as_str().to_owned()).expect("a turn id is not empty")) {
             return Ok(ActionHandle::ended(ActionEnd::Duplicate));
         }
@@ -1042,7 +1050,7 @@ impl SessionCore {
             queued_ahead = self.pending.len(),
             "a message was admitted"
         );
-        Ok(self.push_action(ActionKind::Send { content, comments, schedule }, id))
+        Ok(self.push_action(ActionKind::Send { content, comments, schedule, sender_id }, id))
     }
 
     /// Admits a retry, a resume or a compaction pass.
@@ -1131,7 +1139,12 @@ impl SessionCore {
                 pending_ms,
                 "a steer no turn took opens the next turn"
             );
-            let kind = ActionKind::Send { content: steer.content, comments: steer.comments, schedule: None };
+            let kind = ActionKind::Send {
+                content: steer.content,
+                comments: steer.comments,
+                schedule: None,
+                sender_id: steer.sender_id,
+            };
             self.start_action(kind, turn, None, pending_ms.unwrap_or(0));
             return;
         }
@@ -1165,11 +1178,12 @@ impl SessionCore {
         let cancel = TurnCancel::new();
         self.held = false;
         let unwritten = match &kind {
-            ActionKind::Send { content, comments, schedule } => Some(QueuedMessage {
+            ActionKind::Send { content, comments, schedule, sender_id } => Some(QueuedMessage {
                 id: turn.clone(),
                 content: content.clone(),
                 comments: comments.clone(),
                 schedule: schedule.clone(),
+                sender_id: sender_id.clone(),
             }),
             _ => None,
         };
@@ -1268,7 +1282,7 @@ impl SessionCore {
         let Some(turn) = self.transcript.last_turn().cloned() else {
             return;
         };
-        self.write_inputs_into(turn, Take::Everything, "failed_turn");
+        self.write_inputs_into(turn, Take::Everything, "failed_turn", false);
     }
 
     /// Keeps waiting input from opening a continuation until the node's
@@ -1533,9 +1547,9 @@ impl SessionCore {
         if began {
             self.record_stop(CancelReason::Shutdown);
             self.log_turn_ended("interrupted", None);
-        } else if let ActionKind::Send { content, comments, schedule } = kind {
+        } else if let ActionKind::Send { content, comments, schedule, sender_id } = kind {
             self.pending.push_front(PendingAction {
-                kind: ActionKind::Send { content, comments, schedule },
+                kind: ActionKind::Send { content, comments, schedule, sender_id },
                 turn: turn.clone(),
                 reply: None,
                 admitted_at: self.clock.now(),
@@ -1555,7 +1569,12 @@ impl SessionCore {
     fn queue_steers(&mut self, mut ahead: usize) {
         while let Some(steer) = self.inputs.take_first_steer() {
             self.pending.insert(ahead, PendingAction {
-                kind: ActionKind::Send { content: steer.content, comments: steer.comments, schedule: None },
+                kind: ActionKind::Send {
+                    content: steer.content,
+                    comments: steer.comments,
+                    schedule: None,
+                    sender_id: steer.sender_id,
+                },
                 turn: TurnId::try_from(steer.id.into_string()).expect("a block id is not empty"),
                 reply: None,
                 admitted_at: self.clock.now(),
@@ -1680,11 +1699,11 @@ impl SessionCore {
             _ => None,
         };
         if let Some((turn, message)) = unwritten {
-            let QueuedMessage { content, comments, schedule, .. } = message;
+            let QueuedMessage { content, comments, schedule, sender_id, .. } = message;
             match reason {
-                CancelReason::Stop => self.push_user(turn, content, comments, None, schedule),
+                CancelReason::Stop => self.push_user(turn, content, comments, None, schedule, sender_id),
                 CancelReason::Hold(_) => self.pending.push_front(PendingAction {
-                    kind: ActionKind::Send { content, comments, schedule },
+                    kind: ActionKind::Send { content, comments, schedule, sender_id },
                     turn,
                     reply: None,
                     admitted_at: self.clock.now(),
@@ -1795,6 +1814,7 @@ impl SessionCore {
             content: user.content.clone(),
             comments: user.comments.clone(),
             schedule: None,
+            sender_id: user.sender_id.clone(),
         };
         let position = self.transcript.start() + at;
         self.transcript.withdraw_from(position);
@@ -2027,11 +2047,12 @@ impl SessionCore {
         self.pending
             .iter()
             .filter_map(|action| match &action.kind {
-                ActionKind::Send { content, comments, schedule } => Some(QueuedMessage {
+                ActionKind::Send { content, comments, schedule, sender_id } => Some(QueuedMessage {
                     id: action.turn.clone(),
                     content: content.clone(),
                     comments: comments.clone(),
                     schedule: schedule.clone(),
+                    sender_id: sender_id.clone(),
                 }),
                 _ => None,
             })
@@ -2055,6 +2076,7 @@ impl SessionCore {
         id: BlockId,
         content: Vec<UserContentBlock>,
         comments: Vec<MessageComment>,
+        sender_id: Option<String>,
     ) -> Result<(), SteerError> {
         let own_turn = TurnId::try_from(id.as_str().to_owned()).expect("a block id is not empty");
         if self.took(&id) {
@@ -2080,7 +2102,7 @@ impl SessionCore {
                 path = "starts_turn",
                 "a steer was admitted while nothing ran, and starts the turn"
             );
-            drop(self.push_action(ActionKind::Send { content, comments, schedule: None }, own_turn));
+            drop(self.push_action(ActionKind::Send { content, comments, schedule: None, sender_id }, own_turn));
             return Ok(());
         }
         // A steer no running turn will take, as one sent after a Stop, names
@@ -2108,6 +2130,7 @@ impl SessionCore {
             model: self.model.clone(),
             content,
             comments,
+            sender_id,
         }));
         Ok(())
     }
@@ -2259,11 +2282,12 @@ impl SessionCore {
     /// written, which is saved at once.
     pub(super) fn write_inputs(&mut self, take: Take, boundary: &'static str) -> bool {
         let turn = self.turn();
-        self.write_inputs_into(turn, take, boundary)
+        self.write_inputs_into(turn, take, boundary, false)
     }
 
-    /// [`write_inputs`](Self::write_inputs) into `turn`.
-    fn write_inputs_into(&mut self, turn: TurnId, take: Take, boundary: &'static str) -> bool {
+    /// [`write_inputs`](Self::write_inputs) into `turn`, whose first input
+    /// opens it when `opens_turn`.
+    fn write_inputs_into(&mut self, turn: TurnId, take: Take, boundary: &'static str, opens_turn: bool) -> bool {
         self.drop_seen_ends();
         let inputs = self.inputs.take(take);
         if inputs.is_empty() {
@@ -2277,12 +2301,22 @@ impl SessionCore {
             })
             .collect();
         let mut agent_message = false;
+        // The first message opens the turn; a report that waited for one
+        // joins it.
+        let mut opening = opens_turn;
         for input in inputs {
+            let opens = !matches!(input, Input::Report(..)) && mem::replace(&mut opening, false);
             match input {
                 Input::Steer(steer) => {
                     self.log_written(&turn, steer.id.as_str(), "steer", boundary);
-                    self.transcript
-                        .push_steer(steer.id, turn.clone(), &steer.model, steer.content, steer.comments);
+                    self.transcript.push_steer(
+                        steer.id,
+                        turn.clone(),
+                        &steer.model,
+                        steer.content,
+                        steer.comments,
+                        steer.sender_id,
+                    );
                 }
                 Input::Report(..) if reports.is_empty() => {}
                 Input::Report(..) => {
@@ -2300,7 +2334,7 @@ impl SessionCore {
                         .as_ref()
                         .is_some_and(|sender| self.runtime.is_below(&sender.id));
                     self.transcript
-                        .push_agent_message(turn.clone(), &input.model, input.message, sender_below);
+                        .push_agent_message(turn.clone(), &input.model, input.message, sender_below, opens);
                 }
             }
         }
@@ -2326,21 +2360,30 @@ impl SessionCore {
     }
 
     /// Writes what a continuation opens with: the command reports as one
-    /// `wakeup` block that opens the turn, or else the waiting agent messages.
+    /// `wakeup` block that opens the turn, those that open one first, when
+    /// one does; or else the waiting agent messages, then the reports that
+    /// waited for a turn, as the running turn takes them.
     ///
     /// False when nothing waits any more, and the continuation ends without a
     /// turn.
     pub(super) fn open_continuation(&mut self) -> Option<bool> {
         self.drop_seen_ends();
-        let reports = self.inputs.take_reports();
-        if !reports.is_empty() {
+        if self.inputs.has_report() {
+            let reports = self.inputs.take_reports();
             let turn = self.turn();
             self.push_reports(turn, WakeupPlacement::NewTurn, reports, "continuation");
             self.commit();
             return Some(false);
         }
         if self.inputs.has_agent_input() {
-            return Some(self.write_inputs(Take::Everything, "continuation"));
+            let turn = self.turn();
+            let waited = self.inputs.take_reports();
+            let agent_message = self.write_inputs_into(turn.clone(), Take::Everything, "continuation", true);
+            if !waited.is_empty() {
+                self.push_reports(turn, WakeupPlacement::Steer, waited, "continuation");
+                self.commit();
+            }
+            return Some(agent_message);
         }
         None
     }
@@ -2599,6 +2642,7 @@ impl SessionCore {
         comments: Vec<MessageComment>,
         preamble: Option<String>,
         schedule: Option<ScheduleMark>,
+        sender_id: Option<String>,
     ) {
         session_log!(
             self,
@@ -2616,7 +2660,7 @@ impl SessionCore {
             "a message was written into its turn"
         );
         self.transcript
-            .push_user(turn, &self.model, content, comments, preamble, schedule);
+            .push_user(turn, &self.model, content, comments, preamble, schedule, sender_id);
         if let Activity::Running(run) = &mut self.activity {
             run.unwritten = None;
         }
@@ -3162,6 +3206,7 @@ impl SessionCore {
             affinity: self.runtime.affinity(),
             conversation: self.runtime.conversation(),
             turn_id: turn.to_string(),
+            sender_id: self.sender_id(),
             request_id,
             model_id: self.model.model.id.clone(),
             output_limit: self.model.model.output_limit.and_then(NonZeroU32::new),
@@ -3253,6 +3298,7 @@ impl SessionCore {
             affinity: self.runtime.affinity(),
             conversation: self.runtime.conversation(),
             turn_id: String::new(),
+            sender_id: self.sender_id(),
             request_id,
             model_id: model.model.id.clone(),
             output_limit: model.model.output_limit.and_then(NonZeroU32::new),

@@ -240,6 +240,7 @@ impl Core {
                 node: NodeId::try_from("schedule").expect("a name is not empty"),
                 tool_use_id: "watch".into(),
                 turn: None,
+                sender_id: None,
             },
         };
         let cancel = CancellationToken::new();

@@ -379,17 +379,21 @@ conversation's `identity`, which opened Jush's system prompt, opens as the
 `systemPrompt` its agents read then: the identity, and Jush's rules for
 running commands and replying after it.
 
-`conversation.run(input)` sends a message and resolves once the turn it
-starts ended, with that turn's blocks and outcome, also when your program's
-connection to the process dropped while the turn ended. It fails when the
-message leaves the queue without running, as an abort that clears the queue
-or gives the message back makes it, or when the conversation closes first.
-The other actions are the ones the app has:
+`conversation.run(input, options?)` sends a message and resolves once the
+turn it starts ended, with that turn's blocks and outcome, also when your
+program's connection to the process dropped while the turn ended. It fails
+when the message leaves the queue without running, as an abort that clears
+the queue or gives the message back makes it, or when the conversation
+closes first. `options.senderId` names who sent the message, by your own
+id, such as a person of a team's chat: the message's `user` block keeps it
+as `senderId`, so a page can show who wrote what, the model does not read
+it, and [Usage](#usage) says what it counts. The other actions are the ones
+the app has:
 
 | Method | What it does |
 | --- | --- |
-| `send(input, messageId?)` | Sends a message, queued behind a running turn; resolves once the conversation holds it |
-| `steer(input, steerId?)` | Hands a message to the running turn; resolves once the turn took it |
+| `send(input, messageId?, options?)` | Sends a message, queued behind a running turn; resolves once the conversation holds it; `options.senderId` as `run` takes it |
+| `steer(input, steerId?, options?)` | Hands a message to the running turn; resolves once the turn took it; `options.senderId` as `run` takes it |
 | `abort()` | Stops the running turn |
 | `retry()` | Runs the latest turn again from your message |
 | `resume()` | Finishes a turn that did not finish |
@@ -487,11 +491,12 @@ the core, and the next action follows it again.
 the conversation's, and each subagent, with its role, phase and queue. The
 `agents` and `agent` events say they changed.
 
-`conversation.sendToAgent(node, text)` sends a message to one subagent, named
-by its id in `conversation.agents`. A subagent at work takes it as a steer, an
-idle one starts a turn with it, and one that ended is resumed with it. Give
-the message an id when you may send it again, such as after a lost answer:
-the subagent takes a message once, however often it arrives.
+`conversation.sendToAgent(node, text, messageId?, options?)` sends a message
+to one subagent, named by its id in `conversation.agents`. A subagent at work
+takes it as a steer, an idle one starts a turn with it, and one that ended is
+resumed with it. Give the message an id when you may send it again, such as
+after a lost answer: the subagent takes a message once, however often it
+arrives. `options.senderId` names who sent it, as `run` takes it.
 
 ```ts
 const tester = conversation.agents.find((agent) => agent.role.kind === 'subagent' && agent.role.profile === 'tester')
@@ -676,6 +681,58 @@ core.on('notify', async (message) => {
 `{ type: 'shown' }` says every place that would show it shows its
 conversation already.
 
+## Usage
+
+`core.usage.report` sums the calls of a period by hour or by day of a time
+zone, grouped by any of `conversation`, `sender`, `model`, `provider`,
+`account`, `turn` and `purpose`:
+
+```ts
+const report = await core.usage.report({
+  from: new Date('2026-11-01T00:00:00+08:00'),
+  to: new Date('2026-12-01T00:00:00+08:00'),
+  bucket: 'day',
+  timeZone: 'Asia/Shanghai',
+  groupBy: ['conversation', 'sender', 'model'],
+})
+for (const bucket of report.buckets) {
+  for (const group of bucket.groups) {
+    console.log(bucket.start, group.sender, group.model, group.calls, group.cost.usd, group.apiPrice)
+  }
+}
+```
+
+A group counts its calls and their tokens, `cost` is what the vendors said
+the calls cost, by currency and never converted, and `apiPrice` what their
+tokens would cost on the vendors' APIs in dollars, leaving out the
+`unpricedCalls` whose model has no price. A bucket holds only the groups that
+made calls, and a period without calls has no bucket; the first and the last
+bucket start and end with the period, so two reports of adjoining periods
+never hold the same bucket.
+
+A call's sender is that of the latest message that handed its agent work,
+by the `senderId` your program sent it with: a message, a steer, a side
+question, or another agent's message; or that of the work whose end opened
+its turn.
+
+- Alice's message starts a turn: the turn's calls are Alice's, and so are
+  those of the turn that continues once a command it started ends.
+- A subagent the agent starts while working for Alice works for Alice,
+  and its calls and those of the commands it runs are hers. So is the work
+  of a subagent or a conversation the agent sends a message to then.
+- Bob steers the running turn: the calls after the agent read his steer
+  are Bob's.
+- A turn that work for Alice wakes once it ends is Alice's, even after
+  Bob's message: a command started in her turn, a subagent working for
+  her, or another conversation her turn sent a message to with
+  `--wake-when-done`. What ends while Bob's turn runs joins that turn,
+  which stays Bob's.
+
+After a message that names no sender, as one from the app or from a
+schedule, the calls have a null sender, and so does a turn that the end of
+work it started opens. So do the calls outside an agent's work, such as a
+title's or the suggested replies after a turn.
+
 ## Everything else a core does
 
 Every capability of a core has a method, on the object it acts on, and its
@@ -702,7 +759,7 @@ const token = await core.credentials.create({
 | `conversation.changes` | `status`, `file`, `committed`, `branches`, `repositories`, `log`, `show(commit)` |
 | `conversation.plugins` | `state(plugin)`, `call(plugin, method, input)` |
 | `core` | `search(text)`, `blob(sha256)`, `upload` |
-| `core.usage` | `totals()` |
+| `core.usage` | `totals()`, `report(options)` |
 | `core.models` | `search(text)`, `refresh()` |
 | `core.providers` | `list`, `create`, `update`, `remove`, `catalog`, `order`, `status`, `quota`, `test`, `cli`, `installCli`, `accounts(id)`, `signIn` |
 | `core.credentials` | `list`, `create`, `update`, `remove`, `reveal(id, field)` |

@@ -159,12 +159,13 @@ pub trait CommandKeeper {
     fn looked<'a>(&'a self, command: &'a CommandId, seen: Seen) -> LocalBoxFuture<'a, ()>;
 
     /// Records the command's end, `end`, with its whole output, what its
-    /// result tells of its media and the title of the call that started it,
-    /// in place of its record as running.
+    /// result tells of its media, and the title of the call that started it
+    /// and whom that call's work is for, in place of its record as running.
     fn keep_output<'a>(
         &'a self,
         command: &'a CommandId,
         title: &'a str,
+        sender_id: Option<&'a str>,
         end: CommandEnd,
         output: &'a WholeOutput,
         media: &'a [CommandMedium],
@@ -387,7 +388,8 @@ impl RemoteShellEnvironment {
             &request.script,
             request.service,
         )
-        .on_device(self.0.options.named.clone());
+        .on_device(self.0.options.named.clone())
+        .for_sender(request.caller.sender_id.clone());
         let (running, record) = self.hold(&command, record, cancel.child_token());
         let environment = self.clone();
         let task_command = command.clone();
@@ -437,7 +439,8 @@ impl RemoteShellEnvironment {
             running,
             seen,
         )
-        .on_device(self.0.options.named.clone());
+        .on_device(self.0.options.named.clone())
+        .for_sender(caller.sender_id.clone());
         let (running, record) = self.hold(&command, record, CancellationToken::new());
         let begin = match unsent {
             Some(UnsentStart { script, cwd, viewable }) => Begin::Start {
@@ -1053,8 +1056,11 @@ impl RemoteShellEnvironment {
             page,
         } = settlement;
         if let Some(keeper) = &self.0.options.keeper {
-            let title = record.borrow().title().to_owned();
-            keeper.keep_output(command, &title, end.clone(), &output, &media).await;
+            let (title, sender_id) = {
+                let record = record.borrow();
+                (record.title().to_owned(), record.sender_id().map(str::to_owned))
+            };
+            keeper.keep_output(command, &title, sender_id.as_deref(), end.clone(), &output, &media).await;
         }
         if let Some(job) = job {
             job.release().await;
@@ -1183,6 +1189,10 @@ impl ShellEnvironment for RemoteShellEnvironment {
 
     fn title(&self, command: &CommandId) -> Option<String> {
         Some(self.record(command).ok()?.borrow().title().to_owned())
+    }
+
+    fn sender_id(&self, command: &CommandId) -> Option<String> {
+        self.record(command).ok()?.borrow().sender_id().map(str::to_owned)
     }
 
     fn quiet(&self, command: &CommandId) -> Result<Duration, ShellError> {

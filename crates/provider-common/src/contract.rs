@@ -390,6 +390,11 @@ pub struct InferenceRequest {
     pub conversation: Option<String>,
     /// The turn the request belongs to; continuations inside a turn share it.
     pub turn_id: String,
+    /// Whom its agent works for, by the id the program gave its sender
+    /// (`Block::sender_id`): the usage ledger counts the call for that
+    /// sender. None when no one was named, and for a request of no
+    /// session's, such as a title's. It never reaches a vendor.
+    pub sender_id: Option<String>,
     /// This request, unique per attempt.
     pub request_id: String,
     pub model_id: String,

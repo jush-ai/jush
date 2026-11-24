@@ -1284,11 +1284,13 @@ fn saved_frame(content: Vec<ClientContent>, turn: TurnId, delivery: SavedDeliver
             message_id: turn,
             content,
             comments: Vec::new(),
+            sender_id: None,
         }),
         SavedDelivery::Steer => ClientFrame::Steer {
             comments: Vec::new(),
             steer_id: BlockId::try_from(turn.into_string()).expect("a turn id is not empty"),
             content,
+            sender_id: None,
         },
     }
 }

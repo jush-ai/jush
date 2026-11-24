@@ -27,11 +27,14 @@
 //!   was deleted, once the deletion is done.
 //! - A sender archived or deleted wakes for nothing: its wake goes.
 
+use std::collections::HashMap;
+
 use jush_agent_session::{AgentSession, EndedTurn, TurnOutcome};
 use jush_core_store::wakes::PendingWake;
 use jush_core_device_access::root_of;
 use jush_shared_types::{
-    AgentMessage, AgentMessageEvent, CompletionOutcome, NodeId, Sender, SenderConversation, Timestamp, done_id,
+    AgentMessage, AgentMessageEvent, BlockId, CompletionOutcome, NodeId, Sender, SenderConversation, Timestamp,
+    done_id,
 };
 use jush_web_api_protocol::ids::ConversationId;
 
@@ -105,6 +108,7 @@ impl Core {
                 return;
             }
         };
+        let mut named = Named::of(&wakes);
         let open: Vec<PendingWake> = wakes.into_iter().filter(|wake| wake.notice.is_none()).collect();
         if open.is_empty() {
             return;
@@ -128,7 +132,7 @@ impl Core {
                     continue;
                 }
             };
-            let notice = notice(&wake, finished.title.as_deref(), round, &told, now);
+            let notice = named.name(notice(&wake, finished.title.as_deref(), round, &told, now));
             if let Err(error) = control.settle_wake(wake.recipient.clone(), wake.message.clone(), notice.clone()).await {
                 tracing::warn!(event = "wake.notice_unsaved", %conversation, message = %wake.message, %error, "a wake's notice was not kept, so a failed delivery is not tried again");
             }
@@ -162,6 +166,7 @@ impl Core {
             Some((session, Finished { conversation: conversation.clone(), title: title.clone(), end, error }))
         });
         let now = control.now();
+        let mut named = Named::of(&wakes);
         let mut notices = Vec::new();
         for wake in wakes {
             if let Some(notice) = wake.notice.clone() {
@@ -175,7 +180,7 @@ impl Core {
                 },
                 None => Told::Deleted,
             };
-            let notice = notice(&wake, title.as_deref(), round, &told, now);
+            let notice = named.name(notice(&wake, title.as_deref(), round, &told, now));
             notices.push((wake, notice));
         }
         notices
@@ -281,6 +286,27 @@ fn notice(wake: &PendingWake, title: Option<&str>, round: u64, told: &Told, now:
         event: AgentMessageEvent::Completion { outcome },
         // The notice opens the conversation, at its end.
         origin: None,
+        sender_id: wake.message_sender_id.clone(),
+    }
+}
+
+/// Whom each notice is for, by its id. Several messages of one agent the
+/// same turn took wake it with one notice of that turn's end, which the
+/// agent takes once (`done_id`): each such notice names the first's
+/// sender, so the agent finds them the same message.
+struct Named(HashMap<BlockId, Option<String>>);
+
+impl Named {
+    /// Whom the notices `wakes` keep already are for.
+    fn of(wakes: &[PendingWake]) -> Self {
+        let kept = wakes.iter().filter_map(|wake| wake.notice.as_ref());
+        Self(kept.map(|notice| (notice.id.clone(), notice.sender_id.clone())).collect())
+    }
+
+    /// `notice`, naming whom the first notice of its id was for.
+    fn name(&mut self, mut notice: AgentMessage) -> AgentMessage {
+        notice.sender_id = self.0.entry(notice.id.clone()).or_insert(notice.sender_id).clone();
+        notice
     }
 }
 
