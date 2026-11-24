@@ -60,12 +60,12 @@ pub struct ForkMetadata {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[garde(skip)]
     pub browser_profile: Option<BrowserProfileName>,
-    /// The source's identity and the commands it names, which the
+    /// The source's system prompt and the commands it names, which the
     /// destination keeps as it keeps the model; absent for Jush's and for
     /// every command.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[garde(skip)]
-    pub identity: Option<String>,
+    pub system_prompt: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[garde(skip)]
     pub commands: Option<Vec<String>>,
@@ -215,7 +215,7 @@ impl CoreStore {
                     model: metadata.model.as_ref(),
                     workflow: &metadata.workflow,
                     browser_profile: metadata.browser_profile.as_ref(),
-                    identity: metadata.identity.as_deref(),
+                    system_prompt: metadata.system_prompt.as_deref(),
                     commands: metadata.commands.as_deref(),
                     context_version: metadata.context_version,
                     at: metadata.created_at,

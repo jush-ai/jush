@@ -234,8 +234,8 @@ enum Thinking {
 ///
 /// Jush's system prompt changes during a conversation: its capability index
 /// follows the commands the user and the program turn on, a program changes
-/// a conversation's identity, and a release rewords its guide. Each change
-/// would otherwise end every conversation that holds thinking, Resume
+/// a conversation's system prompt, and a release rewords its guide. Each
+/// change would otherwise end every conversation that holds thinking, Resume
 /// included. The model loses that reasoning once, and the prompt cache from
 /// the first block dropped; the blocks written since bind to the new prefix.
 #[derive(Serialize)]

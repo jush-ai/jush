@@ -237,10 +237,11 @@ pub struct ServerDeps<H: DeviceResolver> {
 /// The product's layers of a conversation's system prompts.
 #[derive(Debug, Clone)]
 pub struct ProductPrompt {
-    /// What the agent is, which opens every node's prompt; a profile's
-    /// instructions follow it, never replace it.
+    /// What the agent is, which opens every node's prompt: Jush's identity,
+    /// or a program's whole system prompt; a profile's instructions follow
+    /// it, never replace it.
     pub identity: Rc<str>,
-    /// The harness guide after it.
+    /// The harness guide after it; empty after a program's system prompt.
     pub guide: Rc<str>,
 }
 

@@ -84,9 +84,9 @@ pub struct ConversationRecord {
     pub browser_profile: Option<BrowserProfileName>,
     /// How many times its browser profile changed.
     pub browser_profile_revision: u64,
-    /// The sentences that open its agents' system prompts in place of
-    /// Jush's; none for Jush's.
-    pub identity: Option<String>,
+    /// The system prompt its agents read in place of Jush's; none for
+    /// Jush's.
+    pub system_prompt: Option<String>,
     /// The commands its agents have, by path without `jush`; none for every
     /// command.
     pub commands: Option<Vec<String>>,
@@ -213,8 +213,8 @@ pub enum RecordChange {
     Workflow(WorkflowChoice),
     /// The browser profile it names now; none for a profile of its own.
     BrowserProfile(Option<BrowserProfileName>),
-    /// The identity its agents speak with now; none for Jush's.
-    Identity(Option<String>),
+    /// The system prompt its agents read now; none for Jush's.
+    SystemPrompt(Option<String>),
     /// The commands its agents have now; none for every command.
     Commands(Option<Vec<String>>),
     /// A device of the user's attached; one attached already stays as it is.
@@ -263,7 +263,7 @@ pub struct ConversationStart {
     /// its first message.
     pub workflow: WorkflowChoice,
     pub browser_profile: Option<BrowserProfileName>,
-    pub identity: Option<String>,
+    pub system_prompt: Option<String>,
     pub commands: Option<Vec<String>>,
 }
 
@@ -279,7 +279,7 @@ impl ConversationStart {
             model: None,
             workflow: WorkflowChoice::Default,
             browser_profile: None,
-            identity: None,
+            system_prompt: None,
             commands: None,
         }
     }
@@ -308,7 +308,7 @@ const CONVERSATION_COLUMNS: &str = "id, workspace_id, title, title_origin, archi
      asked_end_revision, asked_end_failed, target_kind, target_device_id,
      target_path, target_project_id, target_worktree_name, target_worktree_path, context_version, model, workflow_kind,
      workflow_id, workflow_worktree, created_at, updated_at, devices_revision, browser_profile, browser_profile_revision,
-     identity, commands,
+     system_prompt, commands,
      COALESCE((SELECT revision FROM conversation_drafts WHERE conversation_id = conversations.id), 0) AS draft_revision,
      COALESCE((SELECT saved_revision FROM conversation_drafts WHERE conversation_id = conversations.id), 0) AS saved_revision,
      (SELECT count(*) FROM saved_messages
@@ -443,7 +443,7 @@ impl CoreStore {
                     model: start.model.as_ref(),
                     workflow: &workflow,
                     browser_profile: start.browser_profile.as_ref(),
-                    identity: start.identity.as_deref(),
+                    system_prompt: start.system_prompt.as_deref(),
                     commands: start.commands.as_deref(),
                     context_version: 0,
                     at: now,
@@ -735,9 +735,9 @@ impl CoreStore {
                      WHERE id = ?1 AND browser_profile IS NOT ?2",
                     params![id.as_str(), profile.as_ref().map(BrowserProfileName::as_str)],
                 )?,
-                RecordChange::Identity(identity) => transaction.execute(
-                    "UPDATE conversations SET identity = ?2 WHERE id = ?1 AND identity IS NOT ?2",
-                    params![id.as_str(), identity],
+                RecordChange::SystemPrompt(prompt) => transaction.execute(
+                    "UPDATE conversations SET system_prompt = ?2 WHERE id = ?1 AND system_prompt IS NOT ?2",
+                    params![id.as_str(), prompt],
                 )?,
                 RecordChange::Commands(commands) => transaction.execute(
                     "UPDATE conversations SET commands = ?2 WHERE id = ?1 AND commands IS NOT ?2",
@@ -870,7 +870,7 @@ pub struct NewConversation<'a> {
     pub model: Option<&'a ModelSelection>,
     pub workflow: &'a WorkflowChoice,
     pub browser_profile: Option<&'a BrowserProfileName>,
-    pub identity: Option<&'a str>,
+    pub system_prompt: Option<&'a str>,
     pub commands: Option<&'a [String]>,
     /// The execution-context revision it starts at: 0, or a Fork's source's
     /// at the Fork, which the context blocks its copied transcript name.
@@ -891,7 +891,7 @@ pub fn insert_conversation(
         "INSERT INTO conversations (id, title, title_origin, pinned, sort_order,
            read_revision, target_kind, target_device_id, target_path, target_project_id, context_version,
            model, created_at, updated_at, workflow_kind, workflow_id, target_worktree_name, target_worktree_path,
-           workflow_worktree, workspace_id, browser_profile, identity, commands)
+           workflow_worktree, workspace_id, browser_profile, system_prompt, commands)
          VALUES (?1, ?2, ?3, ?10,
            (SELECT COALESCE(MIN(sort_order), 0) - 1 FROM conversations),
            0, ?4, ?5, ?6, ?7, ?13, ?8, ?9, ?9, ?11, ?12, ?14, ?15, ?16, ?17, ?18, ?19, ?20)
@@ -916,7 +916,7 @@ pub fn insert_conversation(
             workflow_worktree,
             new.workspace.as_str(),
             new.browser_profile.map(BrowserProfileName::as_str),
-            new.identity,
+            new.system_prompt,
             new.commands.map(|commands| to_json(&commands))
         ],
     )?;
@@ -1062,7 +1062,7 @@ fn conversation_row(row: &Row<'_>) -> Result<ConversationRecord, StorageError> {
             "browser_profile_revision",
             u64::try_from(row.get::<_, i64>("browser_profile_revision")?),
         )?,
-        identity: row.get("identity")?,
+        system_prompt: row.get("system_prompt")?,
         commands: row
             .get::<_, Option<String>>("commands")?
             .map(|text| decode(TABLE, "commands", serde_json::from_str::<Vec<String>>(&text)))

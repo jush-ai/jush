@@ -156,7 +156,7 @@ impl Core {
                 return Ok(None);
             }
             ConversationChange::Record(change) if !change_is_transition(&change) => {
-                let prompt = matches!(change, RecordChange::Identity(_));
+                let prompt = matches!(change, RecordChange::SystemPrompt(_));
                 let commands = matches!(change, RecordChange::Commands(_));
                 {
                     // A field update waits while a transition holds the
@@ -596,10 +596,10 @@ impl Core {
                 RecordChange::BrowserProfile(profile).into(),
             ));
         }
-        if let Some(identity) = patch.identity {
+        if let Some(prompt) = patch.system_prompt {
             changes.push((
-                vec![PatchField::Identity],
-                RecordChange::Identity(identity).into(),
+                vec![PatchField::SystemPrompt],
+                RecordChange::SystemPrompt(prompt).into(),
             ));
         }
         if let Some(commands) = patch.commands {

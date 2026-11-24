@@ -341,10 +341,12 @@ const refunds = await core.conversations.create({ title: 'Refunds', model, targe
 await refunds.update({ browserProfile: null })
 ```
 
-An agent introduces itself as Jush unless its conversation names an
-`identity`, the sentences that open its system prompt instead. Jush's rules
-for running commands and replying still follow them. A change of the
-identity made with `update` reaches each agent from its next request.
+Every agent of a conversation, its subagents included, reads Jush's system
+prompt unless the conversation names a `systemPrompt`, your whole text in
+its place. After it, Jush writes the index of the conversation's commands
+and the line naming the model that serves it, and a subagent's profile's
+instructions after those. A change made with `update` reaches each agent
+from its next request, and `systemPrompt: null` gives Jush's back.
 
 `commands` lists the commands the conversation's agents have, Jush's and
 your plugins' alike, each by its path without `jush`: a group, such as
@@ -363,7 +365,7 @@ list reaches each agent from its next command.
 const desk = await core.conversations.create({
   model,
   target,
-  identity: "You are the help desk's assistant. You answer the team's questions about their accounts.",
+  systemPrompt: "You are the help desk's assistant. You answer the team's questions about their accounts, in the team's chat: plain text, no links.",
   commands: ['browser', 'schedule', 'tickets'],
 })
 // Try the next version of the commands in this conversation alone:
@@ -372,7 +374,10 @@ await desk.update({ commands: ['browser', 'schedule', 'tickets-next'] })
 
 A core an earlier release made kept a list of plugin ids, `plugins`, which
 opens as `commands`: Jush's groups of then and those ids, each taken for its
-plugin's group name. Name again a plugin whose group is named otherwise.
+plugin's group name. Name again a plugin whose group is named otherwise. A
+conversation's `identity`, which opened Jush's system prompt, opens as the
+`systemPrompt` its agents read then: the identity, and Jush's rules for
+running commands and replying after it.
 
 `conversation.run(input)` sends a message and resolves once the turn it
 starts ended, with that turn's blocks and outcome, also when your program's

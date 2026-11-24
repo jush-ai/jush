@@ -1,6 +1,7 @@
 //! What the backend's conversations are assembled from.
 //!
-//! - The product's instructions, or the identity a conversation names.
+//! - The product's instructions and guide, or the system prompt a
+//!   conversation names.
 //! - The toolset of the plugins the user has on, with the product's
 //!   `jush device` and `jush attachment` groups, narrowed to the commands
 //!   the conversation names.
@@ -52,31 +53,25 @@ use crate::credential_commands::credentials_group;
 use crate::notify_commands::notify_group;
 
 /// The product's instructions, the identity that opens every node's system
-/// prompt unless its conversation names another.
+/// prompt unless its conversation names a system prompt of its own.
 const INSTRUCTIONS: &str = "You are Jush, an agent that works for the user on their computers: a Jush Cloud machine or the devices they paired. You write and run software, research, operate websites, and work with files and data, across turns.";
 
-/// The harness guide every node's system prompt carries after its identity,
-/// a profile's node too, around the words of the web app's Files view, which
-/// a conversation with an identity of its own goes without. A sentence that
-/// tells of a command is left out where the conversation's list does not
-/// name it.
-const GUIDE_START: &str = "Guidelines:\n- Commands run on the conversation's primary device, in its working directory; a context block names both. The directory stays between turns";
-const GUIDE_FILES: &str = ", and Files shows it";
+/// The harness guide Jush's system prompt carries after its identity, a
+/// profile's node too. A sentence that tells of a command is left out where
+/// the conversation's list does not name it.
+const GUIDE_START: &str = "Guidelines:\n- Commands run on the conversation's primary device, in its working directory; a context block names both. The directory stays between turns, and Files shows it";
 const GUIDE_MOVE: &str = "; to work in another directory, move there with `jush device move` first";
 const GUIDE_WAIT: &str = ".\n- To wait for a command or a subagent, end your turn: its end or its message wakes you, and you continue then. Never wait with sleep or a loop.\n- The user reads only your replies, rendered as Markdown. Be concise.";
 const GUIDE_ATTACHMENT: &str = "\n- Deliver a file as an attachment: `jush attachment upload`, then `<attachment id=\"a3\" />` on its own line; a medium a tool result showed you has its `attachment_id` already.";
 const GUIDE_LINKS: &str = "\n- Link what the user can open: a device file `[runner.md](docs/runner.md#L438)`, or `device:<id>/abs/path` on an attached device, a subagent `[File icons](agent:4)`, a commit `[Fix the cart total](commit:3f2a9c1)`, or `commit:src/v8@86229da` in another repository, a conversation `[Login test](conversation:<id>)`.";
 
-/// The guide of a conversation with or without an identity of its own,
-/// whose list names `commands`, every command when none.
-fn guide(own_identity: bool, commands: Option<&CommandList>) -> String {
+/// The guide of a conversation whose list names `commands`, every command
+/// when none.
+fn guide(commands: Option<&CommandList>) -> String {
     let has = |path: &[&str]| {
         commands.is_none_or(|list| list.names(&path.iter().map(|word| (*word).to_owned()).collect::<Vec<_>>()))
     };
     let mut guide = GUIDE_START.to_owned();
-    if !own_identity {
-        guide.push_str(GUIDE_FILES);
-    }
     if has(&["jush", "device", "move"]) {
         guide.push_str(GUIDE_MOVE);
     }
@@ -89,8 +84,8 @@ fn guide(own_identity: bool, commands: Option<&CommandList>) -> String {
 }
 
 /// The product's layers of a conversation's system prompts: Jush's
-/// identity and the whole guide, or the identity it names and the guide
-/// without the Files view; each guide without what its list leaves out.
+/// identity and guide, the guide without what its list leaves out, or the
+/// system prompt the conversation names alone.
 pub(crate) struct CorePrompts {
     /// Weak: the core owns the agent server that holds the source.
     pub(crate) core: Weak<Core>,
@@ -108,18 +103,18 @@ impl PromptSource for CorePrompts {
                 .conversation(conversation_of(root))
                 .await
                 .map_err(|error| error.to_string())?;
-            let (identity, commands) = match record {
-                Some(record) => (record.identity, record.commands.as_deref().map(CommandList::new)),
+            let (system_prompt, commands) = match record {
+                Some(record) => (record.system_prompt, record.commands.as_deref().map(CommandList::new)),
                 None => (None, None),
             };
-            Ok(match identity {
-                Some(identity) => ProductPrompt {
-                    identity: Rc::from(identity),
-                    guide: Rc::from(guide(true, commands.as_ref())),
+            Ok(match system_prompt {
+                Some(prompt) => ProductPrompt {
+                    identity: Rc::from(prompt),
+                    guide: Rc::from(""),
                 },
                 None => ProductPrompt {
                     identity: Rc::from(INSTRUCTIONS),
-                    guide: Rc::from(guide(false, commands.as_ref())),
+                    guide: Rc::from(guide(commands.as_ref())),
                 },
             })
         })

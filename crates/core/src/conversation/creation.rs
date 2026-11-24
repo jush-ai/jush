@@ -121,7 +121,7 @@ impl Core {
             model,
             workflow: request.workflow.unwrap_or_default(),
             browser_profile: request.browser_profile,
-            identity: request.identity,
+            system_prompt: request.system_prompt,
             commands: request.commands,
         })
     }

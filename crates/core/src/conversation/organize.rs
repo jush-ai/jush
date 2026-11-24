@@ -360,7 +360,7 @@ async fn new(core: Rc<Core>, call: Call<NewArgs>, port: RpcPort) -> Result<u8, R
         model: starting.model.clone(),
         workflow: workflow.clone(),
         browser_profile: starting.browser_profile.clone(),
-        identity: starting.identity.clone(),
+        system_prompt: starting.system_prompt.clone(),
         commands: starting.commands.clone(),
     };
     let id = ConversationId::try_from(uuid::Uuid::new_v4().to_string()).expect("a UUID is a conversation's id");
