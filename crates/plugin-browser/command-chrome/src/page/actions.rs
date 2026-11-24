@@ -322,6 +322,7 @@ async fn command_run(
                         input.load.unwrap_or_default(),
                         &operation,
                         references,
+                        true,
                     )
                     .await?;
                 Ok(TabResult::Navigation(completed_navigation(tab, url).await))
@@ -333,6 +334,7 @@ async fn command_run(
                         input.load.unwrap_or_default(),
                         &operation,
                         references,
+                        true,
                     )
                     .await?;
                 Ok(TabResult::Navigation(completed_navigation(tab, url).await))
@@ -347,7 +349,7 @@ async fn command_run(
                 }
                 .unwrap_or_default();
                 let url = tab
-                    .navigate(Navigation::History(entry.id), load, &operation, references)
+                    .navigate(Navigation::History(entry.id), load, &operation, references, true)
                     .await?;
                 Ok(TabResult::Navigation(completed_navigation(tab, url).await))
             }),
@@ -1008,11 +1010,18 @@ async fn command_run(
     } else {
         operation.run(work).await
     };
+    // A navigation's document takes its objects along as it goes, and one
+    // still loading at the deadline holds Chrome's answer to a release past
+    // the cleanup's own bound; the next command releases what stayed.
     let cleanup = if matches!(
         command,
         BrowserOperation::DialogInspect(_)
             | BrowserOperation::DialogAccept(_)
             | BrowserOperation::DialogDismiss(_)
+            | BrowserOperation::Open(_)
+            | BrowserOperation::Reload(_)
+            | BrowserOperation::Back(_)
+            | BrowserOperation::Forward(_)
     ) {
         Ok(())
     } else {

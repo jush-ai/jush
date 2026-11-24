@@ -28,7 +28,7 @@ use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
 
 use jush_command_package_browser_protocol::browser::{
-    ActionProgress, AssetsExportResult, BrowserErrorCode, ErrorDetails,
+    ActionProgress, AssetsExportResult, BrowserErrorCode, ErrorDetails, Load,
 };
 
 pub const CONTROL_TIMEOUT: Duration = Duration::from_secs(5);
@@ -125,6 +125,18 @@ pub enum BrowserError {
     Cancelled,
     #[error("browser operation exceeded its deadline")]
     Timeout,
+    /// A navigation of a tab the agent keeps passed the deadline after its
+    /// page came, before the point it waits for; the tab goes on loading it.
+    #[error(
+        "the page had not reached --load {0} at the deadline and goes on loading in the tab; wait --load {0} waits for it"
+    )]
+    LoadPending(Load),
+    /// A navigation of a tab the agent keeps passed the deadline before the
+    /// site answered; the tab goes on waiting, still showing the page before.
+    #[error(
+        "the site had not answered at the deadline, and the tab goes on waiting for it; wait --url with its address waits for its page"
+    )]
+    Unanswered,
     #[error("another operation owns this browser tab")]
     Busy,
     #[error(
@@ -160,7 +172,7 @@ pub enum BrowserError {
     },
     #[error("browser event task failed: {0}")]
     Task(#[from] tokio::task::JoinError),
-    #[error("browser cleanup failed: {cleanup}; preceding operation: {operation:?}")]
+    #[error("{}", cleanup_failure(.operation.as_deref(), .cleanup))]
     Cleanup {
         operation: Option<Box<BrowserError>>,
         cleanup: Box<BrowserError>,
@@ -238,6 +250,11 @@ impl<'a> Operation<'a> {
         self.set_progress(ActionProgress::Completed);
     }
 
+    /// Whether the operation's deadline has come.
+    pub fn past_deadline(&self) -> bool {
+        self.deadline.is_some_and(|deadline| Instant::now() >= deadline)
+    }
+
     fn set_progress(&self, progress: ActionProgress) {
         *self.progress.lock().expect("the input progress is intact") = progress;
     }
@@ -270,7 +287,7 @@ impl<'a> Operation<'a> {
                 .and_then(|failure| failure.borrow().clone())
                 .map(BrowserError::Connection)
                 .unwrap_or(BrowserError::Closed)),
-            _ = self.cancelled.cancelled() => Err(if self.deadline.is_some_and(|deadline| Instant::now() >= deadline) {
+            _ = self.cancelled.cancelled() => Err(if self.past_deadline() {
                 // The conversation controller cancels at this same shared deadline.
                 BrowserError::Timeout
             } else {
@@ -297,6 +314,15 @@ pub fn agent(context: &jush_command_sdk::InvocationContext) -> Result<u64> {
         .caller
         .agent_number()
         .ok_or_else(|| BrowserError::Configuration("browser commands act for an agent".into()))
+}
+
+/// What a failed cleanup says: the operation's own failure first, whose code
+/// and details the error carries, then the cleanup's.
+fn cleanup_failure(operation: Option<&BrowserError>, cleanup: &BrowserError) -> String {
+    match operation {
+        Some(operation) => format!("{operation}; the cleanup after it failed too: {cleanup}"),
+        None => format!("browser cleanup failed: {cleanup}"),
+    }
 }
 
 /// Preserve the browser operation error when its required cleanup also fails.
@@ -378,7 +404,7 @@ impl BrowserError {
             Self::ProtectedValue => BrowserErrorCode::ProtectedValue,
             Self::Unavailable(_) | Self::Installation(_) => BrowserErrorCode::BrowserUnavailable,
             Self::Cancelled => BrowserErrorCode::Cancelled,
-            Self::Timeout => BrowserErrorCode::Timeout,
+            Self::Timeout | Self::LoadPending(_) | Self::Unanswered => BrowserErrorCode::Timeout,
             Self::Busy => BrowserErrorCode::TabBusy,
             Self::DialogBlocked => BrowserErrorCode::DialogBlocked,
             Self::AppBlocked => BrowserErrorCode::AppBlocked,

@@ -407,12 +407,16 @@ impl NavigationObservation {
 }
 
 impl BrowserTab {
+    /// Navigates the tab and waits for `load`. A tab the agent `keeps` goes
+    /// on with a navigation that passed the deadline, and the failure says
+    /// how far it got and how to wait for the rest.
     pub async fn navigate(
         &self,
         navigation: Navigation,
         load: Load,
         operation: &Operation<'_>,
         references: &mut crate::tabs::session::References,
+        keeps: bool,
     ) -> Result<String> {
         if let Navigation::Url(url) = &navigation {
             validate_url(url)?;
@@ -454,11 +458,16 @@ impl BrowserTab {
                 // Chromiumoxide holds Page.navigate's response until its own load
                 // waiter completes. Our subscribed events establish the requested
                 // state independently. Dropping that response receiver does not
-                // cancel input; the driver's existing bounded request owns its expiry.
+                // cancel input; the driver's existing bounded request owns its expiry,
+                // and a request it gave up on leaves the navigation to the events,
+                // until the operation's own deadline.
                 tokio::select! {
                     biased;
                     result = &mut request => {
-                        result?;
+                        match result {
+                            Ok(()) | Err(BrowserError::Timeout) => {}
+                            Err(error) => return Err(error),
+                        }
                         observation.wait_load(load, operation).await?;
                     }
                     result = observation.wait_load(load, operation) => { result?; }
@@ -483,6 +492,14 @@ impl BrowserTab {
         match result {
             Ok(url) => Ok(url),
             Err(error) => {
+                let error = if keeps && error.is_deadline() && operation.past_deadline() {
+                    error.with_deadline_cause(match observation.committed {
+                        Some(_) => BrowserError::LoadPending(load),
+                        None => BrowserError::Unanswered,
+                    })
+                } else {
+                    error
+                };
                 // A failed diagnostic must preserve the navigation's original cause.
                 if let Ok(Ok(Some(url))) =
                     tokio::time::timeout(crate::driver::operation::CONTROL_TIMEOUT, self.page.url())

@@ -1549,12 +1549,13 @@ impl Conversations {
                     // Cancel the active phase, then join its bounded input/file cleanup.
                     // Dropping the invocation here could strand a pressed button.
                     cancellation.cancel();
+                    // A cancellation the deadline caused is the deadline; a
+                    // timeout an action explained keeps its words, such as a
+                    // load the tab goes on with.
                     match invocation.await {
                         Err(error)
-                            if matches!(
-                                error.code(),
-                                BrowserErrorCode::Cancelled | BrowserErrorCode::Timeout
-                            ) =>
+                            if error.code() == BrowserErrorCode::Cancelled
+                                || matches!(error, BrowserError::Timeout) =>
                         {
                             Err(BrowserError::Action {
                                 details: Box::new(error.details()),

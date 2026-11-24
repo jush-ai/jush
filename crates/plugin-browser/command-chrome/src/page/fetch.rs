@@ -53,6 +53,7 @@ pub async fn execute(
                         Load::DomContentLoaded,
                         &operation,
                         &mut session.references,
+                        false,
                     )
                     .await?;
                 let content = operation
