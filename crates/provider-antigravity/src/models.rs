@@ -12,6 +12,10 @@
 //! maker's, such as Google's for Gemini, where the maker lists it. A model no
 //! listing knows, such as one of `agy`'s orchestrators, which no vendor sells,
 //! is left out: it has no context window and no price to show.
+//!
+//! Its context window is no larger than the limit at which `agy` compacts its
+//! conversation by itself ([`AGY_LIMITS`]), so the agent compacts before `agy`
+//! would, and the conversation has one history, the agent's.
 
 use jush_provider_common::CatalogError;
 use jush_provider_common::models_dev::{ModelsDevMatch, ModelsDevSnapshot};
@@ -21,6 +25,28 @@ use crate::acp::NewSession;
 
 /// The session setting that names the thinking levels.
 const THOUGHT_LEVEL: &str = "thought_level";
+
+/// The tokens at which `agy` 1.5.16 compacts a conversation of a model whose
+/// id starts so, before sending a request that would reach them; any other
+/// model's are [`AGY_DEFAULT_LIMIT`].
+///
+/// `agy` compiles them into its default configuration, which Google's backend
+/// may override; nothing `agy` offers names them, and Jush never calls that
+/// backend with the account's tokens. Jush runs Google's newest `agy`, so a
+/// later release may move one, and a run logs every compaction `agy` makes by
+/// itself (`run.rs`).
+const AGY_LIMITS: [(&str, u32); 5] = [
+    ("gemini-3.8-flash", 256_000),
+    ("gemini-4-", 512_000),
+    ("gemini-pro-orchestrator", 512_000),
+    ("claude-", 840_000),
+    ("gpt-oss-", 80_000),
+];
+
+/// The tokens at which `agy` compacts a conversation of a model its
+/// configuration gives no limit: the default Google chose (agy's
+/// `GetCheckpointConfig`).
+const AGY_DEFAULT_LIMIT: u32 = 256_000;
 
 /// One model `agy` offers, at the levels it offers it.
 pub(crate) struct Offered {
@@ -130,6 +156,7 @@ fn catalog_model(offered: Offered, listing: ModelsDevMatch, levels: &[&str]) -> 
         .filter(|level| offered.levels.iter().any(|offered| offered == *level))
         .map(|level| (*level).to_owned())
         .collect();
+    let context_window = within_agy_limit(&offered.id, listing.model.context_window);
     ProviderModel {
         id: offered.id,
         display_name: offered.name,
@@ -150,6 +177,17 @@ fn catalog_model(offered: Offered, listing: ModelsDevMatch, levels: &[&str]) -> 
         // Only an API's request reads either.
         thinking_form: ThinkingForm::default(),
         interleaved_thinking: false,
+        context_window,
         ..listing.model
     }
+}
+
+/// `window`, the context window models.dev lists for `agy`'s model `id`, no
+/// larger than the limit at which `agy` compacts by itself.
+fn within_agy_limit(id: &str, window: Option<u32>) -> Option<u32> {
+    let limit = AGY_LIMITS
+        .iter()
+        .find(|(prefix, _)| id.starts_with(prefix))
+        .map_or(AGY_DEFAULT_LIMIT, |(_, limit)| *limit);
+    Some(window.map_or(limit, |window| window.min(limit)))
 }

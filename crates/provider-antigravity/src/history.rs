@@ -16,7 +16,8 @@
 //! text, since the format of one in a step is unknown.
 //!
 //! A running session's last step is read back too, for the error step a
-//! failed model call ends a turn with (`failure.rs`).
+//! failed model call ends a turn with (`failure.rs`), and the database a
+//! closed process left, for the next process to load as it is (`live.rs`).
 //!
 //! The format is `agy`'s own and undocumented; these are the fields its
 //! messages carry for each step (`agy` 1.5.13).
@@ -45,12 +46,13 @@ const JOURNAL_VERSIONS: std::ops::Range<usize> = 18..20;
 const WAL: u8 = 2;
 const ROLLBACK: u8 = 1;
 
-/// `database`, the one `agy` made for a session, with the steps of `items`.
+/// `database`, the one `agy` made for a session, with the steps of `items`,
+/// and how many steps it then holds.
 ///
 /// The database is the file alone: `agy` checkpoints its write-ahead log into
 /// it when it ends (measured), and its process has ended before the file is
 /// read.
-pub(crate) fn fill(database: &[u8], items: &[InferenceItem]) -> Result<Bytes, String> {
+pub(crate) fn fill(database: &[u8], items: &[InferenceItem]) -> Result<(Bytes, u64), String> {
     let steps = steps(items);
     let mut image = database.to_vec();
     let wal = image.get(JOURNAL_VERSIONS) == Some(&[WAL, WAL][..]);
@@ -62,11 +64,12 @@ pub(crate) fn fill(database: &[u8], items: &[InferenceItem]) -> Result<Bytes, St
     connection
         .deserialize_read_exact(MAIN_DB, image.as_slice(), image.len(), false)
         .map_err(unreadable)?;
-    {
+    let count = {
         let transaction = connection.transaction().map_err(unreadable)?;
         let first: i64 = transaction
             .query_row("SELECT COALESCE(MAX(idx) + 1, 0) FROM steps", [], |row| row.get(0))
             .map_err(unreadable)?;
+        let count = u64::try_from(first).unwrap_or(0) + steps.len() as u64;
         {
             let mut insert = transaction
                 .prepare("INSERT INTO steps (idx, step_type, status, step_payload) VALUES (?1, ?2, ?3, ?4)")
@@ -78,12 +81,40 @@ pub(crate) fn fill(database: &[u8], items: &[InferenceItem]) -> Result<Bytes, St
             }
         }
         transaction.commit().map_err(unreadable)?;
-    }
+        count
+    };
     let mut filled = connection.serialize(MAIN_DB).map_err(unreadable)?.to_vec();
     if wal && filled.len() >= JOURNAL_VERSIONS.end {
         filled[JOURNAL_VERSIONS].fill(WAL);
     }
-    Ok(Bytes::from(filled))
+    Ok((Bytes::from(filled), count))
+}
+
+/// The database a closed process left, `database` with its write-ahead log
+/// `wal` when `agy` left one, as one file the next process loads, and how
+/// many steps it holds.
+///
+/// `agy` writes its log into the file when it ends (measured), so the log is
+/// normally gone; one that stayed, as after a process that was killed, is
+/// written into the file here.
+pub(crate) fn settled(database: &[u8], wal: Option<&[u8]>) -> Result<(Bytes, u64), String> {
+    let unreadable = |error: &dyn std::fmt::Display| format!("Antigravity's session cannot be read: {error}");
+    let dir = tempfile::tempdir().map_err(|error| unreadable(&error))?;
+    let file = dir.path().join("session.db");
+    std::fs::write(&file, database).map_err(|error| unreadable(&error))?;
+    if let Some(wal) = wal {
+        std::fs::write(dir.path().join("session.db-wal"), wal).map_err(|error| unreadable(&error))?;
+    }
+    let connection = Connection::open(&file).map_err(|error| unreadable(&error))?;
+    connection
+        .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(()))
+        .map_err(|error| unreadable(&error))?;
+    let count: i64 = connection
+        .query_row("SELECT COALESCE(MAX(idx) + 1, 0) FROM steps", [], |row| row.get(0))
+        .map_err(|error| unreadable(&error))?;
+    drop(connection);
+    let settled = std::fs::read(&file).map_err(|error| unreadable(&error))?;
+    Ok((Bytes::from(settled), u64::try_from(count).unwrap_or(0)))
 }
 
 /// The type and payload of the last step of `database`, a running session's,

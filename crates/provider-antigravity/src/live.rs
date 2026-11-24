@@ -6,9 +6,24 @@
 //!
 //! - with no history, as in a conversation's first turn, the process makes
 //!   the session itself;
-//! - with history, a first process makes the session with Jush's agent and
-//!   ends, the provider writes the history into the session's database, and
-//!   the turn's process loads it.
+//! - with the history the session's last process left, the database it left
+//!   ([`Parked`]), the process loads that database as it is, so its first
+//!   request starts with the bytes the last one sent, which Google's cache
+//!   holds;
+//! - with any other history, a first process makes the session with Jush's
+//!   agent and ends, the provider writes the history into the session's
+//!   database, and the turn's process loads it.
+//!
+//! A process closed between turns, as the machine closes an idle one, ends,
+//! and `agy` writes its write-ahead log into its database; the provider reads
+//! that database before the directory goes, and the runtime keeps it, the
+//! last one, until a process started from it opens or the runtime goes. The
+//! machine is up when its process closes, and a directory lasts no longer
+//! than its process, as before.
+//!
+//! Each run reads the lines `agy` added to the session's transcript since the
+//! last read (`transcript.jsonl`, only the new bytes), for the tokens of each
+//! model request, which ACP reports only summed over a turn.
 //!
 //! The process answers the input in one prompt, `session/prompt`. The model's
 //! text and reasoning arrive as `session/update`s, and a call of a tool over
@@ -33,7 +48,9 @@
 //! only between turns, so a steer that comes with a result is answered by a
 //! new process, whose history holds the result.
 
+use std::cell::RefCell;
 use std::collections::HashMap;
+use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -113,6 +130,87 @@ pub(crate) struct Live {
     steps: HashMap<String, (String, OpaqueStatus)>,
     /// What `agy` reported of the latest turn when it ended.
     turn: Option<TurnUsage>,
+    /// Whether the latest turn ended with the model's answer, and nothing
+    /// was given since: the session's database then holds a conversation the
+    /// next process can go on with.
+    settled: bool,
+    /// Where the session's directory goes when the process is closed.
+    parking: Parking,
+    /// How far the session's transcript was read.
+    transcript: Transcript,
+}
+
+/// The session a process closed between turns left: its database, which
+/// holds the session as the process ended it, and what the process held.
+#[derive(Clone)]
+pub(crate) struct Parked {
+    session: String,
+    database: Bytes,
+    /// How many steps the database holds.
+    steps: u64,
+    system_prompt: String,
+    sent: Vec<Vec<UserPart>>,
+}
+
+/// A runtime's kept session, the last one its processes left.
+pub(crate) type Parking = Rc<RefCell<Option<Parked>>>;
+
+impl Parked {
+    /// Whether `request`, whose input starts at `input`, goes on from the
+    /// session: the same system prompt, and its history holds the user
+    /// messages the process received and none after them.
+    fn continues(&self, request: &InferenceRequest, input: usize) -> bool {
+        let history: Vec<&Vec<UserPart>> = user_messages(&request.items[..input]).collect();
+        self.system_prompt == request.system_prompt
+            && history.len() == self.sent.len()
+            && history.iter().zip(&self.sent).all(|(message, sent)| *message == sent)
+    }
+}
+
+/// How far a session's transcript was read: the bytes read, and the last step
+/// whose line was taken.
+#[derive(Default)]
+struct Transcript {
+    offset: u64,
+    /// None until a line was taken: the steps of the history it was loaded
+    /// with are below `first`.
+    last: Option<u64>,
+    first: u64,
+}
+
+/// A step's line of the session's transcript, as the run reads it.
+#[derive(Debug, serde::Deserialize)]
+pub(crate) struct StepLine {
+    step_index: u64,
+    #[serde(rename = "type")]
+    kind: String,
+    input_tokens: Option<u64>,
+    cache_read_tokens: Option<u64>,
+    output_tokens: Option<u64>,
+}
+
+impl StepLine {
+    /// Whether it is the model's response to a request, which carries the
+    /// request's tokens.
+    pub(crate) fn is_response(&self) -> bool {
+        self.kind == "PLANNER_RESPONSE"
+    }
+
+    /// Whether it is `agy`'s own compaction of the session.
+    pub(crate) fn is_compaction(&self) -> bool {
+        self.kind == "CHECKPOINT"
+    }
+
+    /// The request's tokens: uncached input, cache read and output, the
+    /// thinking with it; none for a line that names no input.
+    pub(crate) fn usage(&self) -> Option<jush_shared_types::TokenUsage> {
+        Some(jush_shared_types::TokenUsage {
+            input_tokens: self.input_tokens?,
+            output_tokens: self.output_tokens.unwrap_or(0),
+            cache_read_tokens: self.cache_read_tokens.unwrap_or(0),
+            cache_write_tokens: 0,
+        })
+    }
 }
 
 /// The tokens of a turn, summed over its model requests, as `agy` reports
@@ -164,18 +262,46 @@ impl Live {
         shared: &Arc<Shared>,
         placement: &dyn Placement,
         request: &InferenceRequest,
+        parking: &Parking,
     ) -> Result<Self, ProviderFailure> {
         let work = shared.auth.work().await.map_err(|failure| failure.failure())?;
         let input = input_start(&request.items).ok_or_else(no_input)?;
-        let session = if input == 0 {
-            None
-        } else {
-            Some(make_session(shared, placement, work.clone(), request, input).await?)
+        // A start given up leaves the session kept; one that failed after
+        // taking it lets it go, so that the next writes the history instead.
+        let parked = (input > 0)
+            .then(|| parking.borrow().clone())
+            .flatten()
+            .filter(|parked| parked.continues(request, input));
+        let resumes = parked.is_some();
+        let session = match parked {
+            Some(parked) => Some((parked.session, parked.database, parked.steps)),
+            None if input == 0 => None,
+            None => Some(make_session(shared, placement, work.clone(), request, input).await?),
         };
-        let loaded = session.as_ref().map(|(id, _)| id.clone());
+        let started = Self::open(shared, placement, request, parking, work, input, session).await;
+        if started.is_ok() || resumes {
+            parking.borrow_mut().take();
+        }
+        started
+    }
+
+    /// Starts the turn's process with `session`, the id, database and step
+    /// count of the session it loads, if any, and gives it the request's
+    /// input, which starts at `input`.
+    async fn open(
+        shared: &Arc<Shared>,
+        placement: &dyn Placement,
+        request: &InferenceRequest,
+        parking: &Parking,
+        work: CliWork,
+        input: usize,
+        session: Option<(String, Bytes, u64)>,
+    ) -> Result<Self, ProviderFailure> {
+        let loaded = session.as_ref().map(|(id, _, _)| id.clone());
+        let first = session.as_ref().map_or(0, |(_, _, steps)| *steps);
         let system_prompt = request.system_prompt.clone();
         let start: CliStarter = Arc::new(move |site| {
-            let session = session.as_ref().map(|(id, database)| (id.as_str(), database.clone()));
+            let session = session.as_ref().map(|(id, database, _)| (id.as_str(), database.clone()));
             start::turn(site, &system_prompt, session)
         });
         let Placed {
@@ -220,6 +346,12 @@ impl Live {
             denied: false,
             steps: HashMap::new(),
             turn: None,
+            settled: false,
+            parking: parking.clone(),
+            transcript: Transcript {
+                first,
+                ..Transcript::default()
+            },
         };
         let opened = acp::open(
             live.held.control(),
@@ -233,6 +365,8 @@ impl Live {
             Some(id) => id,
             None => session_id(&opened)?,
         };
+        // What `agy` wrote of the history it loaded is not the run's.
+        live.transcript.offset = live.transcript_size().await.unwrap_or(0);
         live.sent = user_messages(&request.items[..input]).cloned().collect();
         // The prompt waits for `agy` to have Jush's tools, which it asks for
         // once the session is made: a turn takes the tools it has as it starts.
@@ -283,6 +417,7 @@ impl Live {
         request: &InferenceRequest,
     ) -> Result<(), ProviderFailure> {
         self.channel.offer(request.tools.clone());
+        self.settled = false;
         match self.held_call.take() {
             Some(call) => {
                 let (output, is_error) = result_of(&request.items, &call.tool_use_id)
@@ -332,6 +467,7 @@ impl Live {
         self.denied = false;
         self.steps.clear();
         self.turn = None;
+        self.settled = false;
         Ok(())
     }
 
@@ -536,7 +672,10 @@ impl Live {
                 "Antigravity ended the turn because Jush did not let its model read a file outside the tool results it saved."
                     .to_owned(),
             )),
-            Some("end_turn") => Next::Answered,
+            Some("end_turn") => {
+                self.settled = true;
+                Next::Answered
+            }
             Some("max_tokens" | "max_turn_requests") => Next::Failed(ProviderFailure::ended_early(
                 jush_provider_common::EarlyEnd::OutputLimit,
                 "max_tokens",
@@ -564,9 +703,77 @@ impl Live {
         self.turn
     }
 
-    /// Closes the process, SIGTERM first, and waits for its end.
+    /// Closes the process, SIGTERM first, and waits for its end. A process
+    /// between turns leaves its directory to its runtime, for the next
+    /// process to load the session from.
     pub(crate) async fn close(mut self) {
-        self.held.close().await;
+        let between_turns = self.settled && self.held_call.is_none() && self.prompting.is_none();
+        if !between_turns {
+            self.held.close().await;
+            return;
+        }
+        // The directory goes once its database was read.
+        let Some(dir) = self.held.close_keeping_dir().await else {
+            return;
+        };
+        match left_database(&*dir, &self.session).await {
+            Ok((database, steps)) => {
+                *self.parking.borrow_mut() = Some(Parked {
+                    session: self.session,
+                    database,
+                    steps,
+                    system_prompt: self.system_prompt,
+                    sent: self.sent,
+                });
+            }
+            Err(error) => {
+                tracing::warn!(event = "antigravity.left_session_unread", node = %self.node, %error, "the session a closed process left was not read; the next process writes its history");
+            }
+        }
+        dir.remove().await;
+    }
+
+    /// The lines `agy` added to the session's transcript since the last read,
+    /// of the steps the process took; none when it cannot be read, which is
+    /// logged.
+    pub(crate) async fn transcript(&mut self) -> Option<Vec<StepLine>> {
+        match self.read_transcript().await {
+            Ok(lines) => Some(lines),
+            Err(error) => {
+                tracing::warn!(event = "antigravity.transcript_unread", node = %self.node, %error, "a session's transcript was not read");
+                None
+            }
+        }
+    }
+
+    async fn read_transcript(&mut self) -> Result<Vec<StepLine>, String> {
+        let dir = own_dir(&self.held).map_err(|failure| failure.message)?;
+        let path = transcript_path(&self.session);
+        let from = (self.transcript.offset + 1).to_string();
+        let read = dir.output("tail", &["-c", &format!("+{from}"), &path]).await?;
+        // Only whole lines: one being written is read whole next time.
+        let whole = read.iter().rposition(|byte| *byte == b'\n').map_or(0, |end| end + 1);
+        self.transcript.offset += whole as u64;
+        let mut lines = Vec::new();
+        for text in read[..whole].split(|byte| *byte == b'\n').filter(|text| !text.is_empty()) {
+            let Ok(line) = serde_json::from_slice::<StepLine>(text) else {
+                continue;
+            };
+            let after = self.transcript.last.map_or(self.transcript.first, |last| last + 1);
+            if line.step_index < after {
+                continue;
+            }
+            self.transcript.last = Some(line.step_index);
+            lines.push(line);
+        }
+        Ok(lines)
+    }
+
+    /// The size of the session's transcript now; none when it has none yet.
+    async fn transcript_size(&self) -> Option<u64> {
+        let dir = self.held.dir()?;
+        let size = dir.output("wc", &["-c", &transcript_path(&self.session)]).await.ok()?;
+        std::str::from_utf8(&size).ok()?.split_whitespace().next()?.parse().ok()
     }
 
     /// Writes request `line`, of id `id`, and reads until its answer.
@@ -618,16 +825,37 @@ impl KeptProcess for Live {
     }
 }
 
+/// The transcript of the session `session`, in its process's directory.
+fn transcript_path(session: &str) -> String {
+    format!(".gemini/antigravity-cli/brain/{session}/.system_generated/logs/transcript.jsonl")
+}
+
+/// The database of the session `session` a closed process left in its
+/// directory `dir`, as one file, and how many steps it holds.
+async fn left_database(dir: &dyn ConfigDir, session: &str) -> Result<(Bytes, u64), String> {
+    let name = format!("{CONVERSATIONS}/{session}.db");
+    let database = dir.read(&name).await.map_err(|error| error.to_string())?;
+    let wal = match dir.read(&format!("{name}-wal")).await {
+        Ok(wal) => Some(wal),
+        Err(error) if error.code() == Some("ENOENT") => None,
+        Err(error) => return Err(error.to_string()),
+    };
+    tokio::task::spawn_blocking(move || history::settled(&database, wal.as_deref()))
+        .await
+        .map_err(|error| error.to_string())?
+}
+
 /// Makes a session of Jush's agent, with the request's system prompt, in a
 /// process of its own, and writes the history before `input` into its
-/// database: the session's id and the filled database.
+/// database: the session's id, the filled database and how many steps it
+/// holds.
 async fn make_session(
     shared: &Arc<Shared>,
     placement: &dyn Placement,
     work: CliWork,
     request: &InferenceRequest,
     input: usize,
-) -> Result<(String, Bytes), ProviderFailure> {
+) -> Result<(String, Bytes, u64), ProviderFailure> {
     let system_prompt = request.system_prompt.clone();
     let Placed {
         process,
@@ -668,8 +896,10 @@ async fn make_session(
     held.close().await;
     let (session, database) = made?;
     let items = request.items.clone();
-    let filled = encode_body(CLI.name, move || history::fill(&database, &items[..input])).await?;
-    Ok((session, filled.map_err(failure)?))
+    let (filled, steps) = encode_body(CLI.name, move || history::fill(&database, &items[..input]))
+        .await?
+        .map_err(failure)?;
+    Ok((session, filled, steps))
 }
 
 /// The directory of the process `held`, which every turn's process has.

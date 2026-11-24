@@ -57,6 +57,16 @@ impl HeldProcess {
         }
     }
 
+    /// Closes the process and waits for its end, then gives its directory
+    /// back instead of removing it, for what the process left there to be
+    /// read; none for a process held without one. Dropping the directory
+    /// removes it.
+    pub async fn close_keeping_dir(&mut self) -> Option<Box<dyn ConfigDir>> {
+        let Parts { control, exit, config } = self.0.take()?;
+        close_process(control, exit).await;
+        config
+    }
+
     /// Waits for the process to end by itself, then removes its
     /// directory. Dropping the future while it waits leaves the process
     /// held, to be closed.
