@@ -3,6 +3,7 @@ import type { ContextMenuGroup } from '../ui/context-menu'
 import { copyId } from '../infra/copy-id'
 import { t as ui } from '../ui/locales/text'
 import { t } from './locales/text'
+import { may } from './page-operations'
 
 /** An agent as its menu reads it: its number, and whether it runs now. */
 export interface MenuAgent {
@@ -23,7 +24,7 @@ export function agentMenu(agent: MenuAgent, actions: { open?: () => void; stop: 
   return [
     ...(actions.open ? [[{ icon: SquareArrowOutUpRight, label: ui('contextMenu.open'), run: actions.open }]] : []),
     [
-      { icon: CircleStop, label: t('subagents.stopAgent'), disabled: !agent.running, run: actions.stop },
+      ...(may('stop') ? [{ icon: CircleStop, label: t('subagents.stopAgent'), disabled: !agent.running, run: actions.stop }] : []),
       { icon: Copy, label: t('subagents.copyId'), run: () => copyId(String(agent.number)) },
     ],
   ]

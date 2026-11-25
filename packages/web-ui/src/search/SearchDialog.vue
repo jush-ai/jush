@@ -39,13 +39,16 @@ import { useConversationSearch, type MessageRow, type MessageSource, type Search
  *   click opens the conversation at the message. The token's ✕, or Backspace
  *   at the start of the field, removes it, and the same text searches every
  *   conversation.
+ * - Without `search`, as on a program's page of one conversation, the token
+ *   stays: the window searches that conversation alone.
  */
 const props = defineProps<{
   isOpen: boolean
   overlayStore: OverlayStore
   /** The most recent conversations, which the window lists while its field is empty. */
   recent: SearchRow[]
-  search: SearchSource
+  /** The search of every conversation; none where the window searches the shown one alone. */
+  search?: SearchSource
   /** The search of the shown conversation's messages, which the window opens in; none to open searching every conversation. */
   searchIn?: MessageSource | null
 }>()
@@ -60,7 +63,8 @@ const emit = defineEmits<{
 /** Whether the field holds This conversation, and the window searches in it. */
 const scoped = ref(false)
 const { query, view, retry, clear } = useConversationSearch(
-  () => props.search,
+  // Without a search of every conversation, the window never leaves the shown one.
+  () => props.search ?? (async () => []),
   () => props.recent,
   () => (scoped.value ? props.searchIn ?? null : null),
 )
@@ -149,7 +153,7 @@ function keydown(event: KeyboardEvent): void {
   } else if (event.key === 'Enter') {
     event.preventDefault()
     openRow(rows.value[current.value])
-  } else if (event.key === 'Backspace' && scoped.value && atStart(event.target)) {
+  } else if (event.key === 'Backspace' && scoped.value && props.search && atStart(event.target)) {
     event.preventDefault()
     removeScope()
   } else if (event.key === 'Escape') {
@@ -208,10 +212,11 @@ const emptyLabel = computed(() => {
             <span
               v-if="scoped"
               class="ml-1.5 inline-flex h-5 shrink-0 select-none items-center gap-0.5 rounded bg-hover pl-1.5 text-caption font-medium text-fg-muted phone:h-6"
+              :class="{ 'pr-1.5': !search }"
               data-search-scope
             >
               {{ t('scope') }}
-              <Tooltip :content="t('scopeRemove')">
+              <Tooltip v-if="search" :content="t('scopeRemove')">
                 <button
                   type="button"
                   class="flex size-5 cursor-default items-center justify-center rounded text-fg-subtle hover:bg-hover hover:text-fg phone:size-6"

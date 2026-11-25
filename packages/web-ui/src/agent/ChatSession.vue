@@ -67,6 +67,7 @@ import MenuDivider from '../ui/MenuDivider.vue'
 import MenuItem from '../ui/MenuItem.vue'
 import MenuEntries from '../ui/MenuEntries.vue'
 import { selectionEntries } from '../sidebar/selection-menu'
+import { may } from './page-operations'
 import ConversationDeleteDialog from '../sidebar/ConversationDeleteDialog.vue'
 import { copyId } from '../infra/copy-id'
 import StatusDot from '../ui/StatusDot.vue'
@@ -143,10 +144,12 @@ const props = withDefaults(defineProps<{
   work?: SessionWork
   /**
    * The conversation as the sidebar lists it. On a phone, its title sheet
-   * offers the sidebar row's menu for it. Absent, as for a conversation not
-   * saved yet or archived, the sheet offers only where it runs.
+   * offers the sidebar row's menu for it; `pinned` is null where no sidebar
+   * lists it, as on a program's page, whose menu has no Pin and Archive.
+   * Absent, as for a conversation not saved yet or archived, the sheet offers
+   * only where it runs.
    */
-  listed?: { pinned: boolean }
+  listed?: { pinned: boolean | null }
   /**
    * The schedules that wake the conversation, which the taskbar's Schedules
    * button lists.
@@ -533,16 +536,21 @@ const deleteAsked = ref(false)
 
 /**
  * The conversation's commands in the title sheet: the sidebar row's, but Open,
- * since it is the one shown.
+ * since it is the one shown, and Pin and Archive only for a conversation the
+ * sidebar lists; Rename and Delete while the page may do them.
  */
-function titleSheetEntries(listed: { pinned: boolean }) {
-  return selectionEntries([{ id: props.conversation.id, pinned: listed.pinned }], {
+function titleSheetEntries(listed: { pinned: boolean | null }) {
+  return selectionEntries([{ id: props.conversation.id, pinned: listed.pinned ?? false }], {
     open: () => undefined,
-    rename: () => fromTitleSheet(() => (renaming.value = true)),
+    ...(may('rename') ? { rename: () => fromTitleSheet(() => (renaming.value = true)) } : {}),
     copyId: () => fromTitleSheet(() => void copyId(props.conversation.id)),
-    pin: (_ids, pinned) => fromTitleSheet(() => emit('pin', pinned)),
-    archive: () => fromTitleSheet(() => emit('archive')),
-    delete: () => fromTitleSheet(() => (deleteAsked.value = true)),
+    ...(listed.pinned !== null
+      ? {
+          pin: (_ids: string[], pinned: boolean) => fromTitleSheet(() => emit('pin', pinned)),
+          archive: () => fromTitleSheet(() => emit('archive')),
+        }
+      : {}),
+    ...(may('delete') ? { delete: () => fromTitleSheet(() => (deleteAsked.value = true)) } : {}),
   }, true)
 }
 
@@ -559,7 +567,7 @@ const iconPx = useIconPx()
 
 /** The Rename button, or a double-click on the title, names it in place. */
 function beginRename(): void {
-  if (!props.conversation.archived) {
+  if (!props.conversation.archived && may('rename')) {
     renameWidth.value = Math.max(TITLE_KEPT_PX, (title.value?.offsetWidth ?? 0) + TITLE_ACTION_PX)
     renaming.value = true
   }
@@ -635,7 +643,7 @@ const failureNotice = computed(() => {
 // One control in the dock: Resume after an error, Continue after the user's
 // Stop. None while Jush resumes the turn by itself.
 const recovery = computed(() =>
-  canRecover.value && !props.conversation.resuming
+  canRecover.value && !props.conversation.resuming && may('retry')
     ? turnRecovery(props.conversation.phase, latestVisible.value)
     : null,
 )
@@ -648,7 +656,7 @@ function recover(): void {
  * facts name it. None for any other failure.
  */
 const continueWith = computed(() =>
-  canRecover.value
+  canRecover.value && may('chooseModel')
     ? continueWithOffer(props.conversation.phase, latestVisible.value, props.conversation.failures)
     : null,
 )
@@ -656,7 +664,7 @@ const continueWith = computed(() =>
 const opensProviders = computed(() =>
   canRecover.value && openProvidersOffer(props.conversation.phase, latestVisible.value, props.conversation.failures),
 )
-const canEdit = computed(() => !!props.editVersion && !props.messageEdit
+const canEdit = computed(() => may('edit') && !!props.editVersion && !props.messageEdit
   && !props.pendingSubmissions?.length
   && !props.conversation.archived
   && !props.conversation.subagents.some((agent) => agent.phase === 'running'))
@@ -706,7 +714,7 @@ const suggested = computed<SuggestedReplies | null>(() => {
   const kept = props.suggestedReplies
   const last = getVisibleBlocks(latest.value).findLast((block) => !isCompactionDivider(block))
   const resting = props.conversation.phase === 'idle' || props.conversation.phase === 'compacting_idle'
-  if (kept === undefined || !resting || props.conversation.archived
+  if (kept === undefined || !resting || props.conversation.archived || !may('send')
     || (props.pendingSubmissions?.length ?? 0) > 0 || last?.type !== 'text') {
     return null
   }
@@ -737,6 +745,9 @@ const list = ref<{
 provideSendNextWaiting(() => {
   const next = nextWaitingSend(list.value?.waiting ?? [])
   if (next === undefined) {
+    return undefined
+  }
+  if (!may(next.as === 'steer' ? 'steer' : 'send')) {
     return undefined
   }
   return next.as === 'steer'
@@ -984,7 +995,10 @@ watch(
       -->
       <div class="hidden">
         <Teleport :to="placeTarget ?? 'body'" :disabled="placeTarget === null">
-          <slot name="place" />
+          <!-- A program's page that may not choose where it runs shows it. -->
+          <div class="contents" :inert="!may('chooseDevice')">
+            <slot name="place" />
+          </div>
         </Teleport>
       </div>
       <RenameDialog
@@ -1027,7 +1041,7 @@ watch(
           </h1>
           <!-- A cut title shows whole in its tip, as a sidebar row's does. -->
           <Tooltip :trigger="title" :content="shownTitle" :show-if="isTextCut" placement="bottom-start" />
-<Tooltip :content="shared('common.rename')" class="shrink-0">
+<Tooltip v-if="may('rename')" :content="shared('common.rename')" class="shrink-0">
             <IconButton
               :icon="TextCursorInput"
               variant="ghost"
@@ -1041,7 +1055,7 @@ watch(
       <div
         class="col-span-2 row-start-2 flex min-w-0 items-center gap-1 sm:col-span-1 sm:col-start-2 sm:row-start-1"
       >
-        <div class="min-w-0 flex-1">
+        <div class="min-w-0 flex-1" :inert="!may('chooseDevice')">
           <slot name="place" />
         </div>
         <Dropdown v-if="share || searchable" :overlay-store="appOverlayStore">
@@ -1148,9 +1162,9 @@ watch(
               :output-speed="outputSpeed"
               @scroll-to-bottom="scrollToBottom"
             >
-              <template v-if="dockShown && (permissionRequests?.length || notificationsCard)" #above>
+              <template v-if="dockShown && ((permissionRequests?.length && may('decide')) || notificationsCard)" #above>
                 <RequestCard
-                  v-if="permissionRequests?.length"
+                  v-if="permissionRequests?.length && may('decide')"
                   :requests="permissionRequests"
                   :deciding="decidingPermission"
                   :error="requestError"
@@ -1192,8 +1206,11 @@ watch(
                   {{ t('dock.openProviders') }}
                 </SessionDockChip>
               </template>
-              <!-- A message sent while the session opens goes once it has. -->
-              <slot v-if="dockShown" name="composer" />
+              <!--
+                A message sent while the session opens goes once it has. A
+                program's page that may not send has none.
+              -->
+              <slot v-if="dockShown && may('send')" name="composer" />
             </SessionDock>
           </template>
         </SessionSurface>

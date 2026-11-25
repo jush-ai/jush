@@ -9,8 +9,6 @@
 //! a text file, its opening, which the composer shows on the file's capsule as
 //! the message will carry it.
 
-use std::sync::Arc;
-
 use axum::Json;
 use axum::body::Bytes;
 use axum::extract::{Request, State};
@@ -26,9 +24,10 @@ use jush_web_api_protocol::error::ErrorCode;
 use jush_web_api_protocol::ids::UserId;
 use garde::Validate as _;
 
+use crate::api::Api;
 use crate::body::read_within;
 use crate::error::ApiError;
-use crate::caller::Principal;
+use crate::caller::CallerOf;
 use crate::query::QueryParams;
 use jush_core::services::CoreServices;
 
@@ -64,8 +63,8 @@ fn sent_media_type(headers: &HeaderMap) -> Result<String, ApiError> {
 pub(crate) const BODY_LIMIT: usize = ATTACHMENT_MAX_BYTES;
 
 pub(crate) async fn upload(
-    State(services): State<Arc<CoreServices>>,
-    Principal(user): Principal,
+    State(state): State<Api>,
+    CallerOf(caller): CallerOf,
     QueryParams(query): QueryParams<UploadQuery>,
     request: Request,
 ) -> Result<Response, ApiError> {
@@ -73,16 +72,30 @@ pub(crate) async fn upload(
         .validate()
         .map_err(|report| ApiError::invalid_query(format!("name: {report}")))?;
     let sent = sent_media_type(request.headers())?;
+    let services = &state.services;
+    let user = caller.principal();
+    // A program's page reads what it uploaded before a message names it.
+    let page = caller.scope().map(|scope| scope.conversation().clone());
     // The body is read only after the checks above, so a refusal of the
     // query or the media type, or of a declared length over the limit,
     // comes before a byte of it.
-    let bytes = read_within(request, &services, BODY_LIMIT, too_large).await?;
-    let blobs = services.blobs.for_user(&user);
-    let uploaded = async |opening: Bytes, size_bytes: u64, sha256, deduplicated: bool| {
-        record(&services, &user, &query.name, &sent, &opening, size_bytes, sha256, deduplicated).await
+    let bytes = read_within(request, services, BODY_LIMIT, too_large).await?;
+    let blobs = services.blobs.for_user(user);
+    let uploaded = async |opening: Bytes, size_bytes: u64, sha256: BlobRef, deduplicated: bool| {
+        let attachment = record(services, user, &query.name, &sent, &opening, size_bytes, sha256.clone(), deduplicated).await?;
+        if let Some(conversation) = &page {
+            state.page_uploads.uploaded(user, conversation, sha256);
+        }
+        Ok::<_, ApiError>(attachment)
     };
     match (bytes.is_empty(), query.sha256.clone()) {
         (true, None) => Err(ApiError::invalid_body("An upload holds at least one byte")),
+        // A program's page sends the bytes of every file: knowing a blob's
+        // SHA-256 is not holding it.
+        (true, Some(_)) if page.is_some() => {
+            let answer = AttachmentCheckAnswer { attachment: None };
+            Ok((StatusCode::OK, Json(answer)).into_response())
+        }
         // No bytes travel for a blob the caller holds already; only the
         // caller's own namespace is asked, and only its opening is read.
         // A blob it does not hold is an answer too, with no upload.

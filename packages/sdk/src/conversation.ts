@@ -65,6 +65,7 @@ import { z } from 'zod'
 import { conversationChanges, conversationFiles, type ConversationChanges, type ConversationFiles } from './files'
 import { conversationHistory, type ConversationHistory } from './history'
 import { content, type Input, type MessageOptions } from './input'
+import { ConversationPage, type PageOptions } from './page'
 import { JushError, query, segment, type CoreRoutes } from './routes'
 import { sideQuestions, type SideQuestions } from './side-questions'
 
@@ -390,6 +391,15 @@ export class Conversation {
     await this.routes.send('DELETE', `/conversations/${segment(this.id)}`)
     this.close()
     this.registry.removed(this.id)
+  }
+
+  /**
+   * The conversation's page for `<jush-conversation src>`, which the
+   * program's server answers below `options.base` with `fetch` and `accept`,
+   * doing what `options.allow` names; make one for each request.
+   */
+  page(options: PageOptions): ConversationPage {
+    return new ConversationPage(this.routes, this.id, options)
   }
 
   /**

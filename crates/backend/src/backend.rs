@@ -553,6 +553,7 @@ impl Backend {
                 services: services.core.clone(),
                 shards: shards.shards(),
                 html: Arc::default(),
+                page_uploads: Arc::default(),
                 debug: Arc::default(),
                 pages: config.pages,
                 schedule_owners: services.clone(),

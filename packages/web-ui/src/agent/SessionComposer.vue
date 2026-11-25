@@ -50,10 +50,12 @@ import MenuItem from '../ui/MenuItem.vue'
 import Tooltip from '../ui/Tooltip.vue'
 import type { Action } from '../ui/operations'
 import type { PlaceholderText } from '../ui/ui-text'
+import { may } from './page-operations'
 import {
   DEFAULT_SEND_WHILE_RUNNING,
   sendWayLabel,
   chooseSendWay,
+  wayOnPage,
   clickAsksOtherWay,
   otherWay,
   otherWayKeys,
@@ -528,13 +530,13 @@ const clearUnavailable = computed(() => compactUnavailable.value ?? (props.nothi
 const working = computed(() => props.running || props.compacting)
 const submitLabel = computed(() => shownEdit.value && !savedEdit.value
   ? shownEdit.value.phase === 'uncertain' ? shared('common.retry') : t('composer.saveAndResend')
-  : working.value ? sendWayLabel(props.sendWhileRunning) : t('composer.send'),
+  : working.value ? sendWayLabel(wayOnPage(props.sendWhileRunning)) : t('composer.send'),
 )
 /**
  * The send button's tip: while the agent works, also the key that sends the
- * other way.
+ * other way, where the page may send both.
  */
-const submitTip = computed(() => (!shownEdit.value || savedEdit.value) && working.value
+const submitTip = computed(() => (!shownEdit.value || savedEdit.value) && working.value && may('steer')
   ? t('composer.sendOtherWay', {
       way: submitLabel.value,
       keys: otherWayKeys(),
@@ -623,6 +625,10 @@ function attachRemote() {
 }
 
 function addFiles(files: File[]): void {
+  // A program's page that may not attach takes no file, dropped or pasted.
+  if (!may('attach')) {
+    return
+  }
   if (!shownEdit.value) {
     emit('addFiles', files)
     return
@@ -838,7 +844,7 @@ function changeDraft(markdown: string, attachments: MessageCapsule[]): void {
             opens below.
           -->
           <Dropdown
-            v-if="!shownEdit || edit.editable.value"
+            v-if="(!shownEdit || edit.editable.value) && may('attach')"
             :overlay-store="appOverlayStore"
             :side="attachOpen ? 'bottom' : 'top'"
             v-bind="attachOpen ? { open: true } : {}"
@@ -904,7 +910,8 @@ function changeDraft(markdown: string, attachments: MessageCapsule[]): void {
           />
         </template>
         <template #below>
-          <div class="min-w-0" :inert="!!shownEdit && !edit.editable.value">
+          <!-- A program's page that may not choose the model shows it. -->
+          <div class="min-w-0" :inert="(!!shownEdit && !edit.editable.value) || !may('chooseModel')">
             <ModelSelector
               :load="modelLoad"
               :providers="providers"
@@ -970,7 +977,7 @@ function changeDraft(markdown: string, attachments: MessageCapsule[]): void {
             Stop stays for the whole turn, beside the send button while the
             message holds text.
           -->
-          <Tooltip v-if="(running || compacting) && !shownEdit" :content="t('composer.stop')">
+          <Tooltip v-if="(running || compacting) && !shownEdit && may('stop')" :content="t('composer.stop')">
             <IconButton
               :icon="Square"
               variant="ghost"

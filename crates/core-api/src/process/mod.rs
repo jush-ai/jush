@@ -70,7 +70,7 @@ use jush_shared_types::{Clock, SystemClock};
 use jush_web_api_protocol::connection::CONNECT_ROUTE;
 use jush_web_api_protocol::cores::{OpenCore, OpenedCore};
 use jush_web_api_protocol::error::ErrorCode;
-use jush_web_api_protocol::ids::UserId;
+use jush_web_api_protocol::ids::{ConversationId, UserId};
 use jush_web_api_protocol::settings::InstanceMode;
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use hyper_util::service::TowerToHyperService;
@@ -85,10 +85,11 @@ pub use self::listener::serve;
 use self::cores::{OpenCores, ProcessOpener, not_open};
 use self::packages::{ReleaseFiles, ServedPackages};
 use self::plugins::ProgramPlugin;
-use self::program::ProgramCaller;
+use self::program::{PageCaller, ProgramCaller};
 use crate::api::Api;
 use crate::body::JsonBody;
-use crate::caller::CallerOf;
+use crate::caller::{Caller, CallerOf};
+use crate::page::{OPERATIONS_HEADER, PageScope};
 use crate::connection::{Closing, PageTuning};
 use crate::error::ApiError;
 
@@ -252,6 +253,7 @@ impl Process {
             services,
             shards: pool.shards(),
             html: Arc::default(),
+            page_uploads: Arc::default(),
             debug: Arc::default(),
             pages: PageTuning::default(),
             schedule_owners: cores.clone(),
@@ -301,12 +303,14 @@ impl Process {
     }
 }
 
-/// The core's routes, as a program calls them of a serving core.
+/// The core's routes, as a program calls them of a serving core, and as a
+/// program's page calls them of one conversation, through the page's gate.
 fn core_routes(api: Api, release: Arc<ReleaseFiles>, closing: CancellationToken) -> Router {
     crate::routes()
         .route("/state", get(crate::state::read))
         // The reads' caching (`revalidate.rs`): the routes' answers only.
         .layer(middleware::from_fn(crate::revalidate::reads))
+        .route("/page", get(crate::page::answer))
         .route(
             CONNECT_ROUTE,
             any(crate::connection::connect).layer(Extension(Closing(closing))),
@@ -314,6 +318,7 @@ fn core_routes(api: Api, release: Arc<ReleaseFiles>, closing: CancellationToken)
         .merge(crate::public_routes())
         .route("/devices", post(devices::create))
         .route("/devices/{id}/runner", connect(devices::channel))
+        .route_layer(middleware::from_fn(crate::page::gate))
         .fallback(no_route)
         .with_state(api)
         .layer(Extension(release))
@@ -446,13 +451,25 @@ async fn close(State(process): State<Arc<Process>>, _: Authorized, Path(id): Pat
 /// `/cores/{id}/api/...`: a call of the serving core `id`, which the core's
 /// routes answer as the server's answer a page's under `/api`; without the
 /// process's token, only those anyone calls.
+///
+/// `/cores/{id}/pages/{conversation}/...`: a call of a program's page of the
+/// conversation, with the operations its program gave it in the
+/// `jush-page-operations` header, which the same routes answer as the
+/// page's (`crate::page`); only with the process's token.
 async fn core_call(State(process): State<Arc<Process>>, mut request: Request) -> Result<Response, ApiError> {
-    let Some((id, place)) = request
+    let Some((id, rest)) = request
         .uri()
         .path()
         .strip_prefix("/cores/")
-        .and_then(|rest| rest.split_once("/api/"))
+        .and_then(|rest| rest.split_once('/'))
     else {
+        return Ok(no_route(request).await);
+    };
+    let (place, bound) = if let Some(place) = rest.strip_prefix("api/") {
+        (place, None)
+    } else if let Some((conversation, place)) = rest.strip_prefix("pages/").and_then(|rest| rest.split_once('/')) {
+        (place, Some(conversation.to_owned()))
+    } else {
         return Ok(no_route(request).await);
     };
     let id = UserId::try_from(id.to_owned()).map_err(|_| not_open())?;
@@ -462,12 +479,26 @@ async fn core_call(State(process): State<Arc<Process>>, mut request: Request) ->
         None => format!("/{place}"),
     };
     *request.uri_mut() = path.parse::<Uri>().map_err(|_| not_open())?;
-    let routes = match request.extensions().get::<Authorized>() {
-        Some(_) => &process.core_routes,
-        None => &process.open_routes,
+    let authorized = request.extensions().get::<Authorized>().is_some();
+    let routes = if authorized { &process.core_routes } else { &process.open_routes };
+    let program = ProgramCaller::new(id, core, process.cores.clone());
+    let caller: Arc<dyn Caller> = match bound {
+        None => Arc::new(program),
+        Some(_) if !authorized => return Err(unauthorized()),
+        Some(conversation) => {
+            let conversation = ConversationId::try_from(conversation).map_err(|_| {
+                ApiError::new(StatusCode::NOT_FOUND, ErrorCode::ConversationNotFound, "Conversation not found")
+            })?;
+            let operations = request
+                .headers()
+                .get(OPERATIONS_HEADER)
+                .map(|header| header.to_str().unwrap_or("\u{0}"))
+                .unwrap_or_default();
+            let scope = PageScope::new(conversation, PageScope::operations(operations)?);
+            Arc::new(PageCaller::new(program, scope))
+        }
     };
-    let caller = ProgramCaller::new(id, core, process.cores.clone());
-    request.extensions_mut().insert(CallerOf(Arc::new(caller)));
+    request.extensions_mut().insert(CallerOf(caller));
     // The router answers every request.
     Ok(routes.clone().oneshot(request).await.unwrap_or_else(|never| match never {}))
 }

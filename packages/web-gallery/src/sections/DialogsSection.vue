@@ -977,6 +977,18 @@ const resetPhases: {
               />
             </GalleryDialogFrame>
           </GallerySpecimen>
+          <GallerySpecimen wide variant="on a program's page of one conversation · This conversation stays, with no ✕">
+            <GalleryDialogFrame v-slot="{ open, close }">
+              <SearchDialog
+                :is-open="open"
+                :overlay-store="appOverlayStore"
+                :recent="[]"
+                :search-in="shownConversationSearch"
+                @close="close"
+                @open-message="openFoundMessage(close)"
+              />
+            </GalleryDialogFrame>
+          </GallerySpecimen>
           <GallerySpecimen wide variant="in a conversation · more matches than it lists; try retry">
             <GalleryDialogFrame v-slot="{ open, close }">
               <SearchDialog

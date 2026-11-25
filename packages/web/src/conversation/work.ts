@@ -29,7 +29,7 @@ import { reportError } from '@jush-agent/web-ui/infra/errors'
 import { t } from './locales/text'
 import { useResources } from '../state/resources'
 import { useProduct } from '../state/product'
-import { PLUGIN_PAGES } from '../plugins/generated/pages'
+import { shownPages } from '../plugins/shown'
 import { usePluginStates } from '../plugins/states'
 import { pluginEnabled } from '../plugins/enabled'
 import { useConversations } from './store'
@@ -200,7 +200,7 @@ export const useWork = defineStore('work', () => {
 
   /** The kinds of the pages the user has on. */
   function kinds() {
-    return PLUGIN_PAGES.filter((page) => enabled(page.plugin)).flatMap((page) => page.kinds ?? [])
+    return shownPages().filter((page) => enabled(page.plugin)).flatMap((page) => page.kinds ?? [])
   }
 
   /** The conversation's tabs, made the first time they are asked for. */
@@ -504,7 +504,7 @@ export const useWork = defineStore('work', () => {
       seenRevision = Math.max(seenRevision ?? -1, revision)
     }
     const applied = resources.local.tabsShown?.[conversationId] ?? {}
-    const pending = pendingShows(tabs, PLUGIN_PAGES, enabled, applied)
+    const pending = pendingShows(tabs, shownPages(), enabled, applied)
     if (!pending) {
       return
     }
@@ -727,7 +727,7 @@ export const useWork = defineStore('work', () => {
   function openIn(conversationId: string, intent: IntentRequest): void {
     const state = stateFor(conversationId)
     const front = fronts.get(conversationId) ?? null
-    const opened = openIntent(state, PLUGIN_PAGES, enabled, intent, front)
+    const opened = openIntent(state, shownPages(), enabled, intent, front)
     if (!opened) {
       return
     }
@@ -758,7 +758,7 @@ export const useWork = defineStore('work', () => {
 
   /** Whether any page the user has on opens `intent`. */
   function canOpen(intent: IntentName): boolean {
-    return intentKind(PLUGIN_PAGES, enabled, intent) !== null
+    return intentKind(shownPages(), enabled, intent) !== null
   }
 
   /** Where the conversation's windows stand: as this page last wrote it, else as its work last received said; null while it says none. */

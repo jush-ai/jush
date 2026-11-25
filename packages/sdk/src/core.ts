@@ -76,7 +76,7 @@ import { projects, workspaces, type Projects, type Workspaces } from './organize
 import { servePlugin, type Plugin } from './plugin'
 import { portForwards, type PortForwards } from './port-forwards'
 import type { Process } from './process'
-import { below, PROCESS_ORIGIN, CoreRoutes, query, segment } from './routes'
+import { CoreRoutes, query, segment } from './routes'
 import {
   corePlugins,
   credentials,
@@ -235,55 +235,6 @@ export class Core {
    */
   async updatePreferences(patch: PreferencesPatch): Promise<Preferences> {
     return (await this.routes.json('PATCH', '/settings/preferences', userPreferencesSchema, patch)).preferences
-  }
-
-  /**
-   * Answers `request` with the core's route it names below `base`, such as
-   * `/jush/api/conversations` below `/jush/api`, as the program's server
-   * forwards a page's request.
-   */
-  fetch(request: Request, base = '/api'): Promise<Response> {
-    const url = new URL(request.url)
-    const forwarded = new Request(PROCESS_ORIGIN + this.routes.path(below(url.pathname, base)) + url.search, request)
-    return this.routes.process.fetch(forwarded)
-  }
-
-  /**
-   * Carries the page connection a page opened on the program's server,
-   * `socket`, to the core, both ways, until either end closes; `url` is the
-   * address the page opened, whose query goes with it.
-   */
-  accept(socket: AcceptedSocket, url?: string | URL): void {
-    const query = url === undefined ? '' : new URL(url, PROCESS_ORIGIN).search
-    const core = new StreamSocket(this.routes.process.connect(this.routes.path(`/connect${query}`), 'websocket', { 'sec-websocket-version': '13' }))
-    const early: (string | ArrayBuffer | Uint8Array)[] = []
-    let open = false
-    let pageClosed = false
-    socket.binaryType = 'arraybuffer'
-    socket.addEventListener('message', (event) => {
-      const data = event.data as string | ArrayBuffer | Uint8Array
-      if (open) {
-        core.send(data)
-      } else {
-        early.push(data)
-      }
-    })
-    socket.addEventListener('close', () => {
-      pageClosed = true
-      core.close()
-    })
-    core.addEventListener('open', () => {
-      open = true
-      for (const data of early.splice(0)) {
-        core.send(data)
-      }
-    })
-    core.addEventListener('message', (event) => socket.send(event.data))
-    core.addEventListener('close', (event) => {
-      if (!pageClosed) {
-        socket.close(event.code === 1006 || event.code === 1005 ? 1011 : event.code, event.reason)
-      }
-    })
   }
 
   /** Closes the core, for every program: its lanes end, and the process closes it. */

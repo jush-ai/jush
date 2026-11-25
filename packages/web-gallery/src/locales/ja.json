@@ -78,6 +78,10 @@
   },
   "chrome": {
     "mode": "モード",
-    "font": "フォント"
+    "font": "フォント",
+    "page": "ページ",
+    "webApp": "Web アプリ",
+    "programNone": "プログラムのページ（操作なし）",
+    "programSome": "プログラムのページ：送信、停止、ファイル"
   }
 }

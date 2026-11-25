@@ -235,17 +235,21 @@ fn present(
 
 /// The blobs the drafts of the conversations name, and the messages saved
 /// for later of their lists and of their projects' lists, deleted projects'
-/// included: each upload's bytes.
+/// included: each upload's bytes. With `of`, those of that conversation
+/// alone: its draft, its list and its project's list.
 pub(crate) fn draft_blobs(
     connection: &Connection,
+    of: Option<&ConversationId>,
 ) -> Result<Vec<BlobRef>, StorageError> {
+    let of = of.map(ConversationId::as_str);
     let mut versions = Vec::new();
     {
         let mut statement = connection.prepare(
             "SELECT d.revision, d.document, d.saved_revision
-             FROM conversation_drafts d JOIN conversations c ON c.id = d.conversation_id",
+             FROM conversation_drafts d JOIN conversations c ON c.id = d.conversation_id
+             WHERE ?1 IS NULL OR c.id = ?1",
         )?;
-        let mut rows = statement.query([])?;
+        let mut rows = statement.query(params![of])?;
         while let Some(row) = rows.next()? {
             let draft = stored_row(row)?;
             versions.push(draft.version);
@@ -253,10 +257,12 @@ pub(crate) fn draft_blobs(
     }
     let mut statement = connection.prepare(
         "SELECT s.document FROM saved_messages s JOIN conversations c ON c.id = s.conversation_id
+         WHERE ?1 IS NULL OR c.id = ?1
          UNION ALL
-         SELECT s.document FROM saved_messages s JOIN projects w ON w.id = s.project_id",
+         SELECT s.document FROM saved_messages s JOIN projects w ON w.id = s.project_id
+         WHERE ?1 IS NULL OR w.id = (SELECT target_project_id FROM conversations WHERE id = ?1)",
     )?;
-    let mut rows = statement.query([])?;
+    let mut rows = statement.query(params![of])?;
     while let Some(row) = rows.next()? {
         versions.push(json::<Version>(
             "saved_messages",

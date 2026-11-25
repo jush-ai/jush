@@ -259,10 +259,10 @@ function reachedOrNot(error: unknown): unknown {
 /**
  * The URL of an API path, for a request and for what the web browser loads
  * itself: an image, a player, a download. On a program's page it is below
- * where the program forwards the core's routes.
+ * the address where the program's server answers the page.
  */
 export function apiUrl(path: string): string {
-  return `${programPage()?.api ?? '/api'}${path}`
+  return `${programPage()?.src ?? '/api'}${path}`
 }
 
 /** How long a request may take unless it says otherwise. */

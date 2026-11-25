@@ -78,6 +78,10 @@
   },
   "chrome": {
     "mode": "Mode",
-    "font": "Font"
+    "font": "Font",
+    "page": "Page",
+    "webApp": "Web App",
+    "programNone": "Program’s Page, No Operations",
+    "programSome": "Program’s Page: Send, Stop, Files"
   }
 }

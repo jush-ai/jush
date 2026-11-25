@@ -21,6 +21,7 @@ use jush_web_api_protocol::state::SyncEvent;
 use futures_util::future::{BoxFuture, LocalBoxFuture};
 
 use crate::error::ApiError;
+use crate::page::PageScope;
 use crate::plugin_lanes::PluginLanes;
 use crate::starter_lane::StarterLane;
 use crate::state::StateError;
@@ -61,6 +62,13 @@ pub trait Caller: Send + Sync + 'static {
     /// The lanes of the programs' plugins in the caller's core, for a
     /// program; none for any other caller, who may not open one.
     fn plugin_lanes(&self) -> Option<Arc<PluginLanes>>;
+
+    /// The conversation and operations of a program's page, which reaches
+    /// that conversation alone (`crate::page`); none for a caller that
+    /// reaches the whole core.
+    fn scope(&self) -> Option<&PageScope> {
+        None
+    }
 }
 
 /// How a caller left.

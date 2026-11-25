@@ -69,6 +69,7 @@
 //!   changed it: the edit holds the whole message, which goes as it is.
 
 use std::rc::{Rc, Weak};
+use std::sync::Arc;
 
 use axum::extract::ws::close_code;
 use jush_agent_server::{ContentError, ContentResolver, FileReference, Outgoing, ResolvedFiles, Taken};
@@ -85,7 +86,7 @@ use jush_conversation_lane_protocol::{
 };
 use jush_shared_gates::Purpose;
 use jush_shared_types::{Block, BlockId, NodeId, TurnId, UserContentBlock};
-use jush_web_api_protocol::conversations::{ConversationFrame, FirstMessageAnswer};
+use jush_web_api_protocol::conversations::{ConversationFrame, ConversationMetadata, FirstMessageAnswer};
 use jush_web_api_protocol::drafts::{ATTACHMENT_MARK, DraftFile};
 use jush_web_api_protocol::saved::SavedMessage;
 use jush_web_api_protocol::error::ErrorCode;
@@ -264,9 +265,22 @@ fn refusal(code: ErrorCode, message: impl Into<String>) -> ServerFrame {
     }
 }
 
+/// What a lane's page may do and read, for a page that may not do
+/// everything, as a program's page of one conversation
+/// (`crates/core-api/src/page.rs`).
+pub trait LaneGate: Send + Sync {
+    /// Whether the page may send `frame`; a frame it may not send is refused
+    /// and does nothing.
+    fn admits(&self, frame: &ClientFrame) -> bool;
+
+    /// What the page reads of the conversation's settings.
+    fn shown(&self, metadata: &mut ConversationMetadata);
+}
+
 impl Core {
     /// Serves a lane of `conversation` until either end closes it or the core
-    /// closes.
+    /// closes, for a page that does and reads what `gate` lets it, or
+    /// everything without one.
     ///
     /// - A frame the lane has handed to the agent is handled to its end, even
     ///   when the core closes meanwhile; until then, the outbox's frames keep
@@ -278,6 +292,7 @@ impl Core {
         conversation: ConversationRecord,
         mut page: Lane,
         mut stream: LaneReader,
+        gate: Option<Arc<dyn LaneGate>>,
     ) {
         // Counted before any wait, so the core's close waits for this
         // lane; one adopted as the close begins ends at once.
@@ -318,7 +333,7 @@ impl Core {
                                 // The values the page follows are compared with
                                 // what it holds before the frame is handled, and
                                 // the attachments its open holds are noted.
-                                if !self.show_conversation(&id, &mut page, &mut shown, opening).await {
+                                if !self.show_conversation(&id, &mut page, &mut shown, opening, gate.as_deref()).await {
                                     break 'relay Ending::Gone;
                                 }
                                 let Some(frame) = frame else {
@@ -352,8 +367,9 @@ impl Core {
                             let core = self.clone();
                             let connection = &connection;
                             let id = id.clone();
+                            let gate = gate.clone();
                             handling = Some(Box::pin(async move {
-                                core.handle_message(&id, connection, text.as_str()).await
+                                core.handle_message(&id, connection, text.as_str(), gate.as_deref()).await
                             }));
                         }
                         Some(LaneMessage::Binary(_)) => break Ending::NotJson,
@@ -365,7 +381,7 @@ impl Core {
                     // more than one pass each time.
                     () = watch.marked() => {
                         watch.take();
-                        if shown.follows_any() && !self.show_conversation(&id, &mut page, &mut shown, false).await {
+                        if shown.follows_any() && !self.show_conversation(&id, &mut page, &mut shown, false, gate.as_deref()).await {
                             break Ending::Gone;
                         }
                     }
@@ -531,14 +547,24 @@ impl Core {
     /// - a frame storage failed to prepare.
     ///
     /// A refused edit answers its `edit_result`, and a refused removal its
-    /// `remove_result`.
+    /// `remove_result`. A frame `gate` does not admit is refused.
     async fn handle_message(
         &self,
         conversation: &ConversationId,
         connection: &jush_agent_server::Connection<super::CoreDevices>,
         text: &str,
+        gate: Option<&dyn LaneGate>,
     ) -> Handled {
-        match decode_client_frame(text) {
+        let decoded = decode_client_frame(text);
+        if let (Ok(frame), Some(gate)) = (&decoded, gate)
+            && !gate.admits(frame)
+        {
+            return Handled::Replies(vec![refusal(
+                ErrorCode::Forbidden,
+                "This page may not do that in the conversation",
+            )]);
+        }
+        match decoded {
             Ok(ClientFrame::Open { draft, follows, understands }) => {
                 let (own, rest) = OwnFollows::split(follows);
                 Handled::Following {
@@ -1000,6 +1026,7 @@ impl Core {
         page: &mut Lane,
         shown: &mut Shown,
         opening: bool,
+        gate: Option<&dyn LaneGate>,
     ) -> bool {
         if !shown.follows_any() {
             return true;
@@ -1011,7 +1038,10 @@ impl Core {
                 return Ok(None);
             };
             let draft_revision = record.draft_revision;
-            let metadata = self.conversation_metadata(record).await?;
+            let mut metadata = self.conversation_metadata(record).await?;
+            if let Some(gate) = gate {
+                gate.shown(&mut metadata);
+            }
             let saved = match shown.saved {
                 Some(_) => Some(self.store().saved_listing(conversation.clone()).await?),
                 None => None,

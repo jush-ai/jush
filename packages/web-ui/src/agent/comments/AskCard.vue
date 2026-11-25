@@ -16,6 +16,7 @@ import ErrorBlock from '../blocks/ErrorBlock.vue'
 import { t } from '../locales/text'
 import { t as shared } from '../../locales/text'
 import type { CardTurn } from './asks'
+import { may } from '../page-operations'
 
 /**
  * A side question's card, set into the reply under the line its words end on.
@@ -104,7 +105,7 @@ watch(working, async (now) => {
 // The card is a place of its own in the reply: text selected in it is copied,
 // never asked about or commented on again.
 const menu: ContextMenuDeclaration = {
-  entries: () => props.deletable ? [[{ icon: Trash2, label: shared('common.delete'), danger: true, run: () => emit('delete') }]] : [],
+  entries: () => props.deletable && may('ask') ? [[{ icon: Trash2, label: shared('common.delete'), danger: true, run: () => emit('delete') }]] : [],
   text: true,
   selectionEntries: () => [],
 }
@@ -143,7 +144,7 @@ defineExpose({ element: root, failed: () => props.failure != null })
         While the question works: the header has a place for it, the body
         none, so nothing moves when it goes.
       -->
-      <Tooltip v-if="working" :content="t('ask.stop')">
+      <Tooltip v-if="working && may('ask')" :content="t('ask.stop')">
         <IconButton :icon="Square" size="sm" variant="ghost" :aria-label="t('ask.stop')" @click.stop="stop" />
       </Tooltip>
       <Tooltip :content="t('ask.openFull')">
@@ -183,9 +184,10 @@ defineExpose({ element: root, failed: () => props.failure != null })
           :signed-out="failureFacts?.signedOut ?? null"
           :device-offline="failureFacts?.deviceOffline ?? null"
         />
-        <Button size="xs" @click="emit('retry')">{{ t('ask.retry') }}</Button>
+        <Button v-if="may('ask')" size="xs" @click="emit('retry')">{{ t('ask.retry') }}</Button>
       </div>
       <MessageSendField
+        v-if="may('ask')"
         ref="field"
         v-model="reply"
         :files="files"

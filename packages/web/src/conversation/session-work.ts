@@ -2,7 +2,7 @@ import { computed, type ComputedRef } from 'vue'
 import { usePageHost, useBoundKinds } from '@jush-agent/web-ui/plugins/page'
 import type { SessionWork } from '@jush-agent/web-ui/windows/session-work'
 import { readStage } from '@jush-agent/web-ui/windows/stage'
-import { PLUGIN_PAGES } from '../plugins/generated/pages'
+import { shownPages } from '../plugins/shown'
 import { pluginEnabled } from '../plugins/enabled'
 import { useProduct } from '../state/product'
 import { usePreferences } from '../state/preferences'
@@ -29,7 +29,7 @@ export function useSessionWork(conversationId: () => string | null): ComputedRef
     return item ? sessionDevices(item) : []
   })
   const kinds = useBoundKinds(
-    () => PLUGIN_PAGES.filter((page) => pluginEnabled(product.snapshot, page.plugin)),
+    () => shownPages().filter((page) => pluginEnabled(product.snapshot, page.plugin)),
     host,
     () => {
       const id = conversationId()

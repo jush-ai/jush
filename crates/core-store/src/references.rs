@@ -25,12 +25,10 @@ use jush_agent_store::CheckpointState;
 use jush_agent_store::media::{comment_references, content_references};
 use jush_shared_types::{BlobRef, Timestamp};
 use jush_web_api_protocol::ids::ConversationId;
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, OptionalExtension, params};
 
 use super::StorageError;
 use super::columns::{decode, json};
-use super::command_outputs::{self, OutputRow};
-use super::{conversation_attachments, shares};
 use super::store::CoreStore;
 use super::drafts::draft_blobs;
 use super::media_jobs::media_job_blobs;
@@ -59,7 +57,7 @@ impl CoreStore {
         self.call(move |connection, _| {
             let transaction = connection.transaction()?;
             let mut references = ControlReferences::default();
-            references.blobs.extend(draft_blobs(&transaction)?);
+            references.blobs.extend(draft_blobs(&transaction, None)?);
             references.blobs.extend(plugin_blobs(&transaction)?);
             references.blobs.extend(media_job_blobs(&transaction)?);
             {
@@ -118,24 +116,48 @@ impl CoreStore {
     }
 }
 
-/// Every blob a conversation's database names, read on `connection` in the read
-/// transaction it is given.
-///
-/// The blobs are:
+impl CoreStore {
+    /// Whether `conversation` names `blob`: its database, its draft or the
+    /// messages saved for it, as a page that shows it alone reads them.
+    pub async fn conversation_names_blob(&self, conversation: ConversationId, blob: BlobRef) -> Result<bool, StorageError> {
+        let of = conversation.clone();
+        let wanted = blob.clone();
+        let drafted = self
+            .call(move |connection, _| Ok(draft_blobs(connection, Some(&of))?.contains(&wanted)))
+            .await?;
+        if drafted {
+            return Ok(true);
+        }
+        Ok(self
+            .databases()
+            .read(&conversation, move |connection| names_blob(connection, &blob))
+            .await?
+            .unwrap_or(false))
+    }
+}
+
+/// The columns of a conversation's database that name a blob as they are:
 ///
 /// - each block's media and edit copies, as `block_blobs` lists them for every
 ///   row;
-/// - the media of the messages its checkpoints keep queued;
 /// - the agent's uploads;
 /// - each stored command output;
-/// - the shares' copies, which keep their blobs while they last.
-pub fn conversation_blobs(connection: &Connection) -> Result<BTreeSet<BlobRef>, StorageError> {
+/// - the shares' copies and kept attachments, which keep their blobs while
+///   the shares last; the other blocks a share lists are the transcript's.
+///
+/// The messages its checkpoints keep queued name theirs in their state
+/// ([`queued_blobs`]).
+const BLOB_COLUMNS: &[&str] = &[
+    "block_blobs",
+    "attachments",
+    "command_outputs",
+    "share_blobs",
+    "share_attachments",
+];
+
+/// The media of the messages a conversation's checkpoints keep queued.
+fn queued_blobs(connection: &Connection) -> Result<BTreeSet<BlobRef>, StorageError> {
     let mut blobs = BTreeSet::new();
-    let mut named = connection.prepare("SELECT DISTINCT blob FROM block_blobs")?;
-    let mut rows = named.query([])?;
-    while let Some(row) = rows.next()? {
-        blobs.insert(decode("block_blobs", "blob", BlobRef::try_from(row.get::<_, String>(0)?))?);
-    }
     let mut states = connection.prepare("SELECT state FROM nodes")?;
     let mut rows = states.query([])?;
     while let Some(row) = rows.next()? {
@@ -145,16 +167,34 @@ pub fn conversation_blobs(connection: &Connection) -> Result<BTreeSet<BlobRef>, 
             blobs.extend(comment_references(&queued.comments).cloned());
         }
     }
-    blobs.extend(
-        conversation_attachments::all(connection)?
-            .into_iter()
-            .map(|attachment| attachment.row.blob),
-    );
-    for output in command_outputs::all(connection)? {
-        if let OutputRow::Stored { blob, .. } = output.output {
-            blobs.insert(blob);
+    Ok(blobs)
+}
+
+/// Every blob a conversation's database names ([`BLOB_COLUMNS`] and the
+/// queued messages), read on `connection` in the read transaction it is
+/// given.
+pub fn conversation_blobs(connection: &Connection) -> Result<BTreeSet<BlobRef>, StorageError> {
+    let mut blobs = queued_blobs(connection)?;
+    for table in BLOB_COLUMNS {
+        let mut named = connection.prepare(&format!("SELECT DISTINCT blob FROM {table} WHERE blob IS NOT NULL"))?;
+        let mut rows = named.query([])?;
+        while let Some(row) = rows.next()? {
+            blobs.insert(decode(table, "blob", BlobRef::try_from(row.get::<_, String>(0)?))?);
         }
     }
-    blobs.extend(shares::copied_blobs(connection)?);
     Ok(blobs)
+}
+
+/// Whether a conversation's database names `blob`, as [`conversation_blobs`]
+/// would list it, each column asked for it alone.
+pub fn names_blob(connection: &Connection, blob: &BlobRef) -> Result<bool, StorageError> {
+    for table in BLOB_COLUMNS {
+        let found: Option<i64> = connection
+            .query_row(&format!("SELECT 1 FROM {table} WHERE blob = ?1 LIMIT 1"), [blob.as_str()], |row| row.get(0))
+            .optional()?;
+        if found.is_some() {
+            return Ok(true);
+        }
+    }
+    Ok(queued_blobs(connection)?.contains(blob))
 }

@@ -19,6 +19,7 @@ import { shortcutSet } from '@jush-agent/web-ui/ui/shortcut'
 import { appThemeStore } from '@jush-agent/web-ui/theme/appTheme'
 import { resolveLanguage } from '@jush-agent/web-ui/i18n/languages'
 import { DEFAULT_SEND_WHILE_RUNNING } from '@jush-agent/web-ui/agent/send-way'
+import { programPage } from '../program-page'
 import { DEFAULT_ACCENT, DEFAULT_TRANSCRIPT_TEXT_SIZE } from '@jush-agent/web-ui/theme/productAppearance'
 
 /**
@@ -233,6 +234,14 @@ export const usePreferences = defineStore('preferences', () => {
    * when the control is `bursty`, as a slider is.
    */
   function update(patch: PreferencesPatch, { bursty = false } = {}): void {
+    // A program's page keeps what its views change, as the file tree's width,
+    // on the page alone: the core's preferences are the program's.
+    if (programPage()) {
+      const change = show(patch)
+      change.send()
+      change.land()
+      return
+    }
     queued = {
       patch: mergePatch(queued.patch, patch),
       changes: [...queued.changes, show(patch)],
