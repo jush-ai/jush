@@ -79,6 +79,7 @@ pub use self::failure_facts::failure_facts;
 pub use self::fork::{ForkRefusal, recover_forks};
 pub use jush_core_store::forks::ForkPoint;
 pub use self::announcement::AgentsError;
+pub use self::lane::LaneGate;
 pub(crate) use self::lane::TreeRefusal;
 pub(crate) use self::product::CoreDevices;
 pub use self::providers::{lent_limits, lent_runtime};

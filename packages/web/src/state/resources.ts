@@ -31,6 +31,7 @@ import { pluginEnabled } from '../plugins/enabled'
 import { deviceMarkOf, targetKindOf } from './devices'
 import { emptyLocalState, readLocalState, writeLocalState } from './local'
 import type { Device, Project } from './types'
+import { programPage } from '../program-page'
 
 /** Product data and page state. Components own interaction and presentation. */
 /** The file browser's name of each platform a runner reports. */
@@ -329,6 +330,10 @@ export const useResources = defineStore('resources', () => {
    * other pages.
    */
   function rememberInProject(id: string, choice: RememberedChoices): void {
+    // A program's page starts no conversation of the project.
+    if (programPage()) {
+      return
+    }
     const change = product.change('projects', (state) => ({
       ...state,
       projects: known(state.projects, 'projects').map((project) => project.id === id ? { ...project, ...choice } : project),

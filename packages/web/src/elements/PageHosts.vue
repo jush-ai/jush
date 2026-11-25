@@ -8,8 +8,8 @@ import type { ElementsPage } from './page'
 
 /**
  * What the web app's window has once around its views, and a program's page
- * has once too, in its leading element: the context menu, the toasts, the
- * media viewer, the place dialog and the selection's field.
+ * has once too, in its element: the context menu, the toasts, the media
+ * viewer, the place dialog and the selection's field.
  */
 defineProps<{ page: ElementsPage }>()
 </script>

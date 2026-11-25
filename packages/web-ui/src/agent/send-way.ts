@@ -3,6 +3,7 @@ import type { SessionPhase } from '@jush-agent/protocol'
 import { t } from '../locales/text'
 import { shortcutFor, withCommandKey } from '../ui/shortcut'
 import type { TitleText } from '../ui/ui-text'
+import { may } from './page-operations'
 
 /**
  * What a message the user sends while the agent works does: it steers the
@@ -38,7 +39,16 @@ export function chooseSendWay(working: boolean, preferred: SendWhileRunning, ask
   if (!working) {
     return 'send'
   }
-  return asksOtherWay ? otherWay(preferred) : preferred
+  return wayOnPage(asksOtherWay ? otherWay(preferred) : preferred)
+}
+
+/**
+ * `way` as the page sends it: Queue for Steer on a program's page that may
+ * not steer. The composer shows only where the page may send, so Queue is
+ * always its own.
+ */
+export function wayOnPage(way: SendWhileRunning): SendWhileRunning {
+  return way === 'steer' && !may('steer') ? 'queue' : way
 }
 
 /**

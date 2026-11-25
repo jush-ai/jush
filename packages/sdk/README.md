@@ -790,11 +790,46 @@ const token = await core.credentials.create({
 
 [`@jush-agent/web-components`](../web-components/README.md) shows a
 conversation on your own pages with the app's own views: its transcript,
-its composer, and its work in windows with a taskbar.
-Your server forwards the pages' requests with `core.fetch(request, base)`
-and their connection with `core.accept(socket, url)`, which takes a
-WebSocket of the standard interface, as Deno's `upgradeWebSocket` and the
-`ws` package give.
+its composer, and its work in windows with a taskbar. The element names an
+address of your server, `<jush-conversation src="/chats/42/jush">`, and your
+server answers it below that address after its own sign-in:
+
+```ts
+async function answer(request: Request): Promise<Response> {
+  const chat = await signedInChat(request) // your sign-in, your chat
+  const page = core.conversations.open(chat.conversation).page({
+    base: `/chats/${chat.id}/jush`,
+    allow: ['send', 'steer', 'stop', 'files', 'browser'],
+  })
+  if (request.headers.get('upgrade') === 'websocket') {
+    const { socket, response } = Deno.upgradeWebSocket(request)
+    page.accept(socket, request.url)
+    return response
+  }
+  return page.fetch(request)
+}
+```
+
+- The page reaches that conversation alone: its transcript, its agents,
+  the media its messages name, and the windows `allow` names. It never
+  reaches another conversation, the providers, credentials or settings.
+- `allow` lists what the page may do beyond reading, each a
+  `PageOperation`: `send`, `attach`, `steer`, `edit`, `stop`, `retry`,
+  `compact`, `clear`, `ask`, `messageAgents`, `decide`, `fork`, `delete`,
+  `rename`, `chooseModel`, `chooseDevice`, `chooseWorkflow`, `pins`,
+  `schedules`, and the windows `files`, `writeFiles`, `changes`, `browser`,
+  `simulators`, `plugins`. The page shows no control of the rest, and the
+  core refuses it. An operation a later version adds is on no page until you
+  name it.
+- `page.accept` takes a WebSocket of the standard interface, as Deno's
+  `upgradeWebSocket` and the `ws` package give. Make a page for each
+  request: it holds nothing, so each viewer's can name other operations. A
+  connection keeps the operations it opened with.
+- The paths below `base` are the element's and the core's own; pass them on
+  as they come.
+- A file the Files window previews loads in a frame that sends no cookie,
+  below `{base}/html/`, with its own token in the path: hand those requests
+  to the chat's page before your sign-in.
 
 Jush can reach your program from outside when you tell it where your server
 forwards its routes: `Jush.start({ publicUrl: 'https://bot.example.com/jush' })`.

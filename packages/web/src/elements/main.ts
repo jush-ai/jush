@@ -5,15 +5,14 @@
 // ```html
 // <link rel="stylesheet" href="/assets/jush-web-components.css" />
 // <script type="module" src="/assets/jush-web-components.js"></script>
-// <jush-conversation api="/jush/api" conversation="..."></jush-conversation>
+// <jush-conversation src="/chats/42/jush"></jush-conversation>
 // ```
 //
-// It reaches one core through `api`, where the program's server forwards
-// the core's routes and page connection (`@jush-agent/sdk`'s `core.fetch`
-// and `core.accept`), and the elements of a page share its stores
-// (`page.ts`). It renders in the page's own tree, without a shadow root, so
-// its menus and dialogs, which go to the body, keep the styles the
-// stylesheet gives.
+// It shows the one conversation the program's server answers below `src`,
+// by handing each request to `@jush-agent/sdk`'s `conversation.page()`, with
+// the controls of what the program let the page do (`page.ts`). It renders
+// in the page's own tree, without a shadow root, so its menus and dialogs,
+// which go to the body, keep the styles the stylesheet gives.
 
 import { defineCustomElement, type App } from 'vue'
 import ConversationElement from './ConversationElement.vue'

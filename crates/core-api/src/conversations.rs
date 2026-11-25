@@ -11,6 +11,8 @@
 //!
 //! A conversation the caller does not own answers like a missing one.
 
+use std::sync::Arc;
+
 use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
@@ -34,12 +36,13 @@ use crate::api::Api;
 use crate::body::JsonBody;
 use crate::connection::Opened;
 use crate::error::ApiError;
-use crate::caller::Principal;
+use crate::caller::{CallerOf, Principal};
 use crate::attached_devices;
 use crate::query::QueryParams;
 use jush_core::conversation::{AgentsError, ForkPoint, ForkRefusal};
 use jush_core::conversation::subagent_messages::SubagentMessageRefusal;
 use jush_shared_types::NodeId;
+use jush_core::conversation::LaneGate;
 use jush_core::services::CoreServices;
 use jush_core_sync::etag_of;
 
@@ -195,17 +198,25 @@ pub(crate) async fn attachment_file(
 /// and code; any other refusal among several fields answers 207.
 pub(crate) async fn patch(
     State(state): State<Api>,
-    Principal(user): Principal,
+    CallerOf(caller): CallerOf,
     Path(id): Path<String>,
     JsonBody(patch): JsonBody<ConversationPatch>,
 ) -> Result<(StatusCode, Json<ConversationUpdate>), ApiError> {
+    if let Some(scope) = caller.scope() {
+        crate::page::patch(scope, &patch)?;
+    }
+    let user = caller.principal().clone();
     let id = ConversationId::try_from(id).map_err(|_| not_found())?;
-    let update = state
+    let mut update = state
         .shards
         .of(&user)
         .call(move |core, _| async move { core.apply_patch(&id, patch).await })
         .await??
         .ok_or_else(not_found)?;
+    if let Some(scope) = caller.scope() {
+        scope.hide(&mut update.metadata);
+        scope.hide_tabs(&mut update.conversation, &state.services);
+    }
     let failures: Vec<&FieldResult> = update
         .results
         .iter()
@@ -299,17 +310,23 @@ pub(crate) async fn batch(
 /// store, and wakes no device.
 pub(crate) async fn detail(
     State(state): State<Api>,
-    Principal(user): Principal,
+    CallerOf(caller): CallerOf,
     Path(id): Path<String>,
 ) -> Result<Json<ConversationDetail>, ApiError> {
+    let user = caller.principal().clone();
     let record = owned(&state.services, &user, &id).await?;
+    let scope = caller.scope().cloned();
     let detail = state
         .shards
         .of(&user)
         .call(move |core, _| async move {
             let id = record.id.clone();
-            let conversation = core.conversation_summary(record.clone()).await?;
-            let metadata = core.conversation_metadata(record).await?;
+            let mut conversation = core.conversation_summary(record.clone()).await?;
+            let mut metadata = core.conversation_metadata(record).await?;
+            if let Some(scope) = &scope {
+                scope.hide(&mut metadata);
+                scope.hide_tabs(&mut conversation, core.services());
+            }
             let (agents, entries) = core.conversation_agents(&id).await.map_err(|error| match error {
                 AgentsError::Device(error) => ApiError::from(error),
                 AgentsError::Unreadable(error) => ApiError::new(
@@ -393,10 +410,11 @@ pub(crate) async fn message_subagent(
 /// again, 200.
 pub(crate) async fn fork(
     State(state): State<Api>,
-    Principal(user): Principal,
+    CallerOf(caller): CallerOf,
     Path(source): Path<String>,
     JsonBody(ForkRequest { id, block_id, before_turn }): JsonBody<ForkRequest>,
 ) -> Result<(StatusCode, Json<ForkAnswer>), ApiError> {
+    let user = caller.principal().clone();
     let source = ConversationId::try_from(source).map_err(|_| not_found())?;
     // The body's check let one of the two through.
     let point = match (block_id, before_turn) {
@@ -404,7 +422,7 @@ pub(crate) async fn fork(
         (None, Some(turn)) => ForkPoint::Before(turn),
         (None, None) => unreachable!("a fork's body names one end"),
     };
-    let (forked, conversation, metadata) = state
+    let (forked, mut conversation, mut metadata) = state
         .shards
         .of(&user)
         .call(move |core, _| async move {
@@ -415,6 +433,12 @@ pub(crate) async fn fork(
         })
         .await?
         .map_err(fork_refused)?;
+    // The fork carries the source's settings, which a program's page reads
+    // none of.
+    if let Some(scope) = caller.scope() {
+        scope.hide(&mut metadata);
+        scope.hide_tabs(&mut conversation, &state.services);
+    }
     let status = if forked.created {
         StatusCode::CREATED
     } else {
@@ -481,7 +505,7 @@ pub(crate) async fn read(
 
 /// The lane of the caller's conversation `id`, which opens only for one that
 /// is not archived, and which the caller's core serves until it ends.
-pub(crate) async fn open_lane(state: &Api, user: &UserId, id: &str) -> Result<Opened, ApiError> {
+pub(crate) async fn open_lane(state: &Api, user: &UserId, id: &str, gate: Option<Arc<dyn LaneGate>>) -> Result<Opened, ApiError> {
     let record = owned(&state.services, user, id).await?;
     if record.archived() {
         return Err(ApiError::new(
@@ -500,7 +524,7 @@ pub(crate) async fn open_lane(state: &Api, user: &UserId, id: &str) -> Result<Op
             // connection closes as the backend does.
             let _ = shards
                 .of(&user)
-                .adopt(move |core| core.serve_conversation_lane(record, lane, reader))
+                .adopt(move |core| core.serve_conversation_lane(record, lane, reader, gate))
                 .await;
         })
     })

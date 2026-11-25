@@ -8,6 +8,7 @@ import Tooltip from '../ui/Tooltip.vue'
 import { useSendTargets } from '../agent/send-to-conversation'
 import { usePhone } from '../ui/phone'
 import { t } from './locales/text'
+import { may } from '../agent/page-operations'
 import { REVEAL_PX, useSwipeDelete } from './swipe-delete'
 import { triggerIcon } from './trigger-icon'
 import type { ConversationSchedule } from './types'
@@ -31,6 +32,8 @@ import { lastWakeReason, triggerWords, wakeWords } from './words'
  * - In an archived conversation, whose schedules wake nothing, every row is
  *   faded, with no time, its switch disabled and no Delete: the menu only lists
  *   them.
+ * - On a program's page that may not change them, the switch is disabled and
+ *   there is no Delete.
  */
 const props = defineProps<{
   schedule: ConversationSchedule
@@ -52,6 +55,8 @@ const trigger = computed(() => triggerWords(props.schedule, props.now, (id) => t
 const wake = computed(() => (props.archived ? null : wakeWords(props.schedule, props.now)))
 const reason = computed(() => lastWakeReason(props.schedule))
 const { offset, dragging, start, tap } = useSwipeDelete()
+/** The row lists the schedule alone, with no Delete and its switch disabled. */
+const fixed = computed(() => props.archived || !may('schedules'))
 </script>
 
 <template>
@@ -69,7 +74,7 @@ const { offset, dragging, start, tap } = useSwipeDelete()
     :faded="schedule.paused || archived"
     :indicator="reason ? 'warning' : undefined"
     :indicator-label="reason ?? undefined"
-    @touchstart="archived ? undefined : start($event)"
+    @touchstart="fixed ? undefined : start($event)"
     @click="tap"
   >
     <span v-if="phone" class="flex min-w-0 flex-1 flex-col gap-0.5 py-0.5">
@@ -94,7 +99,7 @@ const { offset, dragging, start, tap } = useSwipeDelete()
           text, as a sidebar's row actions do: the menu never widens for it.
         -->
         <span
-          v-if="!phone && !archived"
+          v-if="!phone && !fixed"
           class="absolute right-full top-1/2 flex -translate-y-1/2 items-center pr-2 pl-4 opacity-0 transition-opacity group-hover/row:opacity-100 has-focus-visible:opacity-100"
           style="background: linear-gradient(to right, transparent, var(--surface-current) 1rem)"
         >
@@ -111,14 +116,14 @@ const { offset, dragging, start, tap } = useSwipeDelete()
         <Switch
           :model-value="!schedule.paused"
           size="sm"
-          :disabled="archived"
+          :disabled="fixed"
           :aria-label="schedule.name"
           class="ml-3"
           @update:model-value="(on: boolean) => emit('pause', !on)"
         />
         <!-- The swipe's Delete waits just outside the row's end and comes into view as the row slides. -->
         <button
-          v-if="phone && !archived"
+          v-if="phone && !fixed"
           type="button"
           tabindex="-1"
           aria-hidden="true"

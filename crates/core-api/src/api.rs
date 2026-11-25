@@ -14,6 +14,7 @@ use jush_web_api_protocol::ids::UserId;
 use crate::connection::PageTuning;
 use crate::debug::DebugLinks;
 use crate::html_view::HtmlGrants;
+use crate::page::PageUploads;
 use crate::schedules::ScheduleOwners;
 
 /// What the routes reach. Cloning it is cheap.
@@ -23,6 +24,8 @@ pub struct Api {
     pub shards: Shards,
     /// The tokens of the HTML files the File view shows.
     pub html: Arc<HtmlGrants>,
+    /// What programs' pages uploaded.
+    pub page_uploads: Arc<PageUploads>,
     /// The links of the pages the user chose to debug.
     pub debug: Arc<DebugLinks>,
     /// How a page's connection is timed.

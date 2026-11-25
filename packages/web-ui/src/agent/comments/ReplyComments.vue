@@ -17,6 +17,7 @@ import CommentItem from './CommentItem.vue'
 import AskCard from './AskCard.vue'
 import { cardContent, pageToRead, readKey, unanswered, type ReplyAsking } from './asks'
 import { useComposerFocus } from '../composer-focus'
+import { may } from '../page-operations'
 
 /**
  * The comments and side questions on a transcript's replies
@@ -139,7 +140,7 @@ function selectionTools(reply: { blockId: string; root: HTMLElement }, selected:
     disabledReason: t('comments.waitReply'),
     run: () => chooseWay(kind),
   })
-  return props.asking ? [tool('comment'), tool('ask')] : [tool('comment')]
+  return ways().map(tool)
 }
 
 /**
@@ -167,7 +168,12 @@ function pictureTools(reply: { blockId: string; root: HTMLElement }, image: HTML
     disabledReason: t('comments.waitReply'),
     run: () => openPictureField({ image, actions, way: kind }),
   })
-  return props.asking ? [tool('comment'), tool('ask')] : [tool('comment')]
+  return ways().map(tool)
+}
+
+/** What a remark on a reply can be: a comment while the page may send, a side question while it may ask. */
+function ways(): ('comment' | 'ask')[] {
+  return [...(may('send') ? ['comment' as const] : []), ...(props.asking && may('ask') ? ['ask' as const] : [])]
 }
 
 /**
@@ -223,7 +229,7 @@ function fieldActions(blockId: string, anchor: TextAnchor & { at: number }, quot
       props.commenting.add(comment(written, kept))
     }),
     commented: () => composer.focus(),
-    ask: props.asking
+    ask: props.asking && may('ask')
       ? (written) => withPicture('ask', (kept) => {
         holdLine()
         props.asking?.ask({ id: crypto.randomUUID(), ...placed, ...kept, question: written })

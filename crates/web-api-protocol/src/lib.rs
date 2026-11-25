@@ -37,6 +37,7 @@ pub mod pins;
 pub mod ids;
 pub mod instructions;
 pub mod work;
+pub mod page;
 pub mod passkeys;
 pub mod permissions;
 pub mod plugins;

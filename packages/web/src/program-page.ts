@@ -1,25 +1,26 @@
 // Where the views run: the web app's own page, which reaches its server at
 // `/api` behind a Jush session and reads the server's whole product state,
-// or a program's page, which shows them in Jush's custom elements
-// (`elements/main.ts`). Those reach one core at the path where the program
-// forwards the core's routes, read the core's part of the product state,
-// and act for whoever the program let in, with no session of Jush's.
+// or a program's page, which shows them in Jush's custom element
+// (`elements/main.ts`). That reaches one conversation below the address
+// where the program's server answers it, reads what the core lets the page
+// read of the product state, and does what the program let the page do,
+// with no session of Jush's.
 
 import { shallowRef } from 'vue'
 
 /** The program's page the views run in. */
 export interface ProgramPage {
-  /** Where the program forwards the core's routes, such as `/jush/api`. */
-  api: string
+  /** The element's `src`, where the program's server answers the page, such as `/chats/42/jush`. */
+  src: string
 }
 
 // A ref, so what a store computed from it before the elements started, such
 // as whose the browser's data is, follows.
 const shown = shallowRef<ProgramPage | null>(null)
 
-/** Makes this page a program's, whose core the program forwards at `api`; once, before the views start. */
-export function showInProgramPage(api: string): void {
-  shown.value = { api: api.replace(/\/+$/, '') }
+/** Makes this page a program's, whose server answers it below `src`; once, before the views start. */
+export function showInProgramPage(src: string): void {
+  shown.value = { src: src.replace(/\/+$/, '') }
 }
 
 /** The program's page the views run in, or null in the web app's own. */

@@ -11,6 +11,7 @@ import type { CommitHistorySource } from '@jush-agent/web-ui/files/history'
 import type { ConversationFileService } from '@jush-agent/web-ui/plugins/page'
 import type { FileBrowserSource } from '@jush-agent/web-ui/files/types'
 import { t as shared } from '@jush-agent/web-ui/locales/text'
+import { may } from '@jush-agent/web-ui/agent/page-operations'
 import { conversationFileRoutes, fileSource, deviceFiles } from '../api/files'
 import { useResources } from '../state/resources'
 import { executionFor } from '../targets/execution'
@@ -76,8 +77,10 @@ export function conversationDeviceSource(
 ): FileBrowserSource {
   const resources = useResources()
   const watcher = conversationWatch(conversationId)
+  const directory = `/conversations/${encodeURIComponent(conversationId)}/devices/${encodeURIComponent(deviceId)}/fs`
   return fileSource({
-    directory: `/conversations/${encodeURIComponent(conversationId)}/devices/${encodeURIComponent(deviceId)}/fs`,
+    directory,
+    ...(may('writeFiles') ? { makeDirectory: directory } : {}),
   }, resources.deviceById(deviceId), {
     details: true,
     watch: (files) => primary ? watcher.channel(deviceId, files) : watcher.attached(deviceId, files),

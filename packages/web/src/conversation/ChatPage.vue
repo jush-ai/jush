@@ -45,6 +45,7 @@ import { readCommitHash } from '@jush-agent/web-ui/files/history'
 import type { MessageForkRequest } from '@jush-agent/web-ui/agent/message-fork'
 import type { Conversation } from '../state/types'
 import { conversationShareService } from './sharing'
+import { programPage } from '../program-page'
 
 const store = useConversations()
 const settingsAddress = useSettingsAddress()
@@ -335,7 +336,8 @@ const files = computed<ConversationFiles | undefined>(() => {
     },
     ...(attachments.value ? { attachment: attachments.value } : {}),
     ...(replyBlocks.value ? { replyBlock: replyBlocks.value } : {}),
-    credentials,
+    // A program's page reads none of the core's credentials: a card shows the name alone.
+    ...(programPage() ? {} : { credentials }),
     attachmentOrigin: (id, attachment) => attachmentOrigin(id, attachment, {
       conversation: current.id,
       device: executionFor(current).deviceId ?? null,
@@ -376,9 +378,10 @@ const catchingUp = computed(() => conversation.value ? store.catchingUp(conversa
 const pendingSubmissions = keptComputed(() => conversation.value ? store.submissions(conversation.value) : [])
 const editVersion = keptComputed(() => conversation.value ? store.editVersion(conversation.value) : null)
 const subagentsStreamed = computed(() => conversation.value ? store.streamsSubagents(conversation.value) : false)
+// A program's page lists the conversation in no sidebar.
 const listed = keptComputed(() => {
   const current = conversation.value
-  return current?.persistence === 'synced' && !current.archived ? { pinned: current.pinned } : undefined
+  return current?.persistence === 'synced' && !current.archived ? { pinned: programPage() ? null : current.pinned } : undefined
 })
 async function readBlock(node: string | null, id: string): Promise<void> {
   if (conversation.value)

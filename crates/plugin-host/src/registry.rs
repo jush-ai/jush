@@ -302,6 +302,16 @@ impl Registry {
             .map(|(index, _)| index)
     }
 
+    /// The plugin that declares the user stream `name`.
+    pub fn stream_plugin(&self, name: &str) -> Option<&PluginId> {
+        self.stream_owner(name).map(|index| self.plugins[index].id())
+    }
+
+    /// The plugin that declares the tab kind `kind`.
+    pub fn kind_plugin(&self, kind: &str) -> Option<&PluginId> {
+        self.kind_owner(kind).map(|index| self.plugins[index].id())
+    }
+
     /// Every user stream the catalog serves, of every plugin.
     pub fn streams(&self) -> impl Iterator<Item = &Stream> {
         self.present().flat_map(|(_, registered)| &registered.streams)

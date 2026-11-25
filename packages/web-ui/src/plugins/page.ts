@@ -1014,7 +1014,8 @@ export function useBoundKinds(
   const windows = new Map<string, WindowKind>()
   let boundFor: string | null = null
   watch(
-    [() => pages().map((page) => page.plugin).join(), conversation, () => devices().join()],
+    // A page's kinds change with what a program's page may open.
+    [() => pages().map((page) => `${page.plugin}:${(page.kinds ?? []).map((kind) => kind.kind).join('+')}`).join(), conversation, () => devices().join()],
     () => {
       const now = conversation()
       const at = now === null ? null : `${now}\n${devices()[0] ?? ''}`

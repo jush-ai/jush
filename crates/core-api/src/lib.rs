@@ -43,6 +43,7 @@ pub mod html_view;
 mod instructions;
 mod models;
 mod oauth;
+pub mod page;
 pub mod page_client;
 pub mod peer;
 mod pipe_connection;

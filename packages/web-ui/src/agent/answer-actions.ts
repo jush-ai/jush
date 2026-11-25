@@ -6,6 +6,7 @@ import type { MessageForkState } from './message-fork'
 import type { AnswerShare } from './sharing'
 import { t } from './locales/text'
 import { t as shared } from '../locales/text'
+import { may } from './page-operations'
 
 /** What an answer offers its actions from: what its footer is given. */
 export interface AnswerActionsSource {
@@ -53,7 +54,7 @@ export function answerActions(source: AnswerActionsSource, copy: () => unknown):
   const actions: AnswerAction[] = [
     { key: 'copy', icon: Copy, label: shared('common.copy'), menuLabel: t('transcript.copyMessage'), disabled: false, loading: false, run: copy },
   ]
-  if (!source.hideFork) {
+  if (!source.hideFork && may('fork')) {
     const fork = source.fork
     actions.push({
       key: 'fork',

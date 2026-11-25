@@ -6,6 +6,7 @@ import type { OwnWindow } from '../windows/SessionWindows.vue'
 import { t as windowsText } from '../windows/locales/text'
 import AgentMark from './AgentMark.vue'
 import { agentMenu } from './agent-menu'
+import { may } from './page-operations'
 import { agentName, isSubagentRunning, subagentStatus, subagentTabs, type SubagentRecord } from './subagents'
 import { t } from './locales/text'
 
@@ -70,7 +71,7 @@ export function useAgentsWindow(
       })),
       current: activeId.value,
       // What acts on every agent.
-      menu: () => [[{ icon: CircleStop, label: t('subagents.stopAll'), disabled: running.length === 0, run: actions.stopAll }]],
+      menu: () => may('stop') ? [[{ icon: CircleStop, label: t('subagents.stopAll'), disabled: running.length === 0, run: actions.stopAll }]] : [],
       select: (tab) => {
         activeId.value = tab
       },

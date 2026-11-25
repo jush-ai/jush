@@ -49,6 +49,7 @@ export {
   type ProviderAccounts,
   type SignIn,
 } from './core'
+export { ConversationPage, type PageOperation, type PageOptions } from './page'
 export {
   Conversation,
   type ConversationEvent,

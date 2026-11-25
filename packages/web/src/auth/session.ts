@@ -100,13 +100,13 @@ export const useSession = defineStore('session', {
       state.current.status === 'signedIn' ? state.current.user : null,
     /**
      * Whose the data the web browser keeps for the page is, such as its
-     * drafts: the signed-in user's, or on a program's page, the core's the
-     * program forwards; none before either is known.
+     * drafts: the signed-in user's, or on a program's page, its address's;
+     * none before either is known.
      */
     owner: (state): string | null => {
       const program = programPage()
       if (program) {
-        return `program:${program.api}`
+        return `program:${program.src}`
       }
       return state.current.status === 'signedIn' ? state.current.user.id : null
     },

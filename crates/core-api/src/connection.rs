@@ -52,6 +52,7 @@ use axum::extract::ws::rejection::WebSocketUpgradeRejection;
 use axum::extract::ws::{CloseFrame, Message, Utf8Bytes, WebSocket, WebSocketUpgrade, close_code};
 use axum::http::StatusCode;
 use axum::response::Response;
+use jush_core::conversation::LaneGate;
 use jush_core::lane::{
     Counted, FromConnection, Lane, LaneKind, LaneMessage, LaneOrigin, LanePriority, LaneReader,
     ToConnection, open_lane,
@@ -751,10 +752,15 @@ async fn check_open(
 ) -> Result<Opened, ApiError> {
     let caller = caller.opens(&target).await?;
     let user = caller.principal().clone();
+    let scope = caller.scope().cloned();
+    if let Some(scope) = &scope {
+        crate::page::lane(scope, &target, &state.services)?;
+    }
     match target {
         LaneTarget::Sync => Ok(sync::open(state, caller)),
         LaneTarget::Conversation { conversation } => {
-            conversations::open_lane(state, &user, &conversation).await
+            let gate = scope.map(|scope| Arc::new(scope) as Arc<dyn LaneGate>);
+            conversations::open_lane(state, &user, &conversation, gate).await
         }
         LaneTarget::FileWatch { conversation } => file_watch::open(state, &user, &conversation).await,
         LaneTarget::DeviceWatch { device } => file_watch::open_device(state, &user, &device).await,

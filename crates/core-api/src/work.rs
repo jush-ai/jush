@@ -24,26 +24,32 @@ use crate::api::Api;
 use crate::body::JsonBody;
 use crate::conversations::owned;
 use crate::error::ApiError;
-use crate::caller::Principal;
+use crate::caller::CallerOf;
 
 /// `POST /conversations/:id/work/changes { changes }`: applied in order,
 /// all or none, as one change of the work.
 pub(crate) async fn change(
     State(state): State<Api>,
-    Principal(user): Principal,
+    CallerOf(caller): CallerOf,
     Path(id): Path<String>,
     body: Result<JsonBody<WorkChanges>, ApiError>,
 ) -> Result<Json<WorkAnswer>, ApiError> {
-    let conversation = owned(&state.services, &user, &id).await?.id;
+    let user = caller.principal().clone();
+    let record = owned(&state.services, &user, &id).await?;
     let JsonBody(WorkChanges { changes }) = body?;
+    let scope = caller.scope().cloned();
     let (revision, changed) = state
         .shards
         .of(&user)
         .call(move |core, _| async move {
-            core.plugins().change_work(conversation, changes).await
+            // A page changes the tabs of the windows it may open alone.
+            if let Some(scope) = scope {
+                let work = core.conversation_summary(record.clone()).await?.work;
+                crate::page::work(&scope, &work, &changes, core.services())?;
+            }
+            core.plugins().change_work(record.id, changes).await.map_err(refused)
         })
-        .await?
-        .map_err(refused)?;
+        .await??;
     Ok(Json(WorkAnswer { revision, changed }))
 }
 

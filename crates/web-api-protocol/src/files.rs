@@ -171,8 +171,9 @@ pub struct HtmlRequest {
     pub path: RootedPath,
 }
 
-/// Where the HTML file loads, under `/api/html/`: the session's token for the
-/// conversation, then the names of the file's path from its device's root.
+/// Where the HTML file loads, below the routes' root, under `/html/`: the
+/// caller's token for the conversation, then the names of the file's path
+/// from its device's root.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct HtmlUrl {

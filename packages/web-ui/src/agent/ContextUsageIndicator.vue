@@ -41,6 +41,7 @@ import { instructionRows } from './instructions'
 import ContextCost from './ContextCost.vue'
 import { onImages } from '../settings/window-name'
 import { type CostRange, type CostShown, hasCost, shownRange, useCostRange, useCostWatch } from './context-cost'
+import { may } from './page-operations'
 
 /**
  * The composer's context meter: a ring of how full the next request is, as the
@@ -422,7 +423,7 @@ const ringColor = computed(() => {
                 <div v-if="parts.context && !isCompacting" class="flex items-center gap-3 px-3 pt-2 pb-3">
                   <span class="min-w-0 flex-1 truncate tabular-nums text-fg-muted">{{ room === null ? '' : t('context.untilCompaction', { tokens: formatTokens(room) }) }}</span>
                   <Button
-                    v-if="clearable"
+                    v-if="clearable && may('clear')"
                     size="sm"
                     class="-mr-1"
                     :disabled="clearUnavailableReason != null"
@@ -432,6 +433,7 @@ const ringColor = computed(() => {
                     {{ t('context.clear') }}
                   </Button>
                   <Button
+                    v-if="may('compact')"
                     size="sm"
                     :disabled="blockedReason != null"
                     :disabled-reason="blockedReason ?? undefined"
