@@ -39,6 +39,8 @@ import { useContextCard } from './context-card'
 import { useConversationWorkflows } from './workflows'
 import { workflowProfiles } from '@jush-agent/web-ui/agent/workflow-menu'
 import { t } from './locales/text'
+import { may } from '@jush-agent/web-ui/agent/page-operations'
+import { programPage } from '../program-page'
 
 const props = defineProps<{
   conversation: Conversation
@@ -53,8 +55,12 @@ const store = useConversations()
 const resources = useResources()
 const preferences = usePreferences()
 const product = useProduct()
-// The Workflow menu's profiles come with the subagent settings, which the composer holds while it shows.
-useHeldList('subagents')
+// The Workflow menu's profiles come with the subagent settings, which the
+// composer holds while it shows; a program's page reads none of the core's
+// settings.
+if (!programPage()) {
+  useHeldList('subagents')
+}
 const settings = useSettingsAddress()
 
 const composer = ref<InstanceType<typeof SessionComposer>>()
@@ -312,16 +318,16 @@ function attachRemote(file: { deviceId: string; device: string; path: string }) 
       :cost="cost"
       :cost-profiles="costProfiles"
       @refresh-limits="card.refreshLimits(conversation.model.providerId, conversation.contextUsage?.account ?? null)"
-      :remote-files="remoteDevices.length > 0"
+      :remote-files="remoteDevices.length > 0 && may('files')"
       :archived="conversation.archived"
       :hold="hold"
-      :offline-device="offlineDevice"
+      :offline-device="offlineDevice && !may('chooseDevice') ? { ...offlineDevice, devices: [] } : offlineDevice"
       @move-device="emit('moveDevice', $event)"
       :draft-shown="conversation.draftShown"
-      :plugins-changed="conversation.pluginsChanged"
+      :plugins-changed="conversation.pluginsChanged && may('plugins')"
       :reloading="store.pendingChanges.includes(conversation.id)"
       :saved="savedRows"
-      :workflow="workflow"
+      :workflow="may('chooseWorkflow') ? workflow : null"
       v-model:saved-open="savedOpen"
       @save-for-later="store.saveForLater(conversation)"
       @edit-saved="store.editSaved(conversation, $event)"

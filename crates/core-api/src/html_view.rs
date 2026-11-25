@@ -139,7 +139,7 @@ pub(crate) async fn grant(
         .map(|name| utf8_percent_encode(name, NAME).to_string())
         .collect();
     Ok(Json(HtmlUrl {
-        url: format!("/api/html/{token}/{}", place.join("/")),
+        url: format!("/html/{token}/{}", place.join("/")),
     }))
 }
 

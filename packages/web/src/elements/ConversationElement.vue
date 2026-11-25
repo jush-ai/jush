@@ -1,61 +1,58 @@
 <script setup lang="ts">
-import { computed, onUnmounted, ref, useHost, watch } from 'vue'
+import { computed, ref, useHost } from 'vue'
 import SearchDialog from '@jush-agent/web-ui/search/SearchDialog.vue'
-import type { MessageRow, MessageSource, SearchRow } from '@jush-agent/web-ui/search/search'
+import type { MessageRow, MessageSource } from '@jush-agent/web-ui/search/search'
 import { appOverlayStore } from '@jush-agent/web-ui/overlay/appOverlay'
+import SessionStatus from '@jush-agent/web-ui/agent/SessionStatus.vue'
 import ChatPage from '../conversation/ChatPage.vue'
 import { useConversationNavigation } from '../conversation/navigation'
 import { provideShownConversation } from '../conversation/shown'
-import { searchConversation, searchConversations } from '../api/search'
+import { searchConversation } from '../api/search'
 import PageHosts from './PageHosts.vue'
 import { elementsPage } from './page'
 
 /**
- * `<jush-conversation>`: the web app's conversation view, its transcript,
- * composer and cards, its work's windows and taskbar, with Find in
- * Conversation, and what the web app's window gives it around while it
- * leads the page (`PageHosts.vue`).
+ * `<jush-conversation src>`: the web app's conversation view, its
+ * transcript, composer and cards, its work's windows and taskbar, with Find
+ * in Conversation, and what the web app's window gives it around
+ * (`PageHosts.vue`), of the conversation the program's server answers below
+ * `src`, with the controls of what the page may do.
  */
 const props = defineProps<{
-  /** Where the program forwards the core's routes, such as `/jush/api`. */
-  api: string
-  /** The conversation it shows. */
-  conversation: string
+  /** Where the program's server answers the page, such as `/chats/42/jush`. */
+  src: string
 }>()
 
-const page = elementsPage(props.api)
+const page = elementsPage(props.src, useHost()!)
 provideShownConversation(page.shown)
-const element = useHost()!
-watch(() => props.conversation, (id) => page.show(id, element), { immediate: true })
-onUnmounted(() => page.leave(element))
 
 const { openAt } = useConversationNavigation()
-/** Find in Conversation's window, which searches the conversation shown. */
+/** Find in Conversation's window, which searches the conversation alone. */
 const searchOpen = ref(false)
-const searchIn = computed<MessageSource>(() => (query, signal) => searchConversation(props.conversation, query, signal))
-function openSearchResult(row: SearchRow): void {
-  searchOpen.value = false
-  openAt(row.conversationId, null, row.match?.blockId ?? null)
-}
+const searchIn = computed<MessageSource | null>(() => {
+  const id = page.conversation.value
+  return id === null ? null : (query, signal) => searchConversation(id, query, signal)
+})
 function openFoundMessage(row: MessageRow): void {
   searchOpen.value = false
-  openAt(props.conversation, null, row.blockId)
+  if (page.conversation.value !== null) {
+    openAt(page.conversation.value, null, row.blockId)
+  }
 }
 </script>
 
 <template>
   <div class="jush-conversation flex h-full min-h-0 flex-col">
-    <ChatPage :id="conversation" @find="searchOpen = true" />
+    <ChatPage v-if="page.conversation.value !== null" :id="page.conversation.value" @find="searchOpen = true" />
+    <SessionStatus v-else-if="page.failed.value" kind="missing" />
   </div>
   <SearchDialog
     :is-open="searchOpen"
     :overlay-store="appOverlayStore"
-    :recent="page.shown.recentConversations.value"
-    :search="searchConversations"
+    :recent="[]"
     :search-in="searchIn"
     @close="searchOpen = false"
-    @open="openSearchResult"
     @open-message="openFoundMessage"
   />
-  <PageHosts v-if="page.leader.value === element" :page="page" />
+  <PageHosts :page="page" />
 </template>

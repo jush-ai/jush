@@ -24,7 +24,6 @@ use comrak::{Arena, Options, parse_document};
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 
 use super::StorageError;
-use super::columns::decode;
 use super::records::{self, Codec, Stored, record_of};
 use super::conversation_attachments::{self, AttachmentNumber, AttachmentRow};
 
@@ -558,17 +557,35 @@ pub fn shows_block(connection: &Connection, token: &ShareToken, tag: &str, id: &
 /// Whether a text of the conversation names the reply block
 /// `<tag id="id" />` ([`named_blocks`]), whichever agent wrote it.
 pub fn names_block(connection: &Connection, tag: &str, id: &str) -> Result<bool, StorageError> {
+    let wanted = BTreeSet::from([(tag.to_owned(), id.to_owned())]);
+    Ok(!names_blocks(connection, &wanted)?.is_empty())
+}
+
+/// Which of the reply blocks `wanted`, each a `<tag id="id" />`, a text of
+/// the conversation names, read in one pass over its texts.
+pub fn names_blocks(
+    connection: &Connection,
+    wanted: &BTreeSet<(String, String)>,
+) -> Result<BTreeSet<(String, String)>, StorageError> {
+    let tags: BTreeSet<&str> = wanted.iter().map(|(tag, _)| tag.as_str()).collect();
+    let mut named = BTreeSet::new();
     let codec = Codec::new(connection);
     let mut statement = connection.prepare(&format!("SELECT {} FROM blocks WHERE type = 'text'", record_of("blocks")))?;
     let mut rows = statement.query([])?;
-    while let Some(row) = rows.next()? {
-        if let Block::Text(text) = codec.block("blocks", &Stored::of(row, 0)?)?
-            && named_blocks(&text.text, tag).contains(id)
-        {
-            return Ok(true);
+    while named.len() < wanted.len()
+        && let Some(row) = rows.next()?
+    {
+        let Block::Text(text) = codec.block("blocks", &Stored::of(row, 0)?)? else { continue };
+        for tag in &tags {
+            for id in named_blocks(&text.text, tag) {
+                let block = ((*tag).to_owned(), id);
+                if wanted.contains(&block) {
+                    named.insert(block);
+                }
+            }
         }
     }
-    Ok(false)
+    Ok(named)
 }
 
 /// The attachment `number` as the share `token` keeps it.
@@ -578,17 +595,4 @@ pub fn shown_attachment(
     number: AttachmentNumber,
 ) -> Result<Option<AttachmentRow>, StorageError> {
     conversation_attachments::read_shared(connection, token.as_str(), number)
-}
-
-/// Every blob the shares' copies and kept attachments in a conversation's
-/// database name, which keeps them while the shares do; the other blocks a
-/// list shows are the transcript's, which keeps theirs.
-pub fn copied_blobs(connection: &Connection) -> Result<BTreeSet<BlobRef>, StorageError> {
-    let mut blobs = BTreeSet::new();
-    let mut statement = connection.prepare("SELECT blob FROM share_blobs UNION SELECT blob FROM share_attachments")?;
-    let mut rows = statement.query([])?;
-    while let Some(row) = rows.next()? {
-        blobs.insert(decode("share_blobs", "blob", BlobRef::try_from(row.get::<_, String>(0)?))?);
-    }
-    Ok(blobs)
 }

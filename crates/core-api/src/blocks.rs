@@ -29,15 +29,27 @@ use jush_web_api_protocol::plugins::{ReplyBlocksAnswer, ReplyBlocksRead};
 use crate::api::Api;
 use crate::body::JsonBody;
 use crate::error::ApiError;
-use crate::caller::Principal;
+use crate::caller::CallerOf;
 use crate::html_view;
+use crate::page::PageScope;
+use jush_core_store::shares;
+use jush_web_api_protocol::ids::UserId;
 
 /// `GET /plugins/:plugin/blocks/:tag/:id`.
 pub(crate) async fn document(
     State(state): State<Api>,
-    Principal(user): Principal,
+    CallerOf(caller): CallerOf,
     Path((plugin, tag, id)): Path<(String, String, String)>,
 ) -> Response {
+    let user = caller.principal().clone();
+    // A program's page shows the blocks its conversation names.
+    if let Some(scope) = caller.scope() {
+        match names(&state, &user, scope, tag.clone(), id.clone()).await {
+            Ok(true) => {}
+            Ok(false) => return unavailable(StatusCode::NOT_FOUND).await,
+            Err(error) => return unavailable(error.into_response().status()).await,
+        }
+    }
     let answer = state
         .shards
         .of(&user)
@@ -70,16 +82,39 @@ pub async fn served(document: Option<String>) -> Response {
 /// `blocks` names, as their plugins answer them.
 pub(crate) async fn facts(
     State(state): State<Api>,
-    Principal(user): Principal,
+    CallerOf(caller): CallerOf,
     JsonBody(read): JsonBody<ReplyBlocksRead>,
 ) -> Result<Json<ReplyBlocksAnswer>, ApiError> {
-    let named: BTreeSet<(String, String)> = read.blocks.into_iter().map(|block| (block.tag, block.id)).collect();
+    let user = caller.principal().clone();
+    let mut named: BTreeSet<(String, String)> = read.blocks.into_iter().map(|block| (block.tag, block.id)).collect();
+    // A program's page learns of the blocks its conversation names.
+    if let Some(scope) = caller.scope() {
+        named = state
+            .store(&user)
+            .await?
+            .databases()
+            .read(scope.conversation(), move |connection| shares::names_blocks(connection, &named))
+            .await?
+            .unwrap_or_default();
+    }
     let reply_blocks = state
         .shards
         .of(&user)
         .call(move |core, _| async move { reply_block_facts(core.plugins(), named).await })
         .await?;
     Ok(Json(ReplyBlocksAnswer { reply_blocks }))
+}
+
+/// Whether the page's conversation names the reply block `<tag id="id" />`
+/// in a text of its transcript.
+async fn names(state: &Api, user: &UserId, scope: &PageScope, tag: String, id: String) -> Result<bool, ApiError> {
+    Ok(state
+        .store(user)
+        .await?
+        .databases()
+        .read(scope.conversation(), move |connection| shares::names_block(connection, &tag, &id))
+        .await?
+        .unwrap_or(false))
 }
 
 /// What a block's frame loads when its document cannot be served, with the

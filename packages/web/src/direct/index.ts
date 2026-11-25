@@ -59,6 +59,7 @@ import { DeviceMeter, meterState, pageClock, type MeterState } from './meter'
 import { connectPeer } from './peer'
 import { DeviceSignaling, isBusy } from './signaling'
 import { holdsAny } from '../state/account-owner'
+import { programPage } from '../program-page'
 
 /** A device in use, with its signaling lane, its peer for live views and the measuring of its paths. */
 interface UsedDevice {
@@ -88,9 +89,14 @@ export interface DirectRoute {
 /**
  * The direct route of `conversationId`, while its summary names a paired
  * device whose runner is connected; using it starts the device's
- * signaling. None for a conversation on the Cloud, or one not known yet.
+ * signaling. None for a conversation on the Cloud, or one not known yet,
+ * and none on a program's page, whose bytes go through the program's
+ * server: a runner's peer reaches every conversation on its device.
  */
 export function directRoute(conversationId: string): DirectRoute | null {
+  if (programPage()) {
+    return null
+  }
   const summary = useConversations().items.find((item) => item.id === conversationId)
   if (!summary)
     return null
@@ -112,6 +118,9 @@ export function directRoute(conversationId: string): DirectRoute | null {
  * None for a device the conversation does not reach, or the Cloud.
  */
 export function directRouteOn(conversationId: string, deviceId: string | null): DirectRoute | null {
+  if (programPage()) {
+    return null
+  }
   const summary = useConversations().items.find((item) => item.id === conversationId)
   if (!summary)
     return null
@@ -134,6 +143,9 @@ export function directRouteOn(conversationId: string, deviceId: string | null): 
  * before a conversation used it.
  */
 export function watchDirect(deviceId: string): void {
+  if (programPage()) {
+    return
+  }
   const device = useProduct().snapshot?.devices?.find((candidate) => candidate.id === deviceId)
   if (device?.kind === 'user' && device.state === 'online')
     use(deviceId)

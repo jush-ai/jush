@@ -30,7 +30,7 @@ use jush_web_api_protocol::state::{CoreState, SyncEvent};
 use futures_util::future::join_all;
 
 use crate::api::Api;
-use crate::caller::Principal;
+use crate::caller::CallerOf;
 use crate::error::ApiError;
 
 /// Why a part of the product state could not be read.
@@ -46,12 +46,21 @@ pub enum StateError {
     Catalog(#[from] CatalogError),
 }
 
-/// `GET /state`: the core's part of the product state.
-pub async fn read(State(state): State<Api>, Principal(user): Principal) -> Result<Json<CoreState>, ApiError> {
+/// `GET /state`: the core's part of the product state, as its caller reads
+/// it: a program's page reads its conversation's (`crate::page`).
+pub async fn read(State(state): State<Api>, CallerOf(caller): CallerOf) -> Result<Json<CoreState>, ApiError> {
+    let scope = caller.scope().cloned();
     let core_state = state
         .shards
-        .of(&user)
-        .call(move |core, _| async move { core_state(&core).await.map_err(|error| ApiError::internal(&error)) })
+        .of(caller.principal())
+        .call(move |core, _| async move {
+            let read = core_state(&core).await;
+            let read = match (read, scope) {
+                (Ok(read), Some(scope)) => crate::page::state(&scope, &core, read).await,
+                (read, _) => read,
+            };
+            read.map_err(|error| ApiError::internal(&error))
+        })
         .await??;
     Ok(Json(core_state))
 }

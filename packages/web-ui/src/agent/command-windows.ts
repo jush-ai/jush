@@ -3,6 +3,7 @@ import { Activity, CircleStop, SquareTerminal, X } from '@lucide/vue'
 import type { ContextMenuGroup } from '../ui/context-menu'
 import type { OwnWindow } from '../windows/SessionWindows.vue'
 import { t as windowsText } from '../windows/locales/text'
+import { may } from './page-operations'
 import { deviceTags, type SessionDevice } from '../windows/device-tags'
 import { commandKindOf, isTerminalRunning, runningOfKind, terminalStatus, type CommandKind, type TerminalRecord } from './terminals'
 import { t } from './locales/text'
@@ -68,7 +69,7 @@ export function useCommandWindows(
 
   function menu(kind: CommandKind, terminal: TerminalRecord): () => ContextMenuGroup[] {
     return () => [
-      [{ icon: CircleStop, label: t('terminals.endCommand'), disabled: terminal.phase !== 'running' || terminal.stopping === true, run: () => end(terminal.id) }],
+      ...(may('stop') ? [[{ icon: CircleStop, label: t('terminals.endCommand'), disabled: terminal.phase !== 'running' || terminal.stopping === true, run: () => end(terminal.id) }]] : []),
       [{ icon: X, label: t('terminals.closeTab'), disabled: terminal.phase === 'running', run: () => close(kind, terminal.id) }],
     ]
   }

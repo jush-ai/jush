@@ -32,6 +32,7 @@ import StreamedMarkdown from '../../ui/StreamedMarkdown.vue'
 import type { ComposerAttachment } from '../message-input/attachments'
 import type { MediaSource } from '@jush-agent/protocol'
 import { useMediaAddress } from '../media-source'
+import { may } from '../page-operations'
 
 const props = defineProps<{
   content: readonly MessageEditContent[]
@@ -191,10 +192,16 @@ const message = computed(() => {
   return props.attachments ? { ...held, capsules: props.attachments.map(composerCapsule) } : held
 })
 
+/**
+ * Whether the page may act on the message while it waits or after it was not
+ * delivered: a waiting steer's controls are Steer's, any other's Send's.
+ */
+const handles = computed(() => may(props.pending === 'steer' ? 'steer' : 'send'))
+
 // A sent message gets Copy and, where it can be edited, Edit on hover; one
 // not delivered, Delete too.
 const actions = computed<BubbleAction[]>(() => {
-  if (!props.editable || typeof props.brief === 'string') {
+  if (!props.editable || typeof props.brief === 'string' || (props.notDelivered && !handles.value)) {
     return []
   }
   return [
@@ -231,6 +238,9 @@ const own = computed(() => typeof props.brief !== 'string')
 const menu: ContextMenuDeclaration = {
   entries: () => {
     if (props.pending) {
+      if (!handles.value) {
+        return []
+      }
       return [[
         { label: t('composer.send'), run: () => emit('sendNow') },
         { label: t('transcript.user.recall'), run: () => emit('recall') },
@@ -429,7 +439,7 @@ watch(() => props.pending, measure, { flush: 'post' })
           </Tooltip>
         </span>
         <!-- Always in view, nearest the bubble, as Messages marks a message it could not send. -->
-        <Tooltip v-if="notDelivered?.retryable" :content="shared('common.retry')" class="inline-flex">
+        <Tooltip v-if="notDelivered?.retryable && handles" :content="shared('common.retry')" class="inline-flex">
           <IconButton
             :icon="CircleAlert"
             size="sm"
@@ -510,7 +520,7 @@ watch(() => props.pending, measure, { flush: 'post' })
         <template v-if="pending">
           <span v-if="clip" class="mx-0.5 h-4 w-px bg-line" aria-hidden="true" />
           <!-- The three stay on one line, wrapping together, each a finger's height on a phone. -->
-          <span class="flex items-center gap-x-1">
+          <span v-if="handles" class="flex items-center gap-x-1">
             <Button
               :size="phone ? 'lg' : 'sm'"
               variant="ghost"

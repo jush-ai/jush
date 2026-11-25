@@ -29,6 +29,7 @@ import { uploadBytes } from './uploads'
 import { t } from './locales/text'
 import type { Device } from '../state/types'
 import type { SentenceText } from '@jush-agent/web-ui/ui/ui-text'
+import { may } from '@jush-agent/web-ui/agent/page-operations'
 
 /**
  * A raw file answer's headers as a file description: its size, its modification
@@ -204,8 +205,10 @@ export function rawFileContents(endpoint: string, fixed: Record<string, string> 
 
 /** The routes a file source reads and writes through; each one it lacks leaves that capability out. */
 export interface FileRoutes {
-  /** Lists a directory, and makes one with `POST`. */
+  /** Lists a directory. */
   directory: string | null
+  /** Makes a directory with `POST`. */
+  makeDirectory?: string
   /** Lists several directories in one `POST`; without it each is listed by a request of its own. */
   lists?: string
   /** A file's text. */
@@ -224,17 +227,17 @@ export interface FileRoutes {
 
 /**
  * A conversation's device file routes: its directory listing, file text and raw
- * bytes, uploads and deletes.
+ * bytes, and, where the page may write files, its new folders, uploads and
+ * deletes.
  */
-export function conversationFileRoutes(conversationId: string): Required<FileRoutes> {
+export function conversationFileRoutes(conversationId: string): FileRoutes {
   const base = `/conversations/${encodeURIComponent(conversationId)}/fs`
   return {
     directory: base,
     lists: `${base}/lists`,
     text: `${base}/file`,
     raw: `${base}/raw`,
-    upload: `${base}/raw`,
-    remove: base,
+    ...(may('writeFiles') ? { makeDirectory: base, upload: `${base}/raw`, remove: base } : {}),
     search: `${base}/search`,
     html: `${base}/html`,
   }
@@ -364,6 +367,7 @@ export function fileReads(
 ): FileReads {
   const {
     directory: endpoint,
+    makeDirectory: makeEndpoint,
     lists: listsEndpoint,
     text: textEndpoint,
     raw: rawEndpoint,
@@ -389,11 +393,11 @@ export function fileReads(
     platform: device?.platform ?? 'linux',
     home: device?.home ?? '/',
     list,
-    ...(endpoint
+    ...(makeEndpoint
       ? {
           async createDirectory(path: string, signal?: AbortSignal) {
             try {
-              await apiRequest(endpoint, {
+              await apiRequest(makeEndpoint, {
                 method: 'POST',
                 signal,
                 ...jsonBody({ path } satisfies CreateDirectory),
@@ -416,7 +420,7 @@ export function fileReads(
                         method: 'POST',
                         ...jsonBody({ path } satisfies HtmlRequest),
                       })
-                      return (await readResponse(response, htmlUrlSchema)).url
+                      return apiUrl((await readResponse(response, htmlUrlSchema)).url)
                     } catch (error) {
                       browserError(error)
                     }

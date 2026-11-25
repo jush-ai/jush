@@ -78,6 +78,10 @@
   },
   "chrome": {
     "mode": "Modo",
-    "font": "Fonte"
+    "font": "Fonte",
+    "page": "Página",
+    "webApp": "App web",
+    "programNone": "Página de um programa, sem ações",
+    "programSome": "Página de um programa: enviar, parar, arquivos"
   }
 }

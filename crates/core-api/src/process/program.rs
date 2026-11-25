@@ -26,6 +26,7 @@ use url::Url;
 use super::cores::{OpenCores, Serving, not_open};
 use crate::caller::{Caller, CallerPage, Gone};
 use crate::error::ApiError;
+use crate::page::PageScope;
 use crate::starter_lane::StarterLane;
 use crate::plugin_lanes::PluginLanes;
 use crate::state::StateError;
@@ -50,6 +51,12 @@ impl ProgramCaller {
             cores,
         }
     }
+
+    /// The program as it is now, refused once its core closed.
+    fn now(&self) -> Result<Self, ApiError> {
+        let core = self.cores.serving(&self.principal).ok_or_else(not_open)?;
+        Ok(Self::new(self.principal.clone(), core, self.cores.clone()))
+    }
 }
 
 impl Caller for ProgramCaller {
@@ -72,8 +79,7 @@ impl Caller for ProgramCaller {
 
     fn opens(&self, _: &LaneTarget) -> BoxFuture<'_, Result<Arc<dyn Caller>, ApiError>> {
         Box::pin(async move {
-            let core = self.cores.serving(&self.principal).ok_or_else(not_open)?;
-            let now: Arc<dyn Caller> = Arc::new(Self::new(self.principal.clone(), core, self.cores.clone()));
+            let now: Arc<dyn Caller> = Arc::new(self.now()?);
             Ok(now)
         })
     }
@@ -96,6 +102,73 @@ impl Caller for ProgramCaller {
 
     fn plugin_lanes(&self) -> Option<Arc<PluginLanes>> {
         Some(self.core.plugin_lanes.clone())
+    }
+}
+
+/// A program's page of one conversation, which the program's server answers
+/// with the SDK: the program's caller, bound to the conversation with the
+/// operations the program gave it (`crate::page`).
+pub(crate) struct PageCaller {
+    program: ProgramCaller,
+    /// The program's key and the conversation: the File view's grants of the
+    /// page are its own.
+    key: String,
+    scope: PageScope,
+}
+
+impl PageCaller {
+    pub(crate) fn new(program: ProgramCaller, scope: PageScope) -> Self {
+        Self {
+            key: format!("{}/pages/{}", program.key, scope.conversation()),
+            program,
+            scope,
+        }
+    }
+}
+
+impl Caller for PageCaller {
+    fn principal(&self) -> &UserId {
+        self.program.principal()
+    }
+
+    fn key(&self) -> &str {
+        &self.key
+    }
+
+    fn present(&self) -> BoxFuture<'_, Result<bool, ApiError>> {
+        self.program.present()
+    }
+
+    /// A page reveals none of the core's secrets.
+    fn proved_lately(&self) -> Result<(), ApiError> {
+        Err(ApiError::forbidden("A program's page reveals no secret of its core"))
+    }
+
+    fn opens(&self, _: &LaneTarget) -> BoxFuture<'_, Result<Arc<dyn Caller>, ApiError>> {
+        Box::pin(async move {
+            let now: Arc<dyn Caller> = Arc::new(Self::new(self.program.now()?, self.scope.clone()));
+            Ok(now)
+        })
+    }
+
+    fn gone(&self) -> BoxFuture<'static, Gone> {
+        self.program.gone()
+    }
+
+    fn page(&self, core: &Core) -> Box<dyn CallerPage> {
+        self.program.page(core)
+    }
+
+    fn starter_lane(&self) -> Option<Arc<StarterLane>> {
+        None
+    }
+
+    fn plugin_lanes(&self) -> Option<Arc<PluginLanes>> {
+        None
+    }
+
+    fn scope(&self) -> Option<&PageScope> {
+        Some(&self.scope)
     }
 }
 

@@ -15,6 +15,7 @@ import { provideMessageFiles } from '@jush-agent/web-ui/markdown/message-files'
 import { RouterLink, RouterView, useRoute } from 'vue-router'
 import GalleryAppearanceMenu from './components/GalleryAppearanceMenu.vue'
 import GalleryLanguageMenu from './components/GalleryLanguageMenu.vue'
+import GalleryPageMenu from './components/GalleryPageMenu.vue'
 import { useGalleryView } from './gallery-views'
 import { galleryBlobUrl, keepGalleryPicture } from './fixtures/blobs'
 import { galleryConversationFiles } from './fixtures/message-files'
@@ -134,6 +135,7 @@ const mainClass = computed(() => {
     >
       <Segmented v-model="view" :options="views" />
       <div class="flex items-center gap-1">
+        <GalleryPageMenu />
         <GalleryLanguageMenu />
         <GalleryAppearanceMenu />
       </div>

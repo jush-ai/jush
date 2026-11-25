@@ -17,6 +17,7 @@ import { t } from './locales/text'
 export function fileSourceFor(device: Device | null): FileBrowserSource {
   return fileSource({
     directory: device ? `/devices/${encodeURIComponent(device.id)}/fs` : null,
+    ...(device ? { makeDirectory: `/devices/${encodeURIComponent(device.id)}/fs` } : {}),
   }, device, {
     details: true,
     watch: (files) => device ? deviceWatch(device.id, files, followDevice) : null,

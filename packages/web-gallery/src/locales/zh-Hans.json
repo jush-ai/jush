@@ -78,6 +78,10 @@
   },
   "chrome": {
     "mode": "模式",
-    "font": "字体"
+    "font": "字体",
+    "page": "页面",
+    "webApp": "Web 应用",
+    "programNone": "程序的页面（无操作）",
+    "programSome": "程序的页面：发送、停止、文件"
   }
 }

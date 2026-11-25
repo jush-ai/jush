@@ -1034,8 +1034,11 @@ export const useProduct = defineStore('product', () => {
     // The state is read first, and the channel opens after it, to follow
     // what it read, whether the offline copy shows meanwhile or not.
     readState(false)
-    // Its failure is the Add Provider dialog's region state, with its own Retry.
-    void loadVendors().catch(() => {})
+    // Its failure is the Add Provider dialog's region state, with its own
+    // Retry; a program's page has no such dialog.
+    if (!programPage()) {
+      void loadVendors().catch(() => {})
+    }
   }
 
   /**

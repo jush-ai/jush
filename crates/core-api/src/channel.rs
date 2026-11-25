@@ -63,6 +63,7 @@ use jush_web_api_protocol::ids::ConversationId;
 use jush_web_api_protocol::state::{PageMessage, SyncEvent, SyncFollow, SyncFollowed};
 
 use crate::caller::{Caller, CallerPage};
+use crate::page::PageScope;
 use crate::state::{is_core_part, read_core_part};
 use jush_core::{Lane, LaneClose, LaneEnd, LaneGone, LaneMessage, LaneReader, Core};
 
@@ -121,6 +122,7 @@ pub(crate) async fn serve(core: Rc<Core>, mut page: Lane, mut from_page: LaneRea
             core: &core,
             page: &mut page,
             caller_page: &caller_page,
+            scope: caller.scope(),
         };
         tokio::select! {
             biased;
@@ -265,6 +267,9 @@ struct Channel<'a> {
     core: &'a Core,
     page: &'a mut Lane,
     caller_page: &'a RefCell<Box<dyn CallerPage>>,
+    /// A program's page's conversation and operations, which narrow what it
+    /// is sent (`crate::page`).
+    scope: Option<&'a PageScope>,
 }
 
 impl Channel<'_> {
@@ -354,11 +359,21 @@ impl Channel<'_> {
     /// page is sent nothing of it. The core reads its own parts, the
     /// caller's page the mount's.
     async fn read_part(&mut self, part: &Part) -> Result<Option<SyncEvent>, End> {
+        // A program's page sees no other conversation: it is not read.
+        if let (Some(scope), Part::Conversation(id)) = (self.scope, part)
+            && id != scope.conversation()
+        {
+            return Ok(None);
+        }
         let read = if is_core_part(part) {
             read_core_part(self.core, part).await
         } else {
             let caller_page = self.caller_page.borrow();
             caller_page.read(self.core, part).await
+        };
+        let read = match (read, self.scope) {
+            (Ok(Some(event)), Some(scope)) => crate::page::event(scope, self.core, event).await,
+            (read, _) => read,
         };
         read.map_err(|error| {
             let (name, conversation, plugin) = part_name(part);

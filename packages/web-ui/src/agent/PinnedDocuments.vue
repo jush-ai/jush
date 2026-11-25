@@ -9,6 +9,7 @@ import MenuItem from '../ui/MenuItem.vue'
 import Tooltip from '../ui/Tooltip.vue'
 import { ICON_PX } from '../ui/icon-metrics'
 import { t } from './locales/text'
+import { may } from './page-operations'
 
 /** A document the conversation's main agent pinned, a file of a device. */
 export interface PinnedDocumentView {
@@ -103,7 +104,7 @@ function open(pin: PinnedDocumentView, close: () => void): void {
           :disabled-reason="unopenable(pin)"
           @select="open(pin, close)"
         >
-          <template #actions>
+          <template v-if="may('pins')" #actions>
             <Tooltip :content="t('dock.unpin')" class="inline-flex">
               <IconButton
                 :icon="X"

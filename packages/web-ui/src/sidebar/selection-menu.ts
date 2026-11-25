@@ -17,12 +17,14 @@ export function pinKeys(): string {
 /** What the conversations' commands do; the one who offers them supplies it. */
 export interface SelectionActions {
   open: (id: string) => void
-  rename: (id: string) => void
+  /** Rename; absent, the menu has none, as on a program's page that may not rename. */
+  rename?: (id: string) => void
   copyId: (id: string) => void
-  pin: (ids: string[], pinned: boolean) => void
-  archive: (ids: string[]) => void
-  /** Delete…: the host asks before anything goes. */
-  delete: (ids: string[]) => void
+  /** Pin and Archive, the sidebar's; absent, the menu has neither, as for a conversation no sidebar lists. */
+  pin?: (ids: string[], pinned: boolean) => void
+  archive?: (ids: string[]) => void
+  /** Delete…: the host asks before anything goes; absent, the menu has none. */
+  delete?: (ids: string[]) => void
   /** Move To: the workspaces, and what a choice of one does; absent, the menu has no Move To. */
   moveTo?: WorkspaceMove
 }
@@ -69,29 +71,33 @@ export function selectionEntries(
   if (single) {
     if (!shown)
       first.push({ icon: ArrowRight, label: t('selection.open'), shortcut: namedKeyCap('Enter'), run: () => actions.open(single.id) })
+    const rename = actions.rename
+    if (rename) {
+      first.push({ icon: TextCursorInput, label: t('selection.rename'), shortcut: 'F2', run: () => rename(single.id) })
+    }
+    first.push({ icon: Copy, label: t('selection.copyId'), run: () => actions.copyId(single.id) })
+  }
+  const { pin, archive } = actions
+  if (pin && archive) {
     first.push(
-      { icon: TextCursorInput, label: t('selection.rename'), shortcut: 'F2', run: () => actions.rename(single.id) },
-      { icon: Copy, label: t('selection.copyId'), run: () => actions.copyId(single.id) },
+      {
+        icon: allPinned ? PinOff : Pin,
+        label: allPinned
+          ? (count > 1 ? t('selection.unpinMany', { count }) : t('selection.unpin'))
+          : (count > 1 ? t('selection.pinMany', { count }) : t('selection.pin')),
+        shortcut: pinKeys(),
+        run: () => pin(ids, !allPinned),
+      },
+      { icon: Archive, label: count > 1 ? t('selection.archiveMany', { count }) : t('selection.archive'), run: () => archive(ids) },
     )
   }
-  first.push(
-    {
-      icon: allPinned ? PinOff : Pin,
-      label: allPinned
-        ? (count > 1 ? t('selection.unpinMany', { count }) : t('selection.unpin'))
-        : (count > 1 ? t('selection.pinMany', { count }) : t('selection.pin')),
-      shortcut: pinKeys(),
-      run: () => actions.pin(ids, !allPinned),
-    },
-    { icon: Archive, label: count > 1 ? t('selection.archiveMany', { count }) : t('selection.archive'), run: () => actions.archive(ids) },
-  )
   if (actions.moveTo) {
     first.push(moveToEntry(actions.moveTo))
   }
-  return [
-    first,
-    [{ icon: Trash2, label: count > 1 ? t('selection.deleteMany', { count }) : t('selection.delete'), danger: true, run: () => actions.delete(ids) }],
-  ]
+  const remove = actions.delete
+  return remove
+    ? [first, [{ icon: Trash2, label: count > 1 ? t('selection.deleteMany', { count }) : t('selection.delete'), danger: true, run: () => remove(ids) }]]
+    : [first]
 }
 
 /** A project header's commands. */

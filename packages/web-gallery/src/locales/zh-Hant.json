@@ -78,6 +78,10 @@
   },
   "chrome": {
     "mode": "模式",
-    "font": "字型"
+    "font": "字型",
+    "page": "頁面",
+    "webApp": "Web 應用程式",
+    "programNone": "程式的頁面（無操作）",
+    "programSome": "程式的頁面：傳送、停止、檔案"
   }
 }

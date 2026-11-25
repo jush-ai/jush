@@ -78,6 +78,10 @@
   },
   "chrome": {
     "mode": "모드",
-    "font": "글꼴"
+    "font": "글꼴",
+    "page": "페이지",
+    "webApp": "웹 앱",
+    "programNone": "프로그램 페이지(작업 없음)",
+    "programSome": "프로그램 페이지: 보내기, 중지, 파일"
   }
 }

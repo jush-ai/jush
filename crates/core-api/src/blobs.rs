@@ -7,8 +7,6 @@
 //! - A byte range is answered as `fs/raw` answers one: Safari plays a video
 //!   only from a server that does.
 
-use std::sync::Arc;
-
 use axum::extract::rejection::PathRejection;
 use axum::extract::{Path, RawQuery, State};
 use axum::http::header::{CACHE_CONTROL, RANGE, VARY};
@@ -20,23 +18,34 @@ use jush_web_api_protocol::error::ErrorCode;
 
 use crate::content::content_headers;
 use crate::error::ApiError;
-use crate::caller::Principal;
+use crate::api::Api;
+use crate::caller::CallerOf;
 use jush_core_device_access::transfer::RangeAnswer;
-use jush_core::services::CoreServices;
 
 pub(crate) async fn blob(
-    State(services): State<Arc<CoreServices>>,
-    Principal(user): Principal,
+    State(state): State<Api>,
+    CallerOf(caller): CallerOf,
     name: Result<Path<String>, PathRejection>,
     RawQuery(query): RawQuery,
     request: HeaderMap,
 ) -> Result<Response, ApiError> {
+    let user = caller.principal();
     // A name that is not a lowercase SHA-256 names no blob.
     let blob = name
         .ok()
         .and_then(|Path(name)| BlobRef::try_from(name).ok())
         .ok_or_else(no_such_blob)?;
-    let bytes = services
+    // A program's page reads the blobs its conversation names and those it
+    // uploaded.
+    if let Some(scope) = caller.scope() {
+        let conversation = scope.conversation();
+        let uploaded = state.page_uploads.holds(user, conversation, &blob);
+        if !uploaded && !state.store(user).await?.conversation_names_blob(conversation.clone(), blob.clone()).await? {
+            return Err(no_such_blob());
+        }
+    }
+    let bytes = state
+        .services
         .blobs
         .for_user(&user)
         .get(&blob)
