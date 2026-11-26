@@ -455,6 +455,13 @@ fn router(state: AppState, closing: CancellationToken, web_directory: Option<Pat
         .route("/cloud", get(cloud::status))
         .route("/cloud/reset", post(cloud::reset))
         .merge(jush_core_api::routes().with_state(state.api.clone()))
+        // A plugin's sign-in returns to the server, as a schedule's URL
+        // reaches it: a program serves its own.
+        .merge(
+            Router::new()
+                .route("/plugins/{plugin}/oauth/callback", get(jush_core_api::oauth::callback))
+                .with_state(state.api.clone()),
+        )
         // The reads' caching (`revalidate.rs`): the routes' answers only.
         .layer(middleware::from_fn(jush_core_api::revalidate::reads))
         .fallback(no_route)

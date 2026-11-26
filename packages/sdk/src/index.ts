@@ -33,7 +33,14 @@
 // exported below; a route that serves only the web app's own screens, such
 // as the sidebar's order or a composer's draft, has no method.
 
-export { Jush, type JushConnection, type JushOptions } from './jush'
+export {
+  Jush,
+  type JushConnection,
+  type JushOptions,
+  type JushPlugins,
+  type JushSchedules,
+  type SignInReturn,
+} from './jush'
 export {
   Core,
   Conversations,

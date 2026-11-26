@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: proposed, superseded in part by 0367, 0368 and 0369
 ---
 
 # A TypeScript SDK runs Jush's cores in a program, over the web app's own clients

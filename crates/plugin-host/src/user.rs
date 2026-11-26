@@ -222,9 +222,10 @@ pub trait ProductPort {
     /// `https` and follows no redirect away from it.
     fn web_client(&self) -> reqwest::Client;
 
-    /// Where the core's routes are reached from outside, under `/api`,
-    /// which an OAuth redirect URI starts with; none while it is not known.
-    fn public_url(&self) -> Option<Url>;
+    /// Where the vendor of the plugin `plugin` sends the browser back to
+    /// once the user signed in, the OAuth redirect URI; none while no
+    /// address serves the sign-ins.
+    fn sign_in_return(&self, plugin: &str) -> Option<Url>;
 
     /// The wall clock.
     fn now(&self) -> Timestamp;

@@ -232,17 +232,13 @@ impl Shared {
         Ok(metadata)
     }
 
-    /// Where the vendor sends the browser back to:
-    /// `<public URL>/api/plugins/<plugin>/oauth/callback`.
+    /// Where the vendor sends the browser back to, which whoever runs the
+    /// core serves.
     fn redirect_uri(&self, plugin: usize) -> Result<String, PortFailure> {
-        let public = self.product.public_url().ok_or_else(|| {
-            PortFailure::Port(PortError::Failed("the backend has no public URL yet".into()))
+        let url = self.product.sign_in_return(&self.plugin_id(plugin)).ok_or_else(|| {
+            PortFailure::Port(PortError::Failed("no address takes the sign-in's return yet".into()))
         })?;
-        Ok(format!(
-            "{}/api/plugins/{}/oauth/callback",
-            public.as_str().trim_end_matches('/'),
-            self.plugin_id(plugin)
-        ))
+        Ok(url.to_string())
     }
 
     /// The public client registered for plugin `plugin` at its issuer with
@@ -327,8 +323,9 @@ impl Shared {
         cancel: &CancellationToken,
     ) -> Result<String, PortFailure> {
         let oauth = &self.oauth(plugin)?;
-        let metadata = self.metadata(plugin, oauth, cancel).await?;
+        // A sign-in no address takes back asks the vendor nothing.
         let redirect_uri = self.redirect_uri(plugin)?;
+        let metadata = self.metadata(plugin, oauth, cancel).await?;
         let client_id = self
             .client(plugin, oauth, &metadata, &redirect_uri, cancel)
             .await?;

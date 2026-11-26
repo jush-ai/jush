@@ -62,6 +62,10 @@ serde_json.workspace = true
 serde_plain.workspace = true
 subtle = "2"
 thiserror.workspace = true
+# A call of a schedule's URL, which a program hands on as `message/http`.
+httparse = "1"
+# The query a plugin's sign-in returns with, which a program hands on.
+serde_urlencoded = "0.7"
 # A program's connection: HTTP/2 over the process's standard input and
 # output, or over TCP, where runners dial in too with HTTP/1.1; WebSockets by
 # extended CONNECT.

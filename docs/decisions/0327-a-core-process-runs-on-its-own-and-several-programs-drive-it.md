@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: proposed, superseded in part by 0369
 ---
 
 # A core process runs on its own, and several programs drive it

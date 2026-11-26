@@ -1,9 +1,11 @@
 //! A plugin's OAuth callback (`crates/plugin-host/src/oauth.rs`): where the
 //! vendor sends the browser back after the user signed in.
 //!
-//! It is a session route: the browser's own navigation carries the session
-//! cookie, so the caller's core completes only a sign-in its user started. It
-//! answers a page the user reads in the tab the sign-in opened.
+//! It is a session route of the server's: the browser's own navigation
+//! carries the session cookie, so the caller's core completes only a sign-in
+//! its user started. It answers a page the user reads in the tab the sign-in
+//! opened. A program serves its own sign-in return, and hands it on to its
+//! process (`process/addresses.rs`).
 
 use axum::extract::{Path, Query, State};
 use axum::http::header::ACCEPT_LANGUAGE;
@@ -26,7 +28,7 @@ use crate::caller::Principal;
 ///   used before, or a vendor's error.
 /// - 404 for a plugin that does not sign in or that the caller has off.
 /// - 502 when the vendor did not issue the tokens.
-pub(crate) async fn callback(
+pub async fn callback(
     State(state): State<Api>,
     Principal(user): Principal,
     Path(plugin): Path<String>,

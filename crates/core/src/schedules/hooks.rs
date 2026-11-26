@@ -7,10 +7,13 @@
 //! - as a bearer token;
 //! - signed with the secret as GitHub signs.
 //!
-//! Any other call is refused with the answer an unknown address gets. The
-//! answer is the same, but not in every case: an unknown address is refused
-//! before its body is read, so only a call to a known address meets the
-//! limit on the body's size and the wait for a body that does not finish.
+//! Any other call is refused, and the core says whether for its address or
+//! for its secret. The server answers both alike, so its caller cannot tell
+//! which addresses exist, but not in every case: an unknown address is
+//! refused before its body is read, so only a call to a known address meets
+//! the limit on the body's size and the wait for a body that does not
+//! finish. A program's process tells its program which, and the program
+//! answers.
 //!
 //! # Limits and bursts
 //!
@@ -90,13 +93,15 @@ pub struct HookCall {
     pub body: Bytes,
 }
 
-/// How a call is answered.
+/// What became of a call.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HookAnswer {
-    /// 200: it was taken, whether or not it starts a run.
+    /// It was taken, whether or not it starts a run.
     Taken,
-    /// 401: an unknown address, or a call without the secret.
-    Refused,
+    /// No URL schedule has the id.
+    Unknown,
+    /// The call does not prove it holds the schedule's secret.
+    Secret,
 }
 
 /// A call as a run's message carries it: when, how, and its headers
@@ -177,10 +182,10 @@ impl Core {
             None => None,
         };
         let (Some(schedule), Some(secret)) = (schedule, secret) else {
-            return Ok(HookAnswer::Refused);
+            return Ok(HookAnswer::Unknown);
         };
         if !verified(&call, &secret) {
-            return Ok(HookAnswer::Refused);
+            return Ok(HookAnswer::Secret);
         }
         let delivery = header(&call, "x-github-delivery")
             .or_else(|| header(&call, "idempotency-key"))

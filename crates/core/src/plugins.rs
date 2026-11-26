@@ -299,8 +299,8 @@ impl ProductPort for CorePort {
         self.web.clone()
     }
 
-    fn public_url(&self) -> Option<url::Url> {
-        self.core.upgrade()?.starter().public_url()
+    fn sign_in_return(&self, plugin: &str) -> Option<url::Url> {
+        self.core.upgrade()?.starter().sign_in_return(plugin)
     }
 
     fn now(&self) -> Timestamp {

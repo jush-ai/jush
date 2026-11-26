@@ -5,14 +5,15 @@
 //!
 //! | Who       | Routes                              | Credential           |
 //! | --------- | ----------------------------------- | -------------------- |
-//! | A program | `/plugins`, `/cores`,               | the process's token  |
+//! | A program | `/plugins`, `/cores`, `/addresses`, | the process's token  |
+//! |           | `/schedules/calls`, `/sign-ins`,    |                      |
 //! |           | `/cores/{id}/api/...`               |                      |
 //! | A runner  | `/api/runner`, its pipes and the    | its device's token,  |
 //! |           | command packages' artifacts         | or none while it     |
 //! |           | (`runners.rs`)                      | waits to be paired   |
-//! | Anyone    | `/hooks/{id}`, a plugin's sign-in   | none                 |
-//! |           | callback, the files a page's frames |                      |
-//! |           | load                                |                      |
+//!
+//! No one else reaches it: the calls from outside reach the programs'
+//! own addresses.
 //!
 //! A program presents the token as `Authorization: Bearer`. Its connection
 //! is one of many: its end closes nothing, and the cores, their
@@ -33,7 +34,6 @@ use hyper_util::server::conn::auto;
 use hyper_util::service::TowerToHyperService;
 use subtle::ConstantTimeEq as _;
 use tokio::net::TcpListener;
-use url::Url;
 
 use super::devices::ConnectionWrites;
 use super::stream::Remote;
@@ -43,19 +43,16 @@ use super::{Authorized, Process, ProcessError};
 struct Token(String);
 
 /// Serves the process's routes and its runners' on `listener` until `stop`
-/// resolves, then closes every core. A program presents `token`;
-/// `public_url` is where the process is reached from outside, without which
-/// the cores offer neither a plugin's OAuth nor a schedule's URL; `release`
+/// resolves, then closes every core. A program presents `token`; `release`
 /// holds the roots of the release whose command packages the cores' runners
 /// run.
 pub async fn serve(
     listener: TcpListener,
     token: String,
-    public_url: Option<Url>,
     release: Vec<PathBuf>,
     stop: impl Future<Output = ()>,
 ) -> Result<(), ProcessError> {
-    let process = Process::start(public_url, release, true).await?;
+    let process = Process::start(release, true).await?;
     let app = super::routes(process.clone())
         .merge(super::runners::routes(process.clone()))
         .layer(middleware::from_fn_with_state(Arc::new(Token(token)), authorize));
