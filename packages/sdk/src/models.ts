@@ -31,16 +31,27 @@ export interface UsageReportOptions {
   to: Date
   /** How long a bucket is. */
   bucket: UsageBucketSize
-  /** The IANA zone a bucket's hour or day is counted in; UTC when absent. */
+  /** The IANA zone a bucket's minute, hour or day is counted in; UTC when absent. */
   timeZone?: string
   /** What each bucket's calls are grouped by; none sums each bucket whole. */
   groupBy?: UsageDimension[]
+  /** The conversations whose calls it counts; every one's when absent, none when empty. */
+  conversations?: string[]
+  /**
+   * The numbers of the agents of `conversations` whose calls it counts: 0
+   * for a main agent, a subagent's `number` in `conversation.agents`;
+   * every call of them when absent, none when empty.
+   */
+  agents?: number[]
 }
 
 export interface Usage {
   /** The core's usage, totalled by provider and model. */
   totals(): Promise<UsageGroup[]>
-  /** The calls of a period, in buckets of an hour or a day, grouped by what `groupBy` names. */
+  /**
+   * The calls of a period, in buckets of a minute, an hour or a day,
+   * grouped by what `groupBy` names.
+   */
   report(options: UsageReportOptions): Promise<UsageReport>
 }
 
@@ -55,6 +66,8 @@ export function usage(routes: CoreRoutes): Usage {
         bucket: options.bucket,
         timeZone: options.timeZone,
         groupBy: options.groupBy !== undefined && options.groupBy.length > 0 ? options.groupBy.join(',') : undefined,
+        conversations: options.conversations?.join(','),
+        agents: options.agents?.join(','),
       })}`,
       usageReportSchema,
     ),

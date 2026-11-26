@@ -7,7 +7,8 @@ use std::sync::Arc;
 use axum::Json;
 use axum::extract::State;
 use jiff::tz::TimeZone;
-use jush_core_store::usage_report::ReportAsk;
+use jush_core_store::usage_report::{Kept, ReportAsk};
+use jush_web_api_protocol::ids::ConversationId;
 use jush_web_api_protocol::usage::{UsageDimension, UsageReport, UsageReportQuery, UsageTotals};
 
 use crate::error::ApiError;
@@ -23,8 +24,8 @@ pub(crate) async fn totals(
     Ok(Json(UsageTotals { totals }))
 }
 
-/// `GET /usage/report`: the calls of a period, by bucket and by what the
-/// query groups them by.
+/// `GET /usage/report`: the calls of a period, of the conversations and
+/// agents the query names, by bucket and by what the query groups them by.
 pub(crate) async fn report(
     State(services): State<Arc<CoreServices>>,
     Principal(user): Principal,
@@ -39,15 +40,49 @@ pub(crate) async fn report(
         None => TimeZone::UTC,
     };
     let mut group_by = Vec::new();
-    // `groupBy=` is an empty list.
-    for name in query.group_by.iter().filter(|names| !names.is_empty()).flat_map(|names| names.split(',')) {
+    for name in list(query.group_by.as_deref()) {
         let dimension: UsageDimension = serde_plain::from_str(name)
             .map_err(|_| ApiError::invalid_query(format!("groupBy: {name} is not a dimension of the report")))?;
         if !group_by.contains(&dimension) {
             group_by.push(dimension);
         }
     }
-    let ask = ReportAsk { from: query.from, to: query.to, bucket: query.bucket, zone, group_by };
+    // A list that is there and empty keeps no call.
+    let named = |names: &str| names.split(',').filter(|name| !name.is_empty()).map(str::to_owned).collect::<Vec<_>>();
+    let agents = query
+        .agents
+        .as_deref()
+        .map(|numbers| {
+            named(numbers)
+                .into_iter()
+                .map(|number| {
+                    number.parse::<u64>().map_err(|_| ApiError::invalid_query(format!("agents: {number} is no agent's number")))
+                })
+                .collect::<Result<Vec<_>, _>>()
+        })
+        .transpose()?;
+    let kept = match (query.conversations.as_deref(), agents) {
+        (None, None) => Kept::Every,
+        // A number names an agent of its conversation alone.
+        (None, Some(_)) => return Err(ApiError::invalid_query("agents: names agents of the conversations `conversations` names")),
+        (Some(ids), agents) => {
+            let conversations = named(ids)
+                .into_iter()
+                .map(|id| {
+                    ConversationId::try_from(id.clone())
+                        .map(|_| id.clone())
+                        .map_err(|_| ApiError::invalid_query(format!("conversations: {id} is no conversation's id")))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            Kept::Of { conversations, agents }
+        }
+    };
+    let ask = ReportAsk { from: query.from, to: query.to, bucket: query.bucket, zone, group_by, kept };
     let report = services.vault.stores().store_of(&user).await?.usage_report(ask).await?;
     Ok(Json(report))
+}
+
+/// The values of a comma list; `name=` is an empty one.
+fn list(names: Option<&str>) -> impl Iterator<Item = &str> {
+    names.into_iter().filter(|names| !names.is_empty()).flat_map(|names| names.split(','))
 }
