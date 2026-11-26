@@ -18,6 +18,7 @@ mod device;
 pub mod lane;
 mod permissions;
 pub(crate) mod media;
+pub mod media_listings;
 pub(crate) mod media_jobs;
 pub mod lent_media;
 pub(crate) mod provider_commands;

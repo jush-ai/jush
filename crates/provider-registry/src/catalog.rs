@@ -408,7 +408,7 @@ impl ProviderRegistry {
 /// form of the entry's family, configuration and active account, so a
 /// changed entry starts from an empty cache
 /// (`crates/backend-database/src/columns.rs`).
-fn catalog_key(entry: &ProviderEntry) -> String {
+pub fn catalog_key(entry: &ProviderEntry) -> String {
     let config = match &entry.credential {
         EntryCredential::ApiKey(config) => serde_json::to_value(config),
         EntryCredential::Subscription { .. } => Ok(serde_json::Value::Null),

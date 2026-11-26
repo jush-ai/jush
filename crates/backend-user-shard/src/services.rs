@@ -80,6 +80,8 @@ pub struct Services {
     pub provider_registry: Arc<ProviderRegistry>,
     /// The catalog of image and video models (`crates/provider-common/src/media_catalog.rs`).
     pub media: MediaCatalog,
+    /// The media models each entry listed last, which the product state shows.
+    pub media_listings: crate::shard::media_listings::MediaListings,
     /// The vendors' releases of each CLI on the Subscriptions machine, which
     /// it follows.
     pub cli_releases: CliReleaseReaders,
@@ -500,6 +502,7 @@ impl Services {
             master_account: providers.master_account,
             provider_registry,
             media,
+            media_listings: crate::shard::media_listings::MediaListings::default(),
             cli_releases,
             cli_installs: CliInstalls::default(),
             subscriptions_machine: providers.subscriptions_machine,
