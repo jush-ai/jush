@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, ref, shallowRef, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
 import { useElementSize } from '@vueuse/core'
 import { md } from '@jush-ai/web-ui/markdown/md'
-import { followMathWait } from '@jush-ai/web-ui/markdown/math'
+import { followMathWait, leaveMathWait } from '@jush-ai/web-ui/markdown/math'
 import { fitMessageMedia, fitMessageMedium, messagePicture, messagePictures, type MessagePicture } from '@jush-ai/web-ui/markdown/media-run'
 import { useMarkdownRenderVersion } from '@jush-ai/web-ui/markdown/render-version'
 import CodeBlockCopy from '@jush-ai/web-ui/markdown/CodeBlockCopy.vue'
@@ -218,6 +218,11 @@ useMarkdownBlocks({
       return picture
     })
   },
+})
+
+onBeforeUnmount(() => {
+  if (root.value)
+    leaveMathWait(root.value)
 })
 
 // A render's images and videos take their tile before they paint; one still

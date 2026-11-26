@@ -2262,7 +2262,7 @@ html[data-theme="light"] .file-pill {
    (`markdown/math.ts`) keeps the attributes. */
 .markdown-body .math-waiting,
 .markdown-body > [data-math-held],
-.markdown-body[data-math-waiting]:not([data-shown]) ~ *,
+[data-math-held-after] > .markdown-body[data-math-waiting]:not([data-shown]) ~ *,
 [data-row-key]:has(.markdown-body[data-math-waiting]:not([data-shown])) ~ [data-row-key] {
   visibility: hidden;
 }
