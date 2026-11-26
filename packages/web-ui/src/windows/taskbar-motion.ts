@@ -35,14 +35,14 @@ function widen(element: HTMLElement, from: Keyframe, to: Keyframe, done?: () => 
   }
 }
 
-/** A button that comes (TransitionGroup's `enter`). */
+/** A button that comes (`ListTransition`'s `enter`). */
 export function grow(element: Element, done: () => void): void {
   const box = element as HTMLElement
   const width = box.getBoundingClientRect().width
   widen(box, { width: '0px', minWidth: '0px', paddingInline: '0px', opacity: 0 }, { width: `${width}px`, minWidth: '0px', opacity: 1 }, done)
 }
 
-/** A button that goes (TransitionGroup's `leave`). */
+/** A button that goes (`ListTransition`'s `leave`). */
 export function shrink(element: Element, done: () => void): void {
   const box = element as HTMLElement
   const width = box.getBoundingClientRect().width
