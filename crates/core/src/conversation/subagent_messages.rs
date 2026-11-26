@@ -7,7 +7,7 @@ use std::rc::Rc;
 use jush_agent_server::SubagentMessageError;
 use jush_core_device_access::root_of;
 use jush_core_permissions::Stops;
-use jush_shared_types::{BlockId, NodeId};
+use jush_shared_types::{Attribution, BlockId, NodeId};
 use jush_web_api_protocol::conversations::{SubagentMessage, SubagentMessageAnswer};
 use jush_web_api_protocol::error::ErrorCode;
 use jush_web_api_protocol::ids::ConversationId;
@@ -86,7 +86,10 @@ impl Core {
         );
         let delivered = self
             .agent()
-            .message_subagent(&root_of(id), node, message_id.clone(), message.text, message.sender_id)
+            .message_subagent(&root_of(id), node, message_id.clone(), message.text, Attribution {
+                sender_id: message.sender_id,
+                assignment_id: message.assignment_id,
+            })
             .await;
         // A close that began after the open disposes the tree under the
         // delivery, which then says why only in the agents' words.

@@ -389,13 +389,14 @@ the queue or gives the message back makes it, or when the conversation
 closes first. `options.senderId` names who sent the message, by your own
 id, such as a person of a team's chat: the message's `user` block keeps it
 as `senderId`, so a page can show who wrote what, the model does not read
-it, and [Usage](#usage) says what it counts. The other actions are the ones
-the app has:
+it, and [Usage](#usage) says what it counts. `options.assignmentId` names
+the earlier work the message continues ([Usage](#usage)). The other actions
+are the ones the app has:
 
 | Method | What it does |
 | --- | --- |
-| `send(input, messageId?, options?)` | Sends a message, queued behind a running turn; resolves once the conversation holds it; `options.senderId` as `run` takes it |
-| `steer(input, steerId?, options?)` | Hands a message to the running turn; resolves once the turn took it; `options.senderId` as `run` takes it |
+| `send(input, messageId?, options?)` | Sends a message, queued behind a running turn; resolves once the conversation holds it; `options` as `run` takes them |
+| `steer(input, steerId?, options?)` | Hands a message to the running turn; resolves once the turn took it; `options` as `run` takes them |
 | `abort()` | Stops the running turn |
 | `retry()` | Runs the latest turn again from your message |
 | `resume()` | Finishes a turn that did not finish |
@@ -511,7 +512,8 @@ to one subagent, named by its id in `conversation.agents`. A subagent at work
 takes it as a steer, an idle one starts a turn with it, and one that ended is
 resumed with it. Give the message an id when you may send it again, such as
 after a lost answer: the subagent takes a message once, however often it
-arrives. `options.senderId` names who sent it, as `run` takes it.
+arrives. `options` names who sent it and the work it continues, as `run`
+takes them.
 
 ```ts
 const tester = conversation.agents.find((agent) => agent.role.kind === 'subagent' && agent.role.profile === 'tester')
@@ -830,6 +832,27 @@ sums the cost of each kind:
 await conversation.send('Summarize the incident', 'listener:ops-alerts:8812')
 const report = await core.usage.report({ from, to, bucket: 'day', timeZone: 'Asia/Shanghai', groupBy: ['conversation', 'assignment', 'model'] })
 ```
+
+A message your program sends to continue earlier work names that work's
+assignment with `assignmentId`, as it names its sender. A plugin's command
+call names the assignment and the sender it was part of; a program that
+follows something for the conversation keeps them, and wakes it within
+that work:
+
+```ts
+// In the command that starts following a merge request.
+const caller = call.invocation.caller
+// Hours later, as a commit lands.
+await conversation.send('A commit landed on !42; review it again.', 'acme:review-42:3', {
+  senderId: caller?.senderId,
+  assignmentId: caller?.assignmentId,
+})
+```
+
+The turn it opens, its commands and the work that continues it are counted
+in that assignment, in `usage.report` and in `commands.history`. A steer the
+running turn reads joins that turn's whatever it names, and so does a
+message to a running subagent.
 
 ## Commands your agents ran
 

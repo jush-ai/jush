@@ -170,6 +170,32 @@ interface Subscription {
   stop: AbortController
 }
 
+/**
+ * Who sent a message or a steer, and the work it continues, as a program
+ * names them; both absent for the app's own.
+ */
+export interface MessageOptions {
+  /**
+   * Your own id of whoever sent it, such as a person of a team's chat, 1 to
+   * 255 characters, which the message keeps: every call its agent makes
+   * after reading it, until the next message or the next turn the end of
+   * other work opens, is that sender's in `core.usage.report`, and so are
+   * the calls of the subagents it starts meanwhile, and of the turn the end
+   * of its work opens. The model does not read it.
+   */
+  senderId?: string | null
+  /**
+   * The assignment the message continues, by the id of the message that
+   * opened it, such as one a plugin's call named
+   * (`call.invocation.caller?.assignmentId`): the turn it opens, and the
+   * work that continues it, are counted in it, as `assignment` groups them.
+   * Without it, a message opens an assignment of its own id. A steer the
+   * running turn reads joins that turn's whatever it names. The model does
+   * not read it.
+   */
+  assignmentId?: string | null
+}
+
 /** The entity tags the page holds of the conversation's own values, which it follows them by. */
 export interface ConversationTags {
   metadata: string
@@ -517,7 +543,7 @@ export class ConversationClient {
     content: ClientContent[],
     messageId: string = createId(),
     comments: readonly ClientComment[] = [],
-    senderId?: string,
+    options: MessageOptions = {},
   ): Promise<void> {
     // The answer names the agents' version that shows the message, queued or
     // starting the turn; the send settles once the client holds it.
@@ -528,7 +554,7 @@ export class ConversationClient {
         messageId,
         content,
         ...(comments.length > 0 ? { comments: [...comments] } : {}),
-        ...(senderId === undefined ? {} : { senderId }),
+        ...options,
       },
       (event) => {
         if (event.type === 'send_result' && event.messageId === messageId) {
@@ -686,7 +712,7 @@ export class ConversationClient {
     content: ClientContent[],
     steerId: string = createId(),
     comments: readonly ClientComment[] = [],
-    senderId?: string,
+    options: MessageOptions = {},
   ): Promise<void> {
     let at: Version | null | undefined
     return this.request(
@@ -695,7 +721,7 @@ export class ConversationClient {
         steerId,
         content,
         ...(comments.length > 0 ? { comments: [...comments] } : {}),
-        ...(senderId === undefined ? {} : { senderId }),
+        ...options,
       },
       (event) => {
         if (event.type === 'steer_result' && event.steerId === steerId) {

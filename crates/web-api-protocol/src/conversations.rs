@@ -1097,6 +1097,11 @@ pub struct SubagentMessage {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[garde(length(chars, min = 1, max = jush_shared_types::SENDER_ID_LIMIT))]
     pub sender_id: Option<String>,
+    /// The assignment it continues when it opens a turn of its own, as a
+    /// message's; one the running subagent reads joins its turn's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[garde(skip)]
+    pub assignment_id: Option<TurnId>,
 }
 
 /// What a message to a subagent answers: its id, the one it named or the one

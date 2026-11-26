@@ -10,7 +10,7 @@ use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use jush_core::conversation::side_questions::SideRefusal;
-use jush_shared_types::NodeId;
+use jush_shared_types::{Attribution, NodeId};
 use jush_web_api_protocol::error::ErrorCode;
 use jush_web_api_protocol::ids::ConversationId;
 use jush_web_api_protocol::side_questions::{
@@ -49,14 +49,16 @@ pub(crate) async fn follow_up(
     State(state): State<Api>,
     Principal(user): Principal,
     Path((id, side)): Path<(String, String)>,
-    JsonBody(SideFollowUp { id: message, content, sender_id }): JsonBody<SideFollowUp>,
+    JsonBody(SideFollowUp { id: message, content, sender_id, assignment_id }): JsonBody<SideFollowUp>,
 ) -> Result<StatusCode, ApiError> {
     let id = conversation(id)?;
     let side = side_id(side)?;
     state
         .shards
         .of(&user)
-        .call(move |core, _| async move { core.ask_more(id, side, message, content, sender_id).await })
+        .call(move |core, _| async move {
+            core.ask_more(id, side, message, content, Attribution { sender_id, assignment_id }).await
+        })
         .await?
         .map_err(refused)?;
     Ok(StatusCode::NO_CONTENT)

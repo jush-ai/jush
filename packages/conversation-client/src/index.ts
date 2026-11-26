@@ -24,6 +24,7 @@ export {
   type ConversationFrameTake,
   type ConversationRead,
   type ConversationReader,
+  type MessageOptions,
 } from './client'
 export type { ConversationClientListener, ClientSessionEvent, Failures, RequestOutputReading, ServerFrameOf } from './events'
 export {

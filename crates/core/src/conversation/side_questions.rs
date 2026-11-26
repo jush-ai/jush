@@ -18,7 +18,7 @@ use jush_core_store::conversation_index::ConversationRecord;
 use jush_core_store::side_questions;
 use jush_core_device_access::root_of;
 use jush_conversation_lane_protocol::ClientContent;
-use jush_shared_types::{NodeId, TurnId, UserContentBlock, markdown_quote};
+use jush_shared_types::{Attribution, NodeId, TurnId, UserContentBlock, markdown_quote};
 use jush_web_api_protocol::ids::ConversationId;
 use jush_conversation_lane_protocol::SideQuestion;
 use jush_web_api_protocol::side_questions::AskRequest;
@@ -115,7 +115,8 @@ impl Core {
             asked_at: self.services().clock.now(),
         };
         let message = format!("{}\n\n{}", markdown_quote(&of.quote), text_of(&of.question));
-        let created = self.agent().ask(&root_of(&record.id), side.clone(), of, request.sender_id, media).await?;
+        let attribution = Attribution { sender_id: request.sender_id, assignment_id: request.assignment_id };
+        let created = self.agent().ask(&root_of(&record.id), side.clone(), of, attribution, media).await?;
         let asked = self.side_question(&record.id, &side).await?;
         if !created {
             return Ok((asked, false));
@@ -149,22 +150,22 @@ impl Core {
         Ok((asked, true))
     }
 
-    /// Sends the follow-up `content` from `sender_id` to the side question
-    /// `side` of the user's conversation `id`, under the id `message` or a
-    /// new one.
+    /// Sends the follow-up `content` to the side question `side` of the
+    /// user's conversation `id`, under the id `message` or a new one, from
+    /// the sender `attribution` names and in the assignment it names.
     pub async fn ask_more(
         &self,
         id: ConversationId,
         side: NodeId,
         message: Option<TurnId>,
         content: Vec<ClientContent>,
-        sender_id: Option<String>,
+        attribution: Attribution,
     ) -> Result<(), SideRefusal> {
         let record = self.side_conversation(&id, true).await?;
         self.side_question(&record.id, &side).await?;
         self.open_for_side(&record.id).await?;
         let (content, media) = self.resolve_question(&record.id, content).await?;
-        self.agent().ask_more(&root_of(&record.id), side, message, content, sender_id, media).await?;
+        self.agent().ask_more(&root_of(&record.id), side, message, content, attribution, media).await?;
         Ok(())
     }
 

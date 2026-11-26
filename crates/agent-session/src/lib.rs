@@ -108,8 +108,7 @@ use jush_agent_transcript::{
 use jush_conversation_lane_protocol::{AbortResult, AgentCode, Refusal, RequestOutput, TranscriptPatch, Version};
 use jush_provider_common::{Ahead, ProviderFailure, ProviderRuntime};
 use jush_shared_gates::SerialGate;
-use jush_shared_types::{
-    MessageComment,
+use jush_shared_types::{Attribution, MessageComment,
     AgentMessage, ScheduleMark, Block, BlockId, Clock, ContextUsage, ErrorBlock, ModelSelection, NodeId, PendingCall,
     PendingSteer, PictureCopy, ProviderErrorDiagnostics, QueuedMessage, SessionPhase, ShellToolView, ShellViewStatus,
     TextBlock, Timestamp, ToolResultContentBlock, ToolView, TurnId, UserContentBlock,
@@ -1270,20 +1269,20 @@ impl AgentSession {
     /// Adds input to the running turn at its next boundary, or starts a turn
     /// with it when no turn takes it.
     pub fn steer(&self, content: Vec<UserContentBlock>, id: BlockId) -> Result<(), SteerError> {
-        self.steer_message(content, Vec::new(), None, id)
+        self.steer_message(content, Vec::new(), Attribution::default(), id)
     }
 
     /// A steer as a page or a program sends it: with comments on the
-    /// reply's words, which the model reads before its content, and who sent
-    /// it.
+    /// reply's words, which the model reads before its content, who sent it,
+    /// and the assignment it continues when it opens a turn of its own.
     pub fn steer_message(
         &self,
         content: Vec<UserContentBlock>,
         comments: Vec<MessageComment>,
-        sender_id: Option<String>,
+        attribution: Attribution,
         id: BlockId,
     ) -> Result<(), SteerError> {
-        self.shared.update(|core| core.steer(id, content, comments, sender_id))
+        self.shared.update(|core| core.steer(id, content, comments, attribution))
     }
 
     /// Withdraws a pending steer; an id that is not pending changes nothing.

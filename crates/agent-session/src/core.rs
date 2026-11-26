@@ -30,8 +30,7 @@ use jush_provider_common::{
     Ahead, EntriesOf, InferenceRequest, PromptCache, ProviderEvent, ProviderFailure, RequestPurpose,
     ProviderRuntime, RequestBlock, RequestLimits, ToolDefinition,
 };
-use jush_shared_types::{
-    ScheduleMark, MessageComment,
+use jush_shared_types::{Attribution, opened_assignment, ScheduleMark, MessageComment,
     AgentAccount, AgentMessage, BlobRef, Block, BlockId, Clock, CommandId, CommandReport, FailureSource, ReportEvent,
     ModelSelection, NodeId, PendingCall, PendingSteer, ProviderErrorDiagnostics, QueuedMessage, SessionPhase,
     ShellToolView, ShellViewStatus, Timestamp, ToolResultContentBlock, ToolView, TurnId, UserContentBlock,
@@ -1148,13 +1147,12 @@ impl SessionCore {
                 pending_ms,
                 "a steer no turn took opens the next turn"
             );
-            // It opens an assignment of its own id, as a message does.
             let kind = ActionKind::Send {
                 content: steer.content,
                 comments: steer.comments,
                 schedule: None,
                 sender_id: steer.sender_id,
-                assignment_id: Some(turn.clone()),
+                assignment_id: opened_assignment(steer.assignment_id, &turn),
             };
             self.start_action(kind, turn, None, pending_ms.unwrap_or(0));
             return;
@@ -1587,7 +1585,7 @@ impl SessionCore {
                     comments: steer.comments,
                     schedule: None,
                     sender_id: steer.sender_id,
-                    assignment_id: Some(turn.clone()),
+                    assignment_id: opened_assignment(steer.assignment_id, &turn),
                 },
                 turn,
                 reply: None,
@@ -2092,8 +2090,9 @@ impl SessionCore {
         id: BlockId,
         content: Vec<UserContentBlock>,
         comments: Vec<MessageComment>,
-        sender_id: Option<String>,
+        attribution: Attribution,
     ) -> Result<(), SteerError> {
+        let Attribution { sender_id, assignment_id } = attribution;
         let own_turn = TurnId::try_from(id.as_str().to_owned()).expect("a block id is not empty");
         if self.took(&id) {
             return Ok(());
@@ -2118,7 +2117,7 @@ impl SessionCore {
                 path = "starts_turn",
                 "a steer was admitted while nothing ran, and starts the turn"
             );
-            let assignment_id = Some(own_turn.clone());
+            let assignment_id = opened_assignment(assignment_id, &own_turn);
             drop(self.push_action(ActionKind::Send { content, comments, schedule: None, sender_id, assignment_id }, own_turn));
             return Ok(());
         }
@@ -2148,6 +2147,7 @@ impl SessionCore {
             content,
             comments,
             sender_id,
+            assignment_id,
         }));
         Ok(())
     }

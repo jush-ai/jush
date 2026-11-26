@@ -36,7 +36,7 @@ use jush_agent_transcript::{CutError, ForkEnd, IdSource};
 use jush_provider_common::{Ahead, ProviderRuntime};
 use jush_device_interface::{CommandSet, RegisterError};
 use jush_shared_gates::KeyedSerialGate;
-use jush_shared_types::{AgentMessage, Block, BlockId, Clock, ModelSelection, NodeId, SessionPhase, TurnId, UserContentBlock};
+use jush_shared_types::{AgentMessage, Attribution, Block, BlockId, Clock, ModelSelection, NodeId, SessionPhase, TurnId, UserContentBlock};
 use futures_util::future::{LocalBoxFuture, join_all};
 use tokio_util::task::TaskTracker;
 
@@ -674,14 +674,15 @@ impl<H: DeviceResolver> AgentServer<H> {
     /// resumed with it, as `jush agent resume` resumes one for its parent.
     /// One whose history or queue holds `id` took it already and takes
     /// nothing, so a message sent again after its answer was lost runs no
-    /// second turn and resumes nothing. `sender_id` names who sent it.
+    /// second turn and resumes nothing. `attribution` names who sent it and
+    /// the assignment it continues when it opens a turn of its own.
     pub async fn message_subagent(
         &self,
         root: &NodeId,
         node: &NodeId,
         id: BlockId,
         text: String,
-        sender_id: Option<String>,
+        attribution: Attribution,
     ) -> Result<(), SubagentMessageError> {
         let tree = self
             .tree(root)
@@ -697,7 +698,7 @@ impl<H: DeviceResolver> AgentServer<H> {
         let parent = record.parent.ok_or(SubagentMessageError::MainAgent)?;
         // Before any start, which a closed parent refuses: a subagent that
         // took the message took it whatever its parent did since.
-        if let Some(taken) = tree.take_message(node, &id, &text, sender_id.clone()).await {
+        if let Some(taken) = tree.take_message(node, &id, &text, attribution.clone()).await {
             return taken;
         }
         if &parent != root && !tree.is_live(&parent) {
@@ -717,7 +718,7 @@ impl<H: DeviceResolver> AgentServer<H> {
             number: record.number,
             message_id: id,
             text,
-            sender_id,
+            attribution,
         };
         tree.start(&parent, input)
             .await
@@ -797,25 +798,26 @@ impl<H: DeviceResolver> AgentServer<H> {
         root: &NodeId,
         side: NodeId,
         of: SideOf,
-        sender_id: Option<String>,
+        attribution: Attribution,
         media: HeldMedia,
     ) -> Result<bool, AskError> {
-        self.tree(root).ok_or(AskError::NotOpen)?.ask(side, of, sender_id, media).await
+        self.tree(root).ok_or(AskError::NotOpen)?.ask(side, of, attribution, media).await
     }
 
-    /// Sends the follow-up `content` from `sender_id` to the side question
-    /// `side` of the conversation `root`, whose tree is open, under the id
-    /// `message` or a new one, with the bytes of its media.
+    /// Sends the follow-up `content` to the side question `side` of the
+    /// conversation `root`, whose tree is open, under the id `message` or a
+    /// new one, from the sender `attribution` names and in the assignment
+    /// it names, with the bytes of its media.
     pub async fn ask_more(
         &self,
         root: &NodeId,
         side: NodeId,
         message: Option<TurnId>,
         content: Vec<UserContentBlock>,
-        sender_id: Option<String>,
+        attribution: Attribution,
         media: HeldMedia,
     ) -> Result<(), AskError> {
-        self.tree(root).ok_or(AskError::NotOpen)?.ask_more(side, message, content, sender_id, media).await
+        self.tree(root).ok_or(AskError::NotOpen)?.ask_more(side, message, content, attribution, media).await
     }
 
     /// Runs the failed turn of the side question `side` of the conversation

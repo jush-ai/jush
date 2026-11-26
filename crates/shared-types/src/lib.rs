@@ -166,7 +166,7 @@ pub use schema::Nullable;
 pub use workflow::WorkflowChoice;
 pub use session::{
     Attribution, ContextRow, ContextRowKind, ContextUsage, PendingCall, PendingSteer,
-    QueuedMessage, SessionPhase,
+    QueuedMessage, SessionPhase, opened_assignment,
 };
 pub use time::{Clock, SystemClock, Timestamp, TimestampError};
 pub use view::{

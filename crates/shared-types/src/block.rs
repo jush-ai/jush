@@ -479,10 +479,10 @@ pub struct UserBlock {
     pub sender_id: Option<String>,
     /// The assignment the message is part of, by the id of the message that
     /// opened it: its own for one the program, the user or a schedule sent,
-    /// the turn's that made it for a run of a schedule an agent made, and its
-    /// parent's for a subagent's. Absent when it names none, as the work it
-    /// continues named none, and in a block written before assignments were
-    /// kept.
+    /// or the one the program named of earlier work it continues; the turn's
+    /// that made it for a run of a schedule an agent made, and its parent's
+    /// for a subagent's. Absent when it names none, as the work it continues
+    /// named none, and in a block written before assignments were kept.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",

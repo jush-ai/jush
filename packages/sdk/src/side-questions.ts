@@ -8,9 +8,9 @@ import { content, type Input, type MessageOptions } from './input'
 import { segment, type CoreRoutes } from './routes'
 
 /**
- * A side question to ask: its passage and its question, and who asked it as
- * `senderId`, as a message names its sender; the SDK makes its id unless
- * named.
+ * A side question to ask: its passage and its question, who asked it as
+ * `senderId`, and the work it continues as `assignmentId`, as a message
+ * names them (`MessageOptions`); the SDK makes its id unless named.
  */
 export type SideQuestionAsk = Omit<AskRequest, 'id' | 'question'> & { id?: string; question: Input }
 
@@ -19,7 +19,7 @@ export interface SideQuestions {
   /**
    * Asks the side question `side` more, which takes it once however often it
    * is sent under `messageId`, which the conversation's messages share;
-   * `options.senderId` names who asked.
+   * `options` names who asked and the work it continues, as a message's.
    */
   followUp(side: string, input: Input, messageId?: string, options?: MessageOptions): Promise<void>
   retry(side: string): Promise<void>
@@ -39,7 +39,12 @@ export function sideQuestions(routes: CoreRoutes, id: string): SideQuestions {
       question: content(question.question),
     }),
     followUp: (side, input, messageId = randomUUID(), options = {}) =>
-      routes.send('POST', `${one(side)}/messages`, { id: messageId, content: content(input), senderId: options.senderId }),
+      routes.send('POST', `${one(side)}/messages`, {
+        id: messageId,
+        content: content(input),
+        senderId: options.senderId,
+        assignmentId: options.assignmentId,
+      }),
     retry: (side) => routes.send('POST', `${one(side)}/retry`),
     stop: (side) => routes.send('POST', `${one(side)}/stop`),
     fold: (side, folded) => routes.json('PATCH', one(side), sideQuestionAnswerSchema, { folded }),

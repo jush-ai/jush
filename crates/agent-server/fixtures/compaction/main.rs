@@ -797,6 +797,7 @@ async fn send(
             message_id: id.clone(),
             content: client_text(text),
             sender_id: None,
+            assignment_id: None,
         }),
     )
     .await;

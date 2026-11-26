@@ -369,7 +369,7 @@ export class Conversation {
    */
   async send(input: Input, messageId: string = randomUUID(), options: MessageOptions = {}): Promise<void> {
     const client = await this.open()
-    await client.submit(content(input), messageId, [], options.senderId)
+    await client.submit(content(input), messageId, [], options)
   }
 
   /**
@@ -459,6 +459,7 @@ export class Conversation {
       id: messageId,
       text,
       senderId: options.senderId,
+      assignmentId: options.assignmentId,
     })
     return id
   }
@@ -470,7 +471,7 @@ export class Conversation {
    */
   async steer(input: Input, steerId: string = randomUUID(), options: MessageOptions = {}): Promise<void> {
     const client = await this.open()
-    await client.steer(content(input), steerId, [], options.senderId)
+    await client.steer(content(input), steerId, [], options)
   }
 
   async abort(): Promise<AbortResult> {

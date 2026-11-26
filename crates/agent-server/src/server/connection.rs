@@ -41,7 +41,7 @@ use jush_conversation_lane_protocol::{
     Refusal, RemoveOutcome, STORED_EPOCH, SendMessage, ServerFrame, SteerOutcome, Version,
 };
 use jush_provider_common::Ahead;
-use jush_shared_types::{BlockId, NodeId, QueuedMessage, SessionPhase, TurnId};
+use jush_shared_types::{Attribution, BlockId, NodeId, QueuedMessage, SessionPhase, TurnId, opened_assignment};
 use tokio::sync::mpsc::{self, error::TrySendError};
 
 use jush_agent_store::SavedVersions;
@@ -600,6 +600,7 @@ impl<H: DeviceResolver> Connection<H> {
                 content,
                 comments,
                 sender_id,
+                assignment_id,
             }) => {
                 // Input the session took already under the id is acknowledged
                 // before its files are resolved, so a request sent again,
@@ -633,8 +634,7 @@ impl<H: DeviceResolver> Connection<H> {
                     comments,
                     schedule: None,
                     sender_id,
-                    // A message opens an assignment of its own id.
-                    assignment_id: Some(message_id.clone()),
+                    assignment_id: opened_assignment(assignment_id, &message_id),
                 };
                 if let Err(error) = session.send_message(message) {
                     self.reject(kind, error.refusal());
@@ -644,7 +644,7 @@ impl<H: DeviceResolver> Connection<H> {
                 self.send(ServerFrame::SendResult { message_id, at });
                 return Taken::Now;
             }
-            ClientFrame::Steer { steer_id, content, comments, sender_id } => {
+            ClientFrame::Steer { steer_id, content, comments, sender_id, assignment_id } => {
                 // As a message's: input taken already under the id reads no
                 // file, before and after the resolution.
                 if session.took(&steer_id) {
@@ -661,7 +661,7 @@ impl<H: DeviceResolver> Connection<H> {
                     Ok((content, comments, media)) => {
                         session.hold_media(media);
                         session
-                            .steer_message(content, comments, sender_id, steer_id.clone())
+                            .steer_message(content, comments, Attribution { sender_id, assignment_id }, steer_id.clone())
                             .map_err(|error| error.refusal())
                     }
                     Err(error) => Err(error.refusal()),

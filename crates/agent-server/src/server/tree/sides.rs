@@ -27,7 +27,7 @@ use jush_agent_tools::DeviceResolver;
 use jush_agent_transcript::ForkEnd;
 use jush_provider_common::ProviderRuntime;
 use jush_shared_gates::Purpose;
-use jush_shared_types::{Attachment, Attribution, BlockId, NodeId, QueuedMessage, SessionPhase, TurnId, UserContentBlock, markdown_quote};
+use jush_shared_types::{Attachment, Attribution, BlockId, NodeId, QueuedMessage, SessionPhase, TurnId, UserContentBlock, markdown_quote, opened_assignment};
 use futures_util::future::LocalBoxFuture;
 use tokio::sync::{Notify, watch};
 use tokio_util::task::AbortOnDropHandle;
@@ -126,8 +126,9 @@ impl<H: DeviceResolver> Side<H> {
 /// The first message of the side question `of`: the asked words as a
 /// quote, or the asked picture as an image the message carries, the
 /// instruction, then the question's content, its first text joined to the
-/// instruction by a blank line, from `sender_id`.
-fn first_message(id: TurnId, of: &SideOf, sender_id: Option<String>) -> QueuedMessage {
+/// instruction by a blank line, from the sender `attribution` names, in the
+/// assignment it names or one of its own id.
+fn first_message(id: TurnId, of: &SideOf, attribution: Attribution) -> QueuedMessage {
     let mut content = match &of.picture {
         None => vec![UserContentBlock::Text {
             text: format!("{}\n\n{}", markdown_quote(&of.quote), side_instruction(false)),
@@ -146,14 +147,13 @@ fn first_message(id: TurnId, of: &SideOf, sender_id: Option<String>) -> QueuedMe
         question.next();
     }
     content.extend(question);
-    // A side question opens an assignment of its own id.
     QueuedMessage {
         comments: Vec::new(),
-        assignment_id: Some(id.clone()),
+        assignment_id: opened_assignment(attribution.assignment_id, &id),
         id,
         content,
         schedule: None,
-        sender_id,
+        sender_id: attribution.sender_id,
     }
 }
 
@@ -200,7 +200,7 @@ impl<H: DeviceResolver> Tree<H> {
         self: &Rc<Self>,
         id: NodeId,
         of: SideOf,
-        sender_id: Option<String>,
+        attribution: Attribution,
         media: HeldMedia,
     ) -> Result<bool, AskError> {
         let tree = self.clone();
@@ -228,7 +228,7 @@ impl<H: DeviceResolver> Tree<H> {
             // Its first message's turn is the side question's own id, which
             // names that message to a page whatever pages it holds.
             let turn = TurnId::try_from(id.as_str()).map_err(|error| AskError::Target(error.to_string()))?;
-            seed.checkpoint.state.queue.push(first_message(turn, &of, sender_id));
+            seed.checkpoint.state.queue.push(first_message(turn, &of, attribution));
             let runtime = tree.side_runtime(&server, &seed.checkpoint.state.model).await?;
             let now = tree.clock.now();
             let record = NodeRecord {
@@ -269,16 +269,16 @@ impl<H: DeviceResolver> Tree<H> {
         id: NodeId,
         message: Option<TurnId>,
         content: Vec<UserContentBlock>,
-        sender_id: Option<String>,
+        attribution: Attribution,
         media: HeldMedia,
     ) -> Result<(), AskError> {
         let tree = self.clone();
         let sent = self.lifecycle.spawn_local(async move {
             let _turn = tree.starts.acquire(id.clone()).await;
-            // A follow-up opens an assignment of its own id.
             let named = message.clone();
             let message = message.unwrap_or_else(|| tree.new_turn_id());
-            let attribution = Attribution { sender_id, assignment_id: Some(message.clone()) };
+            let assignment_id = opened_assignment(attribution.assignment_id, &message);
+            let attribution = Attribution { assignment_id, ..attribution };
             let message = supervisor::queued(message, content, attribution);
             if let Some(side) = tree.live_side(&id).await {
                 side.node.session().hold_media(media);

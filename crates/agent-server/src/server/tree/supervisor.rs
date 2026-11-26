@@ -108,7 +108,7 @@ use jush_shared_gates::Purpose;
 use jush_shared_types::{
     AgentMessage, AgentMessageEvent, Attribution, Block, BlockId, CommandId, CompletionId, CompletionOutcome,
     ModelSelection, NodeId, QueuedMessage, Sender, Sequence, SessionPhase, Timestamp, ToolCallBlock,
-    ToolCallStatus, TurnId, UserContentBlock,
+    ToolCallStatus, TurnId, UserContentBlock, opened_assignment,
     output::{self, Fields, Table, seconds},
 };
 use jush_device_interface::ShellEnvironment;
@@ -232,7 +232,9 @@ pub(crate) enum StartInput {
         number: u64,
         message_id: BlockId,
         text: String,
-        sender_id: Option<String>,
+        /// Who sent it, and the assignment it continues when it opens a
+        /// turn of its own.
+        attribution: Attribution,
     },
 }
 
@@ -318,13 +320,13 @@ impl<H: DeviceResolver> Tree<H> {
         id: &NodeId,
         message: &BlockId,
         text: &str,
-        sender_id: Option<String>,
+        attribution: Attribution,
     ) -> Option<Result<(), SubagentMessageError>> {
         if let Some(live) = self.live_agent(id) {
             let content = vec![UserContentBlock::Text { text: text.to_owned() }];
             return Some(
                 live.session()
-                    .steer_message(content, Vec::new(), sender_id, message.clone())
+                    .steer_message(content, Vec::new(), attribution, message.clone())
                     .map_err(|error| SubagentMessageError::Refused(error.to_string())),
             );
         }
@@ -546,13 +548,13 @@ impl<H: DeviceResolver> Tree<H> {
                 }
                 // Each check runs in the queue of starts: one made before it
                 // may be stale by the time this start's turn comes.
-                StartInput::Message { id, number, message_id, text, sender_id } => {
-                    if let Some(taken) = tree.take_message(&id, &message_id, &text, sender_id.clone()).await {
+                StartInput::Message { id, number, message_id, text, attribution } => {
+                    if let Some(taken) = tree.take_message(&id, &message_id, &text, attribution.clone()).await {
                         return taken.map(|()| number).map_err(|error| error.to_string());
                     }
                     let turn = TurnId::try_from(message_id.into_string()).expect("a block id is not empty");
-                    // A message of the child's user opens an assignment of its own id.
-                    let attribution = Attribution { sender_id, assignment_id: Some(turn.clone()) };
+                    let assignment_id = opened_assignment(attribution.assignment_id, &turn);
+                    let attribution = Attribution { assignment_id, ..attribution };
                     let message = queued(turn, vec![UserContentBlock::Text { text }], attribution);
                     tree.reopen(&owner, id, message, None).await
                 }

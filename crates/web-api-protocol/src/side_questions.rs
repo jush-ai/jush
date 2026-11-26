@@ -37,14 +37,20 @@ pub struct AskRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[garde(length(chars, min = 1, max = jush_shared_types::SENDER_ID_LIMIT))]
     pub sender_id: Option<String>,
+    /// The assignment its question continues, as a message's; one of its
+    /// own id when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[garde(skip)]
+    pub assignment_id: Option<TurnId>,
 }
 
 /// `POST /conversations/:id/side-questions/:sideId/messages`: a follow-up.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, garde::Validate)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SideFollowUp {
-    /// Its id, which names the assignment it opens, and which a retry
-    /// repeats so the side question takes it once; one is made when none.
+    /// Its id, which names the assignment it opens unless it names another,
+    /// and which a retry repeats so the side question takes it once; one is
+    /// made when none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[garde(skip)]
     pub id: Option<TurnId>,
@@ -55,6 +61,11 @@ pub struct SideFollowUp {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[garde(length(chars, min = 1, max = jush_shared_types::SENDER_ID_LIMIT))]
     pub sender_id: Option<String>,
+    /// The assignment it continues, as a message's; one of its own id when
+    /// absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[garde(skip)]
+    pub assignment_id: Option<TurnId>,
 }
 
 /// `PATCH /conversations/:id/side-questions/:sideId`: folds its card to

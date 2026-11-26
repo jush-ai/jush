@@ -110,11 +110,19 @@ impl ContextUsage {
 
 /// Whom and which assignment a piece of work is for, as the block that handed it
 /// names them ([`crate::Block::sender_id`], [`crate::Block::assignment_id`]): a
-/// command keeps the call's, and its reports name them.
+/// command keeps the call's, and its reports name them. Of a message a
+/// program sends, the assignment it names, which it opens its turn in
+/// ([`opened_assignment`]).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Attribution {
     pub sender_id: Option<String>,
     pub assignment_id: Option<TurnId>,
+}
+
+/// The assignment a message of the id `message` that opens a turn opens it
+/// in: `named`, the one its program named, else one of its own id.
+pub fn opened_assignment(named: Option<TurnId>, message: &TurnId) -> Option<TurnId> {
+    Some(named.unwrap_or_else(|| message.clone()))
 }
 
 /// A message waiting in the queue; the checkpoint keeps the queue. The page
@@ -214,4 +222,15 @@ pub struct PendingSteer {
     #[schemars(with = "String")]
     #[garde(length(chars, min = 1, max = crate::SENDER_ID_LIMIT))]
     pub sender_id: Option<String>,
+    /// The assignment it continues when it opens a turn of its own, as its
+    /// program named it; none for one that opens the assignment of its own
+    /// id. One the running turn reads joins that turn's.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "serde_with::rust::unwrap_or_skip"
+    )]
+    #[schemars(with = "TurnId")]
+    #[garde(skip)]
+    pub assignment_id: Option<TurnId>,
 }

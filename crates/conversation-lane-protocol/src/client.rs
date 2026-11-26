@@ -98,6 +98,11 @@ pub enum ClientFrame {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[garde(length(chars, min = 1, max = jush_shared_types::SENDER_ID_LIMIT))]
         sender_id: Option<String>,
+        /// The assignment it continues when it opens a turn of its own, as a
+        /// message's; one the running turn reads joins that turn's.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[garde(skip)]
+        assignment_id: Option<TurnId>,
     },
     /// Send a message saved for later as the composer would, as the message
     /// `turn_id`, and remove it from the list in the same step. The backend handles it;
@@ -337,6 +342,13 @@ pub struct SendMessage {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[garde(length(chars, min = 1, max = jush_shared_types::SENDER_ID_LIMIT))]
     pub sender_id: Option<String>,
+    /// The assignment it continues, by the id of the message that opened
+    /// it, as its program names it: the calls of the turn it opens are
+    /// counted in it. Absent for one that opens the assignment of its own
+    /// id.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[garde(skip)]
+    pub assignment_id: Option<TurnId>,
 }
 
 /// The stage of a message the web app sends, a frame's.
