@@ -127,12 +127,18 @@ export function mathExtensions(options: KatexOptions, katex: () => Katex | null 
  * Keeps what `base.css` reads of the rendered message or document `body`:
  * `data-math-waiting` while a formula in it waits for KaTeX; `data-shown`
  * once its text has been on the page with none waiting, from when a formula
- * hides only itself; and, until then, `data-math-held` on the top-level
- * block that holds the first formula waiting and on each block after it.
+ * hides only itself; until then, `data-math-held` on the top-level block that
+ * holds the first formula waiting and on each block after it; and
+ * `data-math-held-after` on the element that holds `body` while a body in it
+ * hides, so the elements after that body, such as a reply's footer, hide.
  *
  * The blocks are marked here, not found by a selector: `> X ~ *` has every
  * element of the message look back over all of its siblings, which took
- * seconds at each style update for a reply of a thousand lines.
+ * seconds at each style update for a reply of a thousand lines. The holder is
+ * marked for the same reason: `X ~ *` alone has every element of the page
+ * look back over all of its siblings, which a command of two thousand words
+ * made cost a tenth of a second at each style update; now the browser rejects
+ * an element with no marked ancestor before it looks.
  */
 export function followMathWait(body: Element): void {
   const waiting = body.querySelector('.math-waiting') !== null
@@ -145,4 +151,19 @@ export function followMathWait(body: Element): void {
     held ||= hiding && (block.classList.contains('math-waiting') || block.querySelector('.math-waiting') !== null)
     block.toggleAttribute('data-math-held', held)
   }
+  const holder = body.parentElement
+  holder?.toggleAttribute(
+    'data-math-held-after',
+    holder.querySelector(':scope > .markdown-body[data-math-waiting]:not([data-shown])') !== null,
+  )
+}
+
+/**
+ * Lets go of what follows `body` as it leaves the page while its holder
+ * stays: a body that goes hides nothing, and its holder's mark goes unless
+ * another body in it hides.
+ */
+export function leaveMathWait(body: Element): void {
+  body.setAttribute('data-shown', '')
+  followMathWait(body)
 }
