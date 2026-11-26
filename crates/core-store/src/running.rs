@@ -193,6 +193,16 @@ pub fn end(connection: &mut Connection, mut output: CommandOutput) -> Result<Opt
     Ok(job)
 }
 
+/// The record of `command` as running; none once it ended, and for one
+/// never recorded.
+pub fn read(connection: &Connection, command: &CommandId) -> Result<Option<RunningCommand>, StorageError> {
+    connection
+        .prepare_cached(&format!("SELECT {COLUMNS} FROM running_commands WHERE command_id = ?1"))?
+        .query_row([command.as_str()], |row| Ok(decode_row(row)))
+        .optional()?
+        .transpose()
+}
+
 /// The commands `node` ran that run, oldest first.
 pub fn of_node(connection: &Connection, node: &NodeId) -> Result<Vec<RunningCommand>, StorageError> {
     let mut statement = connection.prepare_cached(&format!(

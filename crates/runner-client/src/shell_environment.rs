@@ -158,13 +158,12 @@ pub trait CommandKeeper {
     fn looked<'a>(&'a self, command: &'a CommandId, seen: Seen) -> LocalBoxFuture<'a, ()>;
 
     /// Records the command's end, `end`, with its whole output, what its
-    /// result tells of its media, and the title of the call that started it
-    /// and whom that call's work is for, in place of its record as running.
+    /// result tells of its media, and the call that started it, `start`, in
+    /// place of its record as running.
     fn keep_output<'a>(
         &'a self,
         command: &'a CommandId,
-        title: &'a str,
-        attribution: &'a Attribution,
+        start: &'a KeptStart,
         end: CommandEnd,
         output: &'a WholeOutput,
         media: &'a [CommandMedium],
@@ -382,13 +381,12 @@ impl RemoteShellEnvironment {
         let command = numbered(self.0.options.numbers.next(Sequence::Command).await?);
         let record = CommandRecord::new(
             command.clone(),
-            request.caller.tool_use_id.clone(),
+            request.caller.clone(),
             request.title.clone(),
             &request.script,
             request.service,
         )
-        .on_device(self.0.options.named.clone())
-        .attributed_to(request.caller.attribution());
+        .on_device(self.0.options.named.clone());
         let (running, record) = self.hold(&command, record, cancel.child_token());
         let environment = self.clone();
         let task_command = command.clone();
@@ -431,15 +429,14 @@ impl RemoteShellEnvironment {
         }
         let record = CommandRecord::taken_up(
             command.clone(),
-            caller.tool_use_id.clone(),
+            caller.clone(),
             title.clone(),
             &script,
             service,
             running,
             seen,
         )
-        .on_device(self.0.options.named.clone())
-        .attributed_to(caller.attribution());
+        .on_device(self.0.options.named.clone());
         let (running, record) = self.hold(&command, record, CancellationToken::new());
         let begin = match unsent {
             Some(UnsentStart { script, cwd, viewable }) => Begin::Start {
@@ -1055,11 +1052,16 @@ impl RemoteShellEnvironment {
             page,
         } = settlement;
         if let Some(keeper) = &self.0.options.keeper {
-            let (title, attribution) = {
+            let start = {
                 let record = record.borrow();
-                (record.title().to_owned(), record.attribution().clone())
+                KeptStart {
+                    caller: record.caller().clone(),
+                    title: record.title().to_owned(),
+                    script: record.script().to_owned(),
+                    service: record.is_service(),
+                }
             };
-            keeper.keep_output(command, &title, &attribution, end.clone(), &output, &media).await;
+            keeper.keep_output(command, &start, end.clone(), &output, &media).await;
         }
         if let Some(job) = job {
             job.release().await;
@@ -1191,7 +1193,7 @@ impl ShellEnvironment for RemoteShellEnvironment {
     }
 
     fn attribution(&self, command: &CommandId) -> Attribution {
-        self.record(command).map(|record| record.borrow().attribution().clone()).unwrap_or_default()
+        self.record(command).map(|record| record.borrow().caller().attribution()).unwrap_or_default()
     }
 
     fn quiet(&self, command: &CommandId) -> Result<Duration, ShellError> {

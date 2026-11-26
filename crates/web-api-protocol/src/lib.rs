@@ -22,6 +22,7 @@ pub mod attachments;
 pub mod auth;
 pub mod schedules;
 pub mod cloud;
+pub mod command_history;
 pub mod connection;
 pub mod conversations;
 pub mod cores;

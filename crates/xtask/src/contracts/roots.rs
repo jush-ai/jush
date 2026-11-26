@@ -123,7 +123,7 @@ pub fn protocol() -> Vec<Root> {
 /// body, which the web app and a program's SDK send and read.
 pub fn web() -> Vec<Root> {
     use api::{
-        attachments, auth, cloud, conversations, credentials, devices, diagnostics, drafts, error, files, instructions, port_forwards,
+        attachments, auth, cloud, command_history, conversations, credentials, devices, diagnostics, drafts, error, files, instructions, port_forwards,
         work,
         passkeys,
         permissions,
@@ -300,6 +300,7 @@ pub fn web() -> Vec<Root> {
         receives::<files::GitCommit>(),
         receives::<usage::UsageTotals>(),
         receives::<usage::UsageReport>(),
+        receives::<command_history::CommandHistory>(),
         sends::<usage::UsageBucketSize>(),
         sends::<usage::UsageDimension>(),
         receives::<usage::InstanceUsage>(),

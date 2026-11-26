@@ -101,8 +101,8 @@ use jush_device_interface::{
     PageFeed, ShellEnvironment, ShellError, TakenUp,
 };
 use jush_command_protocol::Viewable;
-use jush_provider_common::ToolDefinition;
-use jush_shared_types::{CommandId, NodeId, Sequence};
+use jush_provider_common::{ResultPart, ToolDefinition};
+use jush_shared_types::{Attribution, CommandId, NodeId, Sequence, TurnId};
 use futures_util::{future::LocalBoxFuture, stream::FuturesUnordered};
 use tokio_util::sync::CancellationToken;
 
@@ -154,9 +154,12 @@ pub struct EnvironmentScope<'a> {
     /// The conversation's root node.
     pub root: &'a NodeId,
     pub node: &'a NodeId,
-    /// The node's agent number, as the model and its commands' context know
-    /// it.
-    pub agent: u64,
+    /// The node's number in its tree, as the model and its commands'
+    /// context know it.
+    pub number: u64,
+    /// The node's agent, by its number, as the usage ledger and the command
+    /// history count its work: none for a side question, which is no agent.
+    pub agent: Option<u64>,
     /// Whether the environment is on the device where the node works, which
     /// for the root and a side question moves with the conversation; one on
     /// a device a call named, or a subagent's, stays on its device.
@@ -184,6 +187,30 @@ pub trait ShellEnvironmentFactory<H> {
         scope: EnvironmentScope<'a>,
         device: Rc<H>,
     ) -> LocalBoxFuture<'a, Result<Rc<dyn ShellEnvironment>, DeviceError>>;
+
+    /// Records `call`, which returned an error before its command started,
+    /// as the environments' keepers record the commands that end. By
+    /// default nothing.
+    fn not_started<'a>(&'a self, call: NotStarted<'a>) -> LocalBoxFuture<'a, ()> {
+        let _ = call;
+        Box::pin(async {})
+    }
+}
+
+/// A `shell` call that returned an error before its command started.
+pub struct NotStarted<'a> {
+    /// The conversation's root node.
+    pub root: &'a NodeId,
+    /// The call's agent ([`EnvironmentScope::agent`]).
+    pub agent: Option<u64>,
+    pub turn: &'a TurnId,
+    /// Whom and which assignment the call's work was for.
+    pub attribution: &'a Attribution,
+    /// The call's title and script, as far as its input held them.
+    pub title: &'a str,
+    pub script: &'a str,
+    /// The error the call returned.
+    pub reason: &'a str,
 }
 
 /// A node's own placement as its `shell` calls read it when each starts
@@ -251,8 +278,10 @@ pub struct ShellAccess<'a, H: DeviceResolver> {
     pub root: &'a NodeId,
     /// Where the node's jobs run, read as each starts.
     pub placement: &'a dyn OwnPlacement,
-    /// The node's agent number.
-    pub agent: u64,
+    /// The node's number in its tree ([`EnvironmentScope::number`]).
+    pub number: u64,
+    /// The node's agent ([`EnvironmentScope::agent`]).
+    pub agent: Option<u64>,
     /// The node's commands, which an environment made now offers; a change
     /// reaches the environments made before through
     /// [`Environments::replace_commands`].
@@ -320,10 +349,11 @@ impl<'a, H: DeviceResolver> ShellAccess<'a, H> {
         named: Option<&str>,
     ) -> Result<(Rc<environments::Slot>, Rc<dyn ShellEnvironment>), CallError> {
         let commands = self.commands.borrow().clone();
-        let follows = named.is_none() && self.agent == 0;
+        let follows = named.is_none() && self.number == 0;
         let scope = EnvironmentScope {
             root: self.root,
             node: self.node,
+            number: self.number,
             agent: self.agent,
             follows,
             named,
@@ -361,7 +391,9 @@ impl<'a, H: DeviceResolver> ShellAccess<'a, H> {
         Box::pin(calls)
     }
 
-    /// Runs one call.
+    /// Runs one call. A `shell` call that returns an error before its
+    /// command starts is recorded as not started
+    /// ([`ShellEnvironmentFactory::not_started`]).
     async fn invoke(self, call: ToolInvocation) -> Result<ToolOutcome, ToolFailure> {
         if call.tool_name != SHELL {
             return Ok(ToolOutcome::error(format!(
@@ -369,21 +401,53 @@ impl<'a, H: DeviceResolver> ShellAccess<'a, H> {
                 call.tool_name
             )));
         }
-        match parse::<ShellInput>(SHELL, call.input.clone()) {
+        // A call after one that the user's send now returned never starts:
+        // it runs nothing and fails nothing.
+        if call.arrival.sent_now() {
+            return Ok(ToolOutcome::not_run());
+        }
+        let started = call.command.clone();
+        let turn = call.turn.clone();
+        let attribution = Attribution {
+            sender_id: call.sender_id.clone(),
+            assignment_id: call.assignment_id.clone(),
+        };
+        let asked = call.input.clone();
+        let ran = match parse::<ShellInput>(SHELL, call.input.clone()) {
             Ok(input) => outcome(self.shell(call, input).await),
             Err(refusal) => Ok(ToolOutcome::error(refusal)),
+        };
+        let reason = match &ran {
+            Ok(outcome) if outcome.is_error => {
+                let texts = outcome.output.iter().filter_map(|part| match part {
+                    ResultPart::Text(text) => Some(text.as_str()),
+                    _ => None,
+                });
+                Some(texts.collect::<Vec<_>>().join("\n"))
+            }
+            Ok(_) => None,
+            Err(ToolFailure(message)) => Some(message.clone()),
+        };
+        if let Some(reason) = reason.filter(|_| started.command().is_none()) {
+            let field = |name: &str| asked.get(name).and_then(serde_json::Value::as_str).unwrap_or_default();
+            let call = NotStarted {
+                root: self.root,
+                agent: self.agent,
+                turn: &turn,
+                attribution: &attribution,
+                title: field("description"),
+                script: field("script"),
+                reason: &reason,
+            };
+            self.shells.not_started(call).await;
         }
+        ran
     }
 
     /// Starts a `shell` call's script and watches it for its window, or not
     /// at all when the call asked for the background; a command
     /// that still runs then wakes the node when it ends, from now on.
     async fn shell(&self, call: ToolInvocation, input: ShellInput) -> Result<ToolOutcome, CallError> {
-        // A call after one that the user's send now returned never
-        // starts.
-        if call.arrival.sent_now() {
-            return Ok(ToolOutcome::not_run());
-        }
         let hold = match input.hold() {
             Ok(hold) => hold,
             Err(refusal) => return Ok(ToolOutcome::error(refusal.to_owned())),

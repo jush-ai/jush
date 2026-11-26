@@ -12,11 +12,11 @@
 
 use std::sync::Arc;
 
-use jush_shared_types::{Attribution, CommandId, OutputChunk, OutputView, StreamKind, StreamView};
+use jush_shared_types::{CommandId, OutputChunk, OutputView, StreamKind, StreamView};
 use tokio::time::Instant;
 
 use crate::{
-    BinaryOutput, CommandMedium, CommandState, CommandStatus, EditedFiles, Newest, Seen, WholeOutput, WholeView,
+    BinaryOutput, CommandMedium, CommandState, CommandStatus, EditedFiles, JobCaller, Newest, Seen, WholeOutput, WholeView,
 };
 
 /// How much of a stream's end a view carries.
@@ -27,14 +27,13 @@ pub const TAIL_CHARS: usize = 4096;
 #[derive(Debug)]
 pub struct CommandRecord {
     command_id: CommandId,
-    /// The `shell` call that started the command.
-    tool_use_id: String,
+    /// The `shell` call that started the command: its node, its turn, and
+    /// whom and which assignment its work is for, which every report of the
+    /// command names.
+    caller: JobCaller,
     /// That call's title, its `description`, which every report of the
     /// command names, whatever became of the call (`crates/agent-session/src/reports.rs`).
     title: String,
-    /// Whom and which assignment that call's work is for, which every report of
-    /// the command names.
-    attribution: Attribution,
     /// That call's script, which the pages' view of the command carries
     /// with its title.
     script: Arc<str>,
@@ -183,13 +182,13 @@ pub enum Ending {
 }
 
 impl CommandRecord {
-    /// A running command that the `shell` call `tool_use_id`, titled
+    /// A running command that the `shell` call `caller` names, titled
     /// `title`, started with `script`, as a service when `service`.
-    pub fn new(command_id: CommandId, tool_use_id: String, title: String, script: &str, service: bool) -> Self {
-        Self::taken_up(command_id, tool_use_id, title, script, service, std::time::Duration::ZERO, Seen::default())
+    pub fn new(command_id: CommandId, caller: JobCaller, title: String, script: &str, service: bool) -> Self {
+        Self::taken_up(command_id, caller, title, script, service, std::time::Duration::ZERO, Seen::default())
     }
 
-    /// A running command that the `shell` call `tool_use_id`, titled
+    /// A running command that the `shell` call `caller` names, titled
     /// `title`, started with `script` `running` ago, as a service when
     /// `service`, and that is taken up
     /// again, whose output the model had seen as far as `seen`: its output
@@ -197,7 +196,7 @@ impl CommandRecord {
     /// it saw.
     pub fn taken_up(
         command_id: CommandId,
-        tool_use_id: String,
+        caller: JobCaller,
         title: String,
         script: &str,
         service: bool,
@@ -207,12 +206,11 @@ impl CommandRecord {
         let now = Instant::now();
         Self {
             command_id,
-            tool_use_id,
+            caller,
             title,
             script: Arc::from(script),
             service,
             device: None,
-            attribution: Attribution::default(),
             started: now.checked_sub(running).unwrap_or(now),
             ended: None,
             last_output: now,
@@ -233,8 +231,8 @@ impl CommandRecord {
     }
 
     /// The `shell` call that started the command.
-    pub fn tool_use_id(&self) -> &str {
-        &self.tool_use_id
+    pub fn caller(&self) -> &JobCaller {
+        &self.caller
     }
 
     /// The title of the call that started the command; empty when that
@@ -243,9 +241,9 @@ impl CommandRecord {
         &self.title
     }
 
-    /// Whom and which assignment its call's work is for.
-    pub fn attribution(&self) -> &Attribution {
-        &self.attribution
+    /// The script of the call that started the command.
+    pub fn script(&self) -> &str {
+        &self.script
     }
 
     /// Whether its call started it as a service.
@@ -513,18 +511,11 @@ impl CommandRecord {
         self
     }
 
-    /// The command, as one whose call's work is for `attribution`.
-    #[must_use]
-    pub fn attributed_to(mut self, attribution: Attribution) -> Self {
-        self.attribution = attribution;
-        self
-    }
-
     /// The command as the pages see it now.
     pub fn page_view(&self) -> PageView {
         PageView {
             command_id: self.command_id.clone(),
-            tool_use_id: self.tool_use_id.clone(),
+            tool_use_id: self.caller.tool_use_id.clone(),
             title: self.title.clone(),
             script: Arc::clone(&self.script),
             service: self.service,

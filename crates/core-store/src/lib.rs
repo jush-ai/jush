@@ -84,6 +84,7 @@
 pub mod attachments;
 pub mod cloud;
 pub mod columns;
+pub mod command_history;
 pub mod command_outputs;
 mod contents;
 pub mod conversation_attachments;

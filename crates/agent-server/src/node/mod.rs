@@ -391,7 +391,8 @@ impl<H: DeviceResolver> Node<H> {
             node: &closed.id,
             root: &runtime.root,
             placement: &closed.placement,
-            agent: closed.number,
+            number: closed.number,
+            agent: closed.agent(),
             commands: &runtime.commands,
             feed: &feed,
             numbers: &runtime.numbers,
@@ -549,8 +550,8 @@ pub(crate) struct NodeRuntime<H: DeviceResolver> {
     feed: Rc<dyn PageFeed>,
     /// The conversation's command numbers, from the tree store.
     numbers: Rc<dyn Numbers>,
-    /// The node's agent number.
-    agent: u64,
+    /// The node's number in its tree.
+    number: u64,
     /// The longest a call watches a command that is not a service,
     /// in milliseconds.
     call_window_ms: u32,
@@ -702,7 +703,8 @@ impl<H: DeviceResolver> NodeRuntime<H> {
             node: &self.node,
             root: &self.root,
             placement: self,
-            agent: self.agent,
+            number: self.number,
+            agent: SessionRuntime::agent(self),
             commands: &self.commands,
             feed: &self.feed,
             numbers: &self.numbers,
@@ -931,7 +933,7 @@ impl<H: DeviceResolver> SessionRuntime for NodeRuntime<H> {
 
     /// None for a side question, which is no agent.
     fn agent(&self) -> Option<u64> {
-        self.record.borrow().side.is_none().then_some(self.agent)
+        self.record.borrow().agent()
     }
 
     /// Answered from the tree's children, live and closed, so a child that
@@ -1385,7 +1387,7 @@ pub(crate) async fn assemble<H: DeviceResolver>(
         admission,
         lifecycle: ActivityGate::new(),
         numbers: Rc::new(StoreNumbers(store.clone())),
-        agent: record.number,
+        number: record.number,
         call_window_ms,
         store: store.clone(),
         shells,
