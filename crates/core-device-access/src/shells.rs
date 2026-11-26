@@ -19,7 +19,7 @@ use std::rc::{Rc, Weak};
 use std::sync::Arc;
 
 use bytes::Bytes;
-use jush_agent_tools::{EnvironmentScope, ShellEnvironmentFactory};
+use jush_agent_tools::{EnvironmentScope, NotStarted, ShellEnvironmentFactory};
 use jush_core_blobs::blobs::UserBlobs;
 use jush_core_store::{command_outputs::{CommandOutput, OutputRow}};
 use jush_core_store::store::CoreStore;
@@ -40,8 +40,9 @@ use jush_device_interface::{
     PageView, Seen, ShellEnvironment, ShellError, TakenUp, Unreachable, UnsentStart, WholeOutput,
 };
 use jush_runner_protocol::wire::JobFileChange;
-use jush_shared_types::{Attribution, BlobRef, Clock, CommandEnd, CommandId, EditCopies, EditedFile, NodeId, PixelSize, model_media_type_for,
+use jush_shared_types::{Attribution, BlobRef, Clock, CommandEnd, CommandId, Timestamp, EditCopies, EditedFile, NodeId, PixelSize, model_media_type_for,
 };
+use jush_web_api_protocol::command_history::{CommandHistoryEnd, CommandHistoryEntry};
 use jush_web_api_protocol::ids::{ConversationId, DeviceId};
 use futures_util::future::LocalBoxFuture;
 use tokio_util::sync::CancellationToken;
@@ -288,7 +289,7 @@ impl ShellEnvironmentFactory<RemoteDevice> for CoreShellEnvironments {
             let context: ContextSource = {
                 let core = self.core.clone();
                 let conversation = conversation.clone();
-                let caller = CommandCaller::agent(scope.agent);
+                let caller = CommandCaller::agent(scope.number);
                 Rc::new(move || {
                     let core = core.clone();
                     let conversation = conversation.clone();
@@ -330,6 +331,7 @@ impl ShellEnvironmentFactory<RemoteDevice> for CoreShellEnvironments {
                 core: self.core.clone(),
                 conversation: conversation.clone(),
                 node: scope.node.clone(),
+                agent: scope.agent,
                 device,
                 remote: remote.clone(),
                 db: core.conversation_db(&conversation),
@@ -353,6 +355,33 @@ impl ShellEnvironmentFactory<RemoteDevice> for CoreShellEnvironments {
                 environment,
                 registration,
             }) as Rc<dyn ShellEnvironment>)
+        })
+    }
+
+    /// Writes the call's row in the core's command history, as not started.
+    fn not_started<'a>(&'a self, call: NotStarted<'a>) -> LocalBoxFuture<'a, ()> {
+        Box::pin(async move {
+            let Some(core) = self.core.upgrade() else {
+                return;
+            };
+            let conversation = conversation_of(call.root);
+            let entry = CommandHistoryEntry {
+                conversation: conversation.clone(),
+                agent: call.agent,
+                command: None,
+                device: None,
+                turn: Some(call.turn.clone()),
+                sender: call.attribution.sender_id.clone(),
+                assignment: call.attribution.assignment_id.clone(),
+                title: call.title.to_owned(),
+                script: call.script.to_owned(),
+                started_at: None,
+                ended_at: core.clock().now(),
+                end: CommandHistoryEnd::NotStarted { reason: call.reason.to_owned() },
+            };
+            if let Err(error) = core.store().record_command(entry).await {
+                tracing::warn!(event = "command_history.write_failed", %conversation, error = &error as &dyn std::error::Error, "a call that started no command was not written in the command history");
+            }
         })
     }
 }
@@ -416,12 +445,17 @@ impl ShowWait for Shown<'_> {
 ///   the job's device inside its device access.
 /// - Their whole outputs, each with its record in the conversation's database
 ///   (`crates/core-store/src/command_outputs.rs`).
+///
+/// And it writes each command's row in the core's command history
+/// (`crates/core-store/src/command_history.rs`) as the command ends.
 struct Keeper {
     /// The core, through which a stored attachment reaches the pages.
     core: Weak<dyn DeviceCore>,
     conversation: ConversationId,
     /// The node whose commands these are.
     node: NodeId,
+    /// The node's agent as the command history counts it.
+    agent: Option<u64>,
     /// The node's device.
     device: DeviceId,
     remote: Rc<RemoteDevice>,
@@ -432,6 +466,44 @@ struct Keeper {
 }
 
 impl Keeper {
+    /// Writes `command`'s row in the core's command history
+    /// (`crates/core-store/src/command_history.rs`): its end `end` at
+    /// `ended`, the call that started it, `start`, and its start as its
+    /// record as running keeps it, none for a command that ended before it
+    /// was recorded running. A row not written is logged: the command ends
+    /// all the same.
+    async fn enter(&self, command: &CommandId, start: &KeptStart, end: &CommandEnd, ended: Timestamp) {
+        let Some(end) = CommandHistoryEnd::of(end) else {
+            return;
+        };
+        let wanted = command.clone();
+        let started_at = match self.db.call(move |connection| running::read(connection, &wanted)).await {
+            Ok(running) => running.map(|running| running.started),
+            Err(error) => {
+                tracing::warn!(event = "command_record.read_failed", conversation = %self.conversation, %command, error = &error as &dyn std::error::Error, "a command's record as running was not read");
+                None
+            }
+        };
+        let attribution = start.caller.attribution();
+        let entry = CommandHistoryEntry {
+            conversation: self.conversation.clone(),
+            agent: self.agent,
+            command: Some(command.clone()),
+            device: Some(self.device.clone()),
+            turn: start.caller.turn.clone(),
+            sender: attribution.sender_id,
+            assignment: attribution.assignment_id,
+            title: start.title.clone(),
+            script: start.script.clone(),
+            started_at,
+            ended_at: ended,
+            end,
+        };
+        if let Err(error) = self.store.record_command(entry).await {
+            tracing::warn!(event = "command_history.write_failed", conversation = %self.conversation, %command, error = &error as &dyn std::error::Error, "a command's row was not written in the command history");
+        }
+    }
+
     /// Records `command`, which runs as the job `job`, and while `unsent` waits
     /// to start.
     ///
@@ -699,14 +771,18 @@ impl CommandKeeper for Keeper {
     fn keep_output<'a>(
         &'a self,
         command: &'a CommandId,
-        title: &'a str,
-        attribution: &'a Attribution,
+        start: &'a KeptStart,
         end: CommandEnd,
         output: &'a WholeOutput,
         media: &'a [CommandMedium],
     ) -> LocalBoxFuture<'a, ()> {
         Box::pin(async move {
             let ended = self.clock.now();
+            // The ledger's row first: a backend that stops before the end
+            // below is recorded finds the command running and ends it again,
+            // and the ledger keeps the row it holds.
+            self.enter(command, start, &end, ended).await;
+            let attribution = start.caller.attribution();
             let stored = match self.put(output).await {
                 Ok(blob) => OutputRow::Stored {
                     blob,
@@ -719,7 +795,7 @@ impl CommandKeeper for Keeper {
             };
             let row = CommandOutput {
                 command: command.clone(),
-                title: title.to_owned(),
+                title: start.title.clone(),
                 sender_id: attribution.sender_id.clone(),
                 assignment_id: attribution.assignment_id.clone(),
                 // Its record as running gives its start.

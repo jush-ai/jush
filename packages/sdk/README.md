@@ -798,6 +798,44 @@ await conversation.send('Summarize the incident', 'listener:ops-alerts:8812')
 const report = await core.usage.report({ from, to, bucket: 'day', timeZone: 'Asia/Shanghai', groupBy: ['conversation', 'assignment', 'model'] })
 ```
 
+## Commands your agents ran
+
+`core.commands.history` reads the core's command history, in the order its
+rows were written, which is the order their commands ended. Each command
+an agent's `shell` call started has a row once it ends, however long after
+the call: it exited with its code, was stopped, or was lost. A call that
+returned an error before its command started, such as one that named a
+device that is offline, has a row too, `not_started` with the error.
+
+```ts
+let page = await core.commands.history({ from: new Date(Date.now() - 30 * 86_400_000), limit: 500 })
+for (const command of page.commands) {
+  // command.conversation, command.agent (0 for the main agent, null for a
+  // side question), command.command, command.device, command.turn,
+  // command.sender, command.assignment, command.title, command.script,
+  // command.startedAt (a wait for its device included), command.endedAt,
+  // and command.end:
+  // { kind: 'exited', exitCode } | { kind: 'stopped' } | { kind: 'lost', reason } | { kind: 'not_started', reason }
+}
+// Later, from where the last page ended:
+page = await core.commands.history({ after: page.next })
+```
+
+`after` reads on after a page's `next`; `from` starts at the first row
+written of those that ended at or after a moment; with neither, the first
+row. A page holds `limit` rows, 1 to 1,000 and 100 by default, and `more`
+says rows wait after it. `next` is always where to read on from, also for
+an empty page, so a reader that keeps it and follows it reads each row
+once, also rows written while it reads. It is opaque: keep it as it is. A
+cursor past every row this core's history wrote, such as one of another
+core, is refused.
+
+A row can be read a moment before `conversation.history.commandOutput` has
+its command's output. A conversation's deletion removes its rows, which
+hold its scripts. Commands that ended before the core kept the history
+have none, and so do `device.exec` and a schedule's watch command, which
+no agent ran.
+
 ## Everything else a core does
 
 Every capability of a core has a method, on the object it acts on, and its
@@ -825,6 +863,7 @@ const token = await core.credentials.create({
 | `conversation.plugins` | `state(plugin)`, `call(plugin, method, input)` |
 | `core` | `search(text)`, `blob(sha256)`, `upload` |
 | `core.usage` | `totals()`, `report(options)` |
+| `core.commands` | `history(options)` |
 | `core.models` | `search(text)`, `refresh()` |
 | `core.providers` | `list`, `create`, `update`, `remove`, `catalog`, `order`, `status`, `quota`, `test`, `cli`, `installCli`, `accounts(id)`, `signIn` |
 | `core.credentials` | `list`, `create`, `update`, `remove`, `reveal(id, field)` |

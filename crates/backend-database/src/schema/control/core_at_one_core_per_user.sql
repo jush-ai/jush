@@ -761,6 +761,46 @@ CREATE INDEX usage_ledger_cache_writes ON usage_ledger (conversation_id, agent, 
 CREATE INDEX usage_ledger_turn ON usage_ledger (conversation_id, turn_id)
   WHERE turn_id IS NOT NULL;
 
+-- Each command an agent's shell call started, written as it ends, and each
+-- such call that started none, which a program reads in the order written
+-- (crates/core-store/src/command_history.rs): the call's conversation; its
+-- agent's number, 0 for the main agent and null for a side question's; the
+-- command's id and device, null for a call that started none; the call's
+-- turn, and whom and which assignment its work was for; its title and
+-- script; when the command started, null for a call that started none and
+-- a command whose start was no longer recorded, and when it ended; and how:
+-- its exit code, stopped, lost or not started, with the reason a loss or
+-- the call's error gave. The ids never repeat, even after a conversation's
+-- deletion removed its rows and with them the newest, since a reader's
+-- cursor is one.
+CREATE TABLE command_history (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  conversation_id TEXT NOT NULL,
+  agent           INTEGER CHECK (agent >= 0),
+  command_id      TEXT,
+  device_id       TEXT,
+  turn_id         TEXT,
+  sender_id       TEXT,
+  assignment_id   TEXT,
+  title           TEXT NOT NULL,
+  script          TEXT NOT NULL,
+  started_at      INTEGER,
+  ended_at        INTEGER NOT NULL,
+  ending          TEXT NOT NULL CHECK (ending IN ('exited', 'stopped', 'lost', 'not_started')),
+  exit_code       INTEGER,
+  reason          TEXT,
+  CHECK ((ending = 'exited') = (exit_code IS NOT NULL)),
+  CHECK ((ending IN ('lost', 'not_started')) = (reason IS NOT NULL)),
+  CHECK ((ending = 'not_started') = (command_id IS NULL)),
+  CHECK ((command_id IS NULL) = (device_id IS NULL))
+) STRICT;
+
+-- A command's row once, also when its end is recorded again; and a
+-- conversation's rows, which its deletion removes.
+CREATE UNIQUE INDEX command_history_command ON command_history (conversation_id, command_id);
+
+CREATE INDEX command_history_time ON command_history (ended_at);
+
 CREATE TABLE usage_costs (
   conversation_id    TEXT NOT NULL,
   agent              INTEGER CHECK (agent >= 0),

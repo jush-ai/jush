@@ -502,6 +502,12 @@ pub struct Placement {
 }
 
 impl NodeRecord {
+    /// Its agent, by its number, as the usage ledger and the command history
+    /// count its work: none for a side question, which is no agent.
+    pub fn agent(&self) -> Option<u64> {
+        self.side.is_none().then_some(self.number)
+    }
+
     /// A child as the conversation's agents describe it
     /// (`crates/agent-server/src/server/tree.rs`).
     ///

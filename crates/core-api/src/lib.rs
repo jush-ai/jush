@@ -23,6 +23,7 @@ mod attached_devices;
 mod attachments;
 pub mod blobs;
 mod channel;
+mod command_history;
 pub mod blocks;
 pub mod body;
 pub mod caller;
@@ -127,6 +128,7 @@ pub fn routes() -> Router<Api> {
         .route("/search", get(search::search))
         .route("/usage", get(usage::totals))
         .route("/usage/report", get(usage::report))
+        .route("/commands/history", get(command_history::read))
         .route("/conversations", get(conversations::list).post(conversations::create))
         .route("/conversations/batch", post(conversations::batch))
         .route(

@@ -18,7 +18,8 @@
 //!
 //! 1. One transaction of the control database removes the conversation's record
 //!    and every record that belongs to it (its draft, work, attached devices,
-//!    permission requests and grants, shares), except the usage ledger's rows,
+//!    permission requests and grants, shares, and its commands' rows in the
+//!    command history, which hold its scripts), except the usage ledger's rows,
 //!    which are the user's record of what was used. It records the deletion as
 //!    pending, from which commit no request finds the conversation.
 //! 2. The conversation's device resources are released as archive releases them,
@@ -48,8 +49,9 @@ use super::conversation_index::conversation_by_id;
 
 impl CoreStore {
     /// Step 1 of a deletion: removes the conversation `id` with its draft,
-    /// work, attached devices, permission requests and grants, and records the
-    /// deletion as pending, in one transaction.
+    /// work, attached devices, permission requests and grants and its
+    /// commands' rows, and records the deletion as pending, in one
+    /// transaction.
     ///
     /// Answers the id as the record spelled it, which names its database; none
     /// when there is no such conversation, or none in `workspace` when it
@@ -76,6 +78,8 @@ impl CoreStore {
                 [id.as_str()],
             )?;
             transaction.execute("DELETE FROM conversations WHERE id = ?1", [id.as_str()])?;
+            // Its commands' rows hold its scripts, which go with it.
+            super::command_history::forget(&transaction, &id)?;
             transaction.execute(
                 "INSERT INTO conversation_deletions (id, deleted_at) VALUES (?1, ?2)",
                 params![id.as_str(), now.as_millisecond()],
