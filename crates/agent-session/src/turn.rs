@@ -812,6 +812,7 @@ async fn run_tools(
             let started_in = s.runtime.directory().await;
             let turn = s.read(SessionCore::turn);
             let sender_id = s.read(SessionCore::sender_id);
+            let assignment_id = s.read(SessionCore::assignment_id);
             // Whether a call of the step has returned, which moves the
             // others' commands to the background once they have run a
             // while (`crates/agent-tools/src/lib.rs`).
@@ -824,6 +825,7 @@ async fn run_tools(
                     tool_name: call.tool_name.clone(),
                     turn: turn.clone(),
                     sender_id: sender_id.clone(),
+                    assignment_id: assignment_id.clone(),
                     input: tool_input(&call.input),
                     model: model.clone(),
                     request_limits,

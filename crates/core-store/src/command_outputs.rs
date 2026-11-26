@@ -13,7 +13,7 @@
 //! destination, and never changes.
 
 use jush_device_interface::{CommandMedium, Missing};
-use jush_shared_types::{BlobRef, Block, CommandEnd, CommandId, Timestamp, ToolView};
+use jush_shared_types::{BlobRef, Block, CommandEnd, CommandId, Timestamp, ToolView, TurnId};
 use rusqlite::{Connection, OptionalExtension, Row, params};
 use serde::{Deserialize, Serialize};
 
@@ -55,6 +55,9 @@ pub struct CommandOutput {
     /// Whom its work was for, as the call that started it named; none when
     /// no one was named, and for a row written before rows kept it.
     pub sender_id: Option<String>,
+    /// The assignment its work was part of, as the call that started it named;
+    /// none when none was named, and for a row written before rows kept it.
+    pub assignment_id: Option<TurnId>,
 }
 
 /// Why a medium read back from a row has no bytes when the backend had
@@ -132,7 +135,7 @@ impl KeptMedium {
 }
 
 const COLUMNS: &str =
-    "command_id, ended_at, ending, blob, missing_bytes, missing_reason, not_stored, title, media, started_at, sender_id";
+    "command_id, ended_at, ending, blob, missing_bytes, missing_reason, not_stored, title, media, started_at, sender_id, assignment_id";
 
 /// Writes `rows` in one transaction; a command that has a row keeps it.
 pub fn insert(connection: &mut Connection, rows: &[CommandOutput]) -> Result<(), StorageError> {
@@ -147,7 +150,7 @@ pub fn insert(connection: &mut Connection, rows: &[CommandOutput]) -> Result<(),
 pub(crate) fn insert_in(transaction: &Connection, rows: &[CommandOutput]) -> Result<(), StorageError> {
     {
         let mut insert = transaction.prepare_cached(&format!(
-            "INSERT INTO command_outputs ({COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+            "INSERT INTO command_outputs ({COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
              ON CONFLICT (command_id) DO NOTHING"
         ))?;
         for row in rows {
@@ -175,6 +178,7 @@ pub(crate) fn insert_in(transaction: &Connection, rows: &[CommandOutput]) -> Res
                 media,
                 row.started.map(Timestamp::as_millisecond),
                 row.sender_id,
+                row.assignment_id.as_ref().map(TurnId::as_str),
             ])?;
         }
     }
@@ -335,6 +339,10 @@ fn decode_row(row: &Row<'_>) -> Result<CommandOutput, StorageError> {
         output,
         media,
         sender_id: row.get("sender_id")?,
+        assignment_id: row
+            .get::<_, Option<String>>("assignment_id")?
+            .map(|assignment| decode("command_outputs", "assignment_id", TurnId::try_from(assignment)))
+            .transpose()?,
     })
 }
 

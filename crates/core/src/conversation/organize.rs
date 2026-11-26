@@ -28,7 +28,7 @@ use jush_core_device_access::device_commands::conversation_of;
 use jush_core_device_access::root_of;
 use jush_device_interface::{Call, GroupBuilder, LeafBuilder, RpcError, RpcPort, TypedRpc};
 use jush_shared_types::output::{self, Cell, Table};
-use jush_shared_types::{AgentMessage, AgentMessageEvent, BlockId, NodeId, Sender as AgentSender, SenderConversation, Timestamp};
+use jush_shared_types::{AgentMessage, AgentMessageEvent, Attribution, BlockId, NodeId, Sender as AgentSender, SenderConversation, Timestamp};
 use jush_web_api_protocol::devices::DeviceKind;
 use jush_core_store::wakes::PendingWake;
 use jush_core_store::workspaces::WorkspaceRecord;
@@ -261,7 +261,7 @@ fn sender_of<A>(core: &Core, call: &Call<A>, sending: &ConversationRecord, wakes
         node: caller.node.clone(),
         agent: sender,
         origin,
-        sender_id: caller.sender_id.clone(),
+        attribution: caller.attribution(),
     })
 }
 
@@ -271,9 +271,9 @@ struct Sender {
     node: NodeId,
     agent: AgentSender,
     origin: Option<BlockId>,
-    /// Whom the call that ran the command worked for, whom the recipient's
-    /// work is then counted for.
-    sender_id: Option<String>,
+    /// Whom and which assignment the call that ran the command worked for,
+    /// for which the recipient's work is then counted.
+    attribution: Attribution,
 }
 
 /// Admits `content` into the main agent of the user's conversation `to`, an
@@ -294,7 +294,8 @@ async fn deliver(core: &Core, sender: &Sender, to: &ConversationId, content: &st
         content: content.to_owned(),
         event: AgentMessageEvent::Message {},
         origin: sender.origin.clone(),
-        sender_id: sender.sender_id.clone(),
+        sender_id: sender.attribution.sender_id.clone(),
+        assignment_id: sender.attribution.assignment_id.clone(),
     };
     core.permission_core().admit(to, &root_of(to), &message).await?;
     if sender.agent.conversation.as_ref().is_some_and(|conversation| conversation.wakes) {
@@ -304,7 +305,8 @@ async fn deliver(core: &Core, sender: &Sender, to: &ConversationId, content: &st
             sender: sender.sending.clone(),
             sender_node: sender.node.clone(),
             notice: None,
-            message_sender_id: sender.sender_id.clone(),
+            message_sender_id: sender.attribution.sender_id.clone(),
+            message_assignment_id: sender.attribution.assignment_id.clone(),
         };
         core
             .store()

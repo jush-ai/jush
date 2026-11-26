@@ -46,8 +46,10 @@ use super::columns::{json, to_json};
 use super::contents::{self, Hash, LEVEL};
 
 /// The format of the blocks records hold (`blocks.body: transcript block
-/// format 21` in the schema). A release reads each format it knows:
+/// format 22` in the schema). A release reads each format it knows:
 ///
+/// - format 21 is format 22 whose blocks name no assignment, which reads as
+///   none;
 /// - format 20 is format 21 whose `user` and `steer` blocks name no sender,
 ///   which reads as none;
 /// - format 19 is format 20 that calls a device a host: in an agent message's
@@ -60,7 +62,7 @@ use super::contents::{self, Hash, LEVEL};
 ///   ([`entries_owned`]);
 /// - format 16 is format 17 without the times a block's parts started and
 ///   ended, which read as null ([`times_unkept`]).
-pub(crate) const FORMAT: i64 = 21;
+pub(crate) const FORMAT: i64 = 22;
 
 /// A value of at least this many bytes is a content. A shorter one costs
 /// less inline than its marker and the lookup of its bytes.

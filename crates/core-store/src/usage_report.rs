@@ -1,7 +1,7 @@
 //! The usage ledger's report: its calls of a period in buckets of a minute,
 //! an hour or a day of a time zone, of the conversations and the agents it
-//! names, each bucket's calls grouped by what the report names, the agent
-//! and the sender among them, which each row keeps.
+//! names, each bucket's calls grouped by what the report names, the agent,
+//! the sender and the assignment among them, which each row keeps.
 //!
 //! The rows of the period are read and summed here a bucket at a time, each
 //! in a turn of the database's thread of its own: a report of a long period
@@ -60,7 +60,7 @@ pub enum Kept {
 }
 
 const COLUMNS: &str = "ended_at, conversation_id, agent, sender_id, model_id, provider_id, account_id,
-       turn_id, purpose, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens,
+       turn_id, assignment_id, purpose, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens,
        cost, cost_currency, api_price_input, api_price_cache_write, api_price_cache_read,
        api_price_output";
 
@@ -224,6 +224,7 @@ fn value(row: &Row<'_>, dimension: UsageDimension) -> Result<Value, StorageError
         UsageDimension::Provider => text("provider_id")?,
         UsageDimension::Account => text("account_id")?,
         UsageDimension::Turn => text("turn_id")?,
+        UsageDimension::Assignment => text("assignment_id")?,
         UsageDimension::Purpose => text("purpose")?,
     })
 }
@@ -279,6 +280,7 @@ impl Sums {
             provider: None,
             account: None,
             turn: None,
+            assignment: None,
             purpose: None,
             calls: self.calls,
             input_tokens: self.input_tokens,
@@ -305,6 +307,7 @@ impl Sums {
                 UsageDimension::Provider => &mut group.provider,
                 UsageDimension::Account => &mut group.account,
                 UsageDimension::Turn => &mut group.turn,
+                UsageDimension::Assignment => &mut group.assignment,
                 UsageDimension::Purpose => &mut group.purpose,
             };
             *field = Some(text);

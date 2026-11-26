@@ -702,7 +702,7 @@ conversation already.
 
 `core.usage.report` sums the calls of a period by minute, hour or day of a
 time zone, grouped by any of `conversation`, `agent`, `sender`, `model`,
-`provider`, `account`, `turn` and `purpose`:
+`provider`, `account`, `turn`, `assignment` and `purpose`:
 
 ```ts
 const report = await core.usage.report({
@@ -772,11 +772,31 @@ its turn.
   her, or another conversation her turn sent a message to with
   `--wake-when-done`. What ends while Bob's turn runs joins that turn,
   which stays Bob's.
+- A schedule the agent makes while working for Alice runs for Alice.
 
 After a message that names no sender, as one from the app or from a
-schedule, the calls have a null sender, and so does a turn that the end of
-work it started opens. So do the calls outside an agent's work, such as a
-title's or the suggested replies after a turn.
+schedule your program or the user made, the calls have a null sender, and
+so does a turn that the end of work it started opens. So do the calls
+outside an agent's work, such as a title's or the suggested replies after
+a turn.
+
+A call's `assignment` is the id of the message that handed its agent the
+work: the id you sent the message under, a side question's or its
+follow-up's (`sideQuestions.followUp(side, input, messageId)`), or a
+schedule run's `turn`. The turns that continue that work share it, as they
+share its sender: those a background command's end, a subagent's end or
+another conversation's end opens, a retry, a resume or a compaction, and
+the runs of a schedule the agent made then. A steer joins the running
+turn's assignment. What continues work that names no assignment, such as
+work begun before assignments were kept, names none either. So a report
+grouped by `assignment` sums each piece of work, and a program that names
+its messages by what started them, such as `listener:ops-alerts:8812`,
+sums the cost of each kind:
+
+```ts
+await conversation.send('Summarize the incident', 'listener:ops-alerts:8812')
+const report = await core.usage.report({ from, to, bucket: 'day', timeZone: 'Asia/Shanghai', groupBy: ['conversation', 'assignment', 'model'] })
+```
 
 ## Everything else a core does
 

@@ -9,7 +9,7 @@
 use std::rc::{Rc, Weak};
 
 use jush_core_device_access::device_commands::conversation_of;
-use jush_device_interface::{Call, GroupBuilder, LeafBuilder, RpcError, RpcInvocation, RpcPort, TypedRpc};
+use jush_device_interface::{Call, GroupBuilder, JobCaller, LeafBuilder, RpcError, RpcInvocation, RpcPort, TypedRpc};
 use jush_shared_types::{
     ScheduleId, Timestamp,
     output::{Cell, Fields, Table, warning},
@@ -774,7 +774,8 @@ async fn create(core: Rc<Core>, call: Call<PartsArgs>, port: RpcPort) -> Result<
     let conversation = conversation_of(&call.invocation)?;
     let zone = user_zone(&core).await?;
     let patch = patch(&core, call.args, zone, None, TaskOps::default()).await?;
-    let by = agent_turn(&call.invocation);
+    // The schedule's runs continue the work the turn that made it did.
+    let by = agent_turn(&call.invocation).zip(call.invocation.caller.as_ref().map(JobCaller::attribution));
     let (schedule, secret) = core.create_schedule(&conversation, patch, by).await.map_err(refused)?;
     print_shown(&core, &port, &call.invocation.path.join(" "), call.invocation.json, schedule, secret).await
 }

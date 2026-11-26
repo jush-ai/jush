@@ -18,6 +18,7 @@ mod from_0_1_65_dev_video_sizes;
 mod from_0_1_65_dev_commands_left_running;
 mod from_0_1_65_dev_jush;
 mod from_0_2_6247;
+mod from_0_2_6342;
 
 pub(super) const HISTORY: &[Shipped] = &[
     Shipped {
@@ -62,5 +63,9 @@ pub(super) const HISTORY: &[Shipped] = &[
     Shipped {
         sql: include_str!("from_0_2_6247.sql"),
         migration: from_0_2_6247::MIGRATION,
+    },
+    Shipped {
+        sql: include_str!("from_0_2_6342.sql"),
+        migration: from_0_2_6342::MIGRATION,
     },
 ];

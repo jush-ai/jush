@@ -7,7 +7,7 @@
 //! what it needs of these when it starts and when one changes; nothing here
 //! polls.
 
-use jush_shared_types::{NodeId, ScheduleId, ScheduleRunId, Timestamp, TurnId};
+use jush_shared_types::{Attribution, NodeId, ScheduleId, ScheduleRunId, Timestamp, TurnId};
 use jush_web_api_protocol::ids::ConversationId;
 use jush_web_api_protocol::schedules::{AgentTurn, IfBusy, RunCause, RunNote, RunState, Trigger};
 use rusqlite::{Connection, OptionalExtension, Row, params};
@@ -24,7 +24,7 @@ const COLUMNS: &str = "id, conversation_id, name, trigger, time_zone, max_runs_p
      paused, since, secret IS NOT NULL AS has_secret,
      (SELECT archived_at IS NOT NULL FROM conversations WHERE id = schedules.conversation_id) AS conversation_archived,
      watch_stdout, watch_digest, watch_exit, watch_checked_at, created_at, updated_at,
-     created_node, created_turn, edited_node, edited_turn";
+     created_node, created_turn, edited_node, edited_turn, created_sender_id, created_assignment_id";
 
 const RUN_COLUMNS: &str = "id, schedule_id, cause, at, state, note, line, turn_id, notified, task_id";
 
@@ -55,6 +55,9 @@ pub struct StoredSchedule {
     pub updated_at: Timestamp,
     /// The agent's turn that made it; none for a program's.
     pub created_in: Option<AgentTurn>,
+    /// Whom and which assignment that turn worked for, which its runs'
+    /// messages continue; none named for a program's.
+    pub created_for: Attribution,
     /// The agent's turn that last changed what it does; none when no agent
     /// did since it was made, or a program did last.
     pub edited_in: Option<AgentTurn>,
@@ -261,6 +264,13 @@ fn schedule_row(row: &Row<'_>) -> Result<StoredSchedule, StorageError> {
         updated_at: instant(row, TABLE, "updated_at")?,
         created_in: agent_turn(row, "created_node", "created_turn")?,
         edited_in: agent_turn(row, "edited_node", "edited_turn")?,
+        created_for: Attribution {
+            sender_id: row.get("created_sender_id")?,
+            assignment_id: row
+                .get::<_, Option<String>>("created_assignment_id")?
+                .map(|assignment| decode(TABLE, "created_assignment_id", TurnId::try_from(assignment)))
+                .transpose()?,
+        },
     })
 }
 
@@ -371,8 +381,8 @@ impl CoreStore {
             transaction.execute(
                 "INSERT INTO schedules (id, conversation_id, name, trigger, time_zone, max_runs_per_day, if_busy,
                    prompt, paused, since, created_at, updated_at, created_node, created_turn, edited_node,
-                   edited_turn)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
+                   edited_turn, created_sender_id, created_assignment_id)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)
                  ON CONFLICT (id) DO UPDATE SET name = ?3, trigger = ?4, time_zone = ?5,
                    max_runs_per_day = ?6, if_busy = ?7, prompt = ?8, paused = ?9,
                    since = ?10, updated_at = ?12, edited_node = ?15, edited_turn = ?16
@@ -394,6 +404,8 @@ impl CoreStore {
                     a.created_in.as_ref().map(|turn| turn.turn.as_str()),
                     a.edited_in.as_ref().map(|turn| turn.node.as_str()),
                     a.edited_in.as_ref().map(|turn| turn.turn.as_str()),
+                    a.created_for.sender_id,
+                    a.created_for.assignment_id.as_ref().map(TurnId::as_str),
                 ],
             )?;
             if let Some(secret) = secret {

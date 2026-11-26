@@ -27,14 +27,14 @@ use jush_agent_tools::DeviceResolver;
 use jush_agent_transcript::ForkEnd;
 use jush_provider_common::ProviderRuntime;
 use jush_shared_gates::Purpose;
-use jush_shared_types::{Attachment, NodeId, QueuedMessage, SessionPhase, TurnId, UserContentBlock, markdown_quote};
+use jush_shared_types::{Attachment, Attribution, BlockId, NodeId, QueuedMessage, SessionPhase, TurnId, UserContentBlock, markdown_quote};
 use futures_util::future::LocalBoxFuture;
 use tokio::sync::{Notify, watch};
 use tokio_util::task::AbortOnDropHandle;
 
 use super::{
     Tree, agents, cut_path, note_agent, note_running,
-    supervisor::{OWNER_CLOSING, stop_all},
+    supervisor::{self, OWNER_CLOSING, stop_all},
     told::{self, Asked},
 };
 use crate::{
@@ -146,8 +146,10 @@ fn first_message(id: TurnId, of: &SideOf, sender_id: Option<String>) -> QueuedMe
         question.next();
     }
     content.extend(question);
+    // A side question opens an assignment of its own id.
     QueuedMessage {
         comments: Vec::new(),
+        assignment_id: Some(id.clone()),
         id,
         content,
         schedule: None,
@@ -258,12 +260,14 @@ impl<H: DeviceResolver> Tree<H> {
         started.await.map_err(|error| AskError::Failed(format!("the side question did not start: {error}")))?
     }
 
-    /// Sends the follow-up `content` to the side question `id`, with the
-    /// bytes of its media: its next turn, after its own history, opening it
-    /// again when it closed.
+    /// Sends the follow-up `content` to the side question `id`, under the id
+    /// `message` or a new one, with the bytes of its media: its next turn,
+    /// after its own history, opening it again when it closed. The side
+    /// question takes it once however often it is sent under `message`.
     pub(crate) async fn ask_more(
         self: &Rc<Self>,
         id: NodeId,
+        message: Option<TurnId>,
         content: Vec<UserContentBlock>,
         sender_id: Option<String>,
         media: HeldMedia,
@@ -271,7 +275,11 @@ impl<H: DeviceResolver> Tree<H> {
         let tree = self.clone();
         let sent = self.lifecycle.spawn_local(async move {
             let _turn = tree.starts.acquire(id.clone()).await;
-            let message = tree.content_message(content, sender_id);
+            // A follow-up opens an assignment of its own id.
+            let named = message.clone();
+            let message = message.unwrap_or_else(|| tree.new_turn_id());
+            let attribution = Attribution { sender_id, assignment_id: Some(message.clone()) };
+            let message = supervisor::queued(message, content, attribution);
             if let Some(side) = tree.live_side(&id).await {
                 side.node.session().hold_media(media);
                 return side
@@ -280,6 +288,13 @@ impl<H: DeviceResolver> Tree<H> {
                     .send_message(message)
                     .map(drop)
                     .map_err(|error| AskError::Refused(error.to_string()));
+            }
+            // One that closed with the follow-up in its history took it.
+            if let Some(named) = named {
+                let named = BlockId::try_from(named.as_str().to_owned()).expect("a turn's id is not empty");
+                if tree.history_holds(&id, &named).await.map_err(AskError::Failed)? {
+                    return Ok(());
+                }
             }
             let side = tree.reopen_side(&id, Some(message)).await?;
             side.node.session().hold_media(media);

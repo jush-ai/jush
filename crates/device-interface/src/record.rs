@@ -12,7 +12,7 @@
 
 use std::sync::Arc;
 
-use jush_shared_types::{CommandId, OutputChunk, OutputView, StreamKind, StreamView};
+use jush_shared_types::{Attribution, CommandId, OutputChunk, OutputView, StreamKind, StreamView};
 use tokio::time::Instant;
 
 use crate::{
@@ -32,9 +32,9 @@ pub struct CommandRecord {
     /// That call's title, its `description`, which every report of the
     /// command names, whatever became of the call (`crates/agent-session/src/reports.rs`).
     title: String,
-    /// Whom that call's work is for, which every report of the command
-    /// names; none when no one was named.
-    sender_id: Option<String>,
+    /// Whom and which assignment that call's work is for, which every report of
+    /// the command names.
+    attribution: Attribution,
     /// That call's script, which the pages' view of the command carries
     /// with its title.
     script: Arc<str>,
@@ -212,7 +212,7 @@ impl CommandRecord {
             script: Arc::from(script),
             service,
             device: None,
-            sender_id: None,
+            attribution: Attribution::default(),
             started: now.checked_sub(running).unwrap_or(now),
             ended: None,
             last_output: now,
@@ -243,9 +243,9 @@ impl CommandRecord {
         &self.title
     }
 
-    /// Whom its call's work is for.
-    pub fn sender_id(&self) -> Option<&str> {
-        self.sender_id.as_deref()
+    /// Whom and which assignment its call's work is for.
+    pub fn attribution(&self) -> &Attribution {
+        &self.attribution
     }
 
     /// Whether its call started it as a service.
@@ -513,10 +513,10 @@ impl CommandRecord {
         self
     }
 
-    /// The command, as one whose call's work is for `sender_id`.
+    /// The command, as one whose call's work is for `attribution`.
     #[must_use]
-    pub fn for_sender(mut self, sender_id: Option<String>) -> Self {
-        self.sender_id = sender_id;
+    pub fn attributed_to(mut self, attribution: Attribution) -> Self {
+        self.attribution = attribution;
         self
     }
 

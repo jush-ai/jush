@@ -85,6 +85,10 @@ pub enum UsageDimension {
     /// The provider entry's account; none for an API key.
     Account,
     Turn,
+    /// The assignment the call's agent worked in, by the id of the message
+    /// that opened it: a message's own, which later turns that continue its
+    /// work share; none for a call no agent worked for, such as a title's.
+    Assignment,
     /// Why the call was made: a turn, a compaction, a title and so on.
     Purpose,
 }
@@ -132,6 +136,9 @@ pub struct UsageReportGroup {
     #[serde(default, skip_serializing_if = "Option::is_none", with = "double_option")]
     #[schemars(with = "Option<String>")]
     pub turn: Option<Option<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none", with = "double_option")]
+    #[schemars(with = "Option<String>")]
+    pub assignment: Option<Option<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none", with = "double_option")]
     #[schemars(with = "Option<String>")]
     pub purpose: Option<Option<String>>,

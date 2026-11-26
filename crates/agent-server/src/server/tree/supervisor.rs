@@ -106,7 +106,7 @@ use jush_conversation_lane_protocol::{
 use jush_provider_common::ProviderRuntime;
 use jush_shared_gates::Purpose;
 use jush_shared_types::{
-    AgentMessage, AgentMessageEvent, Block, BlockId, CommandId, CompletionId, CompletionOutcome,
+    AgentMessage, AgentMessageEvent, Attribution, Block, BlockId, CommandId, CompletionId, CompletionOutcome,
     ModelSelection, NodeId, QueuedMessage, Sender, Sequence, SessionPhase, Timestamp, ToolCallBlock,
     ToolCallStatus, TurnId, UserContentBlock,
     output::{self, Fields, Table, seconds},
@@ -211,9 +211,9 @@ pub(crate) enum StartInput {
         /// `--cwd`, read against the caller's directory; none for the
         /// caller's own.
         cwd: Option<String>,
-        /// Whom the call that ran the command worked for, whom the child
-        /// works for (`jush_device_interface::JobCaller`).
-        sender_id: Option<String>,
+        /// Whom and which assignment the call that ran the command worked for,
+        /// which the child works for (`jush_device_interface::JobCaller`).
+        attribution: Attribution,
     },
     /// `jush agent resume`; `profile_name` moves the child to another
     /// profile for this round on, none keeps the one it runs on.
@@ -222,7 +222,7 @@ pub(crate) enum StartInput {
         message: String,
         profile_name: Option<String>,
         /// As a spawn's.
-        sender_id: Option<String>,
+        attribution: Attribution,
     },
     /// A message of the child's user under `message_id`, which the child
     /// takes as a steer if an earlier start made it live, or is resumed
@@ -343,7 +343,7 @@ impl<H: DeviceResolver> Tree<H> {
 
     /// Whether the history of the agent `id`, which is not live, holds the
     /// message `message`.
-    async fn history_holds(&self, id: &NodeId, message: &BlockId) -> Result<bool, String> {
+    pub(super) async fn history_holds(&self, id: &NodeId, message: &BlockId) -> Result<bool, String> {
         let store = self.store.session_store(id);
         let checkpoint = store.load().await.map_err(|error| error.to_string())?;
         let blocks = checkpoint.map_or(0, |checkpoint| checkpoint.block_count());
@@ -529,9 +529,9 @@ impl<H: DeviceResolver> Tree<H> {
                     profile_name,
                     description,
                     cwd,
-                    sender_id,
+                    attribution,
                 } => {
-                    let prompt = tree.text_message(prompt, sender_id);
+                    let prompt = tree.text_message(prompt, attribution);
                     tree.spawn(&owner, prompt, profile_name, description, cwd)
                         .await
                 }
@@ -539,9 +539,9 @@ impl<H: DeviceResolver> Tree<H> {
                     id,
                     message,
                     profile_name,
-                    sender_id,
+                    attribution,
                 } => {
-                    let message = tree.text_message(message, sender_id);
+                    let message = tree.text_message(message, attribution);
                     tree.reopen(&owner, id, message, profile_name).await
                 }
                 // Each check runs in the queue of starts: one made before it
@@ -551,7 +551,9 @@ impl<H: DeviceResolver> Tree<H> {
                         return taken.map(|()| number).map_err(|error| error.to_string());
                     }
                     let turn = TurnId::try_from(message_id.into_string()).expect("a block id is not empty");
-                    let message = queued(turn, vec![UserContentBlock::Text { text }], sender_id);
+                    // A message of the child's user opens an assignment of its own id.
+                    let attribution = Attribution { sender_id, assignment_id: Some(turn.clone()) };
+                    let message = queued(turn, vec![UserContentBlock::Text { text }], attribution);
                     tree.reopen(&owner, id, message, None).await
                 }
             }
@@ -799,14 +801,18 @@ impl<H: DeviceResolver> Tree<H> {
         NodeId::try_from(self.ids.next_id()).expect("an id source never gives an empty id")
     }
 
-    pub(super) fn text_message(&self, text: String, sender_id: Option<String>) -> QueuedMessage {
-        self.content_message(vec![UserContentBlock::Text { text }], sender_id)
+    pub(super) fn text_message(&self, text: String, attribution: Attribution) -> QueuedMessage {
+        self.content_message(vec![UserContentBlock::Text { text }], attribution)
     }
 
-    /// A message of `content` from `sender_id` under a new id.
-    pub(super) fn content_message(&self, content: Vec<UserContentBlock>, sender_id: Option<String>) -> QueuedMessage {
-        let id = TurnId::try_from(self.ids.next_id()).expect("an id source never gives an empty id");
-        queued(id, content, sender_id)
+    /// A message of `content`, for `attribution`, under a new id.
+    pub(super) fn content_message(&self, content: Vec<UserContentBlock>, attribution: Attribution) -> QueuedMessage {
+        queued(self.new_turn_id(), content, attribution)
+    }
+
+    /// A new message's id, which becomes its turn's.
+    pub(super) fn new_turn_id(&self) -> TurnId {
+        TurnId::try_from(self.ids.next_id()).expect("an id source never gives an empty id")
     }
 
     /// Everything spawn, reopen and restore share.
@@ -1636,16 +1642,20 @@ impl<H: DeviceResolver> Tree<H> {
         }
     }
 
-    /// Whom the child of `record` worked for as it closed, as its session
-    /// counts its calls (`Block::sender_id`), read from its store, as a
-    /// completion delivered again after a restart reads it.
-    async fn worked_for(&self, record: &NodeRecord) -> Option<String> {
+    /// Whom and which assignment the child of `record` worked for as it closed, as
+    /// its session counts its calls (`Block::sender_id`, `Block::assignment_id`),
+    /// read from its store, as a completion delivered again after a restart
+    /// reads it.
+    async fn worked_for(&self, record: &NodeRecord) -> Attribution {
         let store = self.store.session_store(&record.id);
         match Earlier::read(store.as_ref(), PATH_END).await {
-            Ok(earlier) => earlier.sender_id().map(str::to_owned),
+            Ok(earlier) => Attribution {
+                sender_id: earlier.sender_id().map(str::to_owned),
+                assignment_id: earlier.assignment_id().cloned(),
+            },
             Err(error) => {
-                self.report(format!("the sender subagent {} worked for was not read: {error}", record.id));
-                None
+                self.report(format!("whom subagent {} worked for was not read: {error}", record.id));
+                Attribution::default()
             }
         }
     }
@@ -1713,14 +1723,14 @@ impl<H: DeviceResolver> Tree<H> {
     ///
     /// Returns the recipient's number once the message is accepted durably. The
     /// message comes from the caller's call `call`, the `shell` call whose
-    /// command sends it, which worked for `sender_id`.
+    /// command sends it, which worked for `attribution`.
     pub(crate) async fn send_message(
         &self,
         caller: &NodeId,
         call: &str,
         target: &str,
         content: String,
-        sender_id: Option<String>,
+        attribution: Attribution,
     ) -> Result<u64, String> {
         if self.is_side(caller) {
             return Err(SIDE_SENDS.to_owned());
@@ -1771,7 +1781,8 @@ impl<H: DeviceResolver> Tree<H> {
             content,
             event: AgentMessageEvent::Message {},
             origin,
-            sender_id,
+            sender_id: attribution.sender_id,
+            assignment_id: attribution.assignment_id,
         };
         let message_id = message.id.clone();
         recipient
@@ -2162,13 +2173,13 @@ pub(super) async fn stop_all(session: &AgentSession) {
 /// Its id names the round, and its body is the texts `written` by the child in
 /// the round, then the failure reason of a failed round. It comes from the
 /// block `origin` of the child's transcript, a failed child's failure record,
-/// and tells of work for `sender_id`.
+/// and tells of work for `attribution`.
 fn completion(
     record: &NodeRecord,
     close: &NodeClose,
     origin: Option<BlockId>,
     written: String,
-    sender_id: Option<String>,
+    attribution: Attribution,
 ) -> AgentMessage {
     let round = CompletionId {
         child: record.id.clone(),
@@ -2201,7 +2212,8 @@ fn completion(
         content,
         event: AgentMessageEvent::Completion { outcome },
         origin,
-        sender_id,
+        sender_id: attribution.sender_id,
+        assignment_id: attribution.assignment_id,
     }
 }
 
@@ -2635,14 +2647,15 @@ fn snapshot<H: DeviceResolver>(
 /// reads as its end: a position is a database integer.
 const PATH_END: usize = 1 << 62;
 
-/// The message `content` from `sender_id` under the id `id`.
-fn queued(id: TurnId, content: Vec<UserContentBlock>, sender_id: Option<String>) -> QueuedMessage {
+/// The message `content`, for `attribution`, under the id `id`.
+pub(super) fn queued(id: TurnId, content: Vec<UserContentBlock>, attribution: Attribution) -> QueuedMessage {
     QueuedMessage {
         comments: Vec::new(),
         id,
         content,
         schedule: None,
-        sender_id,
+        sender_id: attribution.sender_id,
+        assignment_id: attribution.assignment_id,
     }
 }
 

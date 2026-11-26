@@ -395,6 +395,10 @@ pub struct InferenceRequest {
     /// sender. None when no one was named, and for a request of no
     /// session's, such as a title's. It never reaches a vendor.
     pub sender_id: Option<String>,
+    /// The assignment its agent works in, by the id of the message that opened it
+    /// (`Block::assignment_id`): the usage ledger counts the call in that assignment.
+    /// None as `sender_id` is none. It never reaches a vendor.
+    pub assignment_id: Option<String>,
     /// This request, unique per attempt.
     pub request_id: String,
     pub model_id: String,

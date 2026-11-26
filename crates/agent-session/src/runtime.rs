@@ -341,6 +341,8 @@ pub struct ToolInvocation {
     /// Whom its agent worked for in the request that asked for the call, as
     /// that request names it.
     pub sender_id: Option<String>,
+    /// The assignment its agent worked in then, as that request names it.
+    pub assignment_id: Option<TurnId>,
     /// The input as the JSON value the provider supplied, or its text when
     /// that is not valid JSON; the tool validates it.
     pub input: Value,

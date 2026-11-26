@@ -804,17 +804,18 @@ impl<H: DeviceResolver> AgentServer<H> {
     }
 
     /// Sends the follow-up `content` from `sender_id` to the side question
-    /// `side` of the conversation `root`, whose tree is open, with the bytes
-    /// of its media.
+    /// `side` of the conversation `root`, whose tree is open, under the id
+    /// `message` or a new one, with the bytes of its media.
     pub async fn ask_more(
         &self,
         root: &NodeId,
         side: NodeId,
+        message: Option<TurnId>,
         content: Vec<UserContentBlock>,
         sender_id: Option<String>,
         media: HeldMedia,
     ) -> Result<(), AskError> {
-        self.tree(root).ok_or(AskError::NotOpen)?.ask_more(side, content, sender_id, media).await
+        self.tree(root).ok_or(AskError::NotOpen)?.ask_more(side, message, content, sender_id, media).await
     }
 
     /// Runs the failed turn of the side question `side` of the conversation

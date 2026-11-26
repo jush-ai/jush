@@ -76,8 +76,7 @@ use jush_device_interface::{
 };
 use jush_provider_common::{ProviderRuntime, RequestLimits, ToolDefinition};
 use jush_shared_gates::{ActivityGate, GateLease, Purpose, Reservation};
-use jush_shared_types::{
-    Clock, CommandEnd, CommandId, CommandReport, ModelSelection, ReportEvent, NodeId, QueuedMessage, TurnId,
+use jush_shared_types::{Attribution, Clock, CommandEnd, CommandId, CommandReport, ModelSelection, ReportEvent, NodeId, QueuedMessage, TurnId,
     WORKING_DIRECTORY_SOURCE,
 };
 use futures_util::{FutureExt, future::LocalBoxFuture};
@@ -1100,7 +1099,7 @@ impl<H: DeviceResolver> SessionRuntime for NodeRuntime<H> {
                     .quiet(command)
                     .map_or(0, |quiet| u64::try_from(quiet.as_millis()).unwrap_or(u64::MAX));
                 let title = environment.title(command).unwrap_or_default();
-                return Some(progress_report(command, &title, environment.sender_id(command), running_ms, idle_ms));
+                return Some(progress_report(command, &title, environment.attribution(command), running_ms, idle_ms));
             }
             if self.environments.stopper(command) == Some(Stopper::Itself) {
                 dropped("end", "stopped_by_node");
@@ -1110,20 +1109,21 @@ impl<H: DeviceResolver> SessionRuntime for NodeRuntime<H> {
             // Its record names it by the title of the call that started it,
             // whatever became of that call, and whom that call's work is for
             // (`crates/agent-session/src/reports.rs`).
-            let (title, sender_id, status) = match self.environments.owning(command) {
-                Some(environment) => (environment.title(command).unwrap_or_default(), environment.sender_id(command), None),
+            let (title, attribution, status) = match self.environments.owning(command) {
+                Some(environment) => (environment.title(command).unwrap_or_default(), environment.attribution(command), None),
                 None => match self.stored(command).await {
                     Some(stored) => {
                         // Its record keeps them without their bytes, so the
                         // report names their attachments.
                         media.clone_from(&stored.media);
-                        let (title, sender_id) = (stored.title.clone(), stored.sender_id.clone());
-                        (title, sender_id, self.stored_status(command, stored))
+                        let title = stored.title.clone();
+                        let attribution = Attribution { sender_id: stored.sender_id.clone(), assignment_id: stored.assignment_id.clone() };
+                        (title, attribution, self.stored_status(command, stored))
                     }
-                    None => (String::new(), None, None),
+                    None => (String::new(), Attribution::default(), None),
                 },
             };
-            let mut report = end_report(command, &title, sender_id, end, status.as_ref());
+            let mut report = end_report(command, &title, attribution, end, status.as_ref());
             if !media.is_empty() {
                 let parts = report_media(&media, &model.model, limits).await;
                 let session = self.store.session_store(&self.node);

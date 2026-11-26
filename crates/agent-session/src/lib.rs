@@ -1156,6 +1156,7 @@ impl AgentSession {
         id: TurnId,
     ) -> Result<ActionHandle, AdmissionError> {
         self.send_message(QueuedMessage {
+            assignment_id: Some(id.clone()),
             id,
             content,
             comments: Vec::new(),

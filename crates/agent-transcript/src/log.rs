@@ -189,6 +189,17 @@ impl TranscriptLog {
             .unwrap_or_else(|| self.earlier.sender_id())
     }
 
+    /// The assignment the agent works in ([`Block::assignment_id`]), by the latest block
+    /// that handed it work, the one that names whom it works for: none when
+    /// it names none or there is none.
+    pub fn assignment_id(&self) -> Option<&TurnId> {
+        self.blocks
+            .iter()
+            .rev()
+            .find_map(Block::assignment_id)
+            .unwrap_or_else(|| self.earlier.assignment_id())
+    }
+
     /// Holds `blocks` too, the path's from `start` up to the window, with
     /// the versions at their places and what `earlier` keeps of the blocks
     /// before them, as an edit of a message before the window reads them.
@@ -256,6 +267,7 @@ impl TranscriptLog {
         preamble: Option<String>,
         schedule: Option<ScheduleMark>,
         sender_id: Option<String>,
+        assignment_id: Option<TurnId>,
     ) {
         let (id, created_at) = self.stamp();
         self.append(Block::User(UserBlock {
@@ -269,6 +281,7 @@ impl TranscriptLog {
             preamble,
             schedule,
             sender_id,
+            assignment_id,
             entries: Vec::new(),
         }));
     }
@@ -308,6 +321,8 @@ impl TranscriptLog {
         comments: Vec<MessageComment>,
         sender_id: Option<String>,
     ) {
+        // The steer joins the assignment of the turn that reads it.
+        let assignment_id = self.assignment_id().cloned();
         let created_at = self.clock.now();
         self.append(Block::Steer(SteerBlock {
             id,
@@ -318,6 +333,7 @@ impl TranscriptLog {
             content,
             comments,
             sender_id,
+            assignment_id,
             entries: Vec::new(),
         }));
     }

@@ -299,7 +299,12 @@ impl Core {
                     name: schedule.name.clone(),
                     at: fired.at,
                 }),
-                sender_id: None,
+                // A run of a schedule an agent made continues the work the
+                // turn that made it did; one of a program's, or of one made
+                // before that work was kept, opens an assignment of its own
+                // id, which the run names.
+                sender_id: schedule.created_for.sender_id.clone(),
+                assignment_id: Some(schedule.created_for.assignment_id.clone().unwrap_or_else(|| turn.clone())),
             })
             .map_err(|error| error.to_string())?;
         // A message that waits behind a running turn reaches it, as the

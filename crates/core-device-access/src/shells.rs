@@ -40,8 +40,7 @@ use jush_device_interface::{
     PageView, Seen, ShellEnvironment, ShellError, TakenUp, Unreachable, UnsentStart, WholeOutput,
 };
 use jush_runner_protocol::wire::JobFileChange;
-use jush_shared_types::{
-    BlobRef, Clock, CommandEnd, CommandId, EditCopies, EditedFile, NodeId, PixelSize, model_media_type_for,
+use jush_shared_types::{Attribution, BlobRef, Clock, CommandEnd, CommandId, EditCopies, EditedFile, NodeId, PixelSize, model_media_type_for,
 };
 use jush_web_api_protocol::ids::{ConversationId, DeviceId};
 use futures_util::future::LocalBoxFuture;
@@ -459,6 +458,7 @@ impl Keeper {
             tool_use_id: start.caller.tool_use_id.clone(),
             turn: start.caller.turn.clone(),
             sender_id: start.caller.sender_id.clone(),
+            assignment_id: start.caller.assignment_id.clone(),
             title: start.title.clone(),
             script: start.script.clone(),
             service: start.service,
@@ -700,7 +700,7 @@ impl CommandKeeper for Keeper {
         &'a self,
         command: &'a CommandId,
         title: &'a str,
-        sender_id: Option<&'a str>,
+        attribution: &'a Attribution,
         end: CommandEnd,
         output: &'a WholeOutput,
         media: &'a [CommandMedium],
@@ -720,7 +720,8 @@ impl CommandKeeper for Keeper {
             let row = CommandOutput {
                 command: command.clone(),
                 title: title.to_owned(),
-                sender_id: sender_id.map(str::to_owned),
+                sender_id: attribution.sender_id.clone(),
+                assignment_id: attribution.assignment_id.clone(),
                 // Its record as running gives its start.
                 started: None,
                 ended,
@@ -781,8 +782,8 @@ impl ShellEnvironment for Registered {
         self.environment.title(command)
     }
 
-    fn sender_id(&self, command: &CommandId) -> Option<String> {
-        self.environment.sender_id(command)
+    fn attribution(&self, command: &CommandId) -> Attribution {
+        self.environment.attribution(command)
     }
 
     fn quiet(&self, command: &CommandId) -> Result<std::time::Duration, ShellError> {

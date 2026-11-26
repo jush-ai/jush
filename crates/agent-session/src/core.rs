@@ -451,6 +451,9 @@ pub(super) enum ActionKind {
         schedule: Option<ScheduleMark>,
         /// Who sent it, which its `user` block keeps.
         sender_id: Option<String>,
+        /// The assignment it continues, which its `user` block keeps; none for one
+        /// that opens its own.
+        assignment_id: Option<TurnId>,
     },
     /// Input that arrived while nothing ran, command reports or agent
     /// messages: it opens a turn of its own, never shown in the queue.
@@ -761,6 +764,12 @@ impl SessionCore {
         self.transcript.sender_id().map(str::to_owned)
     }
 
+    /// The assignment the agent works in (`Block::assignment_id`): the assignment its requests
+    /// and the commands its calls start are counted in.
+    pub(super) fn assignment_id(&self) -> Option<TurnId> {
+        self.transcript.assignment_id().cloned()
+    }
+
     // Admission and the start of actions.
 
     fn refuse_admission(&self) -> Result<(), AdmissionError> {
@@ -1029,7 +1038,7 @@ impl SessionCore {
         message: QueuedMessage,
     ) -> Result<ActionHandle, AdmissionError> {
         self.refuse_admission()?;
-        let QueuedMessage { id, content, comments, schedule, sender_id } = message;
+        let QueuedMessage { id, content, comments, schedule, sender_id, assignment_id } = message;
         if self.took(&BlockId::try_from(id.as_str().to_owned()).expect("a turn id is not empty")) {
             return Ok(ActionHandle::ended(ActionEnd::Duplicate));
         }
@@ -1050,7 +1059,7 @@ impl SessionCore {
             queued_ahead = self.pending.len(),
             "a message was admitted"
         );
-        Ok(self.push_action(ActionKind::Send { content, comments, schedule, sender_id }, id))
+        Ok(self.push_action(ActionKind::Send { content, comments, schedule, sender_id, assignment_id }, id))
     }
 
     /// Admits a retry, a resume or a compaction pass.
@@ -1139,11 +1148,13 @@ impl SessionCore {
                 pending_ms,
                 "a steer no turn took opens the next turn"
             );
+            // It opens an assignment of its own id, as a message does.
             let kind = ActionKind::Send {
                 content: steer.content,
                 comments: steer.comments,
                 schedule: None,
                 sender_id: steer.sender_id,
+                assignment_id: Some(turn.clone()),
             };
             self.start_action(kind, turn, None, pending_ms.unwrap_or(0));
             return;
@@ -1178,12 +1189,13 @@ impl SessionCore {
         let cancel = TurnCancel::new();
         self.held = false;
         let unwritten = match &kind {
-            ActionKind::Send { content, comments, schedule, sender_id } => Some(QueuedMessage {
+            ActionKind::Send { content, comments, schedule, sender_id, assignment_id } => Some(QueuedMessage {
                 id: turn.clone(),
                 content: content.clone(),
                 comments: comments.clone(),
                 schedule: schedule.clone(),
                 sender_id: sender_id.clone(),
+                assignment_id: assignment_id.clone(),
             }),
             _ => None,
         };
@@ -1547,9 +1559,9 @@ impl SessionCore {
         if began {
             self.record_stop(CancelReason::Shutdown);
             self.log_turn_ended("interrupted", None);
-        } else if let ActionKind::Send { content, comments, schedule, sender_id } = kind {
+        } else if let ActionKind::Send { content, comments, schedule, sender_id, assignment_id } = kind {
             self.pending.push_front(PendingAction {
-                kind: ActionKind::Send { content, comments, schedule, sender_id },
+                kind: ActionKind::Send { content, comments, schedule, sender_id, assignment_id },
                 turn: turn.clone(),
                 reply: None,
                 admitted_at: self.clock.now(),
@@ -1568,14 +1580,16 @@ impl SessionCore {
     /// checkpoint.
     fn queue_steers(&mut self, mut ahead: usize) {
         while let Some(steer) = self.inputs.take_first_steer() {
+            let turn = TurnId::try_from(steer.id.into_string()).expect("a block id is not empty");
             self.pending.insert(ahead, PendingAction {
                 kind: ActionKind::Send {
                     content: steer.content,
                     comments: steer.comments,
                     schedule: None,
                     sender_id: steer.sender_id,
+                    assignment_id: Some(turn.clone()),
                 },
-                turn: TurnId::try_from(steer.id.into_string()).expect("a block id is not empty"),
+                turn,
                 reply: None,
                 admitted_at: self.clock.now(),
             });
@@ -1699,11 +1713,11 @@ impl SessionCore {
             _ => None,
         };
         if let Some((turn, message)) = unwritten {
-            let QueuedMessage { content, comments, schedule, sender_id, .. } = message;
+            let QueuedMessage { content, comments, schedule, sender_id, assignment_id, .. } = message;
             match reason {
-                CancelReason::Stop => self.push_user(turn, content, comments, None, schedule, sender_id),
+                CancelReason::Stop => self.push_user(turn, content, comments, None, schedule, sender_id, assignment_id),
                 CancelReason::Hold(_) => self.pending.push_front(PendingAction {
-                    kind: ActionKind::Send { content, comments, schedule, sender_id },
+                    kind: ActionKind::Send { content, comments, schedule, sender_id, assignment_id },
                     turn,
                     reply: None,
                     admitted_at: self.clock.now(),
@@ -1815,6 +1829,7 @@ impl SessionCore {
             comments: user.comments.clone(),
             schedule: None,
             sender_id: user.sender_id.clone(),
+            assignment_id: user.assignment_id.clone(),
         };
         let position = self.transcript.start() + at;
         self.transcript.withdraw_from(position);
@@ -2047,12 +2062,13 @@ impl SessionCore {
         self.pending
             .iter()
             .filter_map(|action| match &action.kind {
-                ActionKind::Send { content, comments, schedule, sender_id } => Some(QueuedMessage {
+                ActionKind::Send { content, comments, schedule, sender_id, assignment_id } => Some(QueuedMessage {
                     id: action.turn.clone(),
                     content: content.clone(),
                     comments: comments.clone(),
                     schedule: schedule.clone(),
                     sender_id: sender_id.clone(),
+                    assignment_id: assignment_id.clone(),
                 }),
                 _ => None,
             })
@@ -2102,7 +2118,8 @@ impl SessionCore {
                 path = "starts_turn",
                 "a steer was admitted while nothing ran, and starts the turn"
             );
-            drop(self.push_action(ActionKind::Send { content, comments, schedule: None, sender_id }, own_turn));
+            let assignment_id = Some(own_turn.clone());
+            drop(self.push_action(ActionKind::Send { content, comments, schedule: None, sender_id, assignment_id }, own_turn));
             return Ok(());
         }
         // A steer no running turn will take, as one sent after a Stop, names
@@ -2643,6 +2660,7 @@ impl SessionCore {
         preamble: Option<String>,
         schedule: Option<ScheduleMark>,
         sender_id: Option<String>,
+        assignment_id: Option<TurnId>,
     ) {
         session_log!(
             self,
@@ -2660,7 +2678,7 @@ impl SessionCore {
             "a message was written into its turn"
         );
         self.transcript
-            .push_user(turn, &self.model, content, comments, preamble, schedule, sender_id);
+            .push_user(turn, &self.model, content, comments, preamble, schedule, sender_id, assignment_id);
         if let Activity::Running(run) = &mut self.activity {
             run.unwritten = None;
         }
@@ -3207,6 +3225,7 @@ impl SessionCore {
             conversation: self.runtime.conversation(),
             turn_id: turn.to_string(),
             sender_id: self.sender_id(),
+            assignment_id: self.assignment_id().map(|assignment| assignment.to_string()),
             request_id,
             model_id: self.model.model.id.clone(),
             output_limit: self.model.model.output_limit.and_then(NonZeroU32::new),
@@ -3299,6 +3318,7 @@ impl SessionCore {
             conversation: self.runtime.conversation(),
             turn_id: String::new(),
             sender_id: self.sender_id(),
+            assignment_id: self.assignment_id().map(|assignment| assignment.to_string()),
             request_id,
             model_id: model.model.id.clone(),
             output_limit: model.model.output_limit.and_then(NonZeroU32::new),

@@ -5,7 +5,7 @@
 //! agent's.
 
 use jush_conversation_lane_protocol::{ClientContent, SideQuestion};
-use jush_shared_types::{BlockId, CommentPart, MAX_SAFE_INTEGER, MediaSource, NodeId};
+use jush_shared_types::{BlockId, CommentPart, MAX_SAFE_INTEGER, MediaSource, NodeId, TurnId};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -43,6 +43,11 @@ pub struct AskRequest {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, garde::Validate)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SideFollowUp {
+    /// Its id, which names the assignment it opens, and which a retry
+    /// repeats so the side question takes it once; one is made when none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[garde(skip)]
+    pub id: Option<TurnId>,
     /// A message's content, as a frame names it.
     #[garde(dive, custom(says_something))]
     pub content: Vec<ClientContent>,

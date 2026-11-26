@@ -128,6 +128,7 @@ impl Core {
             conversation: None,
             turn_id: uuid::Uuid::new_v4().to_string(),
             sender_id: None,
+            assignment_id: None,
             request_id: uuid::Uuid::new_v4().to_string(),
             model_id: model.id,
             output_limit: selection.model.output_limit.and_then(NonZeroU32::new),

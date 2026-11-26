@@ -228,6 +228,7 @@ pub(crate) async fn exec(
                     tool_use_id: "exec".into(),
                     turn: None,
                     sender_id: None,
+                    assignment_id: None,
                 },
             };
             let time = exec.timeout_ms.map(Duration::from_millis);

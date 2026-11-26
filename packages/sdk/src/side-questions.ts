@@ -16,8 +16,12 @@ export type SideQuestionAsk = Omit<AskRequest, 'id' | 'question'> & { id?: strin
 
 export interface SideQuestions {
   ask(question: SideQuestionAsk): Promise<SideQuestionAnswer>
-  /** Asks the side question `side` more; `options.senderId` names who asked. */
-  followUp(side: string, input: Input, options?: MessageOptions): Promise<void>
+  /**
+   * Asks the side question `side` more, which takes it once however often it
+   * is sent under `messageId`, which the conversation's messages share;
+   * `options.senderId` names who asked.
+   */
+  followUp(side: string, input: Input, messageId?: string, options?: MessageOptions): Promise<void>
   retry(side: string): Promise<void>
   stop(side: string): Promise<void>
   /** Folds the side question `side`, or unfolds it. */
@@ -34,8 +38,8 @@ export function sideQuestions(routes: CoreRoutes, id: string): SideQuestions {
       id: question.id ?? randomUUID(),
       question: content(question.question),
     }),
-    followUp: (side, input, options = {}) =>
-      routes.send('POST', `${one(side)}/messages`, { content: content(input), senderId: options.senderId }),
+    followUp: (side, input, messageId = randomUUID(), options = {}) =>
+      routes.send('POST', `${one(side)}/messages`, { id: messageId, content: content(input), senderId: options.senderId }),
     retry: (side) => routes.send('POST', `${one(side)}/retry`),
     stop: (side) => routes.send('POST', `${one(side)}/stop`),
     fold: (side, folded) => routes.json('PATCH', one(side), sideQuestionAnswerSchema, { folded }),

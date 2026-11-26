@@ -255,7 +255,12 @@ CREATE TABLE schedules (
   created_node     TEXT,
   created_turn     TEXT,
   edited_node      TEXT,
-  edited_turn      TEXT
+  edited_turn      TEXT,
+  -- Whom and which assignment the agent's turn that made it worked for,
+  -- which its runs' messages continue; null for a program's, and for one
+  -- made before schedules kept them.
+  created_sender_id     TEXT,
+  created_assignment_id TEXT
 ) STRICT;
 
 CREATE INDEX schedules_by_conversation ON schedules (conversation_id, created_at);
@@ -277,11 +282,11 @@ CREATE INDEX schedule_runs_by_schedule ON schedule_runs (schedule_id, at);
 -- The wakes a message to another conversation asked for (`jush conversation
 -- send --wake-when-done`), each kept until its sender is woken: the
 -- recipient and the message's block there, the sending conversation and
--- agent, which the end of the work the message started wakes, whom the
--- message's work is for, by the id its program gave its sender, null when
--- it named no one or the wake was kept before wakes kept it, and once that
--- work ended, the notice to deliver, as JSON, an agent message of the shared
--- types, which a failed delivery keeps for the next try. Either
+-- agent, which the end of the work the message started wakes, whom and
+-- which assignment the message's work is for, by the ids its program gave,
+-- null when it named none or the wake was kept before wakes kept them, and
+-- once that work ended, the notice to deliver, as JSON, an agent message of
+-- the shared types, which a failed delivery keeps for the next try. Either
 -- conversation's deletion drops it.
 CREATE TABLE pending_wakes (
   recipient_id TEXT NOT NULL COLLATE NOCASE REFERENCES conversations (id) ON DELETE CASCADE,
@@ -290,6 +295,7 @@ CREATE TABLE pending_wakes (
   sender_node  TEXT NOT NULL,
   notice       TEXT,
   message_sender_id TEXT,
+  message_assignment_id TEXT,
   PRIMARY KEY (recipient_id, message_id)
 ) STRICT;
 CREATE INDEX pending_wakes_by_sender ON pending_wakes (sender_id);
@@ -734,6 +740,10 @@ CREATE TABLE usage_ledger (
   -- sender; null when no one was named, for a call outside a session, and
   -- for a row written before the ledger kept it.
   sender_id             TEXT,
+  -- The assignment the call's agent worked in, by the id of the message
+  -- that opened it; null as its sender is, and for a row written before the
+  -- ledger kept it.
+  assignment_id         TEXT,
   CHECK ((cost IS NULL) = (cost_currency IS NULL))
 ) STRICT;
 
