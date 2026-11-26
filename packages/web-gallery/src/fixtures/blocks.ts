@@ -358,7 +358,8 @@ export const runningShellTool = toolCall({
 /**
  * A heredoc that writes a whole page, with output longer than the box: the
  * command shows two lines until a click shows it whole, and then scrolls on
- * its own above the output.
+ * its own above the output. It is longer than a clamped command lays out word
+ * by word, so the rest follows as plain text and still copies whole.
  */
 export const longScriptShellTool = toolCall({
   id: 'tool-shell-script',
@@ -378,7 +379,11 @@ export const longScriptShellTool = toolCall({
       '  <main>',
       '    <h1>Service Status</h1>',
       '    <p id="summary">All systems are running.</p>',
-      '    <ul id="services"></ul>',
+      '    <ul id="services">',
+      ...['auth', 'billing', 'search', 'uploads', 'mail', 'webhooks', 'exports', 'reports', 'payments', 'notifications', 'analytics', 'storage'].map(
+        (service) => `      <li data-service="${service}"><span class="dot"></span>${service}</li>`,
+      ),
+      '    </ul>',
       '  </main>',
       '</body>',
       '</html>',
