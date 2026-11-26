@@ -108,6 +108,15 @@ impl ContextUsage {
     }
 }
 
+/// Whom and which assignment a piece of work is for, as the block that handed it
+/// names them ([`crate::Block::sender_id`], [`crate::Block::assignment_id`]): a
+/// command keeps the call's, and its reports name them.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Attribution {
+    pub sender_id: Option<String>,
+    pub assignment_id: Option<TurnId>,
+}
+
 /// A message waiting in the queue; the checkpoint keeps the queue. The page
 /// derives the text it shows from the content.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, garde::Validate)]
@@ -142,6 +151,17 @@ pub struct QueuedMessage {
     #[schemars(with = "String")]
     #[garde(length(chars, min = 1, max = crate::SENDER_ID_LIMIT))]
     pub sender_id: Option<String>,
+    /// The assignment it is part of, which its `user` block keeps: its own id
+    /// for one that opens one, the work's for one that continues it; absent
+    /// when it names none.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "serde_with::rust::unwrap_or_skip"
+    )]
+    #[schemars(with = "TurnId")]
+    #[garde(skip)]
+    pub assignment_id: Option<TurnId>,
 }
 
 /// A call the model is writing: the provider opened it and has not handed

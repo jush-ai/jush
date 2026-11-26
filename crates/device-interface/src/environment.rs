@@ -12,7 +12,7 @@ use std::{cell::RefCell, rc::Rc, sync::Arc, time::Duration};
 
 use bytes::Bytes;
 use schemars::JsonSchema;
-use jush_shared_types::{TurnId, 
+use jush_shared_types::{Attribution, TurnId, 
     BinaryStdout, CommandId, EditedFile, NodeId, OutputView, PathChange, Sequence, StreamKind,
     StreamView,
 };
@@ -61,11 +61,10 @@ pub trait ShellEnvironment {
     /// environment does not hold.
     fn title(&self, command: &CommandId) -> Option<String>;
 
-    /// Whom the work of the call that started the command is for, which its
-    /// record keeps from its start and its reports name; none for a command
-    /// the environment does not hold, or whose call's work is for no one
-    /// named.
-    fn sender_id(&self, command: &CommandId) -> Option<String>;
+    /// Whom and which assignment the work of the call that started the command is
+    /// for, which its record keeps from its start and its reports name;
+    /// none named for a command the environment does not hold.
+    fn attribution(&self, command: &CommandId) -> Attribution;
 
     /// The media the command's job viewed, once it exited, which moves no
     /// place in its output (`crates/agent-tools/src/result.rs`).
@@ -207,6 +206,17 @@ pub struct JobCaller {
     /// named.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sender_id: Option<String>,
+    /// The assignment the call's agent worked in, which a command's call to a
+    /// vendor is counted in; none when its turn named none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub assignment_id: Option<TurnId>,
+}
+
+impl JobCaller {
+    /// Whom and which assignment the call's work is for.
+    pub fn attribution(&self) -> Attribution {
+        Attribution { sender_id: self.sender_id.clone(), assignment_id: self.assignment_id.clone() }
+    }
 }
 
 /// How long a running command's device has been unreachable, as far as Jush

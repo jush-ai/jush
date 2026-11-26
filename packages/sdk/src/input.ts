@@ -12,7 +12,8 @@ export interface MessageOptions {
    * after reading it, until the next message or the next turn the end of
    * other work opens, is that sender's in `core.usage.report`, and so are
    * the calls of the subagents it starts meanwhile, and of the turn the end
-   * of its work opens. The model does not read it.
+   * of its work opens. The message's id names the assignment those calls
+   * belong to, as `assignment` groups them. The model does not read it.
    */
   senderId?: string
 }

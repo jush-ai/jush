@@ -12,7 +12,7 @@
 
 use jush_agent_transcript::{REPLAY_CHARS, report_text};
 use jush_device_interface::CommandStatus;
-use jush_shared_types::{CommandId, CommandReport, ReportEvent, StoppedBy};
+use jush_shared_types::{Attribution, CommandId, CommandReport, ReportEvent, StoppedBy};
 
 use crate::{Stopper, result::report_output};
 
@@ -28,34 +28,34 @@ pub enum EndOf {
     Unrecorded,
 }
 
-/// The report of `command`, whose work is for `sender_id`, which still runs
-/// and has printed nothing for a long time: how long it has run and been
-/// silent.
+/// The report of `command`, whose work is for `attribution`, which still
+/// runs and has printed nothing for a long time: how long it has run and
+/// been silent.
 ///
 /// Its output is read when the report is written ([`fill_output`]), which moves
 /// the node's place then.
 pub fn progress_report(
     command: &CommandId,
     title: &str,
-    sender_id: Option<String>,
+    attribution: Attribution,
     running_ms: u64,
     idle_ms: u64,
 ) -> CommandReport {
     report(
         command,
         title,
-        sender_id,
+        attribution,
         ReportEvent::Running { running_ms, idle_ms },
     )
 }
 
-/// The report of `command`'s end, `end`, whose work is for `sender_id`; its
-/// output is read from `status` once it ended, or when the report is written
-/// ([`fill_output`]).
+/// The report of `command`'s end, `end`, whose work is for `attribution`;
+/// its output is read from `status` once it ended, or when the report is
+/// written ([`fill_output`]).
 pub fn end_report(
     command: &CommandId,
     title: &str,
-    sender_id: Option<String>,
+    attribution: Attribution,
     end: EndOf,
     status: Option<&CommandStatus>,
 ) -> CommandReport {
@@ -73,7 +73,7 @@ pub fn end_report(
         EndOf::Lost(reason) => ReportEvent::Lost { reason },
         EndOf::Unrecorded => ReportEvent::Ended { exit_code: None },
     };
-    let mut report = report(command, title, sender_id, event);
+    let mut report = report(command, title, attribution, event);
     if let Some(status) = status {
         fill_output(&mut report, status);
     }
@@ -90,13 +90,14 @@ pub fn fill_output(report: &mut CommandReport, status: &CommandStatus) {
 }
 
 /// A report of `event`, without output yet.
-fn report(command: &CommandId, title: &str, sender_id: Option<String>, event: ReportEvent) -> CommandReport {
+fn report(command: &CommandId, title: &str, attribution: Attribution, event: ReportEvent) -> CommandReport {
     CommandReport {
         command_id: command.clone(),
         title: title.to_owned(),
         event,
         output: String::new(),
         media: Vec::new(),
-        sender_id,
+        sender_id: attribution.sender_id,
+        assignment_id: attribution.assignment_id,
     }
 }

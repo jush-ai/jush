@@ -71,7 +71,7 @@ use jush_provider_common::media_catalog::{
     self, AudioOutput, Catalog, Currency, Modality, PriceUnit, VideoCapabilities, Voices,
 };
 use jush_provider_common::videos::{self, Change, SourceVideo, VideoMaker, VideoRequest, VideoSource};
-use jush_shared_types::{AudioKind, MediaKind, Model, QuotaWindow, Rotation, Timestamp, TurnId, VendorTrace};
+use jush_shared_types::{Attribution, AudioKind, MediaKind, Model, QuotaWindow, Rotation, Timestamp, TurnId, VendorTrace};
 use jush_web_api_protocol::ids::{ConversationId, CredentialId, ProviderId};
 use jush_web_api_protocol::providers::EntryMediaModel;
 use sha2::{Digest as _, Sha256};
@@ -1091,7 +1091,7 @@ impl Call<'_> {
                 listed,
                 manages: Vault::manages(core.user(), &route.entry),
                 turn: self.caller.and_then(|caller| caller.turn.clone()),
-                sender_id: self.caller.and_then(|caller| caller.sender_id.clone()),
+                attribution: self.caller.map(JobCaller::attribution).unwrap_or_default(),
                 route: &route,
                 model: model_of(&name),
                 name,
@@ -1567,8 +1567,8 @@ struct Making<'a> {
     /// The turn whose shell call started the calling job, which the
     /// ledger rows name even after it ended.
     turn: Option<TurnId>,
-    /// Whom that shell call's command is counted for.
-    sender_id: Option<String>,
+    /// Whom and which assignment that shell call's command is counted for.
+    attribution: Attribution,
     /// Whether the user manages the entry, and so may read its accounts.
     manages: bool,
     conversation: ConversationId,
@@ -1624,7 +1624,8 @@ impl Making<'_> {
             conversation: self.conversation.clone(),
             agent: self.agent,
             turn: self.turn.as_ref().map(ToString::to_string),
-            sender_id: self.sender_id.clone(),
+            sender_id: self.attribution.sender_id.clone(),
+            assignment_id: self.attribution.assignment_id.as_ref().map(ToString::to_string),
             purpose,
             provider: entry.id.clone(),
             account: account.cloned(),

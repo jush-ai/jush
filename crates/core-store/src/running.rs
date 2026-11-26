@@ -37,6 +37,8 @@ pub struct RunningCommand {
     /// Whom that call's command is counted for
     /// (`crates/device-interface/src/environment.rs`, `JobCaller`).
     pub sender_id: Option<String>,
+    /// The assignment that call's command is counted in, as `JobCaller` names it.
+    pub assignment_id: Option<TurnId>,
     /// That call's title, which the command's reports name and the pages'
     /// view of it carries.
     pub title: String,
@@ -56,7 +58,7 @@ pub struct RunningCommand {
 }
 
 const COLUMNS: &str =
-    "command_id, node_id, device_id, job_id, tool_use_id, started_at, places, title, service, turn_id, unsent, script, sender_id";
+    "command_id, node_id, device_id, job_id, tool_use_id, started_at, places, title, service, turn_id, unsent, script, sender_id, assignment_id";
 
 /// How far one node has seen a running command's output, as the `places`
 /// column stores it (command places format 1): any count of bytes is one.
@@ -108,7 +110,7 @@ impl StoredPlaces {
 pub fn record(connection: &Connection, running: &RunningCommand) -> Result<(), StorageError> {
     connection
         .prepare_cached(&format!(
-            "INSERT INTO running_commands ({COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
+            "INSERT INTO running_commands ({COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
              ON CONFLICT (command_id) DO UPDATE SET unsent = excluded.unsent"
         ))?
         .execute(params![
@@ -125,6 +127,7 @@ pub fn record(connection: &Connection, running: &RunningCommand) -> Result<(), S
             running.unsent.as_ref().map(to_json),
             running.script,
             running.sender_id,
+            running.assignment_id.as_ref().map(TurnId::as_str),
         ])?;
     Ok(())
 }
@@ -278,6 +281,10 @@ fn decode_row(row: &Row<'_>) -> Result<RunningCommand, StorageError> {
             .map(|turn| decode(table, "turn_id", TurnId::try_from(turn)))
             .transpose()?,
         sender_id: row.get(12)?,
+        assignment_id: row
+            .get::<_, Option<String>>(13)?
+            .map(|assignment| decode(table, "assignment_id", TurnId::try_from(assignment)))
+            .transpose()?,
         started: instant(row, table, "started_at")?,
         places: json::<StoredPlaces>(table, "places", &row.get::<_, String>(6)?)?.places(),
         unsent: row

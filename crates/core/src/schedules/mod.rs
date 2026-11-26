@@ -31,7 +31,7 @@ use jush_agent_session::EndedTurn;
 use jush_core_store::schedules::{StoredRun, StoredSchedule};
 use jush_core_sync::Part;
 use jush_core_store::seal::Row;
-use jush_shared_types::{ScheduleId, ScheduleRunId, Timestamp};
+use jush_shared_types::{Attribution, ScheduleId, ScheduleRunId, Timestamp};
 use jush_web_api_protocol::ids::ConversationId;
 use jush_web_api_protocol::schedules::{
     AgentTurn, ConversationSchedule, IfBusy, LastRun, MonthDay, NEW_NAME, RUNS_SHOWN, Repeat, RepeatUnit, RunCause,
@@ -363,7 +363,8 @@ impl Core {
 
     /// `jush schedule create`, and a program's: a new schedule of
     /// `conversation` from its defaults, with `patch` over them, which the
-    /// agent's turn `by` made, or a program for none.
+    /// agent's turn `by` made, with whom and which assignment it worked for,
+    /// or a program for none.
     ///
     /// The defaults are *New Schedule*, on, every day with one task at 09:00
     /// in the user's time zone and no message, which waits while the
@@ -373,8 +374,9 @@ impl Core {
         &self,
         conversation: &ConversationId,
         patch: SchedulePatch,
-        by: Option<AgentTurn>,
+        by: Option<(AgentTurn, Attribution)>,
     ) -> Result<(ScheduleDto, Option<String>), ScheduleError> {
+        let (by, created_for) = by.map_or((None, Attribution::default()), |(turn, attribution)| (Some(turn), attribution));
         let store = self.store();
         // The record's id, as the caller may spell it in another case, which
         // the conversation's tree and marks would not match.
@@ -422,6 +424,7 @@ impl Core {
             created_at: now,
             updated_at: now,
             created_in: by,
+            created_for,
             edited_in: None,
         };
         self.save_schedule(defaults, patch, Save::Create, None).await

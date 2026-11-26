@@ -241,6 +241,7 @@ impl Core {
                 tool_use_id: "watch".into(),
                 turn: None,
                 sender_id: None,
+                assignment_id: None,
             },
         };
         let cancel = CancellationToken::new();

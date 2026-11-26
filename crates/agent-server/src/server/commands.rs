@@ -33,7 +33,7 @@ use jush_device_interface::{
     Call, CommandSet, JUSH_ROOT, GroupBuilder, LeafBuilder, RegisterError, RpcError, RpcPort,
     TypedRpc,
 };
-use jush_shared_types::{NodeId, is_blank, trim};
+use jush_shared_types::{Attribution, NodeId, is_blank, trim};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -361,9 +361,9 @@ pub(super) struct Invoked<H: DeviceResolver, A> {
     pub(super) caller: NodeId,
     /// The node's `shell` call that started the job.
     pub(super) call: String,
-    /// Whom that call worked for (`JobCaller`): a child it starts or
-    /// resumes, or a message it sends, is that sender's.
-    pub(super) sender_id: Option<String>,
+    /// Whom and which assignment that call worked for (`JobCaller`): a child it
+    /// starts or resumes, or a message it sends, is for them.
+    pub(super) attribution: Attribution,
     /// The invoking shell's directory, which a relative path an argument
     /// names is read against.
     pub(super) cwd: String,
@@ -402,11 +402,12 @@ where
             let tree = server
                 .tree(&root)
                 .ok_or_else(|| RpcError::Failed(format!("the conversation {root} is not open")))?;
+            let attribution = job.attribution();
             let invoked = Invoked {
                 tree,
                 caller: job.node,
+                attribution,
                 call: job.tool_use_id,
-                sender_id: job.sender_id,
                 cwd: call.invocation.cwd.clone(),
                 command: call.invocation.path.join(" "),
                 json: call.invocation.json,
@@ -430,7 +431,7 @@ async fn spawn<H: DeviceResolver>(
         profile_name: call.args.profile,
         description: call.args.description.unwrap_or_default(),
         cwd: call.args.cwd,
-        sender_id: call.sender_id,
+        attribution: call.attribution,
     };
     match call.tree.start(&call.caller, input).await {
         Ok(child) => started(&port, call.json, child).await,
@@ -472,7 +473,7 @@ async fn resume<H: DeviceResolver>(
         id,
         message: message.to_owned(),
         profile_name: call.args.profile,
-        sender_id: call.sender_id,
+        attribution: call.attribution,
     };
     match call.tree.start(&call.caller, input).await {
         Ok(child) => started(&port, call.json, child).await,
@@ -487,7 +488,7 @@ async fn send<H: DeviceResolver>(call: Invoked<H, SendArgs>, port: RpcPort) -> R
     let message = trim(&call.args.message).to_owned();
     match call
         .tree
-        .send_message(&call.caller, &call.call, &call.args.id, message, call.sender_id)
+        .send_message(&call.caller, &call.call, &call.args.id, message, call.attribution)
         .await
     {
         Ok(target) if call.json => {

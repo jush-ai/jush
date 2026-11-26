@@ -323,6 +323,8 @@ pub struct RunningCommand {
     pub turn: Option<TurnId>,
     /// Whom the call's command is counted for.
     pub sender_id: Option<String>,
+    /// The assignment the call's command is counted in.
+    pub assignment_id: Option<TurnId>,
     /// The title its reports name (`crates/agent-session/src/reports.rs`).
     pub title: String,
     /// Its call's script, which the pages' view of it carries with its
@@ -348,6 +350,8 @@ pub struct StoredCommand {
     pub title: String,
     /// Whom its work was for, by the id its program gave its sender.
     pub sender_id: Option<String>,
+    /// The assignment its work was part of.
+    pub assignment_id: Option<TurnId>,
     pub end: CommandEnd,
     pub output: StoredOutput,
     pub media: Vec<CommandMedium>,

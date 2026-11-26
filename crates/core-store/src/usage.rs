@@ -95,6 +95,9 @@ pub struct UsageRow {
     /// Whom the agent worked for, by its program's id; none when no one was
     /// named, and outside a session.
     pub sender_id: Option<String>,
+    /// The assignment the agent worked in, by the id of the message that
+    /// opened it; none as `sender_id` is.
+    pub assignment_id: Option<String>,
     /// `turn`, `compaction`, `title`, `suggested_replies`, `image`, `video`
     /// or `audio`.
     pub purpose: &'static str,
@@ -1011,9 +1014,10 @@ pub(crate) fn write_usage(transaction: &rusqlite::Transaction<'_>, row: &UsageRo
            input_tokens, output_tokens, cache_read_tokens, cache_write_tokens,
            cache_write_1h_tokens, outcome, quota, started_at, ended_at, media_seconds, cost, cost_currency,
            api_price_input, api_price_cache_write, api_price_cache_read, api_price_output,
-           system_hash, tools_hash, call_number, after_compaction, miss, media_digest, sender_id)
+           system_hash, tools_hash, call_number, after_compaction, miss, media_digest, sender_id,
+           assignment_id)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16,
-           ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32, ?33)",
+           ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32, ?33, ?34)",
         params![
             id,
             row.conversation.as_str(),
@@ -1048,6 +1052,7 @@ pub(crate) fn write_usage(transaction: &rusqlite::Transaction<'_>, row: &UsageRo
             call.and_then(|call| call.miss).map(|miss| miss.to_string()),
             row.media_digest,
             row.sender_id,
+            row.assignment_id,
         ],
     )?;
     // Asked after the insert: a transaction that has read cannot wait for

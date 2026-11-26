@@ -92,22 +92,39 @@ impl Block {
     /// (`crates/core-store/src/usage_report.rs`). None for any other block:
     /// a report or a notice read inside a running turn leaves its sender.
     pub fn sender_id(&self) -> Option<Option<&str>> {
-        match self {
-            Block::User(user) => Some(user.sender_id.as_deref()),
-            Block::Steer(steer) => Some(steer.sender_id.as_deref()),
+        self.work().map(|(sender_id, _)| sender_id)
+    }
+
+    /// The assignment the work the block hands its agent is part of, by the id of
+    /// the message that opened it, as [`Block::sender_id`] names whom it is
+    /// for, the same blocks naming both: a message's own id, or the assignment it
+    /// continues; a steer's, the assignment of the turn it joined; another
+    /// agent's message's, a report's and a notice's, the assignment of their work.
+    pub fn assignment_id(&self) -> Option<Option<&TurnId>> {
+        self.work().map(|(_, assignment_id)| assignment_id)
+    }
+
+    /// Whom and which assignment the work the block hands its agent is for, as
+    /// [`Block::sender_id`] and [`Block::assignment_id`] tell them.
+    fn work(&self) -> Option<(Option<&str>, Option<&TurnId>)> {
+        let (sender_id, assignment_id) = match self {
+            Block::User(user) => (&user.sender_id, user.assignment_id.as_ref()),
+            Block::Steer(steer) => (&steer.sender_id, steer.assignment_id.as_ref()),
             Block::AgentMessage(agent) => match agent.message.event {
-                crate::AgentMessageEvent::Message {} => Some(agent.message.sender_id.as_deref()),
+                crate::AgentMessageEvent::Message {} => (&agent.message.sender_id, agent.message.assignment_id.as_ref()),
                 crate::AgentMessageEvent::Completion { .. } if agent.opens_turn => {
-                    Some(agent.message.sender_id.as_deref())
+                    (&agent.message.sender_id, agent.message.assignment_id.as_ref())
                 }
-                _ => None,
+                _ => return None,
             },
-            Block::Wakeup(wakeup) => match wakeup.placement {
-                WakeupPlacement::NewTurn => Some(wakeup.reports.first().and_then(|report| report.sender_id.as_deref())),
-                WakeupPlacement::Steer => None,
+            Block::Wakeup(wakeup) => match (wakeup.placement, wakeup.reports.first()) {
+                (WakeupPlacement::NewTurn, Some(report)) => (&report.sender_id, report.assignment_id.as_ref()),
+                (WakeupPlacement::NewTurn, None) => return Some((None, None)),
+                (WakeupPlacement::Steer, _) => return None,
             },
-            _ => None,
-        }
+            _ => return None,
+        };
+        Some((sender_id.as_deref(), assignment_id))
     }
 
     /// When the block was written.
@@ -460,6 +477,20 @@ pub struct UserBlock {
     #[schemars(with = "String")]
     #[garde(length(chars, min = 1, max = SENDER_ID_LIMIT))]
     pub sender_id: Option<String>,
+    /// The assignment the message is part of, by the id of the message that
+    /// opened it: its own for one the program, the user or a schedule sent,
+    /// the turn's that made it for a run of a schedule an agent made, and its
+    /// parent's for a subagent's. Absent when it names none, as the work it
+    /// continues named none, and in a block written before assignments were
+    /// kept.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "unwrap_or_skip"
+    )]
+    #[schemars(with = "TurnId")]
+    #[garde(skip)]
+    pub assignment_id: Option<TurnId>,
     /// The entries of the vendor's own record of the session that belong to
     /// this block, as its provider gave them
     /// (`crates/provider-claude-code/src/session.rs`); omitted when there are
@@ -749,6 +780,16 @@ pub struct CommandReport {
     #[schemars(with = "String")]
     #[garde(length(chars, min = 1, max = SENDER_ID_LIMIT))]
     pub sender_id: Option<String>,
+    /// The assignment of the call that started it, which its record keeps; absent
+    /// when that call's turn named none.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "unwrap_or_skip"
+    )]
+    #[schemars(with = "TurnId")]
+    #[garde(skip)]
+    pub assignment_id: Option<TurnId>,
 }
 
 /// What a report tells of its command.
@@ -885,6 +926,16 @@ pub struct SteerBlock {
     #[schemars(with = "String")]
     #[garde(length(chars, min = 1, max = SENDER_ID_LIMIT))]
     pub sender_id: Option<String>,
+    /// The assignment of the turn that read it, which it joins; absent when that
+    /// turn named none.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "unwrap_or_skip"
+    )]
+    #[schemars(with = "TurnId")]
+    #[garde(skip)]
+    pub assignment_id: Option<TurnId>,
     /// The entries of the vendor's own record of the session that belong to
     /// this block, as its provider gave them
     /// (`crates/provider-claude-code/src/session.rs`); omitted when there are

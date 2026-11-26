@@ -633,6 +633,8 @@ impl<H: DeviceResolver> Connection<H> {
                     comments,
                     schedule: None,
                     sender_id,
+                    // A message opens an assignment of its own id.
+                    assignment_id: Some(message_id.clone()),
                 };
                 if let Err(error) = session.send_message(message) {
                     self.reject(kind, error.refusal());

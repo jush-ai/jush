@@ -33,7 +33,7 @@ use jush_agent_session::{AgentSession, EndedTurn, TurnOutcome};
 use jush_core_store::wakes::PendingWake;
 use jush_core_device_access::root_of;
 use jush_shared_types::{
-    AgentMessage, AgentMessageEvent, BlockId, CompletionOutcome, NodeId, Sender, SenderConversation, Timestamp,
+    AgentMessage, AgentMessageEvent, Attribution, BlockId, CompletionOutcome, NodeId, Sender, SenderConversation, Timestamp,
     done_id,
 };
 use jush_web_api_protocol::ids::ConversationId;
@@ -287,26 +287,38 @@ fn notice(wake: &PendingWake, title: Option<&str>, round: u64, told: &Told, now:
         // The notice opens the conversation, at its end.
         origin: None,
         sender_id: wake.message_sender_id.clone(),
+        assignment_id: wake.message_assignment_id.clone(),
     }
 }
 
-/// Whom each notice is for, by its id. Several messages of one agent the
-/// same turn took wake it with one notice of that turn's end, which the
-/// agent takes once (`done_id`): each such notice names the first's
-/// sender, so the agent finds them the same message.
-struct Named(HashMap<BlockId, Option<String>>);
+/// Whom and which assignment each notice is for, by its id. Several
+/// messages of one agent the same turn took wake it with one notice of that
+/// turn's end, which the agent takes once (`done_id`): each such notice
+/// names the first's, so the agent finds them the same message.
+struct Named(HashMap<BlockId, Attribution>);
 
 impl Named {
-    /// Whom the notices `wakes` keep already are for.
+    /// Whom and which assignment the notices `wakes` keep already are for.
     fn of(wakes: &[PendingWake]) -> Self {
         let kept = wakes.iter().filter_map(|wake| wake.notice.as_ref());
-        Self(kept.map(|notice| (notice.id.clone(), notice.sender_id.clone())).collect())
+        Self(kept.map(|notice| (notice.id.clone(), attribution(notice))).collect())
     }
 
-    /// `notice`, naming whom the first notice of its id was for.
+    /// `notice`, naming whom and which assignment the first notice of its
+    /// id was for.
     fn name(&mut self, mut notice: AgentMessage) -> AgentMessage {
-        notice.sender_id = self.0.entry(notice.id.clone()).or_insert(notice.sender_id).clone();
+        let first = self.0.entry(notice.id.clone()).or_insert_with(|| attribution(&notice)).clone();
+        notice.sender_id = first.sender_id;
+        notice.assignment_id = first.assignment_id;
         notice
+    }
+}
+
+/// Whom and which assignment `notice` names.
+fn attribution(notice: &AgentMessage) -> Attribution {
+    Attribution {
+        sender_id: notice.sender_id.clone(),
+        assignment_id: notice.assignment_id.clone(),
     }
 }
 

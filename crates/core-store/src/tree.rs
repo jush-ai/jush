@@ -691,6 +691,7 @@ impl AgentTreeStore for SqliteTreeStore {
                     tool_use_id: row.tool_use_id,
                     turn: row.turn,
                     sender_id: row.sender_id,
+                    assignment_id: row.assignment_id,
                     title: row.title,
                     script: row.script,
                     service: row.service,
@@ -775,6 +776,7 @@ pub async fn stored_command(
             return Ok(Some(StoredCommand {
                 title: row.title,
                 sender_id: row.sender_id,
+                assignment_id: row.assignment_id,
                 end: row.end,
                 output: StoredOutput::NotStored(reason),
                 media: row.media,
@@ -791,6 +793,7 @@ pub async fn stored_command(
     Ok(Some(StoredCommand {
         title: row.title,
         sender_id: row.sender_id,
+        assignment_id: row.assignment_id,
         end: row.end,
         output: StoredOutput::Stored { output },
         media: row.media,

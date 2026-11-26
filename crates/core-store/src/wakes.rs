@@ -8,7 +8,7 @@
 //! the next try sends the same message, which the sender's agent takes once.
 //! Either conversation's deletion drops it.
 
-use jush_shared_types::{AgentMessage, BlockId, NodeId};
+use jush_shared_types::{AgentMessage, BlockId, NodeId, TurnId};
 use jush_web_api_protocol::ids::ConversationId;
 use rusqlite::{Row, params};
 
@@ -18,7 +18,7 @@ use super::store::CoreStore;
 
 const TABLE: &str = "pending_wakes";
 
-const COLUMNS: &str = "recipient_id, message_id, sender_id, sender_node, notice, message_sender_id";
+const COLUMNS: &str = "recipient_id, message_id, sender_id, sender_node, notice, message_sender_id, message_assignment_id";
 
 /// A wake a message asked for, until its sender is woken.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -34,6 +34,9 @@ pub struct PendingWake {
     /// Whom the message's work is for, by the id its program gave its
     /// sender, whom the notice's turn is then counted for.
     pub message_sender_id: Option<String>,
+    /// The assignment the message's work is part of, which the notice's
+    /// turn then continues.
+    pub message_assignment_id: Option<TurnId>,
 }
 
 impl CoreStore {
@@ -41,8 +44,7 @@ impl CoreStore {
     pub async fn keep_wake(&self, wake: PendingWake) -> Result<(), StorageError> {
         self.call(move |connection, _| {
             connection.execute(
-                "INSERT OR IGNORE INTO pending_wakes (recipient_id, message_id, sender_id, sender_node, notice, message_sender_id)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                &format!("INSERT OR IGNORE INTO pending_wakes ({COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)"),
                 params![
                     wake.recipient.as_str(),
                     wake.message.as_str(),
@@ -50,6 +52,7 @@ impl CoreStore {
                     wake.sender_node.as_str(),
                     wake.notice.as_ref().map(to_json),
                     wake.message_sender_id,
+                    wake.message_assignment_id.as_ref().map(TurnId::as_str),
                 ],
             )?;
             Ok(())
@@ -132,5 +135,9 @@ fn wake(row: &Row<'_>) -> Result<PendingWake, StorageError> {
             .map(|text| json(TABLE, "notice", &text))
             .transpose()?,
         message_sender_id: row.get("message_sender_id")?,
+        message_assignment_id: row
+            .get::<_, Option<String>>("message_assignment_id")?
+            .map(|assignment| decode(TABLE, "message_assignment_id", TurnId::try_from(assignment)))
+            .transpose()?,
     })
 }

@@ -922,7 +922,8 @@ async fn ask_copy(
     }];
     let turn =
         TurnId::try_from(s.ids.next_id()).expect("an id source never gives an empty identity");
-    // The summary is work for whom the session works, as its turns are.
+    // The summary request is counted as the session's turns are: for their
+    // sender, in their assignment.
     let handle = copy
         .send_message(QueuedMessage {
             id: turn,
@@ -930,6 +931,7 @@ async fn ask_copy(
             comments: Vec::new(),
             schedule: None,
             sender_id: s.read(SessionCore::sender_id),
+            assignment_id: s.read(SessionCore::assignment_id),
         })
         .expect("a new session copy admits its one message");
     let answered = cancel.guard(handle).await;

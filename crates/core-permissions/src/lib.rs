@@ -904,6 +904,7 @@ pub async fn deliver(core: Rc<dyn PermissionCore>, request: StoredRequest) {
         StoredAsk::Credential { .. } => return,
     };
     let message = |recipient: &NodeId| AgentMessage {
+        assignment_id: None,
         id: BlockId::try_from(format!("permission:{}", request.id))
             .expect("a permission message's id is not empty"),
         sender: None,

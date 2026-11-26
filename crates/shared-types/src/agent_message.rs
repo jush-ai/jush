@@ -31,7 +31,7 @@ use std::{fmt, str::FromStr};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::{BlockId, MAX_SAFE_INTEGER, NodeId, Timestamp, is_blank};
+use crate::{BlockId, MAX_SAFE_INTEGER, NodeId, Timestamp, TurnId, is_blank};
 
 /// A message between agents. The supervisor supplies the sender from the
 /// invoking node, so a model cannot impersonate another sender.
@@ -82,6 +82,12 @@ pub struct AgentMessage {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[garde(length(chars, min = 1, max = crate::SENDER_ID_LIMIT))]
     pub sender_id: Option<String>,
+    /// The assignment the work the message hands or tells of is part of, by
+    /// the id of the message that opened it, as `sender_id` names whom it is
+    /// for; absent when it names none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[garde(skip)]
+    pub assignment_id: Option<TurnId>,
 }
 
 /// Who sent an agent message.

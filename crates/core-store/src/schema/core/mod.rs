@@ -14,6 +14,7 @@ type Migration = super::Migration<()>;
 mod from_0_2_6247;
 mod from_0_2_6254;
 mod from_0_2_6320;
+mod from_0_2_6342;
 
 pub(super) const HISTORY: &[Shipped] = &[
     Shipped {
@@ -27,5 +28,9 @@ pub(super) const HISTORY: &[Shipped] = &[
     Shipped {
         sql: include_str!("from_0_2_6320.sql"),
         migration: from_0_2_6320::MIGRATION,
+    },
+    Shipped {
+        sql: include_str!("from_0_2_6342.sql"),
+        migration: from_0_2_6342::MIGRATION,
     },
 ];

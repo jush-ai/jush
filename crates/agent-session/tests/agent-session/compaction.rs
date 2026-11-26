@@ -2277,6 +2277,7 @@ async fn input_that_arrives_during_a_pass_waits_outside_the_summary_for_the_firs
             content: text(&fourth),
             schedule: None,
             sender_id: None,
+            assignment_id: Some(turn("t4")),
         }]
     );
     let steers = session.pending_steers();

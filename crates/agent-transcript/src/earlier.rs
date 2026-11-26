@@ -29,6 +29,8 @@ pub struct Earlier {
     user_input: Option<UserInput>,
     /// Whom the agent worked for there, as [`Block::sender_id`] tells it.
     sender_id: Option<String>,
+    /// The assignment it worked in there, as [`Block::assignment_id`] tells it.
+    assignment_id: Option<TurnId>,
 }
 
 impl Earlier {
@@ -57,8 +59,9 @@ impl Earlier {
         if let Some(input) = blocks.iter().rev().find_map(user_input) {
             self.user_input = Some(input);
         }
-        if let Some(sender) = blocks.iter().rev().find_map(Block::sender_id) {
-            self.sender_id = sender.map(str::to_owned);
+        if let Some(sent) = blocks.iter().rev().find(|block| block.sender_id().is_some()) {
+            self.sender_id = sent.sender_id().flatten().map(str::to_owned);
+            self.assignment_id = sent.assignment_id().flatten().cloned();
         }
     }
 
@@ -79,6 +82,7 @@ impl Earlier {
             record: rows.last_record.as_ref().map(failure),
             user_input: rows.last_user_input.as_ref().and_then(user_input),
             sender_id: rows.last_sent.as_ref().and_then(Block::sender_id).flatten().map(str::to_owned),
+            assignment_id: rows.last_sent.as_ref().and_then(Block::assignment_id).flatten().cloned(),
         }
     }
 
@@ -120,6 +124,10 @@ impl Earlier {
 
     pub fn sender_id(&self) -> Option<&str> {
         self.sender_id.as_deref()
+    }
+
+    pub fn assignment_id(&self) -> Option<&TurnId> {
+        self.assignment_id.as_ref()
     }
 }
 
