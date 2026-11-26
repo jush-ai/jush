@@ -401,9 +401,12 @@ export function useGalleryWork(
     await nextTick()
     await plugin.settled()
   }
-  /** The agent opens a page, shown with `--show` or not: the browser tells the plugin, which adds the tab. */
-  async function agentOpens(url: string, show: boolean) {
-    browser.agentOpens(url, { show })
+  /**
+   * The agent opens a page, shown with `--show` or not, whose title is `title` or its host: the browser tells the
+   * plugin, which adds the tab.
+   */
+  async function agentOpens(url: string, show: boolean, title?: string) {
+    browser.agentOpens(url, { show, title })
     await nextTick()
     await plugin.settled()
   }

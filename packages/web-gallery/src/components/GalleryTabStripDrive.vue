@@ -2,7 +2,6 @@
 import { computed, onBeforeUnmount, ref } from 'vue'
 import Button from '@jush-ai/web-ui/ui/Button.vue'
 import { browserPage } from '@jush-ai/plugin-browser'
-import { BROWSER_TAB_KIND } from '@jush-ai/plugin-browser/live/store'
 import { changesPage } from '@jush-ai/plugin-changes'
 import { fileBrowserPage } from '@jush-ai/plugin-file-browser'
 import { galleryBrowser } from '../fixtures/live-browser'
@@ -38,45 +37,60 @@ const TITLES = [
 
 const project = createGalleryProject()
 // Changes and Files have windows of their own, as the product's do; the pages are
-// the conversation browser's, which has none open before Reset opens them.
+// the conversation browser's, which has none open before Reset opens them. It answers at once, so each motion of
+// the strip is the button's own.
+const browser = galleryBrowser([], { delay: 0 })
 const work = useGalleryWork(null, {
   files: galleryFiles(project),
-  browser: galleryBrowser([]),
+  browser,
   pages: [changesPage, fileBrowserPage, browserPage()],
 })
 const { tabsState } = work
 let opened = 0
 
-function openPage(): void {
+/**
+ * Opens a page in a new tab, which `show` selects, as the agent's `--show` does; resolves once the strip has it.
+ * A page's tab stands in the strip while the device's browser has it, so the browser opens it, as the agent would.
+ */
+function openPage(show: boolean): Promise<void> {
   // Past the last title, each comes again numbered, so every tab of a crowded strip has a name of its own.
   const round = Math.floor(opened / TITLES.length)
   const title = `${TITLES[opened % TITLES.length]!}${round > 0 ? ` ${round + 1}` : ''}`
   opened += 1
-  // The body never shows here, so no browser has the tab and no picture is shown; the title names the tab,
-  // as the plugin writes it, at once, so each motion of the strip is the button's own.
-  work.add(BROWSER_TAB_KIND, { tab: `t${opened}`, url: 'https://example.test/', title })
+  return work.agentOpens('https://example.test/', show, title)
 }
 
 function closeTabs(ids: string[]): void {
   work.closeTabs(ids)
 }
 
-/** The pages beside Changes and Files, the first or the last selected. */
-function reset(): void {
-  work.reset()
-  opened = 0
-  for (let i = 0; i < props.pages; i++)
-    openPage()
-  selectAt(props.select === 'first' ? 0 : -1)
-  if (props.file) {
-    work.updatePinned('file', { path: props.file })
-    work.select('file')
+const playing = ref(false)
+const resetting = ref(false)
+/** Whether the buttons wait: a run plays, or Reset waits for the strip to hold the pages it opened. */
+const busy = computed(() => playing.value || resetting.value)
+
+/**
+ * The pages beside Changes and Files, the first or the last selected. The browser ends with its tabs and opens
+ * the pages in the same moment, so the plugin trades the strip's tabs for them at once and the window stays.
+ */
+async function reset(): Promise<void> {
+  resetting.value = true
+  try {
+    browser.end()
+    opened = 0
+    await Promise.all(Array.from({ length: props.pages }, () => openPage(false)))
+    selectAt(props.select === 'first' ? 0 : -1)
+    if (props.file) {
+      work.updatePinned('file', { path: props.file })
+      work.select('file')
+    }
+  } finally {
+    resetting.value = false
   }
 }
-reset()
+void reset()
 
 const frame = ref<HTMLElement | null>(null)
-const playing = ref(false)
 const step = ref('')
 let stopped = false
 
@@ -112,7 +126,7 @@ function selectCutOff(): void {
 
 function open(count: number): void {
   for (let i = 0; i < count; i++)
-    openPage()
+    openPage(true)
 }
 
 function closeAt(index: number): void {
@@ -132,7 +146,7 @@ function closeOthers(): void {
   closeTabs(ids().filter((id) => id !== work.front.value))
 }
 
-const STEPS: [string, () => void][] = [
+const STEPS: [string, () => void | Promise<void>][] = [
   ['open one', () => open(1)],
   ['select first', () => selectAt(0)],
   ['select cut-off', selectCutOff],
@@ -159,7 +173,7 @@ async function play(): Promise<void> {
     if (stopped)
       break
     step.value = name
-    run()
+    await run()
     await wait(900)
   }
   step.value = ''
@@ -185,27 +199,27 @@ const count = computed(() => ids().length)
     <div class="flex flex-wrap items-center gap-x-4 gap-y-2 text-[12px] text-fg-muted">
       <span class="flex flex-wrap items-center gap-1">
         <span class="mr-1 select-none">Select</span>
-        <Button size="sm" :disabled="playing" @click="selectAt(0)">First</Button>
-        <Button size="sm" :disabled="playing" @click="selectMiddle">Middle</Button>
-        <Button size="sm" :disabled="playing" @click="selectAt(-1)">Last</Button>
-        <Button size="sm" :disabled="playing" @click="selectCutOff">Cut-off</Button>
+        <Button size="sm" :disabled="busy" @click="selectAt(0)">First</Button>
+        <Button size="sm" :disabled="busy" @click="selectMiddle">Middle</Button>
+        <Button size="sm" :disabled="busy" @click="selectAt(-1)">Last</Button>
+        <Button size="sm" :disabled="busy" @click="selectCutOff">Cut-off</Button>
       </span>
       <span class="flex flex-wrap items-center gap-1">
         <span class="mr-1 select-none">Open</span>
-        <Button size="sm" :disabled="playing" @click="open(1)">One</Button>
-        <Button size="sm" :disabled="playing" @click="open(5)">Five</Button>
+        <Button size="sm" :disabled="busy" @click="open(1)">One</Button>
+        <Button size="sm" :disabled="busy" @click="open(5)">Five</Button>
       </span>
       <span class="flex flex-wrap items-center gap-1">
         <span class="mr-1 select-none">Close</span>
-        <Button size="sm" :disabled="playing" @click="closeAt(0)">First</Button>
-        <Button size="sm" :disabled="playing" @click="closeActive">Active</Button>
-        <Button size="sm" :disabled="playing" @click="closeAt(Math.floor(count / 2))">Middle</Button>
-        <Button size="sm" :disabled="playing" @click="closeAt(-1)">Last</Button>
-        <Button size="sm" :disabled="playing" @click="closeOthers">Others</Button>
+        <Button size="sm" :disabled="busy" @click="closeAt(0)">First</Button>
+        <Button size="sm" :disabled="busy" @click="closeActive">Active</Button>
+        <Button size="sm" :disabled="busy" @click="closeAt(Math.floor(count / 2))">Middle</Button>
+        <Button size="sm" :disabled="busy" @click="closeAt(-1)">Last</Button>
+        <Button size="sm" :disabled="busy" @click="closeOthers">Others</Button>
       </span>
       <span class="flex flex-wrap items-center gap-1">
-        <Button size="sm" :disabled="playing" @click="play">Play All</Button>
-        <Button size="sm" :disabled="playing" @click="reset">Reset</Button>
+        <Button size="sm" :disabled="busy" @click="play">Play All</Button>
+        <Button size="sm" :disabled="busy" @click="reset">Reset</Button>
         <span v-if="step" class="ml-1 font-mono text-[11px] text-fg-faint">{{ step }}</span>
       </span>
     </div>

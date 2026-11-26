@@ -687,8 +687,11 @@ export interface GalleryBrowser {
   failNextOpen(failure: BrowserTabsError): void
   /** The agent shows the tab to the user, as `jush browser show` does: its count of showings rises. */
   show(tab: string): void
-  /** The agent makes a tab and opens `url` in it, as `jush browser tab new` and `open` do, and shows it with `show`, as `--show` does. */
-  agentOpens(url: string, options: { show: boolean }): void
+  /**
+   * The agent makes a tab and opens `url` in it, as `jush browser tab new` and `open` do, and shows it with `show`, as
+   * `--show` does; the page's title is `title`, or its host.
+   */
+  agentOpens(url: string, options: { show: boolean; title?: string }): void
   /** The device fails what a viewer asked, such as its input, and tells every view, as the module's notice does. */
   fail(reason: ControlReason, message: string): void
   /** Even recreating the capture extension fails on the device: every view loses its pictures and says so, until Retry. */
@@ -728,12 +731,14 @@ export interface GalleryBrowser {
  */
 export function galleryBrowser(
   tabs: LiveTab[] = galleryTabs(),
-  { capture = true, held: holding = null, page = null, device = GALLERY_DEVICE }: {
+  { capture = true, held: holding = null, page = null, device = GALLERY_DEVICE, delay = REQUEST_DELAY_MS }: {
     capture?: boolean
     held?: StartingPhase | null
     page?: GalleryPage | null
     /** The conversation's device it runs on; the gallery's own by default. */
     device?: string
+    /** How long it takes over a request, in ms: a device's moment by default, none for a specimen of the strip alone. */
+    delay?: number
   } = {},
 ): GalleryBrowser {
   const views = new Set<GalleryBrowserView>()
@@ -742,7 +747,7 @@ export function galleryBrowser(
   // The next tab's number, as the conversation gives them: never one given before.
   let next = Math.max(0, ...tabs.map((tab) => Number(tab.id.slice(1)))) + 1
 
-  /** Answers after a device's moment; the timer ends by itself within 900 ms. */
+  /** Answers after `delay`; the timer ends by itself. */
   function later<T>(answer: () => T): Promise<T> {
     return new Promise((resolve, reject) => {
       setTimeout(() => {
@@ -751,7 +756,7 @@ export function galleryBrowser(
         } catch (error) {
           reject(error)
         }
-      }, REQUEST_DELAY_MS)
+      }, delay)
     })
   }
 
@@ -1121,7 +1126,7 @@ export function galleryBrowser(
     agentOpens: (url, options) => {
       const tab: LiveTab = {
         id: `t${next++}`,
-        title: URL.parse(url)?.host ?? url,
+        title: options.title ?? URL.parse(url)?.host ?? url,
         url,
         createdBy: { kind: 'agent', number: 0 },
         viewport: viewport(),
