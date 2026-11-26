@@ -79,6 +79,16 @@ const commandText = ref<InstanceType<typeof CodeText>>()
 // toggle.
 const commandOverflows = ref(false)
 const commandWhole = ref(false)
+/** Whether the command shows whole, a click having opened it. */
+const commandOpen = computed(() => commandOverflows.value && commandWhole.value)
+
+/**
+ * How many characters of a clamped command are laid out word by word: more
+ * than its two lines hold at the transcript's widths. The rest follows as one
+ * plain run (`CodeText`'s `plainFrom`), so a command of thousands of words is
+ * not laid out word by word behind the ellipsis, and still copies whole.
+ */
+const CLAMPED_WORDS_CHARS = 1000
 
 // Measured each time the command is laid out anew, as its text streams in or
 // the width changes. The element's scroll height is the command's full
@@ -137,11 +147,12 @@ function toggleCommand(): void {
           ref="commandText"
           :text="command"
           :runs="commandColors.runs"
+          :plain-from="commandOpen ? undefined : CLAMPED_WORDS_CHARS"
           class="min-w-0"
           :style="{ color: commandColors.text }"
           :class="[
             commandOverflows ? 'select-text' : 'select-all',
-            commandOverflows && commandWhole ? '' : 'line-clamp-2',
+            commandOpen ? '' : 'line-clamp-2',
           ]"
           :role="commandOverflows ? 'button' : undefined"
           :tabindex="commandOverflows ? 0 : undefined"

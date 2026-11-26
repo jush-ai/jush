@@ -17,11 +17,18 @@ import { textWidth } from './text-width'
  * The caller lays the element out as a block, such as a flex item: the line's
  * width decides which words are longer than a line. `runs` colors runs of the
  * text, as a highlighter gives them, without changing where it wraps.
+ *
+ * Under a caller's clamp, `plainFrom` leaves the text past it as one plain run
+ * in no color, which breaks anywhere: a text of thousands of words is not laid
+ * out word by word behind the clamp, and still copies, finds and measures
+ * whole.
  */
 const props = defineProps<{
   text: string
   /** CSS classes for runs of the text, by where each starts and ends in it; the rest keeps the element's color. */
   runs?: readonly { from: number; to: number; classes: string }[]
+  /** Where the plain run starts, past what the caller's clamp shows; none for the whole text in words. */
+  plainFrom?: number
 }>()
 
 const emit = defineEmits<{
@@ -77,9 +84,21 @@ function segmentsOf(from: number, to: number): Segment[] {
   return segments
 }
 
+/** Where the words end and the plain run starts: never inside a surrogate pair. */
+const wordsEnd = computed(() => {
+  const at = props.plainFrom
+  if (at === undefined || at >= props.text.length) {
+    return props.text.length
+  }
+  return /[\uD800-\uDBFF]/.test(props.text[at - 1] ?? '') ? at - 1 : at
+})
+
+const plain = computed(() => props.text.slice(wordsEnd.value))
+
 const pieces = computed<Piece[]>(() => {
   let offset = 0
   return props.text
+    .slice(0, wordsEnd.value)
     .split(/(\s+)/)
     .filter((text) => text !== '')
     .map((text) => {
@@ -103,5 +122,5 @@ defineExpose({ element })
 </script>
 
 <template>
-  <code ref="element" class="whitespace-pre-wrap"><template v-for="(piece, index) in pieces" :key="index"><span v-if="piece.word" :class="piece.long ? 'long-word-wrap' : 'whitespace-nowrap'"><template v-for="(segment, part) in piece.segments" :key="part"><span v-if="segment.classes" :class="segment.classes">{{ segment.text }}</span><template v-else>{{ segment.text }}</template></template></span><template v-else>{{ piece.text }}</template></template></code>
+  <code ref="element" class="whitespace-pre-wrap"><template v-for="(piece, index) in pieces" :key="index"><span v-if="piece.word" :class="piece.long ? 'long-word-wrap' : 'whitespace-nowrap'"><template v-for="(segment, part) in piece.segments" :key="part"><span v-if="segment.classes" :class="segment.classes">{{ segment.text }}</span><template v-else>{{ segment.text }}</template></template></span><template v-else>{{ piece.text }}</template></template><span v-if="plain" class="long-word-wrap">{{ plain }}</span></code>
 </template>
