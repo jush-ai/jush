@@ -256,10 +256,11 @@ CREATE TABLE schedules (
   created_turn     TEXT,
   edited_node      TEXT,
   edited_turn      TEXT,
-  -- Whom and which assignment the agent's turn that made it worked for,
-  -- which its runs' messages continue; null for a program's, and for one
+  -- The labels, a JSON object of the program's keys and values, and the
+  -- assignment of the work of the agent's turn that made it, which its
+  -- runs' messages continue; null for a program's, for none, and for one
   -- made before schedules kept them.
-  created_sender_id     TEXT,
+  created_labels        TEXT,
   created_assignment_id TEXT
 ) STRICT;
 
@@ -282,19 +283,19 @@ CREATE INDEX schedule_runs_by_schedule ON schedule_runs (schedule_id, at);
 -- The wakes a message to another conversation asked for (`jush conversation
 -- send --wake-when-done`), each kept until its sender is woken: the
 -- recipient and the message's block there, the sending conversation and
--- agent, which the end of the work the message started wakes, whom and
--- which assignment the message's work is for, by the ids its program gave,
--- null when it named none or the wake was kept before wakes kept them, and
--- once that work ended, the notice to deliver, as JSON, an agent message of
--- the shared types, which a failed delivery keeps for the next try. Either
--- conversation's deletion drops it.
+-- agent, which the end of the work the message started wakes, the labels,
+-- a JSON object of its program's keys and values, and the assignment of the
+-- message's work, null when it named none or the wake was kept before wakes
+-- kept them, and once that work ended, the notice to deliver, as JSON, an
+-- agent message of the shared types, which a failed delivery keeps for the
+-- next try. Either conversation's deletion drops it.
 CREATE TABLE pending_wakes (
   recipient_id TEXT NOT NULL COLLATE NOCASE REFERENCES conversations (id) ON DELETE CASCADE,
   message_id   TEXT NOT NULL,
   sender_id    TEXT NOT NULL COLLATE NOCASE REFERENCES conversations (id) ON DELETE CASCADE,
   sender_node  TEXT NOT NULL,
   notice       TEXT,
-  message_sender_id TEXT,
+  message_labels TEXT,
   message_assignment_id TEXT,
   PRIMARY KEY (recipient_id, message_id)
 ) STRICT;
@@ -740,13 +741,13 @@ CREATE TABLE usage_ledger (
   -- The SHA-256 of the video a video call made, in hex; null for any other
   -- call, and for a video call written before the ledger kept it.
   media_digest          TEXT,
-  -- Whom the call's agent worked for, by the id the program gave its
-  -- sender; null when no one was named, for a call outside a session, and
-  -- for a row written before the ledger kept it.
-  sender_id             TEXT,
+  -- The labels of the call's agent's work, a JSON object of the program's
+  -- keys and values; null when none were given, for a call outside a
+  -- session, and for a row written before the ledger kept them.
+  labels                TEXT,
   -- The assignment the call's agent worked in, by the id of the message
-  -- that opened it; null as its sender is, and for a row written before the
-  -- ledger kept it.
+  -- that opened it; null for a call outside a session, and for a row
+  -- written before the ledger kept it.
   assignment_id         TEXT,
   CHECK ((cost IS NULL) = (cost_currency IS NULL))
 ) STRICT;
@@ -770,13 +771,13 @@ CREATE INDEX usage_ledger_turn ON usage_ledger (conversation_id, turn_id)
 -- (crates/core-store/src/command_history.rs): the call's conversation; its
 -- agent's number, 0 for the main agent and null for a side question's; the
 -- command's id and device, null for a call that started none; the call's
--- turn, and whom and which assignment its work was for; its title and
--- script; when the command started, null for a call that started none and
--- a command whose start was no longer recorded, and when it ended; and how:
--- its exit code, stopped, lost or not started, with the reason a loss or
--- the call's error gave. The ids never repeat, even after a conversation's
--- deletion removed its rows and with them the newest, since a reader's
--- cursor is one.
+-- turn, and the labels, a JSON object of the program's keys and values, and
+-- the assignment of its work; its title and script; when the command
+-- started, null for a call that started none and a command whose start was
+-- no longer recorded, and when it ended; and how: its exit code, stopped,
+-- lost or not started, with the reason a loss or the call's error gave. The
+-- ids never repeat, even after a conversation's deletion removed its rows
+-- and with them the newest, since a reader's cursor is one.
 CREATE TABLE command_history (
   id              INTEGER PRIMARY KEY AUTOINCREMENT,
   conversation_id TEXT NOT NULL,
@@ -784,7 +785,7 @@ CREATE TABLE command_history (
   command_id      TEXT,
   device_id       TEXT,
   turn_id         TEXT,
-  sender_id       TEXT,
+  labels          TEXT,
   assignment_id   TEXT,
   title           TEXT NOT NULL,
   script          TEXT NOT NULL,

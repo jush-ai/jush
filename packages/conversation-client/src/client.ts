@@ -171,19 +171,22 @@ interface Subscription {
 }
 
 /**
- * Who sent a message or a steer, and the work it continues, as a program
- * names them; both absent for the app's own.
+ * A program's labels of a message or a steer, and the work it continues;
+ * both absent for the app's own.
  */
 export interface MessageOptions {
   /**
-   * Your own id of whoever sent it, such as a person of a team's chat, 1 to
-   * 255 characters, which the message keeps: every call its agent makes
-   * after reading it, until the next message or the next turn the end of
-   * other work opens, is that sender's in `core.usage.report`, and so are
-   * the calls of the subagents it starts meanwhile, and of the turn the end
-   * of its work opens. The model does not read it.
+   * Your own key-value pairs, such as `{ sender: 'alex', scene: 'review' }`,
+   * which the message keeps: every call its agent makes after reading it,
+   * until the next message or the next turn the end of other work opens,
+   * carries them, as do the calls of the subagents it starts meanwhile, of
+   * the turn the end of its work opens, and the commands they run.
+   * `core.usage.report` groups by each as `label:<key>`. At most 16; a key
+   * is 1 to 64 letters, digits, `.`, `_` and `-`, the first a letter or a
+   * digit, and a value 1 to 512 characters. A steer's replace the running
+   * turn's. Jush gives them no meaning, and the model does not read them.
    */
-  senderId?: string | null
+  labels?: Readonly<Record<string, string>>
   /**
    * The assignment the message continues, by the id of the message that
    * opened it, such as one a plugin's call named

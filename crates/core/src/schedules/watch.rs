@@ -20,7 +20,7 @@ use jush_core_store::schedules::{StoredSchedule, WatchOutput};
 use jush_core_sync::Part;
 use jush_command_protocol::CommandCaller;
 use jush_device_interface::{DeviceError, JobCaller, OutputRecord};
-use jush_shared_types::{NodeId, StreamKind, Timestamp};
+use jush_shared_types::{Labels, NodeId, StreamKind, Timestamp};
 use jush_web_api_protocol::schedules::{RunCause, RunNote, RunState, Trigger};
 use sha2::{Digest, Sha256};
 use tokio_util::sync::CancellationToken;
@@ -240,7 +240,7 @@ impl Core {
                 node: NodeId::try_from("schedule").expect("a name is not empty"),
                 tool_use_id: "watch".into(),
                 turn: None,
-                sender_id: None,
+                labels: Labels::new(),
                 assignment_id: None,
             },
         };

@@ -1,6 +1,6 @@
 //! What the web app sends.
 
-use jush_shared_types::{BlobRef, BlockId, CommandId, Comment, CommentPart, CommentStage, MAX_SAFE_INTEGER, NodeId, OperationId, TurnId, is_blank};
+use jush_shared_types::{BlobRef, BlockId, Labels, CommandId, Comment, CommentPart, CommentStage, MAX_SAFE_INTEGER, NodeId, OperationId, TurnId, is_blank};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -94,10 +94,10 @@ pub enum ClientFrame {
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         #[garde(dive)]
         comments: Vec<ClientComment>,
-        /// Who sent it, as a message's sender.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        #[garde(length(chars, min = 1, max = jush_shared_types::SENDER_ID_LIMIT))]
-        sender_id: Option<String>,
+        /// The labels its program gave it, as a message's.
+        #[serde(default, skip_serializing_if = "Labels::is_empty")]
+        #[garde(custom(jush_shared_types::check_labels))]
+        labels: Labels,
         /// The assignment it continues when it opens a turn of its own, as a
         /// message's; one the running turn reads joins that turn's.
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -335,13 +335,13 @@ pub struct SendMessage {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[garde(dive)]
     pub comments: Vec<ClientComment>,
-    /// Who sent it, by a program's own id, such as a person of a team's
-    /// chat, which its `user` block keeps: the calls its agent makes after
-    /// reading it are that sender's in the usage ledger. Absent for the
-    /// core's own user, as the web app sends.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[garde(length(chars, min = 1, max = jush_shared_types::SENDER_ID_LIMIT))]
-    pub sender_id: Option<String>,
+    /// The program's own labels, such as who asked or what kind of work it
+    /// is, which its `user` block keeps: the calls its agent makes after
+    /// reading it carry them in the usage ledger. Absent for the core's own
+    /// user, as the web app sends.
+    #[serde(default, skip_serializing_if = "Labels::is_empty")]
+    #[garde(custom(jush_shared_types::check_labels))]
+    pub labels: Labels,
     /// The assignment it continues, by the id of the message that opened
     /// it, as its program names it: the calls of the turn it opens are
     /// counted in it. Absent for one that opens the assignment of its own

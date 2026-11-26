@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use serde_with::rust::unwrap_or_skip;
 
 use crate::{
-    AgentMessage, ScheduleId, ScheduleRunId, BlockId, CommandId, MAX_SAFE_INTEGER, MessageComment, ModelSelection, comments_content, Nullable, ProviderErrorDiagnostics,
+    AgentMessage, Labels, NO_LABELS, ScheduleId, ScheduleRunId, BlockId, CommandId, MAX_SAFE_INTEGER, MessageComment, ModelSelection, comments_content, Nullable, ProviderErrorDiagnostics,
     QuotaWindowName, Timestamp, TokenUsage, ToolResultContentBlock, ToolView, TurnId, UserContentBlock,
 };
 
@@ -82,49 +82,47 @@ impl Block {
         on_block!(self, block => &block.id)
     }
 
-    /// Whom the work the block hands its agent is for, by the id the
-    /// program gave its sender: a message, a steer, or another agent's
-    /// explicit message, by who sent it; and what opens a turn of its own
-    /// as work ends, by whom that work was for: command reports, by their
-    /// first command's, and the notice of a child's end or of another
-    /// conversation's, by its message's. A call's sender is that of the
-    /// latest such block its agent read
-    /// (`crates/core-store/src/usage_report.rs`). None for any other block:
-    /// a report or a notice read inside a running turn leaves its sender.
-    pub fn sender_id(&self) -> Option<Option<&str>> {
-        self.work().map(|(sender_id, _)| sender_id)
+    /// The program's labels of the work the block hands its agent: a
+    /// message's, a steer's, or another agent's explicit message's, as their
+    /// sender gave them; and those of the work whose end opens a turn of its
+    /// own: command reports, by their first command's, and the notice of a
+    /// child's end or of another conversation's, by its message's. A call's
+    /// labels are those of the latest such block its agent read
+    /// (`crates/core-store/src/usage_report.rs`). None for any other block: a
+    /// report or a notice read inside a running turn leaves the labels.
+    pub fn labels(&self) -> Option<&Labels> {
+        self.work().map(|(labels, _)| labels)
     }
 
     /// The assignment the work the block hands its agent is part of, by the id of
-    /// the message that opened it, as [`Block::sender_id`] names whom it is
-    /// for, the same blocks naming both: a message's own id, or the assignment it
+    /// the message that opened it, as [`Block::labels`] names its labels, the
+    /// same blocks naming both: a message's own id, or the assignment it
     /// continues; a steer's, the assignment of the turn it joined; another
     /// agent's message's, a report's and a notice's, the assignment of their work.
     pub fn assignment_id(&self) -> Option<Option<&TurnId>> {
         self.work().map(|(_, assignment_id)| assignment_id)
     }
 
-    /// Whom and which assignment the work the block hands its agent is for, as
-    /// [`Block::sender_id`] and [`Block::assignment_id`] tell them.
-    fn work(&self) -> Option<(Option<&str>, Option<&TurnId>)> {
-        let (sender_id, assignment_id) = match self {
-            Block::User(user) => (&user.sender_id, user.assignment_id.as_ref()),
-            Block::Steer(steer) => (&steer.sender_id, steer.assignment_id.as_ref()),
+    /// The labels and the assignment of the work the block hands its agent,
+    /// as [`Block::labels`] and [`Block::assignment_id`] tell them.
+    fn work(&self) -> Option<(&Labels, Option<&TurnId>)> {
+        Some(match self {
+            Block::User(user) => (&user.labels, user.assignment_id.as_ref()),
+            Block::Steer(steer) => (&steer.labels, steer.assignment_id.as_ref()),
             Block::AgentMessage(agent) => match agent.message.event {
-                crate::AgentMessageEvent::Message {} => (&agent.message.sender_id, agent.message.assignment_id.as_ref()),
+                crate::AgentMessageEvent::Message {} => (&agent.message.labels, agent.message.assignment_id.as_ref()),
                 crate::AgentMessageEvent::Completion { .. } if agent.opens_turn => {
-                    (&agent.message.sender_id, agent.message.assignment_id.as_ref())
+                    (&agent.message.labels, agent.message.assignment_id.as_ref())
                 }
                 _ => return None,
             },
             Block::Wakeup(wakeup) => match (wakeup.placement, wakeup.reports.first()) {
-                (WakeupPlacement::NewTurn, Some(report)) => (&report.sender_id, report.assignment_id.as_ref()),
-                (WakeupPlacement::NewTurn, None) => return Some((None, None)),
+                (WakeupPlacement::NewTurn, Some(report)) => (&report.labels, report.assignment_id.as_ref()),
+                (WakeupPlacement::NewTurn, None) => (&NO_LABELS, None),
                 (WakeupPlacement::Steer, _) => return None,
             },
             _ => return None,
-        };
-        Some((sender_id.as_deref(), assignment_id))
+        })
     }
 
     /// When the block was written.
@@ -467,16 +465,11 @@ pub struct UserBlock {
     #[schemars(with = "ScheduleMark")]
     #[garde(dive)]
     pub schedule: Option<ScheduleMark>,
-    /// Who sent the message, by the id the program that sent it gave
-    /// ([`SENDER_ID_LIMIT`]); absent when it named no one.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        with = "unwrap_or_skip"
-    )]
-    #[schemars(with = "String")]
-    #[garde(length(chars, min = 1, max = SENDER_ID_LIMIT))]
-    pub sender_id: Option<String>,
+    /// The labels its program gave it, which its work carries
+    /// (`crate::Labels`); omitted when there are none.
+    #[serde(default, skip_serializing_if = "Labels::is_empty")]
+    #[garde(custom(crate::check_labels))]
+    pub labels: Labels,
     /// The assignment the message is part of, by the id of the message that
     /// opened it: its own for one the program, the user or a schedule sent,
     /// or the one the program named of earlier work it continues; the turn's
@@ -502,11 +495,6 @@ pub struct UserBlock {
     #[garde(skip)]
     pub entries: Vec<Entry>,
 }
-
-/// The most characters a sender's id has: the id is kept on each of the
-/// usage ledger's rows its messages lead to, as a vendor bounds the end
-/// user's id a request names (Anthropic's `metadata.user_id`, 256).
-pub const SENDER_ID_LIMIT: usize = 255;
 
 impl UserBlock {
     /// What the model reads before the message's content, in order: the
@@ -769,17 +757,11 @@ pub struct CommandReport {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[garde(dive)]
     pub media: Vec<ToolResultContentBlock>,
-    /// Whom the command's work is for: the sender of the call that started
-    /// it, which its record keeps; absent when that call's work was for no
-    /// one named.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        with = "unwrap_or_skip"
-    )]
-    #[schemars(with = "String")]
-    #[garde(length(chars, min = 1, max = SENDER_ID_LIMIT))]
-    pub sender_id: Option<String>,
+    /// The labels of the work of the call that started it, which its record
+    /// keeps; omitted when there are none.
+    #[serde(default, skip_serializing_if = "Labels::is_empty")]
+    #[garde(custom(crate::check_labels))]
+    pub labels: Labels,
     /// The assignment of the call that started it, which its record keeps; absent
     /// when that call's turn named none.
     #[serde(
@@ -917,15 +899,11 @@ pub struct SteerBlock {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[garde(dive)]
     pub comments: Vec<MessageComment>,
-    /// Who sent it, as a `user` block names its sender.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        with = "unwrap_or_skip"
-    )]
-    #[schemars(with = "String")]
-    #[garde(length(chars, min = 1, max = SENDER_ID_LIMIT))]
-    pub sender_id: Option<String>,
+    /// The labels its program gave it, as a `user` block's; omitted when
+    /// there are none.
+    #[serde(default, skip_serializing_if = "Labels::is_empty")]
+    #[garde(custom(crate::check_labels))]
+    pub labels: Labels,
     /// The assignment of the turn that read it, which it joins; absent when that
     /// turn named none.
     #[serde(

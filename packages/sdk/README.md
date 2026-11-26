@@ -386,12 +386,14 @@ turn it starts ended, with that turn's blocks and outcome, also when your
 program's connection to the process dropped while the turn ended. It fails
 when the message leaves the queue without running, as an abort that clears
 the queue or gives the message back makes it, or when the conversation
-closes first. `options.senderId` names who sent the message, by your own
-id, such as a person of a team's chat: the message's `user` block keeps it
-as `senderId`, so a page can show who wrote what, the model does not read
-it, and [Usage](#usage) says what it counts. `options.assignmentId` names
-the earlier work the message continues ([Usage](#usage)). The other actions
-are the ones the app has:
+closes first. `options.labels` are your own key-value pairs for the
+message, such as `{ sender: 'alex', scene: 'review' }`: the message's `user`
+block keeps them as `labels`, so a page can show who wrote what, the model
+does not read them, and [Usage](#usage) says what they count. At most 16; a
+key is 1 to 64 letters, digits, `.`, `_` and `-`, the first a letter or a
+digit, and a value 1 to 512 characters. `options.assignmentId` names the
+earlier work the message continues ([Usage](#usage)). The other actions are
+the ones the app has:
 
 | Method | What it does |
 | --- | --- |
@@ -512,7 +514,7 @@ to one subagent, named by its id in `conversation.agents`. A subagent at work
 takes it as a steer, an idle one starts a turn with it, and one that ended is
 resumed with it. Give the message an id when you may send it again, such as
 after a lost answer: the subagent takes a message once, however often it
-arrives. `options` names who sent it and the work it continues, as `run`
+arrives. `options` names its labels and the work it continues, as `run`
 takes them.
 
 ```ts
@@ -736,8 +738,9 @@ conversation already.
 ## Usage
 
 `core.usage.report` sums the calls of a period by minute, hour or day of a
-time zone, grouped by any of `conversation`, `agent`, `sender`, `model`,
-`provider`, `account`, `turn`, `assignment` and `purpose`:
+time zone, grouped by any of `conversation`, `agent`, `model`, `provider`,
+`account`, `turn`, `assignment` and `purpose`, and by the labels your
+messages carry, each as `label:<key>`:
 
 ```ts
 const report = await core.usage.report({
@@ -745,15 +748,18 @@ const report = await core.usage.report({
   to: new Date('2026-12-01T00:00:00+08:00'),
   bucket: 'day',
   timeZone: 'Asia/Shanghai',
-  groupBy: ['conversation', 'sender', 'model'],
+  groupBy: ['conversation', 'label:sender', 'model'],
 })
 for (const bucket of report.buckets) {
   for (const group of bucket.groups) {
-    console.log(bucket.start, group.sender, group.model, group.calls, group.cost.usd, group.apiPrice)
+    console.log(bucket.start, group.labels?.sender, group.model, group.calls, group.cost.usd, group.apiPrice)
   }
 }
 ```
 
+A group names the value of each label it is grouped by in `labels`, null
+for calls without it, such as `{ sender: 'alex' }` or `{ sender: null }`.
+Jush gives a label no meaning: group by as many as your program counts by.
 A group counts its calls and their tokens, `cost` is what the vendors said
 the calls cost, by currency and never converted, and `apiPrice` what their
 tokens would cost on the vendors' APIs in dollars, leaving out the
@@ -790,28 +796,30 @@ const review = await core.usage.report({
 `agent` is null for a side question's call and for one no agent made, such
 as a title's, and `agents` keeps neither.
 
-A call's sender is that of the latest message that handed its agent work,
-by the `senderId` your program sent it with: a message, a steer, a side
-question, or another agent's message; or that of the work whose end opened
-its turn.
+A call carries the labels of the latest message that handed its agent
+work: a message, a steer, a side question, or another agent's message; or
+those of the work whose end opened its turn.
 
-- Alice's message starts a turn: the turn's calls are Alice's, and so are
-  those of the turn that continues once a command it started ends.
-- A subagent the agent starts while working for Alice works for Alice,
-  and its calls and those of the commands it runs are hers. So is the work
-  of a subagent or a conversation the agent sends a message to then.
-- Bob steers the running turn: the calls after the agent read his steer
-  are Bob's.
-- A turn that work for Alice wakes once it ends is Alice's, even after
-  Bob's message: a command started in her turn, a subagent working for
-  her, or another conversation her turn sent a message to with
+- A message labeled `{ sender: 'alice' }` starts a turn: the turn's calls
+  carry its labels, and so do those of the turn that continues once a
+  command it started ends.
+- A subagent the agent starts during that work carries Alice's labels, and
+  so do its calls and the commands it runs. So does the work of a subagent
+  or a conversation the agent sends a message to then.
+- A steer labeled `{ sender: 'bob' }` reaches the running turn: the calls
+  after the agent read it carry Bob's labels, in place of Alice's rather
+  than merged with them, so a `scene` Alice's message named is gone. A
+  steer that names no labels leaves the calls after it none.
+- A turn that Alice's work wakes once it ends carries her labels, even
+  after Bob's message: a command started in her turn, a subagent of her
+  work, or another conversation her turn sent a message to with
   `--wake-when-done`. What ends while Bob's turn runs joins that turn,
-  which stays Bob's.
-- A schedule the agent makes while working for Alice runs for Alice.
+  which keeps Bob's.
+- A schedule the agent makes during Alice's work runs with her labels.
 
-After a message that names no sender, as one from the app or from a
-schedule your program or the user made, the calls have a null sender, and
-so does a turn that the end of work it started opens. So do the calls
+After a message that names no labels, as one from the app or from a
+schedule your program or the user made, the calls carry none, and neither
+does a turn that the end of work it started opens. Nor do the calls
 outside an agent's work, such as a title's or the suggested replies after
 a turn.
 
@@ -819,7 +827,7 @@ A call's `assignment` is the id of the message that handed its agent the
 work: the id you sent the message under, a side question's or its
 follow-up's (`sideQuestions.followUp(side, input, messageId)`), or a
 schedule run's `turn`. The turns that continue that work share it, as they
-share its sender: those a background command's end, a subagent's end or
+share its labels: those a background command's end, a subagent's end or
 another conversation's end opens, a retry, a resume or a compaction, and
 the runs of a schedule the agent made then. A steer joins the running
 turn's assignment. What continues work that names no assignment, such as
@@ -834,17 +842,17 @@ const report = await core.usage.report({ from, to, bucket: 'day', timeZone: 'Asi
 ```
 
 A message your program sends to continue earlier work names that work's
-assignment with `assignmentId`, as it names its sender. A plugin's command
-call names the assignment and the sender it was part of; a program that
-follows something for the conversation keeps them, and wakes it within
-that work:
+assignment with `assignmentId`, and its labels with `labels`. A plugin's
+command call names the assignment and the labels of the work it was part
+of; a program that follows something for the conversation keeps them, and
+wakes it within that work:
 
 ```ts
 // In the command that starts following a merge request.
 const caller = call.invocation.caller
 // Hours later, as a commit lands.
 await conversation.send('A commit landed on !42; review it again.', 'acme:review-42:3', {
-  senderId: caller?.senderId,
+  labels: caller?.labels,
   assignmentId: caller?.assignmentId,
 })
 ```
@@ -868,7 +876,7 @@ let page = await core.commands.history({ from: new Date(Date.now() - 30 * 86_400
 for (const command of page.commands) {
   // command.conversation, command.agent (0 for the main agent, null for a
   // side question), command.command, command.device, command.turn,
-  // command.sender, command.assignment, command.title, command.script,
+  // command.labels, command.assignment, command.title, command.script,
   // command.startedAt (a wait for its device included), command.endedAt,
   // and command.end:
   // { kind: 'exited', exitCode } | { kind: 'stopped' } | { kind: 'lost', reason } | { kind: 'not_started', reason }

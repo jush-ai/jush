@@ -49,7 +49,7 @@ pub(crate) async fn follow_up(
     State(state): State<Api>,
     Principal(user): Principal,
     Path((id, side)): Path<(String, String)>,
-    JsonBody(SideFollowUp { id: message, content, sender_id, assignment_id }): JsonBody<SideFollowUp>,
+    JsonBody(SideFollowUp { id: message, content, labels, assignment_id }): JsonBody<SideFollowUp>,
 ) -> Result<StatusCode, ApiError> {
     let id = conversation(id)?;
     let side = side_id(side)?;
@@ -57,7 +57,7 @@ pub(crate) async fn follow_up(
         .shards
         .of(&user)
         .call(move |core, _| async move {
-            core.ask_more(id, side, message, content, Attribution { sender_id, assignment_id }).await
+            core.ask_more(id, side, message, content, Attribution { labels, assignment_id }).await
         })
         .await?
         .map_err(refused)?;

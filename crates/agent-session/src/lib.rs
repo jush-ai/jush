@@ -108,7 +108,7 @@ use jush_agent_transcript::{
 use jush_conversation_lane_protocol::{AbortResult, AgentCode, Refusal, RequestOutput, TranscriptPatch, Version};
 use jush_provider_common::{Ahead, ProviderFailure, ProviderRuntime};
 use jush_shared_gates::SerialGate;
-use jush_shared_types::{Attribution, MessageComment,
+use jush_shared_types::{Attribution, Labels, MessageComment,
     AgentMessage, ScheduleMark, Block, BlockId, Clock, ContextUsage, ErrorBlock, ModelSelection, NodeId, PendingCall,
     PendingSteer, PictureCopy, ProviderErrorDiagnostics, QueuedMessage, SessionPhase, ShellToolView, ShellViewStatus,
     TextBlock, Timestamp, ToolResultContentBlock, ToolView, TurnId, UserContentBlock,
@@ -1160,7 +1160,7 @@ impl AgentSession {
             content,
             comments: Vec::new(),
             schedule: None,
-            sender_id: None,
+            labels: Labels::new(),
         })
     }
 
@@ -1273,7 +1273,7 @@ impl AgentSession {
     }
 
     /// A steer as a page or a program sends it: with comments on the
-    /// reply's words, which the model reads before its content, who sent it,
+    /// reply's words, which the model reads before its content, its labels,
     /// and the assignment it continues when it opens a turn of its own.
     pub fn steer_message(
         &self,

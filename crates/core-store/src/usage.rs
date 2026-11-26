@@ -47,7 +47,7 @@
 //! past 200K tokens, are not modelled: a call is priced at the model's base rates.
 
 use jush_conversation_lane_protocol::{AgentCost, CacheChart, CacheMiss, ChartPoint, CostPrice, CostTotals};
-use jush_shared_types::{Cost, Currency, ModelCost, QuotaKind, QuotaScope, QuotaWindow, Timestamp, TokenUsage};
+use jush_shared_types::{Cost, Currency, Labels, ModelCost, QuotaKind, QuotaScope, QuotaWindow, Timestamp, TokenUsage};
 use jush_web_api_protocol::conversations::{CostWindow, RecentAgent};
 use jush_web_api_protocol::ids::{ConversationId, CredentialId, ProviderId};
 use jush_web_api_protocol::usage::UsageGroup;
@@ -57,7 +57,7 @@ use rusqlite::{Connection, OptionalExtension, Row, params};
 use serde::{Deserialize, Serialize};
 
 use super::StorageError;
-use super::columns::{decode, instant, json, to_json};
+use super::columns::{decode, instant, json, labels_column, to_json};
 use super::store::CoreStore;
 
 /// How far back the cost of a window counts.
@@ -92,11 +92,11 @@ pub struct UsageRow {
     pub agent: Option<u64>,
     /// None outside a turn.
     pub turn: Option<String>,
-    /// Whom the agent worked for, by its program's id; none when no one was
-    /// named, and outside a session.
-    pub sender_id: Option<String>,
+    /// The labels of the agent's work, as its program gave them; none when
+    /// none were given, and outside a session.
+    pub labels: Labels,
     /// The assignment the agent worked in, by the id of the message that
-    /// opened it; none as `sender_id` is.
+    /// opened it; none outside a session.
     pub assignment_id: Option<String>,
     /// `turn`, `compaction`, `title`, `suggested_replies`, `image`, `video`
     /// or `audio`.
@@ -1014,7 +1014,7 @@ pub(crate) fn write_usage(transaction: &rusqlite::Transaction<'_>, row: &UsageRo
            input_tokens, output_tokens, cache_read_tokens, cache_write_tokens,
            cache_write_1h_tokens, outcome, quota, started_at, ended_at, media_seconds, cost, cost_currency,
            api_price_input, api_price_cache_write, api_price_cache_read, api_price_output,
-           system_hash, tools_hash, call_number, after_compaction, miss, media_digest, sender_id,
+           system_hash, tools_hash, call_number, after_compaction, miss, media_digest, labels,
            assignment_id)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16,
            ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32, ?33, ?34)",
@@ -1051,7 +1051,7 @@ pub(crate) fn write_usage(transaction: &rusqlite::Transaction<'_>, row: &UsageRo
             call.map(|call| call.after_compaction),
             call.and_then(|call| call.miss).map(|miss| miss.to_string()),
             row.media_digest,
-            row.sender_id,
+            labels_column(&row.labels),
             row.assignment_id,
         ],
     )?;

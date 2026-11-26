@@ -1,7 +1,8 @@
 //! The usage ledger's report: its calls of a period in buckets of a minute,
 //! an hour or a day of a time zone, of the conversations and the agents it
 //! names, each bucket's calls grouped by what the report names, the agent,
-//! the sender and the assignment among them, which each row keeps.
+//! the assignment and the program's labels among them, which each row
+//! keeps.
 //!
 //! The rows of the period are read and summed here a bucket at a time, each
 //! in a turn of the database's thread of its own: a report of a long period
@@ -28,14 +29,14 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use jiff::tz::{TimeZone, TimeZoneTransition};
-use jush_shared_types::{Currency, Timestamp};
+use jush_shared_types::{Currency, Labels, Timestamp};
 use jush_web_api_protocol::usage::{
     UsageBucket, UsageBucketSize, UsageCosts, UsageDimension, UsageReport, UsageReportGroup,
 };
 use rusqlite::{Connection, OptionalExtension, Row, params};
 
 use super::StorageError;
-use super::columns::decode;
+use super::columns::{decode, labels};
 use super::store::CoreStore;
 use super::usage::{row_cost, row_prices, row_usage};
 
@@ -45,10 +46,18 @@ pub struct ReportAsk {
     pub to: Timestamp,
     pub bucket: UsageBucketSize,
     pub zone: TimeZone,
-    pub group_by: Vec<UsageDimension>,
+    pub group_by: Vec<Grouping>,
     /// The calls it keeps: every call, or those of the conversations, and
     /// of the agents there, it names.
     pub kept: Kept,
+}
+
+/// What a report groups a bucket's calls by: a dimension of Jush's, or one
+/// of the program's labels by its key.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Grouping {
+    Dimension(UsageDimension),
+    Label(String),
 }
 
 /// The calls a report keeps.
@@ -59,7 +68,7 @@ pub enum Kept {
     Of { conversations: Vec<String>, agents: Option<Vec<u64>> },
 }
 
-const COLUMNS: &str = "ended_at, conversation_id, agent, sender_id, model_id, provider_id, account_id,
+const COLUMNS: &str = "ended_at, conversation_id, agent, labels, model_id, provider_id, account_id,
        turn_id, assignment_id, purpose, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens,
        cost, cost_currency, api_price_input, api_price_cache_write, api_price_cache_read,
        api_price_output";
@@ -144,11 +153,20 @@ fn next_bucket(connection: &Connection, ask: &ReportAsk, from: i64) -> Result<Op
             statement.query(params![first, end, conversations, agents])?
         }
     };
+    let by_label = ask.group_by.iter().any(|grouping| matches!(grouping, Grouping::Label(_)));
     while let Some(row) = rows.next()? {
+        let row_labels = if by_label {
+            labels("usage_ledger", "labels", row.get::<_, Option<String>>("labels")?.as_deref())?
+        } else {
+            Labels::new()
+        };
         let key = ask
             .group_by
             .iter()
-            .map(|dimension| value(row, *dimension))
+            .map(|grouping| match grouping {
+                Grouping::Dimension(dimension) => value(row, *dimension),
+                Grouping::Label(key) => Ok(Value::Text(row_labels.get(key).cloned())),
+            })
             .collect::<Result<Vec<Value>, _>>()?;
         groups.entry(key).or_default().add(row)?;
     }
@@ -219,7 +237,6 @@ fn value(row: &Row<'_>, dimension: UsageDimension) -> Result<Value, StorageError
                 .transpose()?,
         ),
         UsageDimension::Conversation => text("conversation_id")?,
-        UsageDimension::Sender => text("sender_id")?,
         UsageDimension::Model => text("model_id")?,
         UsageDimension::Provider => text("provider_id")?,
         UsageDimension::Account => text("account_id")?,
@@ -271,11 +288,11 @@ impl Sums {
     }
 
     /// The group of `key`, the values of `group_by` in its order.
-    fn group(self, group_by: &[UsageDimension], key: Vec<Value>) -> UsageReportGroup {
+    fn group(self, group_by: &[Grouping], key: Vec<Value>) -> UsageReportGroup {
         let mut group = UsageReportGroup {
             conversation: None,
             agent: None,
-            sender: None,
+            labels: None,
             model: None,
             provider: None,
             account: None,
@@ -291,7 +308,7 @@ impl Sums {
             api_price: self.api_price,
             unpriced_calls: self.unpriced_calls,
         };
-        for (dimension, value) in group_by.iter().zip(key) {
+        for (grouping, value) in group_by.iter().zip(key) {
             let text = match value {
                 Value::Number(number) => {
                     group.agent = Some(number);
@@ -299,10 +316,16 @@ impl Sums {
                 }
                 Value::Text(text) => text,
             };
+            let dimension = match grouping {
+                Grouping::Dimension(dimension) => dimension,
+                Grouping::Label(key) => {
+                    group.labels.get_or_insert_default().insert(key.clone(), text);
+                    continue;
+                }
+            };
             let field = match dimension {
                 UsageDimension::Agent => unreachable!("an agent's value is a number"),
                 UsageDimension::Conversation => &mut group.conversation,
-                UsageDimension::Sender => &mut group.sender,
                 UsageDimension::Model => &mut group.model,
                 UsageDimension::Provider => &mut group.provider,
                 UsageDimension::Account => &mut group.account,

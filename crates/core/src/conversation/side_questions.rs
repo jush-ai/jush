@@ -115,7 +115,7 @@ impl Core {
             asked_at: self.services().clock.now(),
         };
         let message = format!("{}\n\n{}", markdown_quote(&of.quote), text_of(&of.question));
-        let attribution = Attribution { sender_id: request.sender_id, assignment_id: request.assignment_id };
+        let attribution = Attribution { labels: request.labels, assignment_id: request.assignment_id };
         let created = self.agent().ask(&root_of(&record.id), side.clone(), of, attribution, media).await?;
         let asked = self.side_question(&record.id, &side).await?;
         if !created {
@@ -151,8 +151,8 @@ impl Core {
     }
 
     /// Sends the follow-up `content` to the side question `side` of the
-    /// user's conversation `id`, under the id `message` or a new one, from
-    /// the sender `attribution` names and in the assignment it names.
+    /// user's conversation `id`, under the id `message` or a new one, with
+    /// the labels and in the assignment `attribution` names.
     pub async fn ask_more(
         &self,
         id: ConversationId,

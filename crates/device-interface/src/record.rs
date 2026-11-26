@@ -28,7 +28,7 @@ pub const TAIL_CHARS: usize = 4096;
 pub struct CommandRecord {
     command_id: CommandId,
     /// The `shell` call that started the command: its node, its turn, and
-    /// whom and which assignment its work is for, which every report of the
+    /// the labels and the assignment of its work, which every report of the
     /// command names.
     caller: JobCaller,
     /// That call's title, its `description`, which every report of the

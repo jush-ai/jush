@@ -20,7 +20,7 @@ use bytes::Bytes;
 use jush_core_device_access::scripts::{self, Script, ScriptEnd};
 use jush_core_devices::command_context::device_context;
 use jush_device_interface::{JobCaller, OutputRecord, WholeOutput};
-use jush_shared_types::{NodeId, StreamKind};
+use jush_shared_types::{Labels, NodeId, StreamKind};
 use jush_core_store::devices::{DeviceChange, DeviceRecord};
 use jush_web_api_protocol::text::Trimmed;
 use jush_core_devices::files::browse_directory;
@@ -227,7 +227,7 @@ pub(crate) async fn exec(
                     node: NodeId::try_from("program").expect("a name is not empty"),
                     tool_use_id: "exec".into(),
                     turn: None,
-                    sender_id: None,
+                    labels: Labels::new(),
                     assignment_id: None,
                 },
             };

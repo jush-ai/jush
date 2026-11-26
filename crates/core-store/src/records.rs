@@ -46,8 +46,11 @@ use super::columns::{json, to_json};
 use super::contents::{self, Hash, LEVEL};
 
 /// The format of the blocks records hold (`blocks.body: transcript block
-/// format 22` in the schema). A release reads each format it knows:
+/// format 23` in the schema). A release reads each format it knows:
 ///
+/// - format 22 is format 23 whose work names, in place of its labels, the
+///   id its program gave its sender, which is dropped: the work reads as
+///   naming no labels ([`senders_dropped`]);
 /// - format 21 is format 22 whose blocks name no assignment, which reads as
 ///   none;
 /// - format 20 is format 21 whose `user` and `steer` blocks name no sender,
@@ -62,7 +65,7 @@ use super::contents::{self, Hash, LEVEL};
 ///   ([`entries_owned`]);
 /// - format 16 is format 17 without the times a block's parts started and
 ///   ended, which read as null ([`times_unkept`]).
-pub(crate) const FORMAT: i64 = 22;
+pub(crate) const FORMAT: i64 = 23;
 
 /// A value of at least this many bytes is a content. A shorter one costs
 /// less inline than its marker and the lookup of its bytes.
@@ -399,6 +402,9 @@ impl<'c> Codec<'c> {
         if stored.format <= 19 {
             devices_named(&mut value);
         }
+        if stored.format <= 22 {
+            senders_dropped(&mut value);
+        }
         Ok(value)
     }
 
@@ -421,6 +427,27 @@ fn times_unkept(block: &mut Value) {
         for field in unkept {
             fields.insert((*field).to_owned(), Value::Null);
         }
+    }
+}
+
+/// A block of format 22 or earlier as format 23 reads it: the sender its
+/// work named, in a `user` block, a `steer`, an agent's message or a
+/// report, is dropped.
+fn senders_dropped(block: &mut Value) {
+    let drop_sender = |value: Option<&mut Value>| {
+        if let Some(Value::Object(fields)) = value {
+            fields.remove("senderId");
+        }
+    };
+    match block.get("type").and_then(Value::as_str) {
+        Some("user" | "steer") => drop_sender(Some(block)),
+        Some("agent_message") => drop_sender(block.get_mut("message")),
+        Some("wakeup") => {
+            if let Some(Value::Array(reports)) = block.get_mut("reports") {
+                reports.iter_mut().for_each(|report| drop_sender(Some(report)));
+            }
+        }
+        _ => {}
     }
 }
 

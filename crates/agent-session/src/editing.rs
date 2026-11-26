@@ -47,7 +47,7 @@ use jush_conversation_lane_protocol::{
 };
 use jush_provider_common::ProviderRuntime;
 use jush_shared_types::{
-    BlobRef, Block, BlockId, Comment, CommentPart, CommentStage, DocumentSource, MediaSource, MessageComment, NodeId,
+    BlobRef, Block, BlockId, Labels, Comment, CommentPart, CommentStage, DocumentSource, MediaSource, MessageComment, NodeId,
     OperationId, UserContentBlock,
 };
 use tokio::sync::watch;
@@ -350,7 +350,7 @@ impl Candidate {
                         .collect::<Result<Vec<MessageComment>, EditError>>()?,
                     None => target.comments.to_vec(),
                 };
-                candidate.push_user(turn.clone(), &model, content, comments, preamble, None, None, None);
+                candidate.push_user(turn.clone(), &model, content, comments, preamble, None, Labels::new(), None);
                 candidate.blocks().to_vec()
             }
             // The message stays, and the new answer follows it.

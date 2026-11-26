@@ -10,7 +10,7 @@ use std::{collections::BTreeMap, rc::Rc, sync::Arc};
 use jush_conversation_lane_protocol::{TranscriptPatch, Version, Versions};
 use jush_provider_common::{AccountSwitch, OpaqueStep, ToolCall};
 use jush_shared_types::{ScheduleMark, CodeFile, MessageComment, PictureCopy, ReplyPicture, 
-    AbortBlock, AccountSwitchBlock, AgentMessage, AgentMessageBlock, Block, BlockId, ClearBlock, Clock, CompactionBoundaryBlock,
+    AbortBlock, AccountSwitchBlock, Labels, AgentMessage, AgentMessageBlock, Block, BlockId, ClearBlock, Clock, CompactionBoundaryBlock,
     CompactionMarkerBlock, ContextBlock, Entry, ErrorBlock, InstructionEntry, KeptMessage, ModelSelection, ProviderErrorDiagnostics,
     OpaqueBlock, OpaqueStatus, ResponseBlock, ResumeBlock, SteerBlock, TextBlock, ThinkingBlock,
     Timestamp, TokenUsage, ToolCallBlock, ToolCallStatus, ToolResultContentBlock, ToolView, TurnId,
@@ -179,19 +179,20 @@ impl TranscriptLog {
             .or_else(|| self.earlier.user_input().cloned())
     }
 
-    /// Whom the agent works for ([`Block::sender_id`]), by the latest block
-    /// that handed it work: none when it names no one or there is none.
-    pub fn sender_id(&self) -> Option<&str> {
+    /// The labels of the work the agent does ([`Block::labels`]), by the
+    /// latest block that handed it work: none when it names none or there is
+    /// none.
+    pub fn labels(&self) -> &Labels {
         self.blocks
             .iter()
             .rev()
-            .find_map(Block::sender_id)
-            .unwrap_or_else(|| self.earlier.sender_id())
+            .find_map(Block::labels)
+            .unwrap_or_else(|| self.earlier.labels())
     }
 
     /// The assignment the agent works in ([`Block::assignment_id`]), by the latest block
-    /// that handed it work, the one that names whom it works for: none when
-    /// it names none or there is none.
+    /// that handed it work, the one that names its labels: none when it names
+    /// none or there is none.
     pub fn assignment_id(&self) -> Option<&TurnId> {
         self.blocks
             .iter()
@@ -266,7 +267,7 @@ impl TranscriptLog {
         comments: Vec<MessageComment>,
         preamble: Option<String>,
         schedule: Option<ScheduleMark>,
-        sender_id: Option<String>,
+        labels: Labels,
         assignment_id: Option<TurnId>,
     ) {
         let (id, created_at) = self.stamp();
@@ -280,7 +281,7 @@ impl TranscriptLog {
             comments,
             preamble,
             schedule,
-            sender_id,
+            labels,
             assignment_id,
             entries: Vec::new(),
         }));
@@ -319,7 +320,7 @@ impl TranscriptLog {
         model: &ModelSelection,
         content: Vec<UserContentBlock>,
         comments: Vec<MessageComment>,
-        sender_id: Option<String>,
+        labels: Labels,
     ) {
         // The steer joins the assignment of the turn that reads it.
         let assignment_id = self.assignment_id().cloned();
@@ -332,7 +333,7 @@ impl TranscriptLog {
             model: model.clone(),
             content,
             comments,
-            sender_id,
+            labels,
             assignment_id,
             entries: Vec::new(),
         }));

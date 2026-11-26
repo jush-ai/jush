@@ -93,7 +93,7 @@ use jush_core_store::permissions::{
 use jush_core_sync::{Part, Revisions, UserMarks};
 use jush_command_declarations::Category;
 use jush_device_interface::{PortError, RpcError, RpcInvocation, RpcPort};
-use jush_shared_types::{AgentMessage, AgentMessageEvent, BlockId, NodeId, PermissionOutcome};
+use jush_shared_types::{AgentMessage, AgentMessageEvent, BlockId, Labels, NodeId, PermissionOutcome};
 use jush_web_api_protocol::credentials::{CredentialField, Keep, RequestedValues};
 use jush_web_api_protocol::ids::{ConversationId, DeviceId};
 use jush_web_api_protocol::devices::DeviceKind;
@@ -920,7 +920,7 @@ pub async fn deliver(core: Rc<dyn PermissionCore>, request: StoredRequest) {
             pairing: false,
         },
         origin: None,
-        sender_id: None,
+        labels: Labels::new(),
     };
     let admitted = core
         .admit(&request.conversation, &request.agent.node, &message)

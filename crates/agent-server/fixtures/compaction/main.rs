@@ -49,7 +49,7 @@ use jush_provider_common::{
 };
 use jush_provider_openai_api::{OpenAiConfig, OpenAiProvider};
 use jush_shared_types::{
-    Block, Clock, ContextUsage, Model, ModelSelection, ModelWire, NodeId, SessionPhase, SystemClock,
+    Block, Clock, ContextUsage, Labels, Model, ModelSelection, ModelWire, NodeId, SessionPhase, SystemClock,
     TokenUsage, ToolResultContentBlock, TurnId, UserContentBlock, WireApi,
 };
 use futures_util::{StreamExt as _, future::LocalBoxFuture};
@@ -796,7 +796,7 @@ async fn send(
             comments: Vec::new(),
             message_id: id.clone(),
             content: client_text(text),
-            sender_id: None,
+            labels: Labels::new(),
             assignment_id: None,
         }),
     )

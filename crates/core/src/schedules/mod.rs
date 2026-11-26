@@ -363,8 +363,8 @@ impl Core {
 
     /// `jush schedule create`, and a program's: a new schedule of
     /// `conversation` from its defaults, with `patch` over them, which the
-    /// agent's turn `by` made, with whom and which assignment it worked for,
-    /// or a program for none.
+    /// agent's turn `by` made, with the labels and the assignment of its
+    /// work, or a program for none.
     ///
     /// The defaults are *New Schedule*, on, every day with one task at 09:00
     /// in the user's time zone and no message, which waits while the

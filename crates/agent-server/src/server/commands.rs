@@ -361,8 +361,8 @@ pub(super) struct Invoked<H: DeviceResolver, A> {
     pub(super) caller: NodeId,
     /// The node's `shell` call that started the job.
     pub(super) call: String,
-    /// Whom and which assignment that call worked for (`JobCaller`): a child it
-    /// starts or resumes, or a message it sends, is for them.
+    /// The labels and the assignment of that call's work (`JobCaller`),
+    /// which a child it starts or resumes, or a message it sends, carries.
     pub(super) attribution: Attribution,
     /// The invoking shell's directory, which a relative path an argument
     /// names is read against.

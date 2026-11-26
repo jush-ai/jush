@@ -286,38 +286,38 @@ fn notice(wake: &PendingWake, title: Option<&str>, round: u64, told: &Told, now:
         event: AgentMessageEvent::Completion { outcome },
         // The notice opens the conversation, at its end.
         origin: None,
-        sender_id: wake.message_sender_id.clone(),
+        labels: wake.message_labels.clone(),
         assignment_id: wake.message_assignment_id.clone(),
     }
 }
 
-/// Whom and which assignment each notice is for, by its id. Several
+/// The labels and the assignment each notice names, by its id. Several
 /// messages of one agent the same turn took wake it with one notice of that
 /// turn's end, which the agent takes once (`done_id`): each such notice
 /// names the first's, so the agent finds them the same message.
 struct Named(HashMap<BlockId, Attribution>);
 
 impl Named {
-    /// Whom and which assignment the notices `wakes` keep already are for.
+    /// The labels and the assignment the notices `wakes` keep already name.
     fn of(wakes: &[PendingWake]) -> Self {
         let kept = wakes.iter().filter_map(|wake| wake.notice.as_ref());
         Self(kept.map(|notice| (notice.id.clone(), attribution(notice))).collect())
     }
 
-    /// `notice`, naming whom and which assignment the first notice of its
-    /// id was for.
+    /// `notice`, naming the labels and the assignment the first notice of
+    /// its id named.
     fn name(&mut self, mut notice: AgentMessage) -> AgentMessage {
         let first = self.0.entry(notice.id.clone()).or_insert_with(|| attribution(&notice)).clone();
-        notice.sender_id = first.sender_id;
+        notice.labels = first.labels;
         notice.assignment_id = first.assignment_id;
         notice
     }
 }
 
-/// Whom and which assignment `notice` names.
+/// The labels and the assignment `notice` names.
 fn attribution(notice: &AgentMessage) -> Attribution {
     Attribution {
-        sender_id: notice.sender_id.clone(),
+        labels: notice.labels.clone(),
         assignment_id: notice.assignment_id.clone(),
     }
 }

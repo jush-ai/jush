@@ -1567,7 +1567,8 @@ struct Making<'a> {
     /// The turn whose shell call started the calling job, which the
     /// ledger rows name even after it ended.
     turn: Option<TurnId>,
-    /// Whom and which assignment that shell call's command is counted for.
+    /// The labels and the assignment that shell call's command is counted
+    /// with.
     attribution: Attribution,
     /// Whether the user manages the entry, and so may read its accounts.
     manages: bool,
@@ -1624,7 +1625,7 @@ impl Making<'_> {
             conversation: self.conversation.clone(),
             agent: self.agent,
             turn: self.turn.as_ref().map(ToString::to_string),
-            sender_id: self.attribution.sender_id.clone(),
+            labels: self.attribution.labels.clone(),
             assignment_id: self.attribution.assignment_id.as_ref().map(ToString::to_string),
             purpose,
             provider: entry.id.clone(),

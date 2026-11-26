@@ -11,13 +11,13 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use jush_device_interface::{Seen, UnsentStart};
-use jush_shared_types::{CommandEnd, CommandId, NodeId, Timestamp, TurnId};
+use jush_shared_types::{CommandEnd, CommandId, Labels, NodeId, Timestamp, TurnId};
 use jush_web_api_protocol::ids::DeviceId;
 use rusqlite::{Connection, OptionalExtension, Row, params};
 use serde::{Deserialize, Serialize};
 
 use super::StorageError;
-use super::columns::{decode, instant, json, to_json};
+use super::columns::{decode, instant, json, labels, labels_column, to_json};
 use super::command_outputs::{self, CommandOutput};
 
 /// A command that runs, as its conversation records it.
@@ -34,9 +34,9 @@ pub struct RunningCommand {
     /// The turn that call belongs to; none for a command recorded before
     /// records kept it.
     pub turn: Option<TurnId>,
-    /// Whom that call's command is counted for
+    /// The labels that call's command is counted with
     /// (`crates/device-interface/src/environment.rs`, `JobCaller`).
-    pub sender_id: Option<String>,
+    pub labels: Labels,
     /// The assignment that call's command is counted in, as `JobCaller` names it.
     pub assignment_id: Option<TurnId>,
     /// That call's title, which the command's reports name and the pages'
@@ -58,7 +58,7 @@ pub struct RunningCommand {
 }
 
 const COLUMNS: &str =
-    "command_id, node_id, device_id, job_id, tool_use_id, started_at, places, title, service, turn_id, unsent, script, sender_id, assignment_id";
+    "command_id, node_id, device_id, job_id, tool_use_id, started_at, places, title, service, turn_id, unsent, script, labels, assignment_id";
 
 /// How far one node has seen a running command's output, as the `places`
 /// column stores it (command places format 1): any count of bytes is one.
@@ -126,7 +126,7 @@ pub fn record(connection: &Connection, running: &RunningCommand) -> Result<(), S
             running.turn.as_ref().map(TurnId::as_str),
             running.unsent.as_ref().map(to_json),
             running.script,
-            running.sender_id,
+            labels_column(&running.labels),
             running.assignment_id.as_ref().map(TurnId::as_str),
         ])?;
     Ok(())
@@ -290,7 +290,7 @@ fn decode_row(row: &Row<'_>) -> Result<RunningCommand, StorageError> {
             .get::<_, Option<String>>(9)?
             .map(|turn| decode(table, "turn_id", TurnId::try_from(turn)))
             .transpose()?,
-        sender_id: row.get(12)?,
+        labels: labels(table, "labels", row.get::<_, Option<String>>(12)?.as_deref())?,
         assignment_id: row
             .get::<_, Option<String>>(13)?
             .map(|assignment| decode(table, "assignment_id", TurnId::try_from(assignment)))

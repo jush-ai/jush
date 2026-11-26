@@ -15,7 +15,7 @@ use std::{
 use jush_provider_common::{RequestLimits, ResultPart, ToolDefinition};
 use jush_shared_gates::{GateLease, Reservation};
 use jush_shared_types::{
-    CommandId, CommandReport, InstructionEntry, ModelSelection, NodeId, ShellToolView,
+    CommandId, CommandReport, InstructionEntry, Labels, ModelSelection, NodeId, ShellToolView,
     ToolView, TurnId,
 };
 use futures_util::{future::LocalBoxFuture, stream::LocalBoxStream};
@@ -338,9 +338,9 @@ pub struct ToolInvocation {
     pub tool_name: String,
     /// The turn the call belongs to.
     pub turn: TurnId,
-    /// Whom its agent worked for in the request that asked for the call, as
-    /// that request names it.
-    pub sender_id: Option<String>,
+    /// The labels of its agent's work in the request that asked for the
+    /// call, as that request names them.
+    pub labels: Labels,
     /// The assignment its agent worked in then, as that request names it.
     pub assignment_id: Option<TurnId>,
     /// The input as the JSON value the provider supplied, or its text when

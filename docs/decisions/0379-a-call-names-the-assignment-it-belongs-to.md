@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: proposed, superseded in part by 0383
 ---
 
 # A call names the assignment it belongs to

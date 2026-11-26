@@ -87,7 +87,7 @@ impl Core {
         let delivered = self
             .agent()
             .message_subagent(&root_of(id), node, message_id.clone(), message.text, Attribution {
-                sender_id: message.sender_id,
+                labels: message.labels,
                 assignment_id: message.assignment_id,
             })
             .await;

@@ -61,7 +61,7 @@ use std::{
 use jush_conversation_lane_protocol::{JobModel, JobPhase, Subagent, TurnSpeed, Versions};
 use jush_device_interface::{CommandMedium, Seen, UnsentStart, WholeOutput};
 use jush_shared_types::{
-    AgentAccount, AgentMessage, AgentMessageEvent, Block, BlockId, CommandEnd, CommandId, CommandReport, CompletionId, ModelSelection, NodeId,
+    AgentAccount, AgentMessage, AgentMessageEvent, Block, BlockId, Labels, CommandEnd, CommandId, CommandReport, CompletionId, ModelSelection, NodeId,
     OperationId, QueuedMessage, Sequence, SessionPhase, Timestamp, TurnId, UserContentBlock,
 };
 use futures_util::future::LocalBoxFuture;
@@ -321,8 +321,8 @@ pub struct RunningCommand {
     /// The turn of the call; none for a command recorded before records
     /// kept it.
     pub turn: Option<TurnId>,
-    /// Whom the call's command is counted for.
-    pub sender_id: Option<String>,
+    /// The labels the call's command is counted with.
+    pub labels: Labels,
     /// The assignment the call's command is counted in.
     pub assignment_id: Option<TurnId>,
     /// The title its reports name (`crates/agent-session/src/reports.rs`).
@@ -348,8 +348,8 @@ pub struct RunningCommand {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StoredCommand {
     pub title: String,
-    /// Whom its work was for, by the id its program gave its sender.
-    pub sender_id: Option<String>,
+    /// The labels of its work.
+    pub labels: Labels,
     /// The assignment its work was part of.
     pub assignment_id: Option<TurnId>,
     pub end: CommandEnd,
@@ -766,8 +766,8 @@ pub struct EarlierRows {
     pub last_input: Option<Block>,
     /// The last of [`Kind::UserInput`].
     pub last_user_input: Option<Block>,
-    /// The last of [`Kind::Sent`].
-    pub last_sent: Option<Block>,
+    /// The last of [`Kind::Work`].
+    pub last_work: Option<Block>,
     /// The last of [`Kind::Record`].
     pub last_record: Option<Block>,
 }
@@ -795,11 +795,11 @@ pub enum Kind {
     Input,
     /// What the user wrote: a `user` block or a `steer`.
     UserInput,
-    /// A block that hands its agent work, whose sender the agent's calls are
-    /// counted for ([`Block::sender_id`]): a `user` block, a `steer`, an
+    /// A block that hands its agent work, whose labels the agent's calls
+    /// carry ([`Block::labels`]): a `user` block, a `steer`, an
     /// `agent_message` that is an explicit message or a notice of an end
     /// that opened its turn, or a `wakeup` that opened its turn.
-    Sent,
+    Work,
     /// A `user` block, where a request begins.
     User,
     /// A `tool_call` block.
@@ -829,7 +829,7 @@ impl Kind {
             Self::Clear => &["clear"],
             Self::Input => &["user", "context", "wakeup", "steer", "agent_message", "resume"],
             Self::UserInput => &["user", "steer"],
-            Self::Sent => &["user", "steer", "agent_message", "wakeup"],
+            Self::Work => &["user", "steer", "agent_message", "wakeup"],
             Self::User => &["user"],
             Self::ToolCall | Self::ExecutingCall => &["tool_call"],
             Self::Text | Self::CompletedText => &["text"],
@@ -857,7 +857,7 @@ impl Kind {
                     | Block::Resume(_)
             ),
             Self::UserInput => matches!(block, Block::User(_) | Block::Steer(_)),
-            Self::Sent => block.sender_id().is_some(),
+            Self::Work => block.labels().is_some(),
             Self::User => matches!(block, Block::User(_)),
             Self::ToolCall => matches!(block, Block::ToolCall(_)),
             Self::ExecutingCall => {

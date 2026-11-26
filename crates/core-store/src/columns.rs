@@ -6,7 +6,7 @@
 
 use std::fmt::Display;
 
-use jush_shared_types::{Timestamp, WorkflowChoice};
+use jush_shared_types::{Labels, Timestamp, WorkflowChoice, check_labels};
 use garde::Validate;
 use rusqlite::Row;
 use serde::Serialize;
@@ -49,6 +49,22 @@ pub fn to_json<T: Serialize>(value: &T) -> String {
     // The stored types serialize their fields as JSON strings, numbers,
     // arrays and objects with string keys, which serde_json never refuses.
     serde_json::to_string(value).expect("a stored value serializes to JSON")
+}
+
+/// The text a labels column holds for `labels`: NULL for none, so a report
+/// that groups by a label reads a missing one alike for every row.
+pub fn labels_column(labels: &Labels) -> Option<String> {
+    (!labels.is_empty()).then(|| to_json(labels))
+}
+
+/// The labels a labels column's `text` holds, checked as a message's are.
+pub fn labels(table: &'static str, column: &'static str, text: Option<&str>) -> Result<Labels, StorageError> {
+    let Some(text) = text else {
+        return Ok(Labels::new());
+    };
+    let labels: Labels = decode(table, column, serde_json::from_str(text))?;
+    decode(table, column, check_labels(&labels, &()))?;
+    Ok(labels)
 }
 
 /// A Workflow menu choice as its typed columns: the kind, the workflow's id

@@ -271,8 +271,8 @@ struct Sender {
     node: NodeId,
     agent: AgentSender,
     origin: Option<BlockId>,
-    /// Whom and which assignment the call that ran the command worked for,
-    /// for which the recipient's work is then counted.
+    /// The labels and the assignment of the work of the call that ran the
+    /// command, which the recipient's work then carries.
     attribution: Attribution,
 }
 
@@ -294,7 +294,7 @@ async fn deliver(core: &Core, sender: &Sender, to: &ConversationId, content: &st
         content: content.to_owned(),
         event: AgentMessageEvent::Message {},
         origin: sender.origin.clone(),
-        sender_id: sender.attribution.sender_id.clone(),
+        labels: sender.attribution.labels.clone(),
         assignment_id: sender.attribution.assignment_id.clone(),
     };
     core.permission_core().admit(to, &root_of(to), &message).await?;
@@ -305,7 +305,7 @@ async fn deliver(core: &Core, sender: &Sender, to: &ConversationId, content: &st
             sender: sender.sending.clone(),
             sender_node: sender.node.clone(),
             notice: None,
-            message_sender_id: sender.attribution.sender_id.clone(),
+            message_labels: sender.attribution.labels.clone(),
             message_assignment_id: sender.attribution.assignment_id.clone(),
         };
         core

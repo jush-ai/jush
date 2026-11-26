@@ -22,12 +22,12 @@ use jush_web_api_protocol::ids::ConversationId;
 use rusqlite::{Connection, OptionalExtension, Row, params};
 
 use super::StorageError;
-use super::columns::{decode, instant};
+use super::columns::{decode, instant, labels, labels_column};
 use super::store::CoreStore;
 
 const TABLE: &str = "command_history";
 
-const COLUMNS: &str = "id, conversation_id, agent, command_id, device_id, turn_id, sender_id, assignment_id, title,
+const COLUMNS: &str = "id, conversation_id, agent, command_id, device_id, turn_id, labels, assignment_id, title,
      script, started_at, ended_at, ending, exit_code, reason";
 
 /// Where a read of the history starts.
@@ -75,7 +75,7 @@ impl CoreStore {
             // its deletion names.
             connection
                 .prepare_cached(
-                    "INSERT INTO command_history (conversation_id, agent, command_id, device_id, turn_id, sender_id,
+                    "INSERT INTO command_history (conversation_id, agent, command_id, device_id, turn_id, labels,
                        assignment_id, title, script, started_at, ended_at, ending, exit_code, reason)
                      SELECT id, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14 FROM conversations WHERE id = ?1
                      ON CONFLICT (conversation_id, command_id) DO NOTHING",
@@ -86,7 +86,7 @@ impl CoreStore {
                     entry.command.as_ref().map(CommandId::as_str),
                     entry.device.as_ref().map(DeviceId::as_str),
                     entry.turn.as_ref().map(TurnId::as_str),
-                    entry.sender,
+                    labels_column(&entry.labels),
                     entry.assignment.as_ref().map(TurnId::as_str),
                     entry.title,
                     entry.script,
@@ -175,7 +175,7 @@ fn entry(row: &Row<'_>) -> Result<CommandHistoryEntry, StorageError> {
         command: text("command_id")?.map(|id| decode(TABLE, "command_id", CommandId::try_from(id))).transpose()?,
         device: text("device_id")?.map(|id| decode(TABLE, "device_id", DeviceId::try_from(id))).transpose()?,
         turn: text("turn_id")?.map(|id| decode(TABLE, "turn_id", TurnId::try_from(id))).transpose()?,
-        sender: text("sender_id")?,
+        labels: labels(TABLE, "labels", text("labels")?.as_deref())?,
         assignment: text("assignment_id")?.map(|id| decode(TABLE, "assignment_id", TurnId::try_from(id))).transpose()?,
         title: row.get("title")?,
         script: row.get("script")?,

@@ -5,7 +5,7 @@
 //! agent's.
 
 use jush_conversation_lane_protocol::{ClientContent, SideQuestion};
-use jush_shared_types::{BlockId, CommentPart, MAX_SAFE_INTEGER, MediaSource, NodeId, TurnId};
+use jush_shared_types::{BlockId, CommentPart, Labels, MAX_SAFE_INTEGER, MediaSource, NodeId, TurnId};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -32,11 +32,11 @@ pub struct AskRequest {
     /// What is asked, a message's content, as a frame names it.
     #[garde(dive, custom(says_something))]
     pub question: Vec<ClientContent>,
-    /// Who asked, as a message's sender
+    /// The labels its program gave it, as a message's
     /// (`crates/conversation-lane-protocol/src/client.rs`).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[garde(length(chars, min = 1, max = jush_shared_types::SENDER_ID_LIMIT))]
-    pub sender_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Labels::is_empty")]
+    #[garde(custom(jush_shared_types::check_labels))]
+    pub labels: Labels,
     /// The assignment its question continues, as a message's; one of its
     /// own id when absent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -57,10 +57,10 @@ pub struct SideFollowUp {
     /// A message's content, as a frame names it.
     #[garde(dive, custom(says_something))]
     pub content: Vec<ClientContent>,
-    /// Who sent it, as a message's sender.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[garde(length(chars, min = 1, max = jush_shared_types::SENDER_ID_LIMIT))]
-    pub sender_id: Option<String>,
+    /// The labels its program gave it, as a message's.
+    #[serde(default, skip_serializing_if = "Labels::is_empty")]
+    #[garde(custom(jush_shared_types::check_labels))]
+    pub labels: Labels,
     /// The assignment it continues, as a message's; one of its own id when
     /// absent.
     #[serde(default, skip_serializing_if = "Option::is_none")]

@@ -3,7 +3,7 @@
 //! it ended, and each such call that started none, in the order its rows
 //! were written.
 
-use jush_shared_types::{CommandEnd, CommandId, DeviceId, MAX_SAFE_INTEGER, Timestamp, TurnId};
+use jush_shared_types::{CommandEnd, CommandId, DeviceId, Labels, MAX_SAFE_INTEGER, Timestamp, TurnId};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -53,8 +53,8 @@ pub struct CommandHistoryEntry {
     pub device: Option<DeviceId>,
     /// The turn of the call.
     pub turn: Option<TurnId>,
-    /// Whom the call's work was for, by the id the program gave its sender.
-    pub sender: Option<String>,
+    /// The program's labels of the call's work.
+    pub labels: Labels,
     /// The assignment the call's work was part of.
     pub assignment: Option<TurnId>,
     pub title: String,

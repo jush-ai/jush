@@ -211,8 +211,9 @@ pub(crate) enum StartInput {
         /// `--cwd`, read against the caller's directory; none for the
         /// caller's own.
         cwd: Option<String>,
-        /// Whom and which assignment the call that ran the command worked for,
-        /// which the child works for (`jush_device_interface::JobCaller`).
+        /// The labels and the assignment of the work of the call that ran the
+        /// command, which the child's work carries
+        /// (`jush_device_interface::JobCaller`).
         attribution: Attribution,
     },
     /// `jush agent resume`; `profile_name` moves the child to another
@@ -232,7 +233,7 @@ pub(crate) enum StartInput {
         number: u64,
         message_id: BlockId,
         text: String,
-        /// Who sent it, and the assignment it continues when it opens a
+        /// Its labels, and the assignment it continues when it opens a
         /// turn of its own.
         attribution: Attribution,
     },
@@ -1644,19 +1645,19 @@ impl<H: DeviceResolver> Tree<H> {
         }
     }
 
-    /// Whom and which assignment the child of `record` worked for as it closed, as
-    /// its session counts its calls (`Block::sender_id`, `Block::assignment_id`),
-    /// read from its store, as a completion delivered again after a restart
-    /// reads it.
-    async fn worked_for(&self, record: &NodeRecord) -> Attribution {
+    /// The labels and the assignment of the child of `record`'s work as it
+    /// closed, as its session counts its calls (`Block::labels`,
+    /// `Block::assignment_id`), read from its store, as a completion
+    /// delivered again after a restart reads it.
+    async fn attribution_of(&self, record: &NodeRecord) -> Attribution {
         let store = self.store.session_store(&record.id);
         match Earlier::read(store.as_ref(), PATH_END).await {
             Ok(earlier) => Attribution {
-                sender_id: earlier.sender_id().map(str::to_owned),
+                labels: earlier.labels().clone(),
                 assignment_id: earlier.assignment_id().cloned(),
             },
             Err(error) => {
-                self.report(format!("whom subagent {} worked for was not read: {error}", record.id));
+                self.report(format!("the labels and assignment of subagent {}'s work were not read: {error}", record.id));
                 Attribution::default()
             }
         }
@@ -1674,7 +1675,7 @@ impl<H: DeviceResolver> Tree<H> {
         close: &NodeClose,
         origin: Option<BlockId>,
     ) {
-        let message = completion(record, close, origin, self.written(record).await, self.worked_for(record).await);
+        let message = completion(record, close, origin, self.written(record).await, self.attribution_of(record).await);
         let message_id = message.id.clone();
         match owner.session().accept_agent_message(message).await {
             Ok(()) => tracing::info!(
@@ -1725,7 +1726,7 @@ impl<H: DeviceResolver> Tree<H> {
     ///
     /// Returns the recipient's number once the message is accepted durably. The
     /// message comes from the caller's call `call`, the `shell` call whose
-    /// command sends it, which worked for `attribution`.
+    /// command sends it, whose work `attribution` names.
     pub(crate) async fn send_message(
         &self,
         caller: &NodeId,
@@ -1783,7 +1784,7 @@ impl<H: DeviceResolver> Tree<H> {
             content,
             event: AgentMessageEvent::Message {},
             origin,
-            sender_id: attribution.sender_id,
+            labels: attribution.labels,
             assignment_id: attribution.assignment_id,
         };
         let message_id = message.id.clone();
@@ -2214,7 +2215,7 @@ fn completion(
         content,
         event: AgentMessageEvent::Completion { outcome },
         origin,
-        sender_id: attribution.sender_id,
+        labels: attribution.labels,
         assignment_id: attribution.assignment_id,
     }
 }
@@ -2656,7 +2657,7 @@ pub(super) fn queued(id: TurnId, content: Vec<UserContentBlock>, attribution: At
         id,
         content,
         schedule: None,
-        sender_id: attribution.sender_id,
+        labels: attribution.labels,
         assignment_id: attribution.assignment_id,
     }
 }

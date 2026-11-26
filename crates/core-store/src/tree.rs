@@ -690,7 +690,7 @@ impl AgentTreeStore for SqliteTreeStore {
                     job: row.job,
                     tool_use_id: row.tool_use_id,
                     turn: row.turn,
-                    sender_id: row.sender_id,
+                    labels: row.labels,
                     assignment_id: row.assignment_id,
                     title: row.title,
                     script: row.script,
@@ -775,7 +775,7 @@ pub async fn stored_command(
         OutputRow::NotStored(reason) => {
             return Ok(Some(StoredCommand {
                 title: row.title,
-                sender_id: row.sender_id,
+                labels: row.labels,
                 assignment_id: row.assignment_id,
                 end: row.end,
                 output: StoredOutput::NotStored(reason),
@@ -792,7 +792,7 @@ pub async fn stored_command(
         .map_err(|error| StoreError::Corrupt(format!("the output of {command} does not decode: {error}")))?;
     Ok(Some(StoredCommand {
         title: row.title,
-        sender_id: row.sender_id,
+        labels: row.labels,
         assignment_id: row.assignment_id,
         end: row.end,
         output: StoredOutput::Stored { output },
@@ -1237,7 +1237,7 @@ fn condition(kind: Kind) -> &'static str {
         Kind::CompletedText => "forkable = 1",
         Kind::Record => "outside_turn = 0 AND (type != 'wakeup' OR placement != 'steer')",
         // A report read inside a running turn hands no work.
-        Kind::Sent => "(type != 'wakeup' OR placement != 'steer')",
+        Kind::Work => "(type != 'wakeup' OR placement != 'steer')",
         Kind::TurnEnd => "outside_turn = 0 AND resumed = 0",
         _ => "1",
     }
@@ -1356,12 +1356,12 @@ fn earlier_rows(connection: &Connection, node: &NodeId, path: &Path, end: i64) -
     // The index finds agent messages of every event, and only an explicit
     // message, or a notice of an end that opened its turn, hands the agent
     // work: the search goes on before any other.
-    let mut last_sent = None;
+    let mut last_work = None;
     let mut before = end;
-    while let Some(at) = last_of(connection, node, path, Kind::Sent, before)? {
+    while let Some(at) = last_of(connection, node, path, Kind::Work, before)? {
         let block = path_blocks(connection, node, path, count(at)..count(at) + 1)?.pop();
-        if block.as_ref().is_some_and(|block| Kind::Sent.holds(block)) {
-            last_sent = block;
+        if block.as_ref().is_some_and(|block| Kind::Work.holds(block)) {
+            last_work = block;
             break;
         }
         before = count(at);
@@ -1372,7 +1372,7 @@ fn earlier_rows(connection: &Connection, node: &NodeId, path: &Path, end: i64) -
         steers,
         last_input: last(Kind::Input)?,
         last_user_input: last(Kind::UserInput)?,
-        last_sent,
+        last_work,
         last_record: last(Kind::Record)?,
     })
 }

@@ -126,7 +126,7 @@ impl<H: DeviceResolver> Side<H> {
 /// The first message of the side question `of`: the asked words as a
 /// quote, or the asked picture as an image the message carries, the
 /// instruction, then the question's content, its first text joined to the
-/// instruction by a blank line, from the sender `attribution` names, in the
+/// instruction by a blank line, with the labels `attribution` names, in the
 /// assignment it names or one of its own id.
 fn first_message(id: TurnId, of: &SideOf, attribution: Attribution) -> QueuedMessage {
     let mut content = match &of.picture {
@@ -153,7 +153,7 @@ fn first_message(id: TurnId, of: &SideOf, attribution: Attribution) -> QueuedMes
         id,
         content,
         schedule: None,
-        sender_id: attribution.sender_id,
+        labels: attribution.labels,
     }
 }
 

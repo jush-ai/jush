@@ -19,7 +19,7 @@ CREATE TABLE nodes (
   delivered        INTEGER NOT NULL CHECK (delivered IN (0, 1)),
   -- The session's checkpoint state as JSON, with whether a Stop holds its
   -- waiting input until the user's next action.
-  -- nodes.state: checkpoint state format 13
+  -- nodes.state: checkpoint state format 14
   state            TEXT NOT NULL,
   output_revision  INTEGER NOT NULL CHECK (output_revision >= 0),
   -- The number of the agent the node was forked from; null for one that
@@ -112,7 +112,7 @@ CREATE TABLE blocks (
   -- it is then of that row's version. Null for every other row.
   replaces       INTEGER CHECK (replaces < idx),
   -- The block's format; a release reads each format it knows.
-  -- blocks.body: transcript block format 22
+  -- blocks.body: transcript block format 23
   format         INTEGER NOT NULL,
   type           TEXT NOT NULL,
   id             TEXT NOT NULL,
@@ -230,7 +230,7 @@ CREATE TABLE share_blocks (
   copy       INTEGER PRIMARY KEY,
   token      TEXT NOT NULL,
   idx        INTEGER NOT NULL CHECK (idx >= 0),
-  -- share_blocks.body: transcript block format 22
+  -- share_blocks.body: transcript block format 23
   format     INTEGER NOT NULL,
   type       TEXT NOT NULL,
   id         TEXT NOT NULL,
@@ -272,7 +272,8 @@ CREATE TABLE share_attachments (
 -- its end the backend does not have and why; or not stored, and why; the
 -- title of the call that started it, empty for a row written before rows
 -- kept it; when it started, null for a row written before rows kept that;
--- and whom its work was for, as its record as running kept it.
+-- and the labels and the assignment of its work, as its record as running
+-- kept them.
 CREATE TABLE command_outputs (
   command_id     TEXT PRIMARY KEY,
   ended_at       INTEGER NOT NULL,
@@ -291,9 +292,10 @@ CREATE TABLE command_outputs (
   -- command_outputs.media: command media format 1
   media          TEXT,
   started_at     INTEGER,
-  -- Whom its work was for, by the id its program gave its sender; null
-  -- when no one was named, and for a row written before rows kept it.
-  sender_id      TEXT,
+  -- The labels of its work, a JSON object of its program's keys and
+  -- values; null when none were named, and for a row written before rows
+  -- kept them.
+  labels         TEXT,
   -- The assignment its work was part of, by the id of the message that
   -- opened it; null when none was named, and for a row written before rows
   -- kept it.
@@ -330,13 +332,14 @@ CREATE TABLE running_commands (
   unsent      TEXT,
   script      TEXT NOT NULL DEFAULT '',
   service     INTEGER NOT NULL DEFAULT 0 CHECK (service IN (0, 1)),
-  -- Whom its shell call's command is counted for: whom the call's agent
-  -- worked for, by the id its program gave its sender; null when no one
-  -- was named, and for a command recorded before records kept it.
-  sender_id   TEXT,
+  -- The labels its shell call's command is counted with, those of the
+  -- call's agent's work, a JSON object of its program's keys and values;
+  -- null when none were named, and for a command recorded before records
+  -- kept them.
+  labels      TEXT,
   -- The assignment its shell call's command is counted in, as the call's
-  -- agent worked in it; null as its sender is, and for a command recorded
-  -- before records kept it.
+  -- agent worked in it; null when none was named, and for a command
+  -- recorded before records kept it.
   assignment_id TEXT
 ) STRICT;
 CREATE INDEX running_commands_of_node ON running_commands (node_id);

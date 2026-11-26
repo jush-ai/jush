@@ -72,19 +72,17 @@ pub struct AgentMessage {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[garde(custom(comes_from_its_sender(&self.sender)))]
     pub origin: Option<BlockId>,
-    /// Whom the work the message tells of is for, by the id its program
-    /// gave its sender (`crate::UserBlock`'s `sender_id`): for an explicit
-    /// message, whom the sending agent worked for
-    /// (`crate::Block::sender_id`); for a child's end, whom the child worked
-    /// for as it closed; for the end of another conversation's work, whom
-    /// the message that asked for it named. Absent for any other message,
-    /// and when no one was named.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[garde(length(chars, min = 1, max = crate::SENDER_ID_LIMIT))]
-    pub sender_id: Option<String>,
+    /// The program's labels of the work the message hands or tells of
+    /// (`crate::UserBlock`'s `labels`): for an explicit message, those of the
+    /// sending agent's work (`crate::Block::labels`); for a child's end, those
+    /// of its work as it closed; for the end of another conversation's work,
+    /// those of the message that asked for it. Omitted when there are none.
+    #[serde(default, skip_serializing_if = "crate::Labels::is_empty")]
+    #[garde(custom(crate::check_labels))]
+    pub labels: crate::Labels,
     /// The assignment the work the message hands or tells of is part of, by
-    /// the id of the message that opened it, as `sender_id` names whom it is
-    /// for; absent when it names none.
+    /// the id of the message that opened it, as `labels` are its labels;
+    /// absent when it names none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[garde(skip)]
     pub assignment_id: Option<TurnId>,

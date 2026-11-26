@@ -15,7 +15,7 @@ use jush_provider_common::{
     InferenceItem, InferenceRequest, PromptCache, Provider, ProviderEvent, RequestPurpose, RuntimeEnv, UserPart,
 };
 use jush_provider_common::media::MediaFailure;
-use jush_shared_types::MediaKind;
+use jush_shared_types::{Labels, MediaKind};
 use jush_web_api_protocol::ids::CredentialId;
 use jush_web_api_protocol::providers::TestResult;
 use futures_util::StreamExt;
@@ -127,7 +127,7 @@ impl Core {
             affinity: None,
             conversation: None,
             turn_id: uuid::Uuid::new_v4().to_string(),
-            sender_id: None,
+            labels: Labels::new(),
             assignment_id: None,
             request_id: uuid::Uuid::new_v4().to_string(),
             model_id: model.id,

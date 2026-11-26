@@ -18,7 +18,7 @@ use jush_provider_common::{
 };
 use jush_shared_gates::{ActivityGate, GateLease, Purpose};
 use jush_shared_types::{
-    AgentMessage, AgentMessageEvent, B64Bytes, BlobRef, Block, BlockId, CommandId, CommandReport, FileExtension, ModelSelection, NodeId, OperationId, ReportEvent, Sender,
+    AgentMessage, AgentMessageEvent, B64Bytes, BlobRef, Block, BlockId, CommandId, CommandReport, FileExtension, Labels, ModelSelection, NodeId, OperationId, ReportEvent, Sender,
     SessionPhase, ShellToolView, ShellViewStatus, Timestamp,
     ToolView, TurnId, UserContentBlock,
 };
@@ -588,7 +588,7 @@ fn agent_message(id: &str) -> AgentMessage {
         content: format!("Result {id}"),
         event: AgentMessageEvent::Message {},
         origin: None,
-        sender_id: None,
+        labels: Labels::new(),
         assignment_id: None,
     }
 }
@@ -651,7 +651,7 @@ fn test_report(command: &str, title: &str, event: ReportEvent) -> CommandReport 
         event,
         output: String::new(),
         media: Vec::new(),
-        sender_id: None,
+        labels: Labels::new(),
         assignment_id: None,
     }
 }
@@ -792,7 +792,7 @@ async fn an_edit_gives_its_version_the_comments_it_carries_and_keeps_them_withou
             content: Vec::new(),
             comments: vec![first, second.clone()],
             schedule: None,
-            sender_id: None,
+            labels: Labels::new(),
             assignment_id: None,
         })
         .unwrap()

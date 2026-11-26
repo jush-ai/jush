@@ -4,7 +4,8 @@
 //! namespace, in the kept output's records. The conversation's `command_outputs`
 //! table holds one row per command, keyed by its id, which says:
 //!
-//! - when the command ended and how, and whom its work was for;
+//! - when the command ended and how, and the labels and assignment of its
+//!   work;
 //! - whether its output is stored, or was not stored and why;
 //! - what its result tells of the media its job viewed, without their
 //!   bytes: each one's facts, its attachment or why it has none.
@@ -13,12 +14,12 @@
 //! destination, and never changes.
 
 use jush_device_interface::{CommandMedium, Missing};
-use jush_shared_types::{BlobRef, Block, CommandEnd, CommandId, Timestamp, ToolView, TurnId};
+use jush_shared_types::{BlobRef, Block, CommandEnd, CommandId, Labels, Timestamp, ToolView, TurnId};
 use rusqlite::{Connection, OptionalExtension, Row, params};
 use serde::{Deserialize, Serialize};
 
 use super::StorageError;
-use super::columns::{decode, instant, json, to_json};
+use super::columns::{decode, instant, json, labels, labels_column, to_json};
 
 /// What a conversation holds of an ended command's output.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -52,9 +53,9 @@ pub struct CommandOutput {
     /// the reason the row keeps, or [`NOT_KEPT`]; none for a row written
     /// before rows kept them.
     pub media: Vec<CommandMedium>,
-    /// Whom its work was for, as the call that started it named; none when
-    /// no one was named, and for a row written before rows kept it.
-    pub sender_id: Option<String>,
+    /// The labels of its work, as the call that started it named them; none
+    /// when none were named, and for a row written before rows kept them.
+    pub labels: Labels,
     /// The assignment its work was part of, as the call that started it named;
     /// none when none was named, and for a row written before rows kept it.
     pub assignment_id: Option<TurnId>,
@@ -135,7 +136,7 @@ impl KeptMedium {
 }
 
 const COLUMNS: &str =
-    "command_id, ended_at, ending, blob, missing_bytes, missing_reason, not_stored, title, media, started_at, sender_id, assignment_id";
+    "command_id, ended_at, ending, blob, missing_bytes, missing_reason, not_stored, title, media, started_at, labels, assignment_id";
 
 /// Writes `rows` in one transaction; a command that has a row keeps it.
 pub fn insert(connection: &mut Connection, rows: &[CommandOutput]) -> Result<(), StorageError> {
@@ -177,7 +178,7 @@ pub(crate) fn insert_in(transaction: &Connection, rows: &[CommandOutput]) -> Res
                 row.title,
                 media,
                 row.started.map(Timestamp::as_millisecond),
-                row.sender_id,
+                labels_column(&row.labels),
                 row.assignment_id.as_ref().map(TurnId::as_str),
             ])?;
         }
@@ -338,7 +339,7 @@ fn decode_row(row: &Row<'_>) -> Result<CommandOutput, StorageError> {
         end,
         output,
         media,
-        sender_id: row.get("sender_id")?,
+        labels: labels("command_outputs", "labels", row.get::<_, Option<String>>("labels")?.as_deref())?,
         assignment_id: row
             .get::<_, Option<String>>("assignment_id")?
             .map(|assignment| decode("command_outputs", "assignment_id", TurnId::try_from(assignment)))

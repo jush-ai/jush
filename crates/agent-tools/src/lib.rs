@@ -204,7 +204,7 @@ pub struct NotStarted<'a> {
     /// The call's agent ([`EnvironmentScope::agent`]).
     pub agent: Option<u64>,
     pub turn: &'a TurnId,
-    /// Whom and which assignment the call's work was for.
+    /// The labels and the assignment of the call's work.
     pub attribution: &'a Attribution,
     /// The call's title and script, as far as its input held them.
     pub title: &'a str,
@@ -409,7 +409,7 @@ impl<'a, H: DeviceResolver> ShellAccess<'a, H> {
         let started = call.command.clone();
         let turn = call.turn.clone();
         let attribution = Attribution {
-            sender_id: call.sender_id.clone(),
+            labels: call.labels.clone(),
             assignment_id: call.assignment_id.clone(),
         };
         let asked = call.input.clone();
@@ -515,7 +515,7 @@ impl<'a, H: DeviceResolver> ShellAccess<'a, H> {
                 node: self.node.clone(),
                 tool_use_id: call.tool_use_id,
                 turn: Some(call.turn),
-                sender_id: call.sender_id,
+                labels: call.labels,
                 assignment_id: call.assignment_id,
             },
             title: input.description.0.clone(),
@@ -640,7 +640,7 @@ impl<'a, H: DeviceResolver> ShellAccess<'a, H> {
                 node: self.node.clone(),
                 tool_use_id: running.tool_use_id.clone(),
                 turn: running.turn.clone(),
-                sender_id: running.sender_id.clone(),
+                labels: running.labels.clone(),
                 assignment_id: running.assignment_id.clone(),
             },
             title: running.title.clone(),

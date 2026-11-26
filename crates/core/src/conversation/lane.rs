@@ -85,7 +85,7 @@ use jush_conversation_lane_protocol::{
     RemoveOutcome, SavedDelivery, SendMessage, ServerFrame, TranscriptPatch, Understood, Version, decode_client_frame,
 };
 use jush_shared_gates::Purpose;
-use jush_shared_types::{Block, BlockId, NodeId, TurnId, UserContentBlock};
+use jush_shared_types::{Block, BlockId, Labels, NodeId, TurnId, UserContentBlock};
 use jush_web_api_protocol::conversations::{ConversationFrame, ConversationMetadata, FirstMessageAnswer};
 use jush_web_api_protocol::drafts::{ATTACHMENT_MARK, DraftFile};
 use jush_web_api_protocol::saved::SavedMessage;
@@ -1314,14 +1314,14 @@ fn saved_frame(content: Vec<ClientContent>, turn: TurnId, delivery: SavedDeliver
             message_id: turn,
             content,
             comments: Vec::new(),
-            sender_id: None,
+            labels: Labels::new(),
             assignment_id: None,
         }),
         SavedDelivery::Steer => ClientFrame::Steer {
             comments: Vec::new(),
             steer_id: BlockId::try_from(turn.into_string()).expect("a turn id is not empty"),
             content,
-            sender_id: None,
+            labels: Labels::new(),
             assignment_id: None,
         },
     }

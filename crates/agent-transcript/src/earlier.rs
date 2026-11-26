@@ -8,7 +8,7 @@
 use std::collections::HashSet;
 
 use jush_agent_store::{EarlierRows, SessionStore, StoreError};
-use jush_shared_types::{ScheduleMark, Block, BlockId, ErrorBlock, Timestamp, TurnId};
+use jush_shared_types::{ScheduleMark, Block, BlockId, ErrorBlock, Labels, Timestamp, TurnId};
 
 use super::cut::{turn_of, turn_record};
 
@@ -27,8 +27,8 @@ pub struct Earlier {
     /// left it unfinished, or none for any other record.
     record: Option<Option<ErrorBlock>>,
     user_input: Option<UserInput>,
-    /// Whom the agent worked for there, as [`Block::sender_id`] tells it.
-    sender_id: Option<String>,
+    /// The labels of the agent's work there, as [`Block::labels`] tells them.
+    labels: Labels,
     /// The assignment it worked in there, as [`Block::assignment_id`] tells it.
     assignment_id: Option<TurnId>,
 }
@@ -59,9 +59,9 @@ impl Earlier {
         if let Some(input) = blocks.iter().rev().find_map(user_input) {
             self.user_input = Some(input);
         }
-        if let Some(sent) = blocks.iter().rev().find(|block| block.sender_id().is_some()) {
-            self.sender_id = sent.sender_id().flatten().map(str::to_owned);
-            self.assignment_id = sent.assignment_id().flatten().cloned();
+        if let Some(work) = blocks.iter().rev().find(|block| block.labels().is_some()) {
+            self.labels = work.labels().cloned().unwrap_or_default();
+            self.assignment_id = work.assignment_id().flatten().cloned();
         }
     }
 
@@ -81,8 +81,8 @@ impl Earlier {
             last_turn: rows.last_input.as_ref().and_then(turn_of).cloned(),
             record: rows.last_record.as_ref().map(failure),
             user_input: rows.last_user_input.as_ref().and_then(user_input),
-            sender_id: rows.last_sent.as_ref().and_then(Block::sender_id).flatten().map(str::to_owned),
-            assignment_id: rows.last_sent.as_ref().and_then(Block::assignment_id).flatten().cloned(),
+            labels: rows.last_work.as_ref().and_then(Block::labels).cloned().unwrap_or_default(),
+            assignment_id: rows.last_work.as_ref().and_then(Block::assignment_id).flatten().cloned(),
         }
     }
 
@@ -122,8 +122,8 @@ impl Earlier {
         self.user_input.as_ref()
     }
 
-    pub fn sender_id(&self) -> Option<&str> {
-        self.sender_id.as_deref()
+    pub fn labels(&self) -> &Labels {
+        &self.labels
     }
 
     pub fn assignment_id(&self) -> Option<&TurnId> {

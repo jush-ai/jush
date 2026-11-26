@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: proposed, superseded in part by 0383
 ---
 
 # A program reads usage by agent and by minute, of the conversations it names

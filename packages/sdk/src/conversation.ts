@@ -458,7 +458,7 @@ export class Conversation {
     const { id } = await this.routes.json('POST', path, subagentMessageAnswerSchema, {
       id: messageId,
       text,
-      senderId: options.senderId,
+      labels: options.labels,
       assignmentId: options.assignmentId,
     })
     return id

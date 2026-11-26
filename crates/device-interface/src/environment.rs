@@ -12,8 +12,7 @@ use std::{cell::RefCell, rc::Rc, sync::Arc, time::Duration};
 
 use bytes::Bytes;
 use schemars::JsonSchema;
-use jush_shared_types::{Attribution, TurnId, 
-    BinaryStdout, CommandId, EditedFile, NodeId, OutputView, PathChange, Sequence, StreamKind,
+use jush_shared_types::{Attribution, Labels, TurnId, BinaryStdout, CommandId, EditedFile, NodeId, OutputView, PathChange, Sequence, StreamKind,
     StreamView,
 };
 use jush_command_protocol::Viewable;
@@ -61,9 +60,9 @@ pub trait ShellEnvironment {
     /// environment does not hold.
     fn title(&self, command: &CommandId) -> Option<String>;
 
-    /// Whom and which assignment the work of the call that started the command is
-    /// for, which its record keeps from its start and its reports name;
-    /// none named for a command the environment does not hold.
+    /// The labels and the assignment of the work of the call that started
+    /// the command, which its record keeps from its start and its reports
+    /// name; none named for a command the environment does not hold.
     fn attribution(&self, command: &CommandId) -> Attribution;
 
     /// The media the command's job viewed, once it exited, which moves no
@@ -201,11 +200,10 @@ pub struct JobCaller {
     /// records kept it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub turn: Option<TurnId>,
-    /// Whom the call's agent worked for, by its program's id, whom a
-    /// command's call to a vendor is counted for; none when no one was
-    /// named.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub sender_id: Option<String>,
+    /// The labels of the work the call's agent did, which a command's call
+    /// to a vendor is counted with; omitted when there are none.
+    #[serde(default, skip_serializing_if = "Labels::is_empty")]
+    pub labels: Labels,
     /// The assignment the call's agent worked in, which a command's call to a
     /// vendor is counted in; none when its turn named none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -213,9 +211,9 @@ pub struct JobCaller {
 }
 
 impl JobCaller {
-    /// Whom and which assignment the call's work is for.
+    /// The labels and the assignment of the call's work.
     pub fn attribution(&self) -> Attribution {
-        Attribution { sender_id: self.sender_id.clone(), assignment_id: self.assignment_id.clone() }
+        Attribution { labels: self.labels.clone(), assignment_id: self.assignment_id.clone() }
     }
 }
 

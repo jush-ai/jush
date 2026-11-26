@@ -108,14 +108,14 @@ impl ContextUsage {
     }
 }
 
-/// Whom and which assignment a piece of work is for, as the block that handed it
-/// names them ([`crate::Block::sender_id`], [`crate::Block::assignment_id`]): a
-/// command keeps the call's, and its reports name them. Of a message a
-/// program sends, the assignment it names, which it opens its turn in
-/// ([`opened_assignment`]).
+/// The labels and the assignment of a piece of work, as the block that
+/// handed it names them ([`crate::Block::labels`],
+/// [`crate::Block::assignment_id`]): a command keeps the call's, and its
+/// reports name them. Of a message a program sends, the assignment it names,
+/// which it opens its turn in ([`opened_assignment`]).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Attribution {
-    pub sender_id: Option<String>,
+    pub labels: crate::Labels,
     pub assignment_id: Option<TurnId>,
 }
 
@@ -150,15 +150,11 @@ pub struct QueuedMessage {
     #[schemars(with = "crate::ScheduleMark")]
     #[garde(dive)]
     pub schedule: Option<crate::ScheduleMark>,
-    /// Who sent it, which its `user` block keeps.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        with = "serde_with::rust::unwrap_or_skip"
-    )]
-    #[schemars(with = "String")]
-    #[garde(length(chars, min = 1, max = crate::SENDER_ID_LIMIT))]
-    pub sender_id: Option<String>,
+    /// The labels its program gave it, which its `user` block keeps; omitted
+    /// when there are none.
+    #[serde(default, skip_serializing_if = "crate::Labels::is_empty")]
+    #[garde(custom(crate::check_labels))]
+    pub labels: crate::Labels,
     /// The assignment it is part of, which its `user` block keeps: its own id
     /// for one that opens one, the work's for one that continues it; absent
     /// when it names none.
@@ -213,15 +209,11 @@ pub struct PendingSteer {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[garde(dive)]
     pub comments: Vec<crate::MessageComment>,
-    /// Who sent it, which its `steer` block keeps.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        with = "serde_with::rust::unwrap_or_skip"
-    )]
-    #[schemars(with = "String")]
-    #[garde(length(chars, min = 1, max = crate::SENDER_ID_LIMIT))]
-    pub sender_id: Option<String>,
+    /// The labels its program gave it, which its `steer` block keeps; omitted
+    /// when there are none.
+    #[serde(default, skip_serializing_if = "crate::Labels::is_empty")]
+    #[garde(custom(crate::check_labels))]
+    pub labels: crate::Labels,
     /// The assignment it continues when it opens a turn of its own, as its
     /// program named it; none for one that opens the assignment of its own
     /// id. One the running turn reads joins that turn's.

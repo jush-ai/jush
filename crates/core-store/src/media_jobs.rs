@@ -14,7 +14,7 @@
 //! conversation was deleted records its cost all the same.
 
 use jush_plugin_interface::{MadeAudio, MadeImage, MadeVideo, MediaRefusal};
-use jush_shared_types::{AudioKind, BlobRef, Cost, MediaKind, Timestamp, TokenUsage};
+use jush_shared_types::{AudioKind, BlobRef, Cost, Labels, MediaKind, Timestamp, TokenUsage};
 use jush_web_api_protocol::ids::{ConversationId, CredentialId, ProviderId};
 use rusqlite::{OptionalExtension, Row, params};
 use serde::{Deserialize, Serialize};
@@ -108,17 +108,17 @@ impl Made {
     }
 }
 
-/// A usage row as `media_jobs.usage` keeps it, format 3: format 2 and the
-/// call's assignment, format 2 being format 1 and the call's sender; a value
-/// of an earlier format reads as naming none.
+/// A usage row as `media_jobs.usage` keeps it, format 4: format 1, the
+/// call's labels and its assignment. A value of format 1 reads as naming
+/// none; the core's history drops the sender that formats 2 and 3 named.
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct KeptUsage {
     conversation: ConversationId,
     agent: Option<u64>,
     turn: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    sender_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Labels::is_empty")]
+    labels: Labels,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     assignment_id: Option<String>,
     provider: ProviderId,
@@ -140,7 +140,7 @@ impl KeptUsage {
             conversation: row.conversation.clone(),
             agent: row.agent,
             turn: row.turn.clone(),
-            sender_id: row.sender_id.clone(),
+            labels: row.labels.clone(),
             assignment_id: row.assignment_id.clone(),
             provider: row.provider.clone(),
             account: row.account.clone(),
@@ -162,7 +162,7 @@ impl KeptUsage {
             conversation: self.conversation,
             agent: self.agent,
             turn: self.turn,
-            sender_id: self.sender_id,
+            labels: self.labels,
             assignment_id: self.assignment_id,
             purpose: purpose(kind),
             provider: self.provider,

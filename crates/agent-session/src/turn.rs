@@ -821,7 +821,7 @@ async fn run_tools(
             // node works in by then (`crates/agent-store/src/changes.rs`).
             let started_in = s.runtime.directory().await;
             let turn = s.read(SessionCore::turn);
-            let sender_id = s.read(SessionCore::sender_id);
+            let labels = s.read(SessionCore::labels);
             let assignment_id = s.read(SessionCore::assignment_id);
             // Whether a call of the step has returned, which moves the
             // others' commands to the background once they have run a
@@ -834,7 +834,7 @@ async fn run_tools(
                     tool_use_id: call.tool_use_id.clone(),
                     tool_name: call.tool_name.clone(),
                     turn: turn.clone(),
-                    sender_id: sender_id.clone(),
+                    labels: labels.clone(),
                     assignment_id: assignment_id.clone(),
                     input: tool_input(&call.input),
                     model: model.clone(),

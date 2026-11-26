@@ -1092,11 +1092,11 @@ pub struct SubagentMessage {
     pub id: Option<BlockId>,
     #[garde(custom(crate::not_blank))]
     pub text: String,
-    /// Who sent it, as a message's sender
+    /// The labels its program gave it, as a message's
     /// (`crates/conversation-lane-protocol/src/client.rs`).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[garde(length(chars, min = 1, max = jush_shared_types::SENDER_ID_LIMIT))]
-    pub sender_id: Option<String>,
+    #[serde(default, skip_serializing_if = "jush_shared_types::Labels::is_empty")]
+    #[garde(custom(jush_shared_types::check_labels))]
+    pub labels: jush_shared_types::Labels,
     /// The assignment it continues when it opens a turn of its own, as a
     /// message's; one the running subagent reads joins its turn's.
     #[serde(default, skip_serializing_if = "Option::is_none")]

@@ -674,7 +674,7 @@ impl<H: DeviceResolver> AgentServer<H> {
     /// resumed with it, as `jush agent resume` resumes one for its parent.
     /// One whose history or queue holds `id` took it already and takes
     /// nothing, so a message sent again after its answer was lost runs no
-    /// second turn and resumes nothing. `attribution` names who sent it and
+    /// second turn and resumes nothing. `attribution` names its labels and
     /// the assignment it continues when it opens a turn of its own.
     pub async fn message_subagent(
         &self,
@@ -806,8 +806,8 @@ impl<H: DeviceResolver> AgentServer<H> {
 
     /// Sends the follow-up `content` to the side question `side` of the
     /// conversation `root`, whose tree is open, under the id `message` or a
-    /// new one, from the sender `attribution` names and in the assignment
-    /// it names, with the bytes of its media.
+    /// new one, with the labels and in the assignment `attribution` names,
+    /// with the bytes of its media.
     pub async fn ask_more(
         &self,
         root: &NodeId,

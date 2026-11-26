@@ -33,8 +33,12 @@ export interface UsageReportOptions {
   bucket: UsageBucketSize
   /** The IANA zone a bucket's minute, hour or day is counted in; UTC when absent. */
   timeZone?: string
-  /** What each bucket's calls are grouped by; none sums each bucket whole. */
-  groupBy?: UsageDimension[]
+  /**
+   * What each bucket's calls are grouped by: a dimension, or one of the
+   * labels messages carry (`MessageOptions.labels`) as `label:<key>`, which
+   * each group answers in `labels`; none sums each bucket whole.
+   */
+  groupBy?: Array<UsageDimension | `label:${string}`>
   /** The conversations whose calls it counts; every one's when absent, none when empty. */
   conversations?: string[]
   /**

@@ -16,7 +16,7 @@ use jush_provider_common::{
     InferenceItem, InferenceRequest, PromptCache, ProviderEvent, RequestBlock, RequestLimits, RequestPurpose,
     ToolDefinition,
 };
-use jush_shared_types::{ProviderModelList, ThinkingConfig};
+use jush_shared_types::{Labels, ProviderModelList, ThinkingConfig};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256};
@@ -233,9 +233,9 @@ impl RunRequest {
             affinity: self.affinity,
             conversation: self.conversation,
             turn_id: self.turn_id,
-            // The borrower's senders and assignments are its program's ids, which
+            // The borrower's labels and assignments are its program's, which
             // the lender's ledger has no use for: the request carries none.
-            sender_id: None,
+            labels: Labels::new(),
             assignment_id: None,
             request_id: self.request_id,
             model_id: self.model_id,

@@ -24,8 +24,8 @@
 //! - A report names its command by number and the title of the call that
 //!   started it, which the command's record keeps, so it reads the same
 //!   whatever became of the call or the process that watched it. So does
-//!   it name whom that call's work is for, whose turn the report opens
-//!   (`Block::sender_id`).
+//!   it name the labels of that call's work, which the turn the report
+//!   opens carries (`Block::labels`).
 //! - A command whose device's connection is away sends no silence report, since
 //!   the silence is the connection's and the node could do nothing with one.
 //!

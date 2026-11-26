@@ -20,7 +20,7 @@ use jush_provider_common::{
     Ahead, CallEvent, CallOutcome, ErrorCode, InferenceRequest, ProviderEvent, ProviderRun,
     PromptCache, ProviderRuntime, RequestLimits, RequestPurpose, VendorCall,
 };
-use jush_shared_types::{Clock, Model, ModelCost, QuotaWindow, Timestamp, TokenUsage};
+use jush_shared_types::{Clock, Labels, Model, ModelCost, QuotaWindow, Timestamp, TokenUsage};
 use jush_web_api_protocol::ids::{ConversationId, CredentialId, ProviderId};
 use futures_util::future::LocalBoxFuture;
 use futures_util::{Stream, StreamExt, stream};
@@ -130,7 +130,7 @@ struct Calls {
     ledger: Rc<Ledger>,
     agent: Option<u64>,
     turn: Option<String>,
-    sender_id: Option<String>,
+    labels: Labels,
     assignment_id: Option<String>,
     purpose: RequestPurpose,
     model: String,
@@ -170,7 +170,7 @@ impl Calls {
             new_prompt: matches!(request.prompt_cache, PromptCache::Session { answered_items: 0 }),
             agent: request.agent,
             turn: request.purpose.belongs_to_turn().then(|| request.turn_id.clone()),
-            sender_id: request.sender_id.clone(),
+            labels: request.labels.clone(),
             assignment_id: request.assignment_id.clone(),
             purpose: request.purpose,
             model: request.model_id.clone(),
@@ -283,7 +283,7 @@ impl Calls {
             conversation: self.ledger.conversation.clone(),
             agent: self.agent,
             turn: self.turn.clone(),
-            sender_id: self.sender_id.clone(),
+            labels: self.labels.clone(),
             assignment_id: self.assignment_id.clone(),
             purpose: self.purpose.as_str(),
             provider: self.ledger.provider.clone(),

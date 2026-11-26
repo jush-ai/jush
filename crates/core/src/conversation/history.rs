@@ -50,7 +50,7 @@ use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
 
 use super::organize::{failed, refused, verb};
-use super::cost_report::{CostRows, Labels, call_costs, render_calls, render_turns, turn_costs};
+use super::cost_report::{CostRows, EntryNames, call_costs, render_calls, render_turns, turn_costs};
 use super::turn_timing::{Turn, TurnTiming, Turns, turn_of};
 use crate::Core;
 
@@ -905,7 +905,7 @@ async fn cost(core: Rc<Core>, call: Call<CostArgs>, port: RpcPort) -> Result<u8,
         port.stderr(output::note(command, &notes.join("; "))).await?;
     }
     let rows = if by_call {
-        CostRows::Calls(call_costs(&turns, &calls, &Labels::of(&core, &calls).await))
+        CostRows::Calls(call_costs(&turns, &calls, &EntryNames::of(&core, &calls).await))
     } else {
         CostRows::Turns(turn_costs(&turns, &calls))
     };

@@ -127,7 +127,7 @@ impl StoredNode {
         let last = |kind: Kind| self.last_of(kind, end).map(|at| self.blocks(at..at + 1).remove(0));
         rows.last_input = last(Kind::Input);
         rows.last_user_input = last(Kind::UserInput);
-        rows.last_sent = last(Kind::Sent);
+        rows.last_work = last(Kind::Work);
         rows.last_record = last(Kind::Record);
         rows
     }

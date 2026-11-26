@@ -7,7 +7,8 @@ use std::sync::Arc;
 use axum::Json;
 use axum::extract::State;
 use jiff::tz::TimeZone;
-use jush_core_store::usage_report::{Kept, ReportAsk};
+use jush_core_store::usage_report::{Grouping, Kept, ReportAsk};
+use jush_shared_types::check_label_key;
 use jush_web_api_protocol::ids::ConversationId;
 use jush_web_api_protocol::usage::{UsageDimension, UsageReport, UsageReportQuery, UsageTotals};
 
@@ -41,10 +42,17 @@ pub(crate) async fn report(
     };
     let mut group_by = Vec::new();
     for name in list(query.group_by.as_deref()) {
-        let dimension: UsageDimension = serde_plain::from_str(name)
-            .map_err(|_| ApiError::invalid_query(format!("groupBy: {name} is not a dimension of the report")))?;
-        if !group_by.contains(&dimension) {
-            group_by.push(dimension);
+        let grouping = match name.strip_prefix("label:") {
+            Some(key) => {
+                check_label_key(key).map_err(|reason| ApiError::invalid_query(format!("groupBy: {reason}")))?;
+                Grouping::Label(key.to_owned())
+            }
+            None => serde_plain::from_str::<UsageDimension>(name).map(Grouping::Dimension).map_err(|_| {
+                ApiError::invalid_query(format!("groupBy: {name} is not a dimension of the report, nor label:<key>"))
+            })?,
+        };
+        if !group_by.contains(&grouping) {
+            group_by.push(grouping);
         }
     }
     // A list that is there and empty keeps no call.

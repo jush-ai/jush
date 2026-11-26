@@ -303,7 +303,7 @@ impl Core {
                 // turn that made it did; one of a program's, or of one made
                 // before that work was kept, opens an assignment of its own
                 // id, which the run names.
-                sender_id: schedule.created_for.sender_id.clone(),
+                labels: schedule.created_for.labels.clone(),
                 assignment_id: Some(schedule.created_for.assignment_id.clone().unwrap_or_else(|| turn.clone())),
             })
             .map_err(|error| error.to_string())?;

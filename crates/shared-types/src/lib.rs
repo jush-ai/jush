@@ -81,6 +81,7 @@ mod file_types;
 mod ids;
 mod idle_compaction;
 mod kept;
+mod labels;
 mod log;
 #[cfg(feature = "tracing")]
 pub mod log_layer;
@@ -109,11 +110,12 @@ pub use agent_message::{
 pub use block::{
     AbortBlock, AccountSwitchBlock, AccountSwitchCause, AgentMessageBlock, ScheduleMark, Block, CodeFile, CommandEnd, CommandReport, ClearBlock, CompactionBoundaryBlock, CompactionMarkerBlock, Entry,
     ContextBlock, ErrorBlock, ErrorDevice, EXECUTION_SOURCE, SKILLS_SOURCE, INSTRUCTIONS_SOURCE, InstructionEntry, PINNED_DOCUMENTS_SOURCE, SIDE_QUESTIONS_SOURCE, USER_TIME_SOURCE, OpaqueBlock, OpaqueStatus, OpaqueView, SearchAction, SearchSource, ReportEvent, ResponseBlock, ResumeBlock, ShellCommand, SteerBlock, StoppedBy,
-    WORKING_DIRECTORY_SOURCE, PictureCopy, PictureFailure, ReplyPicture, SENDER_ID_LIMIT, sent_whole,
+    WORKING_DIRECTORY_SOURCE, PictureCopy, PictureFailure, ReplyPicture, sent_whole,
     TextBlock, ThinkingBlock, ToolCallBlock, ToolCallStatus, UserBlock, WakeupBlock, client_block,
     client_blocks, WakeupPlacement,
 };
 pub use bytes::{B64Bytes, from_json_apart, to_json_apart};
+pub use labels::{LABEL_KEY_LIMIT, LABEL_VALUE_LIMIT, LABELS_LIMIT, Labels, NO_LABELS, check_label_key, check_labels};
 pub use comment::{Comment, CommentContent, CommentPart, CommentStage, Message, MessageComment, comments_content, markdown_quote};
 pub use cost::{Cost, Currency};
 pub use catalog::{CatalogRecord, ModelCost, ProviderModel, ProviderModelList, ServiceTier, UnavailableSetting};

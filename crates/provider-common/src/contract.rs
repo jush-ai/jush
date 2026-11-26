@@ -5,7 +5,7 @@
 use std::{num::NonZeroU32, sync::Arc};
 
 use jush_shared_types::{
-    AccountSwitchCause, AgentAccount, AuthState, B64Bytes, MODEL_MEDIA_TYPES, Model, ModelMediaKind, ModelSelection, ProviderErrorDiagnostics,
+    AccountSwitchCause, AgentAccount, Labels, AuthState, B64Bytes, MODEL_MEDIA_TYPES, Model, ModelMediaKind, ModelSelection, ProviderErrorDiagnostics,
     ProviderFailureFacts, ProviderModelList, QuotaWindow, QuotaWindowName, RuntimeState, ThinkingConfig, ThinkingForm,
     Timestamp,
     TokenUsage,
@@ -390,14 +390,14 @@ pub struct InferenceRequest {
     pub conversation: Option<String>,
     /// The turn the request belongs to; continuations inside a turn share it.
     pub turn_id: String,
-    /// Whom its agent works for, by the id the program gave its sender
-    /// (`Block::sender_id`): the usage ledger counts the call for that
-    /// sender. None when no one was named, and for a request of no
-    /// session's, such as a title's. It never reaches a vendor.
-    pub sender_id: Option<String>,
+    /// The labels of its agent's work, as the program gave them
+    /// (`Block::labels`): the usage ledger keeps them with the call. Empty
+    /// when none were given, and for a request of no session's, such as a
+    /// title's. They never reach a vendor.
+    pub labels: Labels,
     /// The assignment its agent works in, by the id of the message that opened it
     /// (`Block::assignment_id`): the usage ledger counts the call in that assignment.
-    /// None as `sender_id` is none. It never reaches a vendor.
+    /// None for a request of no session's. It never reaches a vendor.
     pub assignment_id: Option<String>,
     /// This request, unique per attempt.
     pub request_id: String,

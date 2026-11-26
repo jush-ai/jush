@@ -257,7 +257,7 @@ impl InputQueue {
 
     /// Takes the command reports: the input a continuation opens with, those
     /// that open a turn first, each in the order they arrived, so the first
-    /// names whom the turn is for (`Block::sender_id`).
+    /// names the labels of the turn's work (`Block::labels`).
     pub(super) fn take_reports(&mut self) -> Vec<CommandReport> {
         let mut taken: Vec<(CommandReport, Opens)> = self
             .entries

@@ -3,6 +3,8 @@
 //! used, with the number of requests and the sum of each token count; and
 //! its report, by period and by what a program groups the calls by.
 
+use std::collections::BTreeMap;
+
 use jush_shared_types::{MAX_SAFE_INTEGER, Timestamp};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -38,10 +40,10 @@ pub struct UsageGroup {
 /// `?from=&to=&bucket=&timeZone=&groupBy=&conversations=&agents=` of
 /// `GET /usage/report`: the calls that ended from `from` until `to`, in
 /// buckets of a minute, an hour or a day of `time_zone`, UTC unless named,
-/// grouped by what `group_by` names; of the conversations `conversations`
-/// names and the agents of the numbers `agents` names, every call when
-/// absent. Each list has a comma between two. Queries are the backend's
-/// alone and are not emitted.
+/// grouped by what `group_by` names, a dimension or a label as
+/// `label:<key>`; of the conversations `conversations` names and the agents
+/// of the numbers `agents` names, every call when absent. Each list has a
+/// comma between two. Queries are the backend's alone and are not emitted.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UsageReportQuery {
@@ -76,10 +78,6 @@ pub enum UsageDimension {
     /// main agent; none for a side question's call and one no agent made,
     /// such as a title's.
     Agent,
-    /// Whom the call's agent worked for, by the id the program gave its
-    /// sender: the sender of the latest message that handed it work, or of
-    /// the work whose end opened its turn.
-    Sender,
     Model,
     Provider,
     /// The provider entry's account; none for an API key.
@@ -108,9 +106,10 @@ pub struct UsageBucket {
     pub groups: Vec<UsageReportGroup>,
 }
 
-/// The calls of a bucket that share each of the report's dimensions, which
-/// it names; a dimension the report does not group by is absent, and one
-/// a call has no value of, such as the sender of a title's call, is null.
+/// The calls of a bucket that share each of the report's dimensions and
+/// labels, which it names; a dimension the report does not group by is
+/// absent, and one a call has no value of, such as the agent of a title's
+/// call, is null.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct UsageReportGroup {
@@ -121,9 +120,11 @@ pub struct UsageReportGroup {
     #[schemars(with = "Option<u64>")]
     #[garde(range(max = MAX_SAFE_INTEGER))]
     pub agent: Option<Option<u64>>,
-    #[serde(default, skip_serializing_if = "Option::is_none", with = "double_option")]
-    #[schemars(with = "Option<String>")]
-    pub sender: Option<Option<String>>,
+    /// The value of each label the report groups by, by its key, null for
+    /// the calls without it; absent when it groups by none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "BTreeMap<String, Option<String>>")]
+    pub labels: Option<BTreeMap<String, Option<String>>>,
     #[serde(default, skip_serializing_if = "Option::is_none", with = "double_option")]
     #[schemars(with = "Option<String>")]
     pub model: Option<Option<String>>,

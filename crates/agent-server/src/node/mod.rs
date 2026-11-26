@@ -1109,7 +1109,8 @@ impl<H: DeviceResolver> SessionRuntime for NodeRuntime<H> {
             }
             let end = self.end_of(command).await;
             // Its record names it by the title of the call that started it,
-            // whatever became of that call, and whom that call's work is for
+            // whatever became of that call, and names the labels and the
+            // assignment of that call's work
             // (`crates/agent-session/src/reports.rs`).
             let (title, attribution, status) = match self.environments.owning(command) {
                 Some(environment) => (environment.title(command).unwrap_or_default(), environment.attribution(command), None),
@@ -1119,7 +1120,7 @@ impl<H: DeviceResolver> SessionRuntime for NodeRuntime<H> {
                         // report names their attachments.
                         media.clone_from(&stored.media);
                         let title = stored.title.clone();
-                        let attribution = Attribution { sender_id: stored.sender_id.clone(), assignment_id: stored.assignment_id.clone() };
+                        let attribution = Attribution { labels: stored.labels.clone(), assignment_id: stored.assignment_id.clone() };
                         (title, attribution, self.stored_status(command, stored))
                     }
                     None => (String::new(), Attribution::default(), None),

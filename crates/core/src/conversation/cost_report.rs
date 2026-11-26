@@ -231,17 +231,17 @@ struct OutcomeRow {
 /// Settings keeps them: a report names none of them and does not tell them
 /// apart.
 #[derive(Default)]
-pub(super) struct Labels {
+pub(super) struct EntryNames {
     entries: BTreeMap<ProviderId, String>,
     accounts: BTreeMap<(ProviderId, CredentialId), String>,
     /// The entries whose accounts the user sees.
     disclosed: BTreeSet<ProviderId>,
 }
 
-impl Labels {
-    /// The labels of the entries and accounts `calls` name.
+impl EntryNames {
+    /// The names of the entries and accounts `calls` name.
     pub(super) async fn of(core: &Core, calls: &[LedgerCall]) -> Self {
-        let mut labels = Self::default();
+        let mut names = Self::default();
         // An entry that cannot be read leaves only its id to show.
         let entries = entries(core).await.unwrap_or_default();
         for entry in entries {
@@ -252,18 +252,18 @@ impl Labels {
             if calls.iter().any(|call| call.provider == entry.id && call.account.is_some())
                 && Vault::manages(core.user(), &entry)
             {
-                labels.disclosed.insert(entry.id.clone());
+                names.disclosed.insert(entry.id.clone());
                 if let Ok(listed) = vault_accounts::list(&core.services().vault, &entry, true).await {
                     for account in listed.accounts {
                         if let Ok(id) = CredentialId::try_from(account.id.as_str()) {
-                            labels.accounts.insert((entry.id.clone(), id), account.label);
+                            names.accounts.insert((entry.id.clone(), id), account.label);
                         }
                     }
                 }
             }
-            labels.entries.insert(entry.id.clone(), entry.label.clone());
+            names.entries.insert(entry.id.clone(), entry.label.clone());
         }
-        labels
+        names
     }
 
     fn entry(&self, provider: &ProviderId) -> String {
@@ -320,8 +320,8 @@ pub(super) async fn cost(core: Rc<Core>, call: Call<CostArgs>, port: RpcPort) ->
         .into_iter()
         .map(|subagent| (subagent.record.number, subagent.record.profile))
         .collect();
-    let labels = Labels::of(&core, &calls).await;
-    let report = report(conversation, title, &calls, now, &profiles, &labels);
+    let names = EntryNames::of(&core, &calls).await;
+    let report = report(conversation, title, &calls, now, &profiles, &names);
     if call.invocation.json {
         let text = serde_json::to_string(&report).map_err(failed)?;
         port.stdout(text + "\n").await?;
@@ -346,7 +346,7 @@ fn report(
     calls: &[LedgerCall],
     now: Timestamp,
     profiles: &BTreeMap<u64, Option<String>>,
-    labels: &Labels,
+    names: &EntryNames,
 ) -> ConversationCost {
     let sum = sum_of(calls);
     let windows = WINDOWS
@@ -384,7 +384,7 @@ fn report(
         .into_iter()
         .map(|((model, provider), sum)| ModelRow {
             model,
-            entry: labels.entry(&provider),
+            entry: names.entry(&provider),
             sum,
         })
         .collect();
@@ -392,14 +392,14 @@ fn report(
         .into_iter()
         .map(|(purpose, sum)| PurposeRow { purpose, sum })
         .collect();
-    let accounts = grouped(calls, |call| labels.shown(call))
+    let accounts = grouped(calls, |call| names.shown(call))
         .into_iter()
         .map(|((provider, account), sum)| {
             let key = Some((provider.clone(), account.clone()));
-            let own = || calls.iter().filter(|call| labels.shown(call) == key);
+            let own = || calls.iter().filter(|call| names.shown(call) == key);
             AccountRow {
-                entry: labels.entry(&provider),
-                account: labels.account(&provider, account.as_ref()),
+                entry: names.entry(&provider),
+                account: names.account(&provider, account.as_ref()),
                 sum,
                 first_call_at: own().map(|call| call.started_at.unwrap_or(call.ended_at)).min().unwrap_or(now),
                 last_call_at: own().map(|call| call.ended_at).max().unwrap_or(now),
@@ -414,7 +414,7 @@ fn report(
             let answered: Vec<CredentialId> = rows
                 .iter()
                 .filter(|call| call.call_number.is_some())
-                .filter_map(|call| labels.shown(call).and_then(|(_, account)| account))
+                .filter_map(|call| names.shown(call).and_then(|(_, account)| account))
                 .collect();
             answered.windows(2).filter(|pair| pair[0] != pair[1]).count() as u64
         })
@@ -698,7 +698,7 @@ pub(super) fn turn_costs(turns: &[(String, usize, Timestamp)], calls: &[LedgerCa
 }
 
 /// Each call of `calls`, under the turn of `turns` it belongs to.
-pub(super) fn call_costs(turns: &[(String, usize, Timestamp)], calls: &[LedgerCall], labels: &Labels) -> Vec<CallCost> {
+pub(super) fn call_costs(turns: &[(String, usize, Timestamp)], calls: &[LedgerCall], names: &EntryNames) -> Vec<CallCost> {
     turns
         .iter()
         .flat_map(|(id, index, _)| {
@@ -707,7 +707,7 @@ pub(super) fn call_costs(turns: &[(String, usize, Timestamp)], calls: &[LedgerCa
                 number: call.call_number,
                 purpose: call.purpose.clone(),
                 model: call.model.clone(),
-                account: labels.account_of(call),
+                account: names.account_of(call),
                 prompt_tokens: call.prompt_tokens(),
                 tokens: sum_of([call]).tokens,
                 outcome: call.outcome.clone(),

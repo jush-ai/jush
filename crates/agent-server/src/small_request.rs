@@ -12,7 +12,7 @@ use std::{num::NonZeroU32, sync::Arc};
 use jush_provider_common::{
     InferenceItem, InferenceRequest, PromptCache, ProviderEvent, ProviderRuntime, RequestPurpose, UserPart,
 };
-use jush_shared_types::ModelSelection;
+use jush_shared_types::{Labels, ModelSelection};
 use futures_util::StreamExt;
 use tokio_util::sync::CancellationToken;
 
@@ -55,7 +55,7 @@ pub async fn run_small_request(
         affinity: None,
         conversation: Some(session.to_owned()),
         turn_id: format!("{}:{request_id}", request.purpose.as_str()),
-        sender_id: None,
+        labels: Labels::new(),
         assignment_id: None,
         request_id,
         model_id: selection.model.id.clone(),

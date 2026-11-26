@@ -28,7 +28,7 @@ pub enum EndOf {
     Unrecorded,
 }
 
-/// The report of `command`, whose work is for `attribution`, which still
+/// The report of `command`, whose work carries `attribution`, which still
 /// runs and has printed nothing for a long time: how long it has run and
 /// been silent.
 ///
@@ -49,7 +49,7 @@ pub fn progress_report(
     )
 }
 
-/// The report of `command`'s end, `end`, whose work is for `attribution`;
+/// The report of `command`'s end, `end`, whose work carries `attribution`;
 /// its output is read from `status` once it ended, or when the report is
 /// written ([`fill_output`]).
 pub fn end_report(
@@ -97,7 +97,7 @@ fn report(command: &CommandId, title: &str, attribution: Attribution, event: Rep
         event,
         output: String::new(),
         media: Vec::new(),
-        sender_id: attribution.sender_id,
+        labels: attribution.labels,
         assignment_id: attribution.assignment_id,
     }
 }

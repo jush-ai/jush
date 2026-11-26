@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: proposed, superseded in part by 0383
 ---
 
 # A message names its sender, and a program reads usage by period

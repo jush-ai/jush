@@ -30,7 +30,7 @@ use jush_provider_common::{
     Ahead, EntriesOf, InferenceRequest, PromptCache, ProviderEvent, ProviderFailure, RequestPurpose,
     ProviderRuntime, RequestBlock, RequestLimits, ToolDefinition,
 };
-use jush_shared_types::{Attribution, opened_assignment, ScheduleMark, MessageComment,
+use jush_shared_types::{Attribution, Labels, opened_assignment, ScheduleMark, MessageComment,
     AgentAccount, AgentMessage, BlobRef, Block, BlockId, Clock, CommandId, CommandReport, FailureSource, ReportEvent,
     ModelSelection, NodeId, PendingCall, PendingSteer, ProviderErrorDiagnostics, QueuedMessage, SessionPhase,
     ShellToolView, ShellViewStatus, Timestamp, ToolResultContentBlock, ToolView, TurnId, UserContentBlock,
@@ -448,8 +448,8 @@ pub(super) enum ActionKind {
         comments: Vec<MessageComment>,
         /// The schedule's run that sent it, which its `user` block keeps.
         schedule: Option<ScheduleMark>,
-        /// Who sent it, which its `user` block keeps.
-        sender_id: Option<String>,
+        /// The labels its program gave it, which its `user` block keeps.
+        labels: Labels,
         /// The assignment it continues, which its `user` block keeps; none for one
         /// that opens its own.
         assignment_id: Option<TurnId>,
@@ -757,10 +757,10 @@ impl SessionCore {
         TurnId::try_from(self.ids.next_id()).expect("an id source never gives an empty identity")
     }
 
-    /// Whom the agent works for (`Block::sender_id`): whom its requests and
-    /// the commands its calls start are counted for.
-    pub(super) fn sender_id(&self) -> Option<String> {
-        self.transcript.sender_id().map(str::to_owned)
+    /// The labels of the work the agent does (`Block::labels`), which its
+    /// requests and the commands its calls start carry.
+    pub(super) fn labels(&self) -> Labels {
+        self.transcript.labels().clone()
     }
 
     /// The assignment the agent works in (`Block::assignment_id`): the assignment its requests
@@ -1037,7 +1037,7 @@ impl SessionCore {
         message: QueuedMessage,
     ) -> Result<ActionHandle, AdmissionError> {
         self.refuse_admission()?;
-        let QueuedMessage { id, content, comments, schedule, sender_id, assignment_id } = message;
+        let QueuedMessage { id, content, comments, schedule, labels, assignment_id } = message;
         if self.took(&BlockId::try_from(id.as_str().to_owned()).expect("a turn id is not empty")) {
             return Ok(ActionHandle::ended(ActionEnd::Duplicate));
         }
@@ -1058,7 +1058,7 @@ impl SessionCore {
             queued_ahead = self.pending.len(),
             "a message was admitted"
         );
-        Ok(self.push_action(ActionKind::Send { content, comments, schedule, sender_id, assignment_id }, id))
+        Ok(self.push_action(ActionKind::Send { content, comments, schedule, labels, assignment_id }, id))
     }
 
     /// Admits a retry, a resume or a compaction pass.
@@ -1151,7 +1151,7 @@ impl SessionCore {
                 content: steer.content,
                 comments: steer.comments,
                 schedule: None,
-                sender_id: steer.sender_id,
+                labels: steer.labels,
                 assignment_id: opened_assignment(steer.assignment_id, &turn),
             };
             self.start_action(kind, turn, None, pending_ms.unwrap_or(0));
@@ -1187,12 +1187,12 @@ impl SessionCore {
         let cancel = TurnCancel::new();
         self.held = false;
         let unwritten = match &kind {
-            ActionKind::Send { content, comments, schedule, sender_id, assignment_id } => Some(QueuedMessage {
+            ActionKind::Send { content, comments, schedule, labels, assignment_id } => Some(QueuedMessage {
                 id: turn.clone(),
                 content: content.clone(),
                 comments: comments.clone(),
                 schedule: schedule.clone(),
-                sender_id: sender_id.clone(),
+                labels: labels.clone(),
                 assignment_id: assignment_id.clone(),
             }),
             _ => None,
@@ -1557,9 +1557,9 @@ impl SessionCore {
         if began {
             self.record_stop(CancelReason::Shutdown);
             self.log_turn_ended("interrupted", None);
-        } else if let ActionKind::Send { content, comments, schedule, sender_id, assignment_id } = kind {
+        } else if let ActionKind::Send { content, comments, schedule, labels, assignment_id } = kind {
             self.pending.push_front(PendingAction {
-                kind: ActionKind::Send { content, comments, schedule, sender_id, assignment_id },
+                kind: ActionKind::Send { content, comments, schedule, labels, assignment_id },
                 turn: turn.clone(),
                 reply: None,
                 admitted_at: self.clock.now(),
@@ -1584,7 +1584,7 @@ impl SessionCore {
                     content: steer.content,
                     comments: steer.comments,
                     schedule: None,
-                    sender_id: steer.sender_id,
+                    labels: steer.labels,
                     assignment_id: opened_assignment(steer.assignment_id, &turn),
                 },
                 turn,
@@ -1711,11 +1711,11 @@ impl SessionCore {
             _ => None,
         };
         if let Some((turn, message)) = unwritten {
-            let QueuedMessage { content, comments, schedule, sender_id, assignment_id, .. } = message;
+            let QueuedMessage { content, comments, schedule, labels, assignment_id, .. } = message;
             match reason {
-                CancelReason::Stop => self.push_user(turn, content, comments, None, schedule, sender_id, assignment_id),
+                CancelReason::Stop => self.push_user(turn, content, comments, None, schedule, labels, assignment_id),
                 CancelReason::Hold(_) => self.pending.push_front(PendingAction {
-                    kind: ActionKind::Send { content, comments, schedule, sender_id, assignment_id },
+                    kind: ActionKind::Send { content, comments, schedule, labels, assignment_id },
                     turn,
                     reply: None,
                     admitted_at: self.clock.now(),
@@ -1826,7 +1826,7 @@ impl SessionCore {
             content: user.content.clone(),
             comments: user.comments.clone(),
             schedule: None,
-            sender_id: user.sender_id.clone(),
+            labels: user.labels.clone(),
             assignment_id: user.assignment_id.clone(),
         };
         let position = self.transcript.start() + at;
@@ -2060,12 +2060,12 @@ impl SessionCore {
         self.pending
             .iter()
             .filter_map(|action| match &action.kind {
-                ActionKind::Send { content, comments, schedule, sender_id, assignment_id } => Some(QueuedMessage {
+                ActionKind::Send { content, comments, schedule, labels, assignment_id } => Some(QueuedMessage {
                     id: action.turn.clone(),
                     content: content.clone(),
                     comments: comments.clone(),
                     schedule: schedule.clone(),
-                    sender_id: sender_id.clone(),
+                    labels: labels.clone(),
                     assignment_id: assignment_id.clone(),
                 }),
                 _ => None,
@@ -2092,7 +2092,7 @@ impl SessionCore {
         comments: Vec<MessageComment>,
         attribution: Attribution,
     ) -> Result<(), SteerError> {
-        let Attribution { sender_id, assignment_id } = attribution;
+        let Attribution { labels, assignment_id } = attribution;
         let own_turn = TurnId::try_from(id.as_str().to_owned()).expect("a block id is not empty");
         if self.took(&id) {
             return Ok(());
@@ -2118,7 +2118,7 @@ impl SessionCore {
                 "a steer was admitted while nothing ran, and starts the turn"
             );
             let assignment_id = opened_assignment(assignment_id, &own_turn);
-            drop(self.push_action(ActionKind::Send { content, comments, schedule: None, sender_id, assignment_id }, own_turn));
+            drop(self.push_action(ActionKind::Send { content, comments, schedule: None, labels, assignment_id }, own_turn));
             return Ok(());
         }
         // A steer no running turn will take, as one sent after a Stop, names
@@ -2146,7 +2146,7 @@ impl SessionCore {
             model: self.model.clone(),
             content,
             comments,
-            sender_id,
+            labels,
             assignment_id,
         }));
         Ok(())
@@ -2332,7 +2332,7 @@ impl SessionCore {
                         &steer.model,
                         steer.content,
                         steer.comments,
-                        steer.sender_id,
+                        steer.labels,
                     );
                 }
                 Input::Report(..) if reports.is_empty() => {}
@@ -2659,7 +2659,7 @@ impl SessionCore {
         comments: Vec<MessageComment>,
         preamble: Option<String>,
         schedule: Option<ScheduleMark>,
-        sender_id: Option<String>,
+        labels: Labels,
         assignment_id: Option<TurnId>,
     ) {
         session_log!(
@@ -2678,7 +2678,7 @@ impl SessionCore {
             "a message was written into its turn"
         );
         self.transcript
-            .push_user(turn, &self.model, content, comments, preamble, schedule, sender_id, assignment_id);
+            .push_user(turn, &self.model, content, comments, preamble, schedule, labels, assignment_id);
         if let Activity::Running(run) = &mut self.activity {
             run.unwritten = None;
         }
@@ -3224,7 +3224,7 @@ impl SessionCore {
             affinity: self.runtime.affinity(),
             conversation: self.runtime.conversation(),
             turn_id: turn.to_string(),
-            sender_id: self.sender_id(),
+            labels: self.labels(),
             assignment_id: self.assignment_id().map(|assignment| assignment.to_string()),
             request_id,
             model_id: self.model.model.id.clone(),
@@ -3317,7 +3317,7 @@ impl SessionCore {
             affinity: self.runtime.affinity(),
             conversation: self.runtime.conversation(),
             turn_id: String::new(),
-            sender_id: self.sender_id(),
+            labels: self.labels(),
             assignment_id: self.assignment_id().map(|assignment| assignment.to_string()),
             request_id,
             model_id: model.model.id.clone(),
