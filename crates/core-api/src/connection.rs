@@ -79,6 +79,7 @@ use crate::api::Api;
 use crate::caller::{Caller, CallerOf, Gone};
 use crate::error::ApiError;
 use crate::page_client::PageClient;
+use crate::plugin_lanes::{PluginVersion, undeclared};
 use crate::request_id;
 use crate::{conversations, debug, direct, file_watch, streams, sync};
 
@@ -497,7 +498,7 @@ impl Connection {
             Ok(LaneTarget::Signaling { .. }) => LaneKind::Signaling,
             Ok(LaneTarget::UserStream { .. }) => LaneKind::UserStream,
             Ok(LaneTarget::Debug { .. }) => LaneKind::Debug,
-            Ok(LaneTarget::Starter) => LaneKind::Starter,
+            Ok(LaneTarget::Starter { .. }) => LaneKind::Starter,
             Ok(LaneTarget::Plugin { .. }) => LaneKind::Plugin,
         };
         let request = request_id::generate();
@@ -771,26 +772,22 @@ async fn check_open(
             device,
         } => streams::open(state, &user, &conversation, stream, device).await,
         LaneTarget::Debug { resume } => debug::open(state, &user, page, resume),
-        LaneTarget::Starter => {
+        LaneTarget::Starter { version } => {
             let lane = caller
                 .starter_lane()
                 .ok_or_else(|| ApiError::forbidden("Only a program opens a core's starter lane"))?;
-            let claim = lane.claim();
+            let claim = lane.claim(version.is_some());
             Ok(Opened::new(move |lane, reader| claim.serve(lane, reader)))
         }
-        LaneTarget::Plugin { plugin } => {
+        LaneTarget::Plugin { plugin, version } => {
             let lanes = caller
                 .plugin_lanes()
                 .ok_or_else(|| ApiError::forbidden("Only a program opens its plugins' lanes"))?;
-            let declared = state.services.plugins.current().declared(&plugin);
+            let declared = state.services.plugins.current().declared(&plugin, version.as_deref());
             let Some(plugin) = declared else {
-                return Err(ApiError::new(
-                    StatusCode::NOT_FOUND,
-                    ErrorCode::UnknownPlugin,
-                    format!("No program declared the plugin \"{plugin}\""),
-                ));
+                return Err(undeclared(&plugin, version.as_deref()));
             };
-            let claim = lanes.claim(plugin);
+            let claim = lanes.claim(PluginVersion { plugin, version });
             Ok(Opened::new(move |lane, reader| claim.serve(lane, reader)))
         }
     }

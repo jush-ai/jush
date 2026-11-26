@@ -134,7 +134,7 @@ impl Core {
         let plugins_changed = match &tree {
             Some(tree) => {
                 let named = record.commands.as_deref().map(CommandList::new);
-                let plugins = self.plugins().revision(named.as_ref()).await.map_err(StorageError::from)?;
+                let plugins = self.plugins().revision(named.as_ref(), &record.plugin_versions).await.map_err(StorageError::from)?;
                 *tree.toolset() != *super::product::toolset_revision(plugins, named.as_ref())
             }
             None => false,
@@ -173,6 +173,7 @@ impl Core {
             browser_profile: record.browser_profile,
             system_prompt: record.system_prompt,
             commands: record.commands,
+            plugin_versions: record.plugin_versions,
             cwd: resolved.path().to_owned(),
             last_turn: facts.last_turn.as_ref().map(last_turn),
             turn_speed: facts.turn_speed,

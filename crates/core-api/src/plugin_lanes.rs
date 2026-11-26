@@ -14,7 +14,8 @@
 //!
 //! Several lanes of a plugin may be open, as several programs serve it or
 //! one that restarts opens its lanes before its old connection is gone. A
-//! request goes on the newest, which the newest program opened.
+//! request goes on the newest lane of the plugin's version it is for, the
+//! current one or another, which the newest program of that version opened.
 //!
 //! A request outlives its lane: once a lane of its plugin is open again, it
 //! goes there under its number, marked `resent`, and waits as long as its
@@ -42,13 +43,54 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use axum::body::Bytes;
 use axum::extract::ws::close_code;
+use axum::http::StatusCode;
 use jush_core::{Lane, LaneClose, LaneEnd, LaneMessage, LaneReader};
 use jush_device_interface::{PortRequest, PortResponse};
 use jush_plugin_interface::wire::{HostMessage, PluginMessage};
 use jush_plugin_interface::{PluginError, PluginId, PortAnswer, PortMessage, Reply, Request};
 use jush_shared_types::B64Bytes;
+use jush_web_api_protocol::error::ErrorCode;
 use tokio::sync::{Notify, mpsc};
 use tokio_util::sync::CancellationToken;
+
+use crate::error::ApiError;
+
+/// A program's plugin in one version, the current one for none, whose
+/// lanes carry the requests for that version.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub(crate) struct PluginVersion {
+    pub(crate) plugin: PluginId,
+    pub(crate) version: Option<String>,
+}
+
+impl std::fmt::Display for PluginVersion {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        Named(self.plugin.as_str(), self.version.as_deref()).fmt(formatter)
+    }
+}
+
+/// A plugin in a version, its current one for none, as an answer names
+/// it: `"acme"`, or `"acme" in the version "canary"`.
+struct Named<'a>(&'a str, Option<&'a str>);
+
+impl std::fmt::Display for Named<'_> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.1 {
+            Some(version) => write!(formatter, "\"{}\" in the version \"{version}\"", self.0),
+            None => write!(formatter, "\"{}\"", self.0),
+        }
+    }
+}
+
+/// The refusal of the plugin `plugin` that no program declared in
+/// `version`, its current one for none.
+pub(crate) fn undeclared(plugin: &str, version: Option<&str>) -> ApiError {
+    ApiError::new(
+        StatusCode::NOT_FOUND,
+        ErrorCode::UnknownPlugin,
+        format!("No program declared the plugin {}", Named(plugin, version)),
+    )
+}
 
 /// What a lane hands a request.
 pub(crate) enum Event {
@@ -70,7 +112,7 @@ pub struct PluginLanes {
 #[derive(Default)]
 struct State {
     /// The open lanes of each plugin, oldest first.
-    lanes: HashMap<PluginId, Vec<OpenLane>>,
+    lanes: HashMap<PluginVersion, Vec<OpenLane>>,
     /// The requests in flight, by number.
     flights: HashMap<u64, Flight>,
     /// How many lanes were opened for the core.
@@ -87,7 +129,7 @@ struct OpenLane {
 
 /// A request in flight.
 struct Flight {
-    plugin: PluginId,
+    plugin: PluginVersion,
     /// What goes again to the next lane while it waits for its reply; none
     /// once it was answered.
     call: Option<Request>,
@@ -148,7 +190,7 @@ impl PluginLanes {
 
     /// Sends `call` to `plugin` on its newest lane; while none is open, it
     /// waits for one for `wait`, and fails at once without it.
-    pub(crate) async fn send(&self, plugin: &PluginId, call: Request, wait: Option<Duration>) -> Result<Sent, PluginError> {
+    pub(crate) async fn send(&self, plugin: &PluginVersion, call: Request, wait: Option<Duration>) -> Result<Sent, PluginError> {
         let deadline = wait.map(|wait| tokio::time::Instant::now() + wait);
         loop {
             let opened = self.opened.notified();
@@ -284,7 +326,7 @@ impl PluginLanes {
     /// Opens a lane of `plugin`, which the program declared: it takes the
     /// requests of the plugin that wait for a lane, and every new one until
     /// a newer lane opens.
-    pub(crate) fn claim(self: &Arc<Self>, plugin: PluginId) -> Claim {
+    pub(crate) fn claim(self: &Arc<Self>, plugin: PluginVersion) -> Claim {
         let (out, calls) = mpsc::unbounded_channel();
         let removed = CancellationToken::new();
         let number = {
@@ -312,7 +354,7 @@ impl PluginLanes {
 
     /// Closes the lanes of `plugin`, which no program declares any longer:
     /// a program that declares it again opens its lanes again.
-    pub(crate) fn remove(&self, plugin: &PluginId) {
+    pub(crate) fn remove(&self, plugin: &PluginVersion) {
         for open in self.state().lanes.get(plugin).into_iter().flatten() {
             open.removed.cancel();
         }
@@ -338,7 +380,7 @@ impl PluginLanes {
     /// not deliver: its requests go to the newest lane of the plugin, if
     /// one is open, or wait for the next; one that was stopped or answered
     /// ends, and so does a context request that finds no lane.
-    fn ended(&self, plugin: &PluginId, number: u64, unsent: Vec<HostMessage>) {
+    fn ended(&self, plugin: &PluginVersion, number: u64, unsent: Vec<HostMessage>) {
         let mut state = self.state();
         if let Some(lanes) = state.lanes.get_mut(plugin) {
             lanes.retain(|open| open.number != number);
@@ -364,13 +406,13 @@ impl PluginLanes {
 
 impl State {
     /// The sender of lane `lane` of `plugin`, while it is open.
-    fn out(&self, plugin: &PluginId, lane: u64) -> Option<mpsc::UnboundedSender<HostMessage>> {
+    fn out(&self, plugin: &PluginVersion, lane: u64) -> Option<mpsc::UnboundedSender<HostMessage>> {
         self.lanes.get(plugin)?.iter().find(|open| open.number == lane).map(|open| open.out.clone())
     }
 
     /// Sends each request of `plugin` that waits for a lane to its newest,
     /// if one is open, again under its number.
-    fn resend(&mut self, plugin: &PluginId) {
+    fn resend(&mut self, plugin: &PluginVersion) {
         let Some(newest) = self.lanes.get(plugin).and_then(|lanes| lanes.last()) else {
             return;
         };
@@ -418,16 +460,16 @@ pub(crate) fn input(bytes: B64Bytes) -> PortAnswer {
     }
 }
 
-fn unreachable(plugin: &PluginId) -> PluginError {
+fn unreachable(plugin: &PluginVersion) -> PluginError {
     PluginError::failed(format!(
-        "the program of the plugin \"{plugin}\" is unreachable: no lane of the plugin is open"
+        "the program of the plugin {plugin} is unreachable: no lane of it is open"
     ))
 }
 
 /// An open lane of a plugin, from its claim until it ends.
 pub(crate) struct Claim {
     lanes: Arc<PluginLanes>,
-    plugin: PluginId,
+    plugin: PluginVersion,
     number: u64,
     calls: mpsc::UnboundedReceiver<HostMessage>,
     removed: CancellationToken,

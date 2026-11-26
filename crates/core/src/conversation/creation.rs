@@ -95,6 +95,9 @@ impl Core {
         &self,
         request: CreateConversation,
     ) -> Result<ConversationStart, ChangeRefusal> {
+        self.plugins()
+            .check_versions(&request.plugin_versions)
+            .map_err(|error| ChangeRefusal::PluginVersions(error.to_string()))?;
         let target = request
             .target
             .unwrap_or(ConversationTarget::Cloud { path: None });
@@ -123,6 +126,7 @@ impl Core {
             browser_profile: request.browser_profile,
             system_prompt: request.system_prompt,
             commands: request.commands,
+            plugin_versions: request.plugin_versions,
         })
     }
 }

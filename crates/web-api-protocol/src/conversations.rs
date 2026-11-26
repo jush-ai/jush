@@ -169,6 +169,11 @@ pub struct CreateConversation {
     #[schemars(with = "Vec<String>")]
     #[garde(inner(inner(custom(crate::command_path))))]
     pub commands: Option<Vec<String>>,
+    /// The versions it runs on of the program's plugins, each by its
+    /// plugin's id; the current one of a plugin it names none of.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[garde(custom(crate::plugin_versions))]
+    pub plugin_versions: BTreeMap<String, String>,
     /// The message the conversation starts with, as the socket's `send`
     /// frame carries it.
     #[serde(
@@ -310,6 +315,9 @@ pub struct ConversationMetadata {
     #[serde(deserialize_with = "Option::deserialize")]
     #[schemars(with = "Nullable<Vec<String>>")]
     pub commands: Option<Vec<String>>,
+    /// The versions it runs on of the program's plugins, each by its
+    /// plugin's id; the current one of a plugin it names none of.
+    pub plugin_versions: BTreeMap<String, String>,
     /// The directory the conversation's work runs in, resolved by the backend
     /// for every kind of target, so the web app never derives it.
     pub cwd: String,
@@ -949,6 +957,15 @@ pub struct ConversationPatch {
     #[schemars(with = "Option<Vec<String>>")]
     #[garde(inner(inner(inner(custom(crate::command_path)))))]
     pub commands: Option<Option<Vec<String>>>,
+    /// The versions it runs on of the program's plugins, each by its
+    /// plugin's id, in place of those it named: its agents' commands, and
+    /// every request of the conversation, go to them from now on; a call
+    /// sent already goes on where it is. `{}` returns it to the current
+    /// versions.
+    #[serde(default, skip_serializing_if = "Option::is_none", with = "unwrap_or_skip")]
+    #[schemars(with = "BTreeMap<String, String>")]
+    #[garde(inner(custom(crate::plugin_versions)))]
+    pub plugin_versions: Option<BTreeMap<String, String>>,
     /// A switch of the conversation's execution target.
     #[serde(
         default,
@@ -984,6 +1001,7 @@ pub enum PatchField {
     BrowserProfile,
     SystemPrompt,
     Commands,
+    PluginVersions,
     Target,
 }
 

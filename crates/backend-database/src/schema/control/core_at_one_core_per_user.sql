@@ -390,6 +390,10 @@ CREATE TABLE conversations (
   -- The commands its agents have, a JSON array of their paths without
   -- `jush`; null for every command.
   commands TEXT,
+  -- The versions it names of the program's plugins, a JSON object of each
+  -- version by its plugin's id; null for none, each plugin on its current
+  -- version.
+  plugin_versions TEXT,
   CHECK (
     (target_kind = 'cloud'
       AND target_device_id IS NULL AND target_project_id IS NULL)

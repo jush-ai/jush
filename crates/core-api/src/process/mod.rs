@@ -14,6 +14,9 @@
 //! ```text
 //! program --- HTTP/2 ---> PUT /plugins/{id} {manifest}  declares a plugin
 //!                         DELETE /plugins/{id}          removes it
+//!                         PUT, DELETE /plugins/{id}/versions/{version}
+//!                                                       the same of one
+//!                                                       version of it
 //!                         POST /cores {dir}             opens a core: 201
 //!                                                       {id}, or 200 for
 //!                                                       one open already
@@ -97,6 +100,7 @@ use self::plugins::ProgramPlugin;
 use self::program::{PageCaller, ProgramCaller};
 use crate::api::Api;
 use crate::body::JsonBody;
+use crate::plugin_lanes::{PluginVersion, undeclared};
 use crate::caller::{Caller, CallerOf};
 use crate::page::{OPERATIONS_HEADER, PageScope};
 use crate::connection::{Closing, PageTuning};
@@ -154,6 +158,20 @@ fn unauthorized() -> ApiError {
 #[derive(Debug, serde::Deserialize, garde::Validate)]
 #[serde(transparent)]
 struct DeclaredPlugin(#[garde(skip)] Manifest);
+
+/// `version` of `/plugins/{id}/versions/{version}`, refused when it names
+/// no version.
+fn version_of(version: String) -> Result<String, ApiError> {
+    if jush_web_api_protocol::is_plugin_version(&version) {
+        Ok(version)
+    } else {
+        Err(ApiError::new(
+            StatusCode::BAD_REQUEST,
+            ErrorCode::InvalidBody,
+            format!("{version} is no plugin's version: 1 to 64 letters, digits, `.`, `_` and `-`"),
+        ))
+    }
+}
 
 /// Runs the process over `io`, the program's connection, until it ends,
 /// then closes every core. `release` holds the roots of the release whose
@@ -333,7 +351,8 @@ fn core_routes(api: Api, release: Arc<ReleaseFiles>, closing: CancellationToken)
 /// The process's routes.
 fn routes(process: Arc<Process>) -> Router {
     Router::new()
-        .route("/plugins/{id}", put(declare).delete(remove))
+        .route("/plugins/{id}", put(declare_current).delete(remove_current))
+        .route("/plugins/{id}/versions/{version}", put(declare_version).delete(remove_version))
         .route("/cores", post(open))
         .route("/cores/{id}", delete(close))
         .route("/addresses", put(addresses::declare))
@@ -369,44 +388,77 @@ async fn to_the_end<T: Send + 'static>(work: impl Future<Output = T> + Send + 's
     }
 }
 
-/// `PUT /plugins/{id}`: declares the program's plugin `id`, in place of the
-/// one declared before, 204; every open core takes it before the answer.
-/// A manifest that breaks a rule, or takes the id of a plugin of the
-/// release, is refused, 400.
-async fn declare(
+/// `PUT /plugins/{id}`: declares the program's plugin `id` as its current
+/// one, in place of the one declared so before ([`declare`]).
+async fn declare_current(
     State(process): State<Arc<Process>>,
     _: Authorized,
     Path(id): Path<String>,
     JsonBody(DeclaredPlugin(manifest)): JsonBody<DeclaredPlugin>,
 ) -> Result<StatusCode, ApiError> {
+    declare(process, id, None, manifest).await
+}
+
+/// `PUT /plugins/{id}/versions/{version}`: declares the program's plugin
+/// `id` as `version`, in place of the one declared so before ([`declare`]).
+/// A process of a release before versions answers 404, as it has no such
+/// route, and changes nothing.
+async fn declare_version(
+    State(process): State<Arc<Process>>,
+    _: Authorized,
+    Path((id, version)): Path<(String, String)>,
+    JsonBody(DeclaredPlugin(manifest)): JsonBody<DeclaredPlugin>,
+) -> Result<StatusCode, ApiError> {
+    declare(process, id, Some(version_of(version)?), manifest).await
+}
+
+/// Declares `manifest`, the program's plugin `id`, as `version`, or as its
+/// current one for none, 204; every open core takes it before the answer. A
+/// manifest that breaks a rule, or takes the id of a plugin of the release,
+/// is refused, 400.
+async fn declare(process: Arc<Process>, id: String, version: Option<String>, manifest: Manifest) -> Result<StatusCode, ApiError> {
     if manifest.id.as_str() != id {
         return Err(ApiError::invalid_body(format!(
             "The manifest's id is \"{}\", not the plugin's in the path",
             manifest.id
         )));
     }
-    let plugin = ProgramPlugin::new(manifest, process.cores.clone(), process.returning);
+    let plugin = ProgramPlugin::new(manifest, version.clone(), process.cores.clone(), process.returning);
     process
         .api
         .services
         .plugins
-        .declare(Arc::new(plugin))
+        .declare(Arc::new(plugin), version.as_deref())
         .map_err(|error| ApiError::invalid_body(error.to_string()))?;
     to_the_end(async move { process.adopt_plugins().await }).await;
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// `DELETE /plugins/{id}`: removes the program's plugin `id`, 204, whose
-/// commands leave every open core before the answer, and whose lanes
-/// close; 404 for a plugin no program declared.
-async fn remove(State(process): State<Arc<Process>>, _: Authorized, Path(id): Path<String>) -> Result<StatusCode, ApiError> {
-    let Some(plugin) = process.api.services.plugins.remove(&id) else {
-        return Err(ApiError::new(
-            StatusCode::NOT_FOUND,
-            ErrorCode::UnknownPlugin,
-            format!("No program declared the plugin \"{id}\""),
-        ));
+/// `DELETE /plugins/{id}`: removes the program's plugin `id` as its current
+/// one ([`remove`]).
+async fn remove_current(State(process): State<Arc<Process>>, _: Authorized, Path(id): Path<String>) -> Result<StatusCode, ApiError> {
+    remove(process, id, None).await
+}
+
+/// `DELETE /plugins/{id}/versions/{version}`: removes the program's plugin
+/// `id` as `version` ([`remove`]).
+async fn remove_version(
+    State(process): State<Arc<Process>>,
+    _: Authorized,
+    Path((id, version)): Path<(String, String)>,
+) -> Result<StatusCode, ApiError> {
+    remove(process, id, Some(version_of(version)?)).await
+}
+
+/// Removes the program's plugin `id` as `version`, or as its current one
+/// for none, the others staying, 204: its commands of that version leave
+/// every open core before the answer, and its lanes of that version close;
+/// 404 for a plugin no program declared so.
+async fn remove(process: Arc<Process>, id: String, version: Option<String>) -> Result<StatusCode, ApiError> {
+    let Some(plugin) = process.api.services.plugins.remove(&id, version.as_deref()) else {
+        return Err(undeclared(&id, version.as_deref()));
     };
+    let plugin = PluginVersion { plugin, version };
     to_the_end(async move {
         process.adopt_plugins().await;
         for core in process.cores.all_held() {

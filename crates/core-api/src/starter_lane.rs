@@ -4,8 +4,10 @@
 //! notifications on it and waits for the program's answers.
 //!
 //! Several lanes may be open, as several programs drive the core: a
-//! notification goes on the newest. One sent while none is, or whose lane
-//! ends before the program answers, reached no one.
+//! notification goes on the newest of a connection that declares the
+//! plugins' current versions, and on the newest of any while none is. One
+//! sent while none is open, or whose lane ends before the program answers,
+//! reached no one.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -25,9 +27,18 @@ pub struct StarterLane(Mutex<Opens>);
 struct Opens {
     /// How many lanes were opened for the core.
     count: u64,
-    /// Each open lane's notifications to send, with the lane's number
-    /// among them, oldest first.
-    open: Vec<(u64, mpsc::UnboundedSender<Notification>)>,
+    /// Each open lane's notifications to send, oldest first.
+    open: Vec<Open>,
+}
+
+/// A lane a program opened, until it ends.
+struct Open {
+    /// Its number among the core's lanes.
+    number: u64,
+    /// Its connection declares its plugins in a version: it takes a
+    /// notification while no lane of the current versions is open.
+    versioned: bool,
+    notifications: mpsc::UnboundedSender<Notification>,
 }
 
 /// A notification to send, and where its answer goes.
@@ -47,13 +58,18 @@ impl StarterLane {
         !self.opens().open.is_empty()
     }
 
-    /// Sends `message` on the newest lane and answers how the program says
-    /// it went; nowhere while no lane is open, or when the lane ends first.
+    /// Sends `message` on the newest lane of the current versions, else the
+    /// newest, and answers how the program says it went; nowhere while no
+    /// lane is open, or when the lane ends first.
     pub async fn notify(&self, message: PushMessage) -> Notified {
         let (answer, answered) = oneshot::channel();
-        let sent = match self.opens().open.last() {
-            Some((_, notifications)) => notifications.send(Notification { message, answer }).is_ok(),
-            None => false,
+        let sent = {
+            let opens = self.opens();
+            let lane = opens.open.iter().rev().find(|open| !open.versioned).or(opens.open.last());
+            match lane {
+                Some(open) => open.notifications.send(Notification { message, answer }).is_ok(),
+                None => false,
+            }
         };
         if !sent {
             return Notified::Nowhere;
@@ -66,13 +82,16 @@ impl StarterLane {
         self.opens().open.clear();
     }
 
-    /// Opens a lane, which takes the notifications until a newer one opens.
-    pub(crate) fn claim(self: &Arc<Self>) -> Claim {
+    /// Opens a lane, which takes the notifications until a newer one opens;
+    /// with `versioned`, of a connection that declares its plugins in a
+    /// version, which takes them only while no lane of the current versions
+    /// is open.
+    pub(crate) fn claim(self: &Arc<Self>, versioned: bool) -> Claim {
         let mut opens = self.opens();
         opens.count += 1;
         let (notifications, received) = mpsc::unbounded_channel();
         let number = opens.count;
-        opens.open.push((number, notifications));
+        opens.open.push(Open { number, versioned, notifications });
         Claim {
             lane: self.clone(),
             number,
@@ -142,6 +161,6 @@ impl Claim {
 
 impl Drop for Claim {
     fn drop(&mut self) {
-        self.lane.opens().open.retain(|(number, _)| *number != self.number);
+        self.lane.opens().open.retain(|open| open.number != self.number);
     }
 }

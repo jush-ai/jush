@@ -145,6 +145,10 @@ pub trait PluginStore {
 
     fn set_feature_switch(&self, plugin: String, feature: String, enabled: bool) -> Stored<'_, ()>;
 
+    /// The versions `conversation` names of the plugins, by their ids; none
+    /// for a conversation that is gone.
+    fn plugin_versions(&self, conversation: ConversationId) -> Stored<'_, BTreeMap<String, String>>;
+
     fn value(&self, plugin: String, key: String) -> Stored<'_, Option<PluginValue>>;
 
     fn values(&self, plugin: String) -> Stored<'_, BTreeMap<String, PluginValue>>;

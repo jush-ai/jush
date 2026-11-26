@@ -153,6 +153,10 @@ pub enum ChangeRefusal {
     /// The device to attach is the conversation's primary device.
     #[error("That device is the conversation's primary device")]
     DeviceIsPrimary,
+    /// The versions of the program's plugins it would name: a plugin of the
+    /// release's own, or declarations that take a name twice.
+    #[error("{0}")]
+    PluginVersions(String),
     #[error(transparent)]
     Storage(#[from] StorageError),
 }
@@ -178,6 +182,7 @@ impl ChangeRefusal {
             Self::DeviceFailed(_) => (ErrorCode::DeviceOperationFailed, 502),
             Self::Conflict => (ErrorCode::TargetConflict, 409),
             Self::DeviceIsPrimary => (ErrorCode::DeviceIsPrimary, 409),
+            Self::PluginVersions(_) => (ErrorCode::InvalidBody, 400),
             Self::Runtime(_) | Self::Storage(_) | Self::Cancelled => (ErrorCode::OperationFailed, 500),
         }
     }

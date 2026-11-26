@@ -8,6 +8,8 @@
 //! Publication is the public conversation row; a reservation without one stays
 //! hidden.
 
+use std::collections::BTreeMap;
+
 use jush_shared_types::{BlockId, ModelSelection, Timestamp, TurnId, WorkflowChoice};
 use jush_web_api_protocol::conversations::ConversationTarget;
 use jush_web_api_protocol::ids::{BrowserProfileName, ConversationId};
@@ -80,6 +82,11 @@ pub struct ForkMetadata {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[garde(skip)]
     pub commands: Option<Vec<String>>,
+    /// The versions the source names of the program's plugins, which the
+    /// destination keeps as it keeps the commands.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[garde(skip)]
+    pub plugin_versions: BTreeMap<String, String>,
     #[garde(skip)]
     pub created_at: Timestamp,
     #[garde(dive)]
@@ -233,6 +240,7 @@ impl CoreStore {
                     browser_profile: metadata.browser_profile.as_ref(),
                     system_prompt: metadata.system_prompt.as_deref(),
                     commands: metadata.commands.as_deref(),
+                    plugin_versions: &metadata.plugin_versions,
                     context_version: metadata.context_version,
                     at: metadata.created_at,
                 },

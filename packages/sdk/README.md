@@ -671,6 +671,39 @@ for one, and then fails, telling the agent that the plugin's program is
 unreachable. A `context` call does not wait: when your program stops
 during one, the agent goes on without its block.
 
+### Versions
+
+Several builds of your program can serve its plugins at once, such as a
+production node and a canary node connected to one process, each
+conversation running on one of them. A connection with `pluginVersion`
+declares its plugins as that version; one without it, as their current
+versions:
+
+```ts
+// The canary node.
+const jush = await Jush.connect({ url, token, plugins: [acme], pluginVersion: 'canary-1126' })
+
+// A conversation moves to the canary, and back to the current versions.
+await conversation.update({ pluginVersions: { acme: 'canary-1126' } })
+await conversation.update({ pluginVersions: {} })
+```
+
+A conversation's agents run the commands of the version it names of the
+plugin, with their `--help`, the index of its system prompt and its
+context; a plugin it names none of runs on its current version. Everything
+else of a plugin is its current version's: what it keeps of a conversation
+as it is forked or deleted, a project's search, and its sign-ins. A core's
+notifications go to a connection of the current versions while one is
+open. A change of `pluginVersions` gives its agents their commands at
+once; a command already running goes on where it is. The core refuses
+versions whose commands take a name another plugin's take, and a version
+of a plugin of its own. A version no connection declares leaves the
+conversation without that plugin's commands, and while no connection of a
+version is open, its commands wait 10 seconds and fail, as above. A
+plugin's store, secrets and sign-ins, and the user's switches of it, are
+the plugin's, whichever version reads them. A process of a release before
+versions refuses a connection with `pluginVersion`.
+
 ## Product state and notifications
 
 `core.state` is the core's product state: its workspaces, projects, provider

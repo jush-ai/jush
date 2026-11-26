@@ -1,9 +1,11 @@
 //! From the core schema the SDK's release 0.2.6342 shipped: a call names its
-//! assignment, and the core keeps a ledger of its agents' commands. The
-//! usage ledger's rows name the assignment their agent worked in, a kept
-//! wake its message's, and a schedule an agent made whom and which
-//! assignment the turn that made it worked for, which its runs' messages
-//! continue; null for every row before. The command history starts empty.
+//! assignment, the core keeps a history of its agents' commands, and a
+//! conversation names versions of the program's plugins. The usage ledger's
+//! rows name the assignment their agent worked in, a kept wake its
+//! message's, and a schedule an agent made whom and which assignment the
+//! turn that made it worked for, which its runs' messages continue; null
+//! for every row before. The command history starts empty, and every
+//! conversation names no version.
 
 use super::Migration;
 
@@ -12,6 +14,7 @@ pub(super) const MIGRATION: Migration = Migration::Sql(
      ALTER TABLE pending_wakes ADD COLUMN message_assignment_id TEXT;
      ALTER TABLE schedules ADD COLUMN created_sender_id TEXT;
      ALTER TABLE schedules ADD COLUMN created_assignment_id TEXT;
+     ALTER TABLE conversations ADD COLUMN plugin_versions TEXT;
      CREATE TABLE command_history (
        id              INTEGER PRIMARY KEY AUTOINCREMENT,
        conversation_id TEXT NOT NULL,

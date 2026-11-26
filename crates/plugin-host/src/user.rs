@@ -11,6 +11,11 @@
 //!   started, when it is turned off. A conversation's deletion or fork reaches
 //!   a plugin that keeps something of a conversation on or off, through an
 //!   instance made for it alone.
+//! - An instance of each version of a program's plugin, which a
+//!   conversation that names the version sends its agents' command calls,
+//!   its context requests and its running state to, as its record says at
+//!   each request; every other request goes to the current declaration's
+//!   (`crate::registry`).
 //! - The context sources among them.
 //! - The device directories of the plugins on.
 //! - The answers to their port operations.
@@ -54,7 +59,7 @@ use tokio_util::sync::CancellationToken;
 use url::Url;
 
 use crate::commands::compose;
-use crate::registry::{Plugins, Registry};
+use crate::registry::{Plugins, Registered, Registry, RegistryError};
 use crate::oauth::{Callback, CallbackError, SignIns};
 use crate::web;
 
@@ -375,9 +380,9 @@ pub(crate) struct Shared {
     /// what changed against.
     adopted: RefCell<Arc<Registry>>,
     pub(crate) user: UserId,
-    /// The instance of each plugin the user has on, by its index, once a
-    /// request made it.
-    lives: RefCell<HashMap<usize, Live>>,
+    /// The instance of each plugin the user has on, by its index and its
+    /// version, none for its current one, once a request made it.
+    lives: RefCell<HashMap<(usize, Option<String>), Live>>,
     pub(crate) product: Rc<dyn ProductPort>,
     pub(crate) store: Rc<dyn PluginStore>,
     /// The user's OAuth sign-ins under way, and the turns of their renewals.
@@ -482,6 +487,23 @@ impl Shared {
         };
         let registry = self.registry();
         let enabled = self.enabled(&registry).await.map_err(PluginError::failed)?;
+        // A conversation's agents' work, its context and whether it runs go
+        // to the version it names of the plugin; everything else of the
+        // plugin, what it keeps of a conversation included, to its current
+        // declaration.
+        let versioned = matches!(
+            request,
+            Request::Command { .. } | Request::Context { .. } | Request::ConversationRunning { .. }
+        );
+        let version = match &transport.conversation {
+            Some(conversation) if versioned => self
+                .versions_of(conversation)
+                .await
+                .map_err(PluginError::failed)?
+                .get(registry.plugins[plugin].id().as_str())
+                .cloned(),
+            _ => None,
+        };
         // A conversation's deletion or fork reaches a plugin that is off too,
         // through an instance made for it alone, so what it keeps of the
         // conversation follows the conversation whatever the switch says; so
@@ -491,17 +513,21 @@ impl Shared {
             request,
             Request::ConversationDeleted { .. } | Request::ConversationForked { .. } | Request::ReplyBlocks { .. }
         );
-        let live = match self.live(&registry, plugin, &enabled) {
+        let live = match self.live(&registry, plugin, version.as_deref(), &enabled) {
             Some(live) => live,
             // A removed plugin keeps nothing of a conversation any more.
-            None if lifecycle && !registry.plugins[plugin].removed => Live {
-                instance: registry.plugins[plugin].factory.instance(&self.user),
+            None if lifecycle && let Some(chosen) = registry.plugins[plugin].chosen(version.as_deref()) => Live {
+                instance: chosen.factory.instance(&self.user),
                 ended: CancellationToken::new(),
             },
             None => {
-                return Err(PluginError::Ended {
-                    message: format!("The plugin \"{}\" is off", self.plugin_id(plugin)),
-                });
+                let id = self.plugin_id(plugin);
+                let message = match &version {
+                    _ if !enabled[plugin] => format!("The plugin \"{id}\" is off"),
+                    Some(version) => format!("No program declared the plugin \"{id}\" in the version \"{version}\""),
+                    None => format!("No program declared the plugin \"{id}\" in its current version"),
+                };
+                return Err(PluginError::Ended { message });
             }
         };
         let port = PluginPort::new(Rc::new(transport), cancel);
@@ -515,18 +541,39 @@ impl Shared {
         }
     }
 
-    /// The instance of plugin `plugin`, made now when it has none; none
-    /// while `enabled`, the user's switches in `registry`, has it off.
-    fn live(&self, registry: &Registry, plugin: usize, enabled: &[bool]) -> Option<Live> {
+    /// The instance of plugin `plugin` in `version`, its current one for
+    /// none, made now when it has none; none while `enabled`, the user's
+    /// switches in `registry`, has it off, or while that version is not
+    /// declared.
+    fn live(&self, registry: &Registry, plugin: usize, version: Option<&str>, enabled: &[bool]) -> Option<Live> {
         if !enabled[plugin] {
             return None;
         }
+        let chosen = registry.plugins[plugin].chosen(version)?;
         let mut lives = self.lives.borrow_mut();
-        let live = lives.entry(plugin).or_insert_with(|| Live {
-            instance: registry.plugins[plugin].factory.instance(&self.user),
+        let live = lives.entry((plugin, version.map(str::to_owned))).or_insert_with(|| Live {
+            instance: chosen.factory.instance(&self.user),
             ended: CancellationToken::new(),
         });
         Some(live.clone())
+    }
+
+    /// The versions `conversation` names of the plugins, by their ids, as
+    /// its record says now.
+    pub(crate) async fn versions_of(&self, conversation: &ConversationId) -> Result<BTreeMap<String, String>, StoreError> {
+        self.store.plugin_versions(conversation.clone()).await
+    }
+
+    /// Ends the instances of plugin `plugin` that `ends` takes, by their
+    /// versions, none for the current one.
+    fn end_lives(&self, plugin: usize, ends: impl Fn(Option<&str>) -> bool) {
+        self.lives.borrow_mut().retain(|(index, version), live| {
+            let ended = *index == plugin && ends(version.as_deref());
+            if ended {
+                live.ended.cancel();
+            }
+            !ended
+        });
     }
 
     /// The user's choices of the plugins, by their ids.
@@ -539,31 +586,34 @@ impl Shared {
         Ok(switches)
     }
 
-    /// Whether the user has each plugin of `registry` on, by its index: a
-    /// removed one is off.
+    /// Whether the user has each plugin of `registry` on, by its index: one
+    /// declared in no version is off.
     async fn enabled(&self, registry: &Registry) -> Result<Vec<bool>, StoreError> {
         let switches = self.switches().await?;
         Ok(registry
             .plugins
             .iter()
             .map(|registered| {
-                !registered.removed && switches.get(registered.id().as_str()).copied().unwrap_or(true)
+                registered.has_declaration() && switches.get(registered.id().as_str()).copied().unwrap_or(true)
             })
             .collect())
+    }
+
+    /// The user's choices of the plugins' features, by the plugin's id and
+    /// the feature's.
+    async fn feature_switches(&self) -> Result<BTreeMap<(String, String), bool>, StoreError> {
+        if let Some(switches) = &*self.feature_switches.borrow() {
+            return Ok(switches.clone());
+        }
+        let switches = self.store.feature_switches().await?;
+        self.feature_switches.replace(Some(switches.clone()));
+        Ok(switches)
     }
 
     /// Whether the user has each feature of each plugin of `registry` on,
     /// by the plugin's index and the feature's.
     async fn features(&self, registry: &Registry) -> Result<Vec<Vec<bool>>, StoreError> {
-        let cached = self.feature_switches.borrow().clone();
-        let switches = match cached {
-            Some(switches) => switches,
-            None => {
-                let switches = self.store.feature_switches().await?;
-                self.feature_switches.replace(Some(switches.clone()));
-                switches
-            }
-        };
+        let switches = self.feature_switches().await?;
         Ok(registry
             .plugins
             .iter()
@@ -574,12 +624,7 @@ impl Shared {
                     .manifest()
                     .features
                     .iter()
-                    .map(|feature| {
-                        switches
-                            .get(&(plugin.to_owned(), feature.id.clone()))
-                            .copied()
-                            .unwrap_or(feature.on_by_default)
-                    })
+                    .map(|feature| feature_on(&switches, plugin, feature))
                     .collect()
             })
             .collect())
@@ -830,8 +875,13 @@ impl UserPlugins {
         let this = Self(self.0.clone());
         let conversation = conversation.clone();
         tokio::task::spawn_local(async move {
+            // A plugin that follows it in a version is told, as the version
+            // the conversation names is.
             let plugins = this
-                .receivers_of(|registered| registered.factory.manifest().running)
+                .receivers_of(|registered| {
+                    let running = |declared: &Registered| declared.factory.manifest().running;
+                    (registered.current && running(registered)) || registered.versions.values().any(running)
+                })
                 .await;
             let running = this.0.running.borrow().contains(&conversation);
             let told = if running {
@@ -904,21 +954,24 @@ impl UserPlugins {
         let mut removed = Vec::new();
         for (index, registered) in registry.plugins.iter().enumerate() {
             let held = before.plugins.get(index);
-            let same = held.is_some_and(|held| held.removed == registered.removed && held.declaration == registered.declaration);
-            if same {
+            let declarations = |registered: &Registered| {
+                let versions = registered.versions.iter().map(|(version, declared)| (version.clone(), declared.declaration));
+                (registered.current, registered.declaration, versions.collect::<Vec<_>>())
+            };
+            if held.is_some_and(|held| declarations(held) == declarations(registered)) {
                 continue;
             }
             changed.push(registered.id().clone());
-            if registered.removed {
+            self.0.end_lives(index, |version| registered.chosen(version).is_none());
+            // Its tabs and packages are its current declaration's, which go
+            // with it, whatever versions stay.
+            if !registered.current && held.is_some_and(|held| held.current) {
                 removed.push(index);
             }
         }
         let enabled = self.enabled(&registry).await?;
         let mut packages = Vec::new();
         for &index in &removed {
-            if let Some(live) = self.0.lives.borrow_mut().remove(&index) {
-                live.ended.cancel();
-            }
             self.close_tabs(&registry, index).await?;
             packages.extend(registry.plugins[index].packages.iter());
         }
@@ -942,7 +995,7 @@ impl UserPlugins {
     /// Its durable data stays.
     pub async fn switch(&self, plugin: &str, enabled: bool) -> Result<Option<Switched>, SwitchError> {
         let registry = self.0.registry();
-        let Some((index, registered)) = registry.plugin(plugin) else {
+        let Some((index, registered)) = registry.declared_plugin(plugin) else {
             return Err(SwitchError::UnknownPlugin(plugin.to_owned()));
         };
         let _switching = self.0.switching.lock().await;
@@ -960,9 +1013,7 @@ impl UserPlugins {
         self.0.switches.replace(Some(switches));
         let mut released = Vec::new();
         if !enabled {
-            if let Some(live) = self.0.lives.borrow_mut().remove(&index) {
-                live.ended.cancel();
-            }
+            self.0.end_lives(index, |_| true);
             self.close_tabs(&registry, index).await?;
             released = Self::unbound(&registry, &current, registered.packages.iter());
         }
@@ -1072,45 +1123,65 @@ impl UserPlugins {
         Ok(())
     }
 
-    /// The toolset of the plugins the user has on: their commands, with the
-    /// product's `product` groups under `jush`, of the plugins a
+    /// The toolset of the plugins the user has on: their commands, each in
+    /// the version `versions` names of it by its id or the current one, with
+    /// the product's `product` groups under `jush`, of the plugins a
     /// conversation's list `commands` reaches; none reaches them all.
-    pub async fn toolset(&self, product: Vec<GroupBuilder>, commands: Option<&CommandList>) -> Result<PluginToolset, StoreError> {
+    ///
+    /// A conversation's versions were checked with the others as it named
+    /// them; a declaration since that takes a name another plugin's version
+    /// takes refuses the conversation a toolset, with the name.
+    pub async fn toolset(
+        &self,
+        product: Vec<GroupBuilder>,
+        commands: Option<&CommandList>,
+        versions: &BTreeMap<String, String>,
+    ) -> Result<PluginToolset, ToolsetError> {
         let registry = self.0.registry();
-        let enabled = Self::reached(&registry, self.enabled(&registry).await?, commands);
-        let features = self.0.features(&registry).await?;
-        let on = |index: usize, feature: &Feature| {
-            let declared = &registry.plugins[index].factory.manifest().features;
-            declared
-                .iter()
-                .position(|candidate| candidate.id == feature.id)
-                .is_some_and(|position| features[index][position])
-        };
-        let commands = compose(&registry, Some(&self.0), product, |index| enabled[index], on)
-            .expect("the plugins' commands were checked as they were registered");
+        let enabled = Self::reached(&registry, self.enabled(&registry).await?, commands, versions);
+        let switches = self.0.feature_switches().await?;
+        let on = |index: usize, feature: &Feature| feature_on(&switches, registry.plugins[index].id().as_str(), feature);
+        let commands = compose(&registry, Some(&self.0), product, versions, |index| enabled[index], on)?;
         Ok(PluginToolset {
             commands,
-            revision: Self::revision_of(&registry, &enabled, &features),
+            revision: Self::revision_of(&registry, &enabled, &switches, versions),
         })
     }
 
     /// The revision of the toolset the user's plugins give now, of the
-    /// plugins `commands` reaches ([`toolset`](Self::toolset)).
-    pub async fn revision(&self, commands: Option<&CommandList>) -> Result<String, StoreError> {
+    /// plugins `commands` reaches in the versions `versions` names
+    /// ([`toolset`](Self::toolset)).
+    pub async fn revision(&self, commands: Option<&CommandList>, versions: &BTreeMap<String, String>) -> Result<String, StoreError> {
         let registry = self.0.registry();
-        let enabled = Self::reached(&registry, self.enabled(&registry).await?, commands);
-        let features = self.0.features(&registry).await?;
-        Ok(Self::revision_of(&registry, &enabled, &features))
+        let enabled = Self::reached(&registry, self.enabled(&registry).await?, commands, versions);
+        let switches = self.0.feature_switches().await?;
+        Ok(Self::revision_of(&registry, &enabled, &switches, versions))
     }
 
-    /// `enabled`, the plugins the user has on, less those with commands
-    /// that `commands` names none of; a plugin of no command is not the
-    /// list's.
-    fn reached(registry: &Registry, mut enabled: Vec<bool>, commands: Option<&CommandList>) -> Vec<bool> {
-        let Some(commands) = commands else {
-            return enabled;
-        };
-        for (on, registered) in enabled.iter_mut().zip(&registry.plugins) {
+    /// Whether a conversation may name `versions` of the program's plugins
+    /// ([`Registry::check_versions`]).
+    pub fn check_versions(&self, versions: &BTreeMap<String, String>) -> Result<(), RegistryError> {
+        self.0.registry().check_versions(versions)
+    }
+
+    /// `enabled`, the plugins the user has on, less those not declared in
+    /// the version `versions` names of them, and those with commands that
+    /// `commands` names none of; a plugin of no command is not the list's.
+    fn reached(
+        registry: &Registry,
+        mut enabled: Vec<bool>,
+        commands: Option<&CommandList>,
+        versions: &BTreeMap<String, String>,
+    ) -> Vec<bool> {
+        let chosen: HashMap<usize, &Registered> = registry.chosen(versions).collect();
+        for (index, on) in enabled.iter_mut().enumerate() {
+            let Some(registered) = chosen.get(&index) else {
+                *on = false;
+                continue;
+            };
+            let Some(commands) = commands else {
+                continue;
+            };
             if !registered.commands.is_empty()
                 && !registered
                     .commands
@@ -1123,24 +1194,32 @@ impl UserPlugins {
         enabled
     }
 
-    /// The plugins on that have commands, each with the number of its
-    /// program's declaration of it and the features it has off, such as
-    /// `web!search` or `chat@3`.
-    fn revision_of(registry: &Registry, enabled: &[bool], features: &[Vec<bool>]) -> String {
+    /// The plugins on that have commands, each in the version `versions`
+    /// names of it, with the number of its program's declaration of it and
+    /// the features it has off, such as `web!search`, `chat@3` or
+    /// `chat~canary@5`.
+    fn revision_of(
+        registry: &Registry,
+        enabled: &[bool],
+        switches: &BTreeMap<(String, String), bool>,
+        versions: &BTreeMap<String, String>,
+    ) -> String {
         let parts: Vec<String> = registry
-            .plugins
-            .iter()
-            .zip(enabled)
-            .zip(features)
-            .filter(|((registered, enabled), _)| **enabled && !registered.commands.is_empty())
-            .map(|((registered, _), on)| {
-                let mut part = registered.id().as_str().to_owned();
+            .chosen(versions)
+            .filter(|(index, registered)| enabled[*index] && !registered.commands.is_empty())
+            .map(|(_, registered)| {
+                let id = registered.id().as_str();
+                let mut part = id.to_owned();
+                if let Some(version) = versions.get(id) {
+                    part.push('~');
+                    part.push_str(version);
+                }
                 if let Some(declaration) = registered.declaration {
                     part.push('@');
                     part.push_str(&declaration.to_string());
                 }
-                for (feature, on) in registered.factory.manifest().features.iter().zip(on) {
-                    if !on {
+                for feature in &registered.factory.manifest().features {
+                    if !feature_on(switches, id, feature) {
                         part.push('!');
                         part.push_str(&feature.id);
                     }
@@ -1162,10 +1241,17 @@ impl UserPlugins {
         cancel: CancellationToken,
     ) -> Result<Option<String>, PluginError> {
         let registry = self.0.registry();
-        let Some((index, _)) = registry.plugin(plugin.as_str()) else {
+        let Some((index, registered)) = registry.declared_plugin(plugin.as_str()) else {
             return Ok(None);
         };
-        let enabled = Self::reached(&registry, self.enabled(&registry).await.map_err(PluginError::failed)?, commands);
+        // The conversation asks the version it names, while that one is a
+        // context source.
+        let versions = self.0.versions_of(&asked.conversation).await.map_err(PluginError::failed)?;
+        let version = versions.get(plugin.as_str()).map(String::as_str);
+        if !registered.chosen(version).is_some_and(|chosen| chosen.factory.manifest().context) {
+            return Ok(None);
+        }
+        let enabled = Self::reached(&registry, self.enabled(&registry).await.map_err(PluginError::failed)?, commands, &versions);
         if !enabled[index] {
             return Ok(None);
         }
@@ -1199,7 +1285,9 @@ impl UserPlugins {
         let Some((index, registered)) = registry.plugin(plugin.as_str()) else {
             return Ok(false);
         };
-        Ok(registered.factory.manifest().project_search && Self::reached(&registry, self.enabled(&registry).await?, commands)[index])
+        let current = BTreeMap::new();
+        Ok(registered.factory.manifest().project_search
+            && Self::reached(&registry, self.enabled(&registry).await?, commands, &current)[index])
     }
 
     /// Asks `plugin`, which declares a project search, to search
@@ -1277,7 +1365,7 @@ impl UserPlugins {
             return Ok(None);
         };
         let enabled = self.enabled(&registry).await?;
-        Ok(self.0.live(&registry, index, &enabled).map(|live| live.ended))
+        Ok(self.0.live(&registry, index, None, &enabled).map(|live| live.ended))
     }
 
     /// The user state of each plugin the user has on that declares one, by
@@ -1540,11 +1628,13 @@ impl UserPlugins {
 
     /// The plugins that bind `package` and that the user has on.
     async fn receivers(&self, package: &str) -> Vec<usize> {
-        self.receivers_of(|registered| registered.packages.contains(package)).await
+        // A plugin's packages are its current declaration's.
+        self.receivers_of(|registered| registered.current && registered.packages.contains(package)).await
     }
 
-    /// The plugins `bound` takes that the user has on, by their indices.
-    async fn receivers_of(&self, bound: impl Fn(&crate::registry::Registered) -> bool) -> Vec<usize> {
+    /// The plugins `bound` takes that the user has on, by their indices, of
+    /// those declared in some version.
+    async fn receivers_of(&self, bound: impl Fn(&Registered) -> bool) -> Vec<usize> {
         let registry = self.0.registry();
         let enabled = match self.enabled(&registry).await {
             Ok(enabled) => enabled,
@@ -1554,7 +1644,9 @@ impl UserPlugins {
             }
         };
         registry
-            .present()
+            .plugins
+            .iter()
+            .enumerate()
             .filter(|(index, registered)| enabled[*index] && bound(registered))
             .map(|(index, _)| index)
             .collect()
@@ -2210,4 +2302,24 @@ fn stored(value: crate::store::PluginValue) -> StoredValue {
 /// plugin cannot cause.
 pub(crate) fn storage(error: StoreError) -> PortFailure {
     PortFailure::Port(PortError::Failed(error.to_string()))
+}
+
+/// Whether the user has `feature` of the plugin `plugin` on: as the user
+/// switched it, else as the declaration that names it says by default, so
+/// a feature only one version declares is that version's default.
+fn feature_on(switches: &BTreeMap<(String, String), bool>, plugin: &str, feature: &Feature) -> bool {
+    switches
+        .get(&(plugin.to_owned(), feature.id.clone()))
+        .copied()
+        .unwrap_or(feature.on_by_default)
+}
+
+/// Why the plugins give a conversation no toolset.
+#[derive(Debug, thiserror::Error)]
+pub enum ToolsetError {
+    #[error(transparent)]
+    Store(#[from] StoreError),
+    /// The declarations it runs on take a name twice.
+    #[error(transparent)]
+    Commands(#[from] RegistryError),
 }

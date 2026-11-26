@@ -111,6 +111,8 @@ export interface CoreOpening {
   id: string
   dir: string
   plugins: readonly Plugin[]
+  /** The version the program's plugins are; none for their current one. */
+  pluginVersion: string | undefined
   /** The package's own runner, which `device.spawn()` starts with no command. */
   runner: () => string
 }
@@ -134,6 +136,8 @@ export class Core {
   readonly portForwards: PortForwards
   private readonly routes: CoreRoutes
   private readonly connection: PageConnection
+  /** The version the program's plugins are; none for their current one. */
+  private readonly pluginVersion: string | undefined
   // Read by `follow`, which opening the core awaits before it hands the core over.
   private stateRead!: CoreState
   private readonly stateListeners = new Set<(state: CoreState) => void>()
@@ -146,6 +150,7 @@ export class Core {
     this.id = opening.id
     this.dir = opening.dir
     this.connection = new PageConnection(processConnection(opening.process, `/cores/${segment(opening.id)}/api/connect`))
+    this.pluginVersion = opening.pluginVersion
     this.connection.start()
     this.routes = new CoreRoutes(opening.process, opening.id, this.connection)
     this.conversations = new Conversations(this.routes, () => this.stateRead)
@@ -341,7 +346,7 @@ export class Core {
     if (this.closed || this.starter !== null) {
       return
     }
-    const lane = this.connection.openLane({ kind: 'starter' }, 'starter lane')
+    const lane = this.connection.openLane({ kind: 'starter', version: this.pluginVersion }, 'starter lane')
     this.starter = lane
     lane.addEventListener('message', (message) => {
       const parsed = starterRequestSchema.safeParse(JSON.parse(message.data as string))
@@ -369,7 +374,10 @@ export class Core {
     if (this.closed) {
       return
     }
-    const lane = this.connection.openLane({ kind: 'plugin', plugin: plugin.manifest.id }, `plugin lane of ${plugin.manifest.id}`)
+    const lane = this.connection.openLane(
+      { kind: 'plugin', plugin: plugin.manifest.id, version: this.pluginVersion },
+      `plugin lane of ${plugin.manifest.id}`,
+    )
     servePlugin(plugin, lane, (error) => process.emitWarning(error))
     lane.addEventListener('close', () => {
       if (lane.refusal !== null) {

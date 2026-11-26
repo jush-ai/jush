@@ -22,26 +22,29 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use jush_plugin_interface::{
-    Manifest, Plugin, PluginError, PluginFactory, PluginId, PluginPort, PortMessage, Reply, Request, UserId,
+    Manifest, Plugin, PluginError, PluginFactory, PluginPort, PortMessage, Reply, Request, UserId,
 };
 use futures_util::future::LocalBoxFuture;
 use tokio_util::sync::{CancellationToken, DropGuard};
 
 use super::cores::OpenCores;
-use crate::plugin_lanes::{Event, PluginLanes, Reading, Sent, input, reads_input};
+use crate::plugin_lanes::{Event, PluginLanes, Reading, Sent, PluginVersion, input, reads_input};
 
-/// A program's plugin, as the process registers it.
+/// A program's plugin in one version, the current one for none, as the
+/// process registers it.
 pub(super) struct ProgramPlugin {
     manifest: Manifest,
+    version: Option<String>,
     cores: Arc<OpenCores>,
     /// How long a request waits for a lane of the plugin to open.
     returning: Duration,
 }
 
 impl ProgramPlugin {
-    pub(super) fn new(manifest: Manifest, cores: Arc<OpenCores>, returning: Duration) -> Self {
+    pub(super) fn new(manifest: Manifest, version: Option<String>, cores: Arc<OpenCores>, returning: Duration) -> Self {
         Self {
             manifest,
+            version,
             cores,
             returning,
         }
@@ -57,7 +60,10 @@ impl PluginFactory for ProgramPlugin {
         let ended = CancellationToken::new();
         Rc::new(LanePlugin {
             core: user.clone(),
-            plugin: self.manifest.id.clone(),
+            plugin: PluginVersion {
+                plugin: self.manifest.id.clone(),
+                version: self.version.clone(),
+            },
             cores: self.cores.clone(),
             returning: self.returning,
             ended: ended.clone(),
@@ -66,11 +72,12 @@ impl PluginFactory for ProgramPlugin {
     }
 }
 
-/// A program plugin's instance in one core: each request goes to the
-/// program on the plugin's newest lane of the core.
+/// A program plugin's instance in one core, of one version: each request
+/// goes to the program on the newest lane of that version of the plugin in
+/// the core.
 struct LanePlugin {
     core: UserId,
-    plugin: PluginId,
+    plugin: PluginVersion,
     cores: Arc<OpenCores>,
     returning: Duration,
     /// Cancelled as the instance ends, which ends the tasks it started.

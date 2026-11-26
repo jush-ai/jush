@@ -18,6 +18,7 @@
 //! A group's permission categories are checked by the backend's dispatch before
 //! a call reaches the plugin, which never sees a permission.
 
+use std::collections::BTreeMap;
 use std::rc::Rc;
 
 use jush_device_interface::{
@@ -35,13 +36,16 @@ use crate::{Registry, RegistryError};
 pub(crate) const TAKEN_GROUPS: &[&str] = &["agent", "shell", "device", "attachment", "conversation"];
 
 /// The command set of the plugins of `registry` that `include` takes, by
-/// their index, narrowed to the features of each that `on` takes
-/// (`crate::features`), whose `rpc` leaves `user`'s instances serve;
-/// without them, as the startup check composes it, a call is refused.
+/// their index, each in the version `versions` names of it by its id or
+/// the current one ([`Registry::chosen`]), narrowed to the features of
+/// each that `on` takes (`crate::features`), whose `rpc` leaves `user`'s
+/// instances serve; without them, as the startup check composes it, a call
+/// is refused.
 pub(crate) fn compose(
     registry: &Registry,
     user: Option<&Rc<Shared>>,
     product: Vec<GroupBuilder>,
+    versions: &BTreeMap<String, String>,
     include: impl Fn(usize) -> bool,
     on: impl Fn(usize, &Feature) -> bool,
 ) -> Result<CommandSet, RegistryError> {
@@ -55,7 +59,7 @@ pub(crate) fn compose(
         set.register(root)
             .expect("the product's groups are a valid `jush` root");
     }
-    for (index, registered) in registry.present() {
+    for (index, registered) in registry.chosen(versions) {
         if !include(index) {
             continue;
         }
