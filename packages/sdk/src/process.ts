@@ -33,8 +33,6 @@ export interface ProcessStart {
   executable: string
   /** The release roots whose command packages the cores' runners run. */
   release: readonly string[]
-  /** Where the program's server forwards the process's routes. */
-  publicUrl?: string
 }
 
 /** A process on its own, as a program connects to it. */
@@ -79,9 +77,6 @@ export class Process {
   /** Starts the process. */
   static start(start: ProcessStart): Process {
     const env: NodeJS.ProcessEnv = { ...process.env, JUSH_RELEASE: start.release.join(pathListSeparator()) }
-    if (start.publicUrl !== undefined) {
-      env.JUSH_PUBLIC_URL = start.publicUrl
-    }
     const child = spawn(start.executable, [], { stdio: ['pipe', 'pipe', 'inherit'], env })
     const exited = new Promise<number | null>((resolve) => {
       child.once('exit', (code) => resolve(code))
@@ -180,12 +175,27 @@ export class Process {
     // A stream that fails closes, which its reader sees; Bun also reports
     // each stream an ended session cancels as an error.
     stream.on('error', () => {})
+    // Why the request's body broke off, as when its own sender went away.
+    let broken: unknown
     if (request.body !== null) {
       const body = Readable.fromWeb(request.body as import('node:stream/web').ReadableStream)
       body.pipe(stream)
-      // A stream that closes first, as one the process answered early,
-      // cancels what is left of the body.
-      stream.once('close', () => body.destroy())
+      // A body that breaks off cancels the request, which the process takes
+      // as unfinished, and fails it with the body's error.
+      body.once('error', (error) => {
+        broken = error
+        stream.close(http2.constants.NGHTTP2_CANCEL)
+      })
+      // A stream the process ended first, as one it answered before it read
+      // the whole body and then reset, cancels what is left of the body.
+      // Node resets it before it closes it, and a write after the reset
+      // errs it, whose answer then never ends.
+      const stop = () => {
+        body.unpipe(stream)
+        body.destroy()
+      }
+      stream.once('aborted', stop)
+      stream.once('close', stop)
     }
     // The request's signal cancels it until it is answered; then the
     // response's body does, as its reader cancels it. A server such as
@@ -199,7 +209,7 @@ export class Process {
     const bodied = (status: number) => request.method !== 'HEAD' && status !== 204 && status !== 304
     const response = await answered(stream, bodied)
       .catch((error: unknown) => {
-        throw request.signal.aborted ? request.signal.reason : error
+        throw request.signal.aborted ? request.signal.reason : broken ?? error
       })
       .finally(() => request.signal.removeEventListener('abort', abort))
     if (response.body === null) {

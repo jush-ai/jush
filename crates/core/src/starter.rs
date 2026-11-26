@@ -59,10 +59,14 @@ pub trait Starter {
     /// while nothing serves the installers.
     fn install_commands(&self) -> Option<InstallCommands>;
 
-    /// Where the core's routes are reached from outside: the URL they are
-    /// under `/api` of, which a plugin's OAuth redirect starts with; none
-    /// while it is not known.
-    fn public_url(&self) -> Option<Url>;
+    /// The URL of the schedule `id`, which another system calls to run it;
+    /// none while no address serves the schedules.
+    fn schedule_url(&self, id: &ScheduleId) -> Option<Url>;
+
+    /// Where the vendor of the plugin `plugin` sends the browser back to
+    /// once the user signed in, the OAuth redirect URI; none while no
+    /// address serves the sign-ins.
+    fn sign_in_return(&self, plugin: &str) -> Option<Url>;
 
     /// Where the runner lines of `device` are kept; none to keep none.
     fn device_log(&self, device: &DeviceId) -> Option<Rc<dyn DeviceLog>>;

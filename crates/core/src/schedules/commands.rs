@@ -226,8 +226,7 @@ fn address(core: &Core, schedule: &ScheduleDto) -> Option<String> {
     if !matches!(schedule.trigger, Trigger::Url {}) {
         return None;
     }
-    let base = core.services().public_url.get()?;
-    Some(format!("{}/hooks/{}", base.as_str().trim_end_matches('/'), schedule.id))
+    Some(core.starter().schedule_url(&schedule.id)?.to_string())
 }
 
 async fn list(core: Rc<Core>, call: Call<NoArgs>, port: RpcPort) -> Result<u8, RpcError> {

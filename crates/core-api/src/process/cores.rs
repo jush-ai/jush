@@ -47,8 +47,8 @@ use jush_web_api_protocol::settings::InstanceMode;
 use futures_util::future::BoxFuture;
 use tokio::sync::Notify;
 use tokio_util::sync::CancellationToken;
-use url::Url;
 
+use super::addresses::Addresses;
 use super::program::ProgramStarter;
 use crate::error::ApiError;
 use crate::schedules::ScheduleOwners;
@@ -74,9 +74,6 @@ pub(crate) struct OpenCores {
     changed: Notify,
     /// Set as the process stops, which opens no core any more.
     stopping: AtomicBool,
-    /// Where the process is reached from outside; a core's routes are
-    /// under `/cores/{id}` of it.
-    public_url: Option<Url>,
 }
 
 enum Slot {
@@ -129,13 +126,12 @@ pub(crate) struct Serving {
 }
 
 impl OpenCores {
-    pub(crate) fn new(public_url: Option<Url>) -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             slots: Mutex::default(),
             opening: tokio::sync::Mutex::default(),
             changed: Notify::new(),
             stopping: AtomicBool::new(false),
-            public_url,
         }
     }
 
@@ -514,6 +510,7 @@ impl ScheduleOwners for OpenCores {
 /// the programs' starter.
 pub(crate) struct ProcessOpener {
     pub(crate) cores: Arc<OpenCores>,
+    pub(super) addresses: Arc<Addresses>,
     /// The runners waiting to be paired, which an agent's `jush device pair`
     /// claims; none for a process over stdio, which no runner dials.
     pub(crate) claims: Option<Arc<PendingClaims>>,
@@ -530,14 +527,11 @@ impl Opener for ProcessOpener {
             // The pool starts only a core whose store it found.
             _ => Arc::default(),
         };
-        let public_url = self.cores.public_url.as_ref().and_then(|url| {
-            format!("{}/cores/{user}", url.as_str().trim_end_matches('/')).parse().ok()
-        });
         Rc::new(ProgramStarter {
             user: user.clone(),
             core,
             starter_lane,
-            public_url,
+            addresses: self.addresses.clone(),
             claims: self.claims.clone(),
         })
     }

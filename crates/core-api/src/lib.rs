@@ -42,7 +42,7 @@ pub mod history;
 pub mod html_view;
 mod instructions;
 mod models;
-mod oauth;
+pub mod oauth;
 pub mod page;
 pub mod page_client;
 pub mod peer;
@@ -182,7 +182,6 @@ pub fn routes() -> Router<Api> {
         .route("/plugins/{plugin}/calls/{method}", post(plugins::user_call))
         .route("/plugins/{plugin}/blocks/{tag}/{id}", get(blocks::document))
         .route("/reply-blocks", post(blocks::facts))
-        .route("/plugins/{plugin}/oauth/callback", get(oauth::callback))
         .route("/plugins/{plugin}", put(plugins::switch))
         .route("/plugins/{plugin}/features/{feature}", put(plugins::switch_feature))
         .route("/instructions", put(instructions::replace))
