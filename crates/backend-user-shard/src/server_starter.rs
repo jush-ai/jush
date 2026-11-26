@@ -69,6 +69,13 @@ impl ServerStarter {
     pub fn new(user: UserId, services: Arc<Services>, core: Weak<Core>) -> Self {
         Self { user, services, core }
     }
+
+    /// The server's route `path` as it is reached from outside; none while
+    /// the server's public URL is not known.
+    fn below_public_url(&self, path: &str) -> Option<url::Url> {
+        let public = self.services.public_url.get()?;
+        format!("{}/{path}", public.url().as_str().trim_end_matches('/')).parse().ok()
+    }
 }
 
 /// What the server keeps in each of its users' cores for its own work on
@@ -129,8 +136,12 @@ impl Starter for ServerStarter {
         Some(install_commands(backend.url()))
     }
 
-    fn public_url(&self) -> Option<url::Url> {
-        Some(self.services.public_url.get()?.url().clone())
+    fn schedule_url(&self, id: &ScheduleId) -> Option<url::Url> {
+        self.below_public_url(&format!("hooks/{id}"))
+    }
+
+    fn sign_in_return(&self, plugin: &str) -> Option<url::Url> {
+        self.below_public_url(&format!("api/plugins/{plugin}/oauth/callback"))
     }
 
     fn device_log(&self, device: &DeviceId) -> Option<Rc<dyn DeviceLog>> {

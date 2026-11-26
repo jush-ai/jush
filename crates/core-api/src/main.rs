@@ -9,18 +9,12 @@
 //!   `JUSH_CORE_TOKEN` is the token every program presents; it does not
 //!   start without one.
 //!
-//! It logs to its standard error. `JUSH_PUBLIC_URL` says where it is reached
-//! from outside: the program's server that forwards its routes, or the
-//! process itself; without it, the cores offer neither a plugin's OAuth nor
-//! a schedule's URL. `JUSH_RELEASE` names the release whose command packages
-//! the cores' runners run, as the server's does, in one root or a list of
-//! them (`crates/core-api/src/process/packages.rs`); without it, they run
-//! none.
+//! It logs to its standard error. `JUSH_RELEASE` names the release whose
+//! command packages the cores' runners run, as the server's does, in one
+//! root or a list of them (`crates/core-api/src/process/packages.rs`);
+//! without it, they run none.
 
-use std::env::VarError;
 use std::process::ExitCode;
-
-use url::Url;
 
 /// How the process runs.
 enum Mode {
@@ -45,20 +39,6 @@ fn main() -> ExitCode {
             return ExitCode::from(2);
         }
     };
-    let public_url = match std::env::var("JUSH_PUBLIC_URL") {
-        Ok(text) => match text.parse::<Url>() {
-            Ok(url) => Some(url),
-            Err(error) => {
-                tracing::error!(event = "process.public_url_unusable", %error, "JUSH_PUBLIC_URL is no URL");
-                return ExitCode::FAILURE;
-            }
-        },
-        Err(VarError::NotPresent) => None,
-        Err(error) => {
-            tracing::error!(event = "process.public_url_unusable", %error, "JUSH_PUBLIC_URL is not readable");
-            return ExitCode::FAILURE;
-        }
-    };
     let runtime = match tokio::runtime::Builder::new_multi_thread().enable_all().build() {
         Ok(runtime) => runtime,
         Err(error) => {
@@ -72,7 +52,7 @@ fn main() -> ExitCode {
     let ran = match mode {
         Mode::Stdio => {
             let connection = tokio::io::join(tokio::io::stdin(), tokio::io::stdout());
-            runtime.block_on(jush_core_api::process::run(connection, public_url, release))
+            runtime.block_on(jush_core_api::process::run(connection, release))
         }
         Mode::Serve { listen } => {
             let token = match std::env::var("JUSH_CORE_TOKEN") {
@@ -89,7 +69,7 @@ fn main() -> ExitCode {
                     return ExitCode::FAILURE;
                 }
             };
-            runtime.block_on(jush_core_api::process::serve(listener, token, public_url, release, stopped()))
+            runtime.block_on(jush_core_api::process::serve(listener, token, release, stopped()))
         }
     };
     match ran {

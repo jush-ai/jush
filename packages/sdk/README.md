@@ -105,14 +105,16 @@ const core = await jush.open('/srv/bot/data/team-a')
   core for every service.
 - Each connection declares its plugins again, and the last declaration of a
   plugin's id stands: a new version of your program changes the commands
-  of every conversation at once.
+  of every conversation at once. A connection that passes `addresses`
+  declares them in place of those before; one without them keeps them.
 - `SIGTERM` or Ctrl-C stops the process, which closes every core. Your
   program connects again by itself once the process is back, declares its
-  plugins and opens its cores again, and goes on.
+  addresses and plugins and opens its cores again, and goes on.
 
-Set `JUSH_PUBLIC_URL` to where the process is reached from outside, such as
-`https://bot.example.com/jush`, for schedules' URLs and plugins' sign-ins,
-which the process then answers itself.
+The process answers only your services and its runners. A call from
+outside, such as one of a schedule's URL, reaches your server at an
+address of yours, which hands it on: see
+[Your server's addresses](#your-servers-addresses).
 
 A runner reaches a process of its own as it reaches a Jush server: start it
 anywhere with `jush-runner run --backend http://bot.example.com:4100`. It
@@ -544,6 +546,8 @@ A new schedule starts from the defaults of `jush schedule create`, every day
 at 09:00, and is on unless the patch says `paused: true`. `create` and
 `update` answer the schedule with `secret`, a URL trigger's secret when the
 call made one, and null otherwise: it is the only time the secret is shown.
+A URL trigger's address is your server's, which hands its calls to
+`jush.schedules.call`: see [Your server's addresses](#your-servers-addresses).
 
 `runs(id, before?)` answers 50 runs at most, newest first; pass the last
 one's id as `before` for the 50 before it. Each run says what fired it
@@ -831,10 +835,102 @@ async function answer(request: Request): Promise<Response> {
   below `{base}/html/`, with its own token in the path: hand those requests
   to the chat's page before your sign-in.
 
-Jush can reach your program from outside when you tell it where your server
-forwards its routes: `Jush.start({ publicUrl: 'https://bot.example.com/jush' })`.
-A schedule's URL is then `/hooks/{id}` below it, which your server answers
-with `jush.fetch(request, '/jush')`, and a plugin's sign-in returns there.
+## Your server's addresses
+
+Two kinds of call come from outside, and reach your server, not Jush: a
+system that calls a schedule's URL, and a plugin's vendor that sends the
+browser back once the user signed in, such as Exa for the `web` plugin's
+search. Tell Jush where your server takes each, as URI templates whose
+`{name}`s Jush fills:
+
+```ts
+const jush = await Jush.start({
+  plugins: [chat],
+  addresses: {
+    schedule: 'https://bot.example.com/hooks/{id}',
+    signInReturn: 'https://bot.example.com/sign-in/{core}/{plugin}',
+  },
+})
+```
+
+- `schedule` holds `{id}`, the schedule's id. `jush schedule create --url`
+  and `jush schedule show` print the address filled.
+- `signInReturn` may hold `{core}`, the core's id (`core.id`), and
+  `{plugin}`, the plugin's: leave out what your server knows from its own
+  session. The core registers the address with the vendor itself.
+- A template that holds another name or a fragment (`#…`), or that is no
+  `http` or `https` URL once filled, fails `Jush.start` and
+  `Jush.connect`. Without `schedule`, a URL schedule has no address;
+  without `signInReturn`, a plugin's sign-in is refused.
+- Jush fills a template each time it writes the address: change it, and
+  the address of every URL schedule changes with it, its secret kept.
+
+Your server answers each call at its route, and hands it to Jush. With
+`Bun.serve`, as with any server that gives a standard `Request`:
+
+```ts
+const text = (body: string) => new Response(body, { headers: { 'content-type': 'text/plain; charset=utf-8' } })
+
+Bun.serve({
+  routes: {
+    '/hooks/:id': {
+      POST: async (request) => {
+        const called = await jush.schedules.call(request.params.id, request)
+        if (called.type === 'taken') {
+          return new Response(null, { status: 202 })
+        }
+        console.info('A schedule call was refused', request.params.id, called.reason)
+        const status = { unknown: 404, secret: 404, tooMany: 429, tooLarge: 413 }[called.reason]
+        return new Response(null, { status })
+      },
+    },
+    '/sign-in/:core/:plugin': async (request) => {
+      const { core, plugin } = request.params
+      const query = new URL(request.url).searchParams
+      const done = await jush.plugins.completeSignIn({ core, plugin, query })
+      return text(done.type === 'signedIn' ? `You're signed in to ${done.vendor}.` : "The sign-in didn't finish. Try again.")
+    },
+  },
+})
+```
+
+`jush.schedules.call(id, request)` passes the call to the open core that
+holds the schedule as it came, so a GitHub signature over its body
+verifies. It answers `{ type: 'taken' }` or `{ type: 'refused', reason }`:
+
+| `reason` | When |
+| --- | --- |
+| `unknown` | No open core holds a URL schedule of the id. |
+| `secret` | The call carries the secret neither as `Authorization: Bearer` nor in GitHub's `X-Hub-Signature-256`. |
+| `tooMany` | The schedule took 30 calls in the last minute. |
+| `tooLarge` | The body is over 1 MiB, or the headers are over 64 KiB. |
+
+- `taken` means the schedule keeps the call, not that a run started: a run
+  starts 30 seconds after the last call of a burst, or 2 minutes after its
+  first; a call whose `X-GitHub-Delivery` or `Idempotency-Key` came in the
+  last hour is answered as the first; a paused schedule keeps its calls.
+  The runs are in `conversation.schedules.runs(id)`.
+- Answer `unknown` and `secret` alike, as above, so a caller cannot tell
+  which addresses exist. Limit how often one caller may call addresses
+  that are none, as you limit your other routes: Jush does not see the
+  caller's address.
+- Your route decides which methods it takes: Jush checks a call whatever
+  its method.
+- A call whose body breaks off, as when its sender goes away, fails with
+  the body's error, as reading the request would; one whose body stops
+  coming for a minute fails with a `JushError` whose `code` is
+  `transfer_stalled`.
+
+`jush.plugins.completeSignIn({ core, plugin, query })` takes the query the
+browser came back with, as `URLSearchParams`, a string or a record. It
+answers `{ type: 'signedIn', vendor }` or `{ type: 'refused', reason }`:
+
+| `reason` | When |
+| --- | --- |
+| `unknownPlugin` | The core has no plugin of the id that signs in, or has it off. |
+| `expired` | No open core of the id started the sign-in, or it started over 10 minutes ago, or the sign-in ended already. |
+| `declined` | The vendor sent the browser back with an error, such as the user's refusal. |
+| `vendorFailed` | The vendor issued no tokens. |
 
 ## Errors
 

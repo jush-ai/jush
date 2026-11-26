@@ -64,24 +64,16 @@ pub async fn hook(
     request: Request,
 ) -> Result<Response, ApiError> {
     let limits = &state.services.hook_limits;
-    let now = Instant::now();
     let (parts, body) = request.into_parts();
     let client = client_address(&parts);
-    let id = ScheduleId::try_from(id).ok();
-    let owner = match &id {
-        Some(id) => state.schedule_owners.owner(id).await?,
-        None => None,
+    let (id, owner) = match admit(&state, id, |now| limits.admit_unknown(client, now)).await? {
+        Admission::Known { id, owner } => (id, owner),
+        Admission::Unknown => return Err(unauthorized()),
+        Admission::TooMany => return Err(too_many()),
     };
-    let admitted = match (&id, &owner) {
-        (Some(id), Some(_)) => limits.admit_known(id, now),
-        _ => limits.admit_unknown(client, now),
-    };
-    if !admitted {
-        return Err(too_many());
-    }
-    let (Some(id), Some(owner), true) = (id, owner, parts.method == Method::POST) else {
+    if parts.method != Method::POST {
         return Err(unauthorized());
-    };
+    }
     let method = parts.method.to_string();
     let headers = parts
         .headers
@@ -89,16 +81,55 @@ pub async fn hook(
         .filter_map(|(name, value)| Some((name.as_str().to_owned(), value.to_str().ok()?.to_owned())))
         .collect();
     let body = read(Request::from_parts(parts, body), &state).await?;
-    let call = HookCall { method, headers, body };
-    let answer = state
-        .shards
-        .of(&owner)
-        .call(move |core, _| async move { core.hook_call(&id, call).await })
-        .await??;
-    match answer {
+    match take(&state, &owner, id, HookCall { method, headers, body }).await? {
         HookAnswer::Taken => Ok(StatusCode::OK.into_response()),
-        HookAnswer::Refused => Err(unauthorized()),
+        HookAnswer::Unknown | HookAnswer::Secret => Err(unauthorized()),
     }
+}
+
+/// Where a call of a schedule's URL goes, once it is counted.
+pub(crate) enum Admission {
+    /// To the schedule `id`, in the core of `owner`.
+    Known { id: ScheduleId, owner: UserId },
+    /// Nowhere: no open core holds a schedule of the id.
+    Unknown,
+    /// Nowhere: the calls are over their limit.
+    TooMany,
+}
+
+/// Finds the core that holds the schedule `id`, and counts the call against
+/// the schedule's limit. `unknown` counts a call of an id no core holds:
+/// the server limits those by the caller's address, which a program's
+/// process does not see, so the program limits them at its own server.
+pub(crate) async fn admit(
+    state: &Api,
+    id: String,
+    unknown: impl FnOnce(Instant) -> bool,
+) -> Result<Admission, ApiError> {
+    let now = Instant::now();
+    let id = ScheduleId::try_from(id).ok();
+    let owner = match &id {
+        Some(id) => state.schedule_owners.owner(id).await?,
+        None => None,
+    };
+    let admitted = match (&id, &owner) {
+        (Some(id), Some(_)) => state.services.hook_limits.admit_known(id, now),
+        _ => unknown(now),
+    };
+    Ok(match (id, owner, admitted) {
+        (_, _, false) => Admission::TooMany,
+        (Some(id), Some(owner), true) => Admission::Known { id, owner },
+        _ => Admission::Unknown,
+    })
+}
+
+/// Hands `call` to the schedule `id` in the core of `owner`.
+pub(crate) async fn take(state: &Api, owner: &UserId, id: ScheduleId, call: HookCall) -> Result<HookAnswer, ApiError> {
+    Ok(state
+        .shards
+        .of(owner)
+        .call(move |core, _| async move { core.hook_call(&id, call).await })
+        .await??)
 }
 
 /// The conversation and the schedule a path names; an id that is not one is

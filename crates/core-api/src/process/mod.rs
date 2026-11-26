@@ -21,14 +21,24 @@
 //!                         /cores/{id}/api/...           the core's routes,
 //!                                                       as a page has them
 //!                                                       under /api
-//!                         /hooks/{id}                   a schedule's URL
+//!                         PUT /addresses {templates}    where the program
+//!                                                       serves the calls
+//!                                                       from outside
+//!                         POST /schedules/calls?id=     a call of a
+//!                                                       schedule's URL
+//!                         POST /sign-ins                a sign-in's return
 //! ```
+//!
+//! The process answers no one without its token but runners: the calls
+//! from outside reach the program's own addresses, which hand them on
+//! (`addresses.rs`).
 //!
 //! The process is an isolated instance with one set of services for its
 //! cores, as the server has for its users'. A program is the caller of each
 //! core's routes, and a starter: the core's notifications go on the newest
 //! starter lane a program opened on its page connection to the core.
 
+mod addresses;
 mod cores;
 mod devices;
 mod listener;
@@ -38,7 +48,6 @@ mod program;
 mod runners;
 mod stream;
 
-use std::net::SocketAddr;
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -78,10 +87,10 @@ use tokio::io::{AsyncRead, AsyncWrite};
 use tokio_util::sync::CancellationToken;
 use tower::ServiceExt as _;
 use tower_http::trace::TraceLayer;
-use url::Url;
 
 pub use self::listener::serve;
 
+use self::addresses::Addresses;
 use self::cores::{OpenCores, ProcessOpener, not_open};
 use self::packages::{ReleaseFiles, ServedPackages};
 use self::plugins::ProgramPlugin;
@@ -111,10 +120,8 @@ struct Process {
     release: Arc<ReleaseFiles>,
     /// The core's routes, for a program's calls of a serving core.
     core_routes: Router,
-    /// The core's routes anyone calls, a program or not: a plugin's sign-in
-    /// callback, which the vendor sends the browser back to, and the files a
-    /// page's frames load.
-    open_routes: Router,
+    /// Where the programs serve the calls from outside.
+    addresses: Arc<Addresses>,
     /// How long a request of a program's plugin waits for a lane of it.
     returning: Duration,
     closing: CancellationToken,
@@ -149,16 +156,13 @@ fn unauthorized() -> ApiError {
 struct DeclaredPlugin(#[garde(skip)] Manifest);
 
 /// Runs the process over `io`, the program's connection, until it ends,
-/// then closes every core. `public_url` is where the program's server
-/// forwards the process's routes; without one, the cores offer neither a
-/// plugin's OAuth nor a schedule's URL. `release` holds the roots of the
-/// release whose command packages the cores' runners run; without a root,
-/// they run none.
-pub async fn run<IO>(io: IO, public_url: Option<Url>, release: Vec<PathBuf>) -> Result<(), ProcessError>
+/// then closes every core. `release` holds the roots of the release whose
+/// command packages the cores' runners run; without a root, they run none.
+pub async fn run<IO>(io: IO, release: Vec<PathBuf>) -> Result<(), ProcessError>
 where
     IO: AsyncRead + AsyncWrite + Send + Unpin + 'static,
 {
-    let process = Process::start(public_url, release, false).await?;
+    let process = Process::start(release, false).await?;
     // Whatever comes over the connection is the program's.
     let app = routes(process.clone()).layer(Extension(Authorized));
     tracing::info!(event = "process.serving", "the process serves its program");
@@ -178,14 +182,14 @@ impl Process {
     /// Starts the process's services, with the release's plugins, which
     /// each program's declarations add to; `listens` for one on its own,
     /// which runners dial.
-    async fn start(public_url: Option<Url>, release: Vec<PathBuf>, listens: bool) -> Result<Arc<Self>, ProcessError> {
+    async fn start(release: Vec<PathBuf>, listens: bool) -> Result<Arc<Self>, ProcessError> {
         let release = Arc::new(ReleaseFiles::read(release).await?);
-        let cores = Arc::new(OpenCores::new(public_url.clone()));
+        let cores = Arc::new(OpenCores::new());
+        let addresses = Arc::new(Addresses::default());
+        // The process is reached from outside at its programs' addresses
+        // alone: it has no public URL, so its cores show no device a
+        // command that dials it, and lend no entry under its name.
         let public = PublicUrl::default();
-        if let Some(url) = &public_url {
-            // A URL given is the one taken; the address goes unused.
-            public.listening(Some(url), SocketAddr::from(([127, 0, 0, 1], 0)));
-        }
         let clock: Arc<dyn Clock> = Arc::new(SystemClock);
         let subscriptions_machine = MachineSlot::default();
         let runners = RunnerTuning::default();
@@ -234,6 +238,7 @@ impl Process {
         let services = Arc::new(services);
         let opener = ProcessOpener {
             cores: cores.clone(),
+            addresses: addresses.clone(),
             claims: listens.then(|| claims.clone()),
         };
         let pool = match ShardPool::start(
@@ -261,14 +266,13 @@ impl Process {
         };
         let closing = CancellationToken::new();
         let core_routes = core_routes(api.clone(), release.clone(), closing.clone());
-        let open_routes = open_routes(api.clone());
         tracing::info!(event = "process.started", "the process's services started");
         Ok(Arc::new(Self {
             cores,
             api,
             release,
             core_routes,
-            open_routes,
+            addresses,
             returning,
             closing,
             pool: Mutex::new(Some(pool)),
@@ -326,24 +330,18 @@ fn core_routes(api: Api, release: Arc<ReleaseFiles>, closing: CancellationToken)
         .layer(middleware::from_fn(stream::stream_peer))
 }
 
-/// The core's routes anyone calls.
-fn open_routes(api: Api) -> Router {
-    Router::new()
-        .route("/plugins/{plugin}/oauth/callback", get(crate::oauth::callback))
-        .merge(crate::public_routes())
-        .fallback(|| async { unauthorized() })
-        .with_state(api)
-        .layer(middleware::from_fn(stream::stream_peer))
-}
-
 /// The process's routes.
 fn routes(process: Arc<Process>) -> Router {
     Router::new()
         .route("/plugins/{id}", put(declare).delete(remove))
         .route("/cores", post(open))
         .route("/cores/{id}", delete(close))
-        // The limit on unknown addresses takes the caller's address.
-        .route("/hooks/{id}", any(hook).layer(middleware::from_fn(stream::stream_peer)))
+        .route("/addresses", put(addresses::declare))
+        .route(
+            "/schedules/calls",
+            post(addresses::schedule_call).layer(axum::extract::DefaultBodyLimit::max(addresses::CALL_LIMIT)),
+        )
+        .route("/sign-ins", post(addresses::complete_sign_in))
         // A route with parameters would give them to the core's routes too.
         .fallback(core_call)
         .with_state(process)
@@ -449,14 +447,13 @@ async fn close(State(process): State<Arc<Process>>, _: Authorized, Path(id): Pat
 }
 
 /// `/cores/{id}/api/...`: a call of the serving core `id`, which the core's
-/// routes answer as the server's answer a page's under `/api`; without the
-/// process's token, only those anyone calls.
+/// routes answer as the server's answer a page's under `/api`.
 ///
 /// `/cores/{id}/pages/{conversation}/...`: a call of a program's page of the
 /// conversation, with the operations its program gave it in the
 /// `jush-page-operations` header, which the same routes answer as the
-/// page's (`crate::page`); only with the process's token.
-async fn core_call(State(process): State<Arc<Process>>, mut request: Request) -> Result<Response, ApiError> {
+/// page's (`crate::page`).
+async fn core_call(State(process): State<Arc<Process>>, _: Authorized, mut request: Request) -> Result<Response, ApiError> {
     let Some((id, rest)) = request
         .uri()
         .path()
@@ -479,12 +476,9 @@ async fn core_call(State(process): State<Arc<Process>>, mut request: Request) ->
         None => format!("/{place}"),
     };
     *request.uri_mut() = path.parse::<Uri>().map_err(|_| not_open())?;
-    let authorized = request.extensions().get::<Authorized>().is_some();
-    let routes = if authorized { &process.core_routes } else { &process.open_routes };
     let program = ProgramCaller::new(id, core, process.cores.clone());
     let caller: Arc<dyn Caller> = match bound {
         None => Arc::new(program),
-        Some(_) if !authorized => return Err(unauthorized()),
         Some(conversation) => {
             let conversation = ConversationId::try_from(conversation).map_err(|_| {
                 ApiError::new(StatusCode::NOT_FOUND, ErrorCode::ConversationNotFound, "Conversation not found")
@@ -500,13 +494,7 @@ async fn core_call(State(process): State<Arc<Process>>, mut request: Request) ->
     };
     request.extensions_mut().insert(CallerOf(caller));
     // The router answers every request.
-    Ok(routes.clone().oneshot(request).await.unwrap_or_else(|never| match never {}))
-}
-
-/// `/hooks/{id}`: a call of a schedule's URL, which reaches the serving core
-/// that holds the schedule.
-async fn hook(State(process): State<Arc<Process>>, id: Path<String>, request: Request) -> Result<Response, ApiError> {
-    crate::schedules::hook(State(process.api.clone()), id, request).await
+    Ok(process.core_routes.clone().oneshot(request).await.unwrap_or_else(|never| match never {}))
 }
 
 pub(super) async fn no_route(request: Request) -> Response {

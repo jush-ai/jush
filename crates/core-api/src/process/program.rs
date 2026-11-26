@@ -23,6 +23,7 @@ use jush_web_api_protocol::state::SyncEvent;
 use futures_util::future::{BoxFuture, LocalBoxFuture};
 use url::Url;
 
+use super::addresses::Addresses;
 use super::cores::{OpenCores, Serving, not_open};
 use crate::caller::{Caller, CallerPage, Gone};
 use crate::error::ApiError;
@@ -202,8 +203,8 @@ pub(crate) struct ProgramStarter {
     pub(crate) user: UserId,
     pub(crate) core: Weak<Core>,
     pub(crate) starter_lane: Arc<StarterLane>,
-    /// Where the core's routes are reached from outside, under `/api`.
-    pub(crate) public_url: Option<Url>,
+    /// Where the programs serve the calls from outside.
+    pub(super) addresses: Arc<Addresses>,
     /// None for a process over stdio, which no runner dials.
     pub(crate) claims: Option<Arc<PendingClaims>>,
 }
@@ -231,8 +232,12 @@ impl Starter for ProgramStarter {
         None
     }
 
-    fn public_url(&self) -> Option<Url> {
-        self.public_url.clone()
+    fn schedule_url(&self, id: &ScheduleId) -> Option<Url> {
+        self.addresses.schedule_url(id)
+    }
+
+    fn sign_in_return(&self, plugin: &str) -> Option<Url> {
+        self.addresses.sign_in_return(&self.user, plugin)
     }
 
     fn device_log(&self, _: &DeviceId) -> Option<Rc<dyn DeviceLog>> {
@@ -243,7 +248,8 @@ impl Starter for ProgramStarter {
         Box::pin(async { Ok(()) })
     }
 
-    /// The process finds the schedule among its cores when its URL is called.
+    /// The process finds the schedule among its cores when its program
+    /// hands on a call of its URL.
     fn schedule_called_at_url<'a>(&'a self, _: &'a ScheduleId) -> LocalBoxFuture<'a, Result<(), StorageError>> {
         Box::pin(async { Ok(()) })
     }

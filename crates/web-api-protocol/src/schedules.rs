@@ -283,7 +283,8 @@ pub enum Trigger {
         #[garde(range(min = 1))]
         every_minutes: u32,
     },
-    /// When its URL, `<server>/hooks/<id>`, is called with its secret.
+    /// When its URL is called with its secret: `<server>/hooks/<id>` on a
+    /// server, the address its program serves for a program's core.
     Url {},
     /// When another conversation of the user finishes working: it rests
     /// after work that ended a turn.

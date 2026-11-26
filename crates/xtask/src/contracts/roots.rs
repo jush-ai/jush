@@ -349,6 +349,10 @@ pub fn web() -> Vec<Root> {
         // (`crates/core-api/src/process/mod.rs`).
         sends::<api::cores::OpenCore>(),
         receives::<api::cores::OpenedCore>(),
+        sends::<api::cores::ProgramAddresses>(),
+        receives::<api::cores::ScheduleCallAnswer>(),
+        sends::<api::cores::CompleteSignIn>(),
+        receives::<api::cores::SignInAnswer>(),
         receives::<api::page::PageAnswer>(),
         receives::<api::starter::StarterRequest>(),
         sends::<api::starter::StarterAnswer>(),

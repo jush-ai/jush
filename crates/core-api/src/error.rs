@@ -174,6 +174,11 @@ impl ApiError {
         &self.message
     }
 
+    /// The refusal's code, as its answer's `code`.
+    pub fn code(&self) -> ErrorCode {
+        self.code
+    }
+
     pub fn invalid_body(message: impl Into<String>) -> Self {
         Self::new(StatusCode::BAD_REQUEST, ErrorCode::InvalidBody, message)
     }
