@@ -37,6 +37,10 @@ impl PluginStore for CoreStore {
         .boxed_local()
     }
 
+    fn plugin_versions(&self, conversation: ConversationId) -> Stored<'_, BTreeMap<String, String>> {
+        async move { self.conversation_plugin_versions(conversation).await.map_err(StoreError::new) }.boxed_local()
+    }
+
     fn value(&self, plugin: String, key: String) -> Stored<'_, Option<PluginValue>> {
         async move { self.plugin_value(plugin, key).await.map_err(StoreError::new) }.boxed_local()
     }

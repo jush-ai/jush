@@ -11,6 +11,7 @@
 //!   execution context changed.
 //! - The plugins that are context sources.
 
+use std::collections::BTreeMap;
 use std::rc::{Rc, Weak};
 
 use jush_agent_server::{ProductPrompt, PromptSource};
@@ -123,17 +124,17 @@ impl PromptSource for CorePrompts {
 
 impl Core {
     /// The commands the conversation of `root` names, none for every
-    /// command, as the user's are with no root.
-    async fn named_commands(&self, root: Option<&NodeId>) -> Result<Option<CommandList>, StorageError> {
+    /// command, and the versions it names of the program's plugins, as the
+    /// user's are with no root.
+    async fn tools_named(&self, root: Option<&NodeId>) -> Result<(Option<CommandList>, BTreeMap<String, String>), StorageError> {
         let Some(root) = root else {
-            return Ok(None);
+            return Ok((None, BTreeMap::new()));
         };
-        Ok(self
-            .store()
-            .conversation(conversation_of(root))
-            .await?
-            .and_then(|record| record.commands)
-            .map(|commands| CommandList::new(&commands)))
+        let record = self.store().conversation(conversation_of(root)).await?;
+        Ok(match record {
+            Some(record) => (record.commands.map(|commands| CommandList::new(&commands)), record.plugin_versions),
+            None => (None, BTreeMap::new()),
+        })
     }
 }
 
@@ -162,10 +163,10 @@ impl ToolsetSource for CoreToolsets {
                 .core
                 .upgrade()
                 .ok_or_else(|| "the backend is shutting down".to_owned())?;
-            let named = core.named_commands(root).await.map_err(|error| error.to_string())?;
+            let (named, versions) = core.tools_named(root).await.map_err(|error| error.to_string())?;
             let revision = core
                 .plugins()
-                .revision(named.as_ref())
+                .revision(named.as_ref(), &versions)
                 .await
                 .map_err(|error| error.to_string())?;
             Ok(Rc::from(toolset_revision(revision, named.as_ref())))
@@ -178,7 +179,7 @@ impl ToolsetSource for CoreToolsets {
                 .core
                 .upgrade()
                 .ok_or_else(|| "the backend is shutting down".to_owned())?;
-            let named = core.named_commands(root).await.map_err(|error| error.to_string())?;
+            let (named, versions) = core.tools_named(root).await.map_err(|error| error.to_string())?;
             let devices: Weak<dyn DeviceCore> = self.core.clone();
             let toolset = core
                 .plugins()
@@ -191,7 +192,7 @@ impl ToolsetSource for CoreToolsets {
                     schedule_group(self.core.clone()),
                     providers_group(self.core.clone()),
                     notify_group(self.core.clone()),
-                ], named.as_ref())
+                ], named.as_ref(), &versions)
                 .await
                 .map_err(|error| error.to_string())?;
             let revision = toolset_revision(toolset.revision, named.as_ref());
@@ -580,8 +581,8 @@ impl ContextSource for PluginContext {
             };
             // A plugin the conversation names no command of is neither
             // searched nor asked, as it gives the conversation no commands.
-            let named = core
-                .named_commands(Some(node.root))
+            let (named, _) = core
+                .tools_named(Some(node.root))
                 .await
                 .map_err(|error| format!("the plugin {} was not asked: {error}", self.plugin))?;
             let conversation = conversation_of(node.root);

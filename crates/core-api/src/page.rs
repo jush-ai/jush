@@ -337,7 +337,7 @@ pub(crate) fn lane(scope: &PageScope, target: &LaneTarget, services: &CoreServic
         LaneTarget::DeviceWatch { .. } => scope.needs(Some(PageOperation::ChooseDevice)),
         LaneTarget::Signaling { .. }
         | LaneTarget::Debug { .. }
-        | LaneTarget::Starter
+        | LaneTarget::Starter { .. }
         | LaneTarget::Plugin { .. } => Err(ApiError::forbidden(
             "A program's page opens only its conversation's lanes",
         )),
@@ -420,9 +420,16 @@ pub(crate) fn patch(scope: &PageScope, patch: &ConversationPatch) -> Result<(), 
         browser_profile,
         system_prompt,
         commands,
+        plugin_versions,
         target,
     } = patch;
-    if archived.is_some() || pinned.is_some() || browser_profile.is_some() || system_prompt.is_some() || commands.is_some() {
+    if archived.is_some()
+        || pinned.is_some()
+        || browser_profile.is_some()
+        || system_prompt.is_some()
+        || commands.is_some()
+        || plugin_versions.is_some()
+    {
         return Err(ApiError::forbidden(
             "A program's page does not change the program's settings of its conversation, nor the sidebar's",
         ));

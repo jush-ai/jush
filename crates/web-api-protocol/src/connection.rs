@@ -53,10 +53,20 @@ pub enum LaneTarget {
     Debug { resume: Option<String> },
     /// What the core asks of a program that drives it
     /// (`crates/web-api-protocol/src/starter.rs`); only a program opens it.
-    Starter,
-    /// The core's requests of the program's plugin `plugin`
-    /// (`crates/plugin-interface/src/wire.rs`); only a program opens it.
-    Plugin { plugin: String },
+    /// One whose connection declares its plugins in a `version` takes
+    /// what no lane of a connection of the current versions does.
+    Starter {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        version: Option<String>,
+    },
+    /// The core's requests of the program's plugin `plugin` in `version`,
+    /// its current one for none (`crates/plugin-interface/src/wire.rs`);
+    /// only a program opens it.
+    Plugin {
+        plugin: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        version: Option<String>,
+    },
 }
 
 /// Why the backend refused a lane's open: the status and the error answer a

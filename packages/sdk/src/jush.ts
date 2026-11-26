@@ -24,6 +24,13 @@ export interface JushOptions {
   /** The program's plugins, which its cores' agents use besides Jush's own. */
   plugins?: readonly Plugin[]
   /**
+   * The version the program's plugins are, such as `canary-1126`, which the
+   * conversations that name it in `pluginVersions` run on; without it, the
+   * plugins are their current versions, which every other conversation runs
+   * on. 1 to 64 letters, digits, `.`, `_` and `-`.
+   */
+  pluginVersion?: string
+  /**
    * Where the program's server takes the calls from outside, as URI
    * templates whose `{name}`s Jush fills: a schedule's URL, and a
    * plugin's sign-in return. Without one, a URL schedule has no address,
@@ -44,6 +51,13 @@ export interface JushConnection {
    * program's earlier run declared it.
    */
   plugins?: readonly Plugin[]
+  /**
+   * The version the program's plugins are, such as `canary-1126`, which the
+   * conversations that name it in `pluginVersions` run on; without it, the
+   * plugins are their current versions, which every other conversation runs
+   * on. 1 to 64 letters, digits, `.`, `_` and `-`.
+   */
+  pluginVersion?: string
   /**
    * Where the program's server takes the calls from outside, in place of
    * the addresses declared before; without them, those another
@@ -94,6 +108,8 @@ export class Jush {
   private constructor(
     private readonly process: Process,
     private readonly declared: readonly Plugin[],
+    /** The version the program's plugins are; none for their current one. */
+    private readonly pluginVersion: string | undefined,
     private readonly addresses: ProgramAddresses | undefined,
     /** The package's own runner, which a device spawns with no command. */
     private readonly runner: () => string,
@@ -108,7 +124,7 @@ export class Jush {
   static async start(options: JushOptions = {}): Promise<Jush> {
     const found = binaries()
     const process = Process.start({ executable: found.core, release: found.release })
-    return Jush.greeted(new Jush(process, options.plugins ?? [], options.addresses, () => found.runner, true))
+    return Jush.greeted(new Jush(process, options.plugins ?? [], options.pluginVersion, options.addresses, () => found.runner, true))
   }
 
   /**
@@ -121,7 +137,14 @@ export class Jush {
   static async connect(connection: JushConnection): Promise<Jush> {
     const process = Process.connect({ url: connection.url, token: connection.token })
     // A program that spawns no device needs no executable of its own.
-    return Jush.greeted(new Jush(process, connection.plugins ?? [], connection.addresses, () => binaries().runner, false))
+    return Jush.greeted(new Jush(
+      process,
+      connection.plugins ?? [],
+      connection.pluginVersion,
+      connection.addresses,
+      () => binaries().runner,
+      false,
+    ))
   }
 
   /**
@@ -154,7 +177,7 @@ export class Jush {
       return opened
     }
     const core = new Core(
-      { process: this.process, id, dir: path, plugins: this.declared, runner: this.runner },
+      { process: this.process, id, dir: path, plugins: this.declared, pluginVersion: this.pluginVersion, runner: this.runner },
       async () => {
         this.cores.delete(id)
         await (await this.call('DELETE', `/cores/${segment(id)}`)).body?.cancel()
@@ -224,8 +247,11 @@ export class Jush {
       const response = await this.call('PUT', '/addresses', this.addresses, fetch)
       await response.body?.cancel()
     }
+    // A process of a release before versions has no route of a version,
+    // and refuses the declaration.
+    const version = this.pluginVersion === undefined ? '' : `/versions/${segment(this.pluginVersion)}`
     for (const plugin of this.declared) {
-      const response = await this.call('PUT', `/plugins/${segment(plugin.manifest.id)}`, plugin.manifest, fetch)
+      const response = await this.call('PUT', `/plugins/${segment(plugin.manifest.id)}${version}`, plugin.manifest, fetch)
       await response.body?.cancel()
     }
     for (const core of this.cores.values()) {

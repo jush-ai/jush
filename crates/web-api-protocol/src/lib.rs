@@ -98,6 +98,30 @@ fn command_path(text: &str, _: &()) -> garde::Result {
     }
 }
 
+/// Whether `text` names a version of a program's plugin: 1 to 64 letters,
+/// digits, `.`, `_` and `-`, which a query and a lane's open carry as they
+/// are.
+pub fn is_plugin_version(text: &str) -> bool {
+    (1..=64).contains(&text.len())
+        && text.bytes().all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
+}
+
+/// A conversation's versions of the program's plugins: each a version by
+/// its plugin's id.
+fn plugin_versions(versions: &std::collections::BTreeMap<String, String>, _: &()) -> garde::Result {
+    for (plugin, version) in versions {
+        if plugin.is_empty() {
+            return Err(garde::Error::new("a version names no plugin"));
+        }
+        if !is_plugin_version(version) {
+            return Err(garde::Error::new(format!(
+                "{plugin}: {version} is no plugin's version: 1 to 64 letters, digits, `.`, `_` and `-`"
+            )));
+        }
+    }
+    Ok(())
+}
+
 /// A check of a text that must say something: whitespace alone says
 /// nothing.
 fn not_blank(text: &str, _: &()) -> garde::Result {

@@ -157,7 +157,14 @@ impl Core {
             }
             ConversationChange::Record(change) if !change_is_transition(&change) => {
                 let prompt = matches!(change, RecordChange::SystemPrompt(_));
-                let commands = matches!(change, RecordChange::Commands(_));
+                // The commands it names, or the versions of the plugins they
+                // come from.
+                let renews_commands = matches!(change, RecordChange::Commands(_) | RecordChange::PluginVersions(_));
+                if let RecordChange::PluginVersions(versions) = &change {
+                    self.plugins()
+                        .check_versions(versions)
+                        .map_err(|error| ChangeRefusal::PluginVersions(error.to_string()))?;
+                }
                 {
                     // A field update waits while a transition holds the
                     // conversation, and applies as if it arrived afterwards.
@@ -178,10 +185,11 @@ impl Core {
                 // The record holds the change, which a tree that opens later
                 // reads; a live tree takes it from its agents' next requests.
                 let root = root_of(&record.id);
-                // A list of commands changes the guide's sentences too.
+                // A list of commands, or the versions they come from, change
+                // the guide's sentences and the index too.
                 let adopted = if prompt {
                     self.agent().adopt_prompt(&root).await
-                } else if commands {
+                } else if renews_commands {
                     match self.agent().adopt_commands_of(&root).await {
                         Ok(()) => self.agent().adopt_prompt(&root).await,
                         failed => failed,
@@ -606,6 +614,12 @@ impl Core {
             changes.push((
                 vec![PatchField::Commands],
                 RecordChange::Commands(commands).into(),
+            ));
+        }
+        if let Some(versions) = patch.plugin_versions {
+            changes.push((
+                vec![PatchField::PluginVersions],
+                RecordChange::PluginVersions(versions).into(),
             ));
         }
         if let Some(target) = patch.target {

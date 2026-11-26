@@ -16,6 +16,8 @@
 //! in and compared without case, so an id another conversation holds in any
 //! spelling is taken.
 
+use std::collections::BTreeMap;
+
 use jush_shared_types::{ModelSelection, Timestamp, WorkflowChoice};
 use jush_web_api_protocol::conversations::{ConversationTarget, ModelChoice};
 use jush_web_api_protocol::ids::{BrowserProfileName, ConversationId, DeviceId, ProjectId, WorkspaceId};
@@ -90,6 +92,9 @@ pub struct ConversationRecord {
     /// The commands its agents have, by path without `jush`; none for every
     /// command.
     pub commands: Option<Vec<String>>,
+    /// The versions it names of the program's plugins, by their ids; a
+    /// plugin it names none of runs on its current version.
+    pub plugin_versions: BTreeMap<String, String>,
 }
 
 impl ConversationRecord {
@@ -217,6 +222,8 @@ pub enum RecordChange {
     SystemPrompt(Option<String>),
     /// The commands its agents have now; none for every command.
     Commands(Option<Vec<String>>),
+    /// The versions it names now of the program's plugins, by their ids.
+    PluginVersions(BTreeMap<String, String>),
     /// A device of the user's attached; one attached already stays as it is.
     Attach(AttachedDeviceRecord),
     /// A detach of an attached device; a device that is not attached
@@ -265,6 +272,7 @@ pub struct ConversationStart {
     pub browser_profile: Option<BrowserProfileName>,
     pub system_prompt: Option<String>,
     pub commands: Option<Vec<String>>,
+    pub plugin_versions: BTreeMap<String, String>,
 }
 
 impl ConversationStart {
@@ -281,6 +289,7 @@ impl ConversationStart {
             browser_profile: None,
             system_prompt: None,
             commands: None,
+            plugin_versions: BTreeMap::new(),
         }
     }
 }
@@ -308,7 +317,7 @@ const CONVERSATION_COLUMNS: &str = "id, workspace_id, title, title_origin, archi
      asked_end_revision, asked_end_failed, target_kind, target_device_id,
      target_path, target_project_id, target_worktree_name, target_worktree_path, context_version, model, workflow_kind,
      workflow_id, workflow_worktree, created_at, updated_at, devices_revision, browser_profile, browser_profile_revision,
-     system_prompt, commands,
+     system_prompt, commands, plugin_versions,
      COALESCE((SELECT revision FROM conversation_drafts WHERE conversation_id = conversations.id), 0) AS draft_revision,
      COALESCE((SELECT saved_revision FROM conversation_drafts WHERE conversation_id = conversations.id), 0) AS saved_revision,
      (SELECT count(*) FROM saved_messages
@@ -445,6 +454,7 @@ impl CoreStore {
                     browser_profile: start.browser_profile.as_ref(),
                     system_prompt: start.system_prompt.as_deref(),
                     commands: start.commands.as_deref(),
+                    plugin_versions: &start.plugin_versions,
                     context_version: 0,
                     at: now,
                 },
@@ -461,6 +471,23 @@ impl CoreStore {
             } else {
                 (Creation::Existing(record), None)
             })
+        })
+        .await
+    }
+
+    /// The versions the conversation `id` names of the program's plugins;
+    /// none for a conversation that is not there.
+    pub async fn conversation_plugin_versions(&self, id: ConversationId) -> Result<BTreeMap<String, String>, StorageError> {
+        self.call(move |connection, _| {
+            let column: Option<Option<String>> = connection
+                .prepare_cached("SELECT plugin_versions FROM conversations WHERE id = ?1")?
+                .query_row([id.as_str()], |row| row.get(0))
+                .optional()?;
+            column
+                .flatten()
+                .map(|text| decode("conversations", "plugin_versions", serde_json::from_str::<BTreeMap<String, String>>(&text)))
+                .transpose()
+                .map(Option::unwrap_or_default)
         })
         .await
     }
@@ -743,6 +770,10 @@ impl CoreStore {
                     "UPDATE conversations SET commands = ?2 WHERE id = ?1 AND commands IS NOT ?2",
                     params![id.as_str(), commands.as_ref().map(to_json)],
                 )?,
+                RecordChange::PluginVersions(versions) => transaction.execute(
+                    "UPDATE conversations SET plugin_versions = ?2 WHERE id = ?1 AND plugin_versions IS NOT ?2",
+                    params![id.as_str(), versions_column(versions)],
+                )?,
                 RecordChange::Attach(attached) => {
                     if insert_attached_device(&transaction, &id, attached, now)? {
                         advance_context(&transaction, &id)?;
@@ -872,6 +903,7 @@ pub struct NewConversation<'a> {
     pub browser_profile: Option<&'a BrowserProfileName>,
     pub system_prompt: Option<&'a str>,
     pub commands: Option<&'a [String]>,
+    pub plugin_versions: &'a BTreeMap<String, String>,
     /// The execution-context revision it starts at: 0, or a Fork's source's
     /// at the Fork, which the context blocks its copied transcript name.
     pub context_version: u64,
@@ -891,10 +923,10 @@ pub fn insert_conversation(
         "INSERT INTO conversations (id, title, title_origin, pinned, sort_order,
            read_revision, target_kind, target_device_id, target_path, target_project_id, context_version,
            model, created_at, updated_at, workflow_kind, workflow_id, target_worktree_name, target_worktree_path,
-           workflow_worktree, workspace_id, browser_profile, system_prompt, commands)
+           workflow_worktree, workspace_id, browser_profile, system_prompt, commands, plugin_versions)
          VALUES (?1, ?2, ?3, ?10,
            (SELECT COALESCE(MIN(sort_order), 0) - 1 FROM conversations),
-           0, ?4, ?5, ?6, ?7, ?13, ?8, ?9, ?9, ?11, ?12, ?14, ?15, ?16, ?17, ?18, ?19, ?20)
+           0, ?4, ?5, ?6, ?7, ?13, ?8, ?9, ?9, ?11, ?12, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21)
          ON CONFLICT (id) DO NOTHING",
         params![
             new.id.as_str(),
@@ -917,10 +949,16 @@ pub fn insert_conversation(
             new.workspace.as_str(),
             new.browser_profile.map(BrowserProfileName::as_str),
             new.system_prompt,
-            new.commands.map(|commands| to_json(&commands))
+            new.commands.map(|commands| to_json(&commands)),
+            versions_column(new.plugin_versions),
         ],
     )?;
     Ok(inserted)
+}
+
+/// The `plugin_versions` column of `versions`: null for none.
+fn versions_column(versions: &BTreeMap<String, String>) -> Option<String> {
+    (!versions.is_empty()).then(|| to_json(versions))
 }
 
 /// A revision as the INTEGER column holds it. The output revision advances
@@ -1067,6 +1105,11 @@ fn conversation_row(row: &Row<'_>) -> Result<ConversationRecord, StorageError> {
             .get::<_, Option<String>>("commands")?
             .map(|text| decode(TABLE, "commands", serde_json::from_str::<Vec<String>>(&text)))
             .transpose()?,
+        plugin_versions: row
+            .get::<_, Option<String>>("plugin_versions")?
+            .map(|text| decode(TABLE, "plugin_versions", serde_json::from_str::<BTreeMap<String, String>>(&text)))
+            .transpose()?
+            .unwrap_or_default(),
     })
 }
 
