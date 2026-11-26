@@ -86,15 +86,15 @@ use crate::services::Services;
 /// An entry that makes media of a kind, with what makes them for its
 /// active account, in the order a call tries the entries.
 pub(super) struct Route {
-    entry: ProviderEntry,
-    kind: MediaKind,
+    pub(super) entry: ProviderEntry,
+    pub(super) kind: MediaKind,
     pub(super) maker: MakerOf,
     /// The user turned the entry off in Settings › Providers.
     hidden: bool,
 }
 
 impl Route {
-    fn media(&self) -> &dyn jush_provider_common::media::MediaMaker {
+    pub(super) fn media(&self) -> &dyn jush_provider_common::media::MediaMaker {
         self.maker.media()
     }
 
@@ -269,21 +269,22 @@ async fn standing(services: &Services, route: &Route, model: &str) -> Result<Sta
 ///
 /// An entry is listed whether or not its switch for the kind is on, and an alias
 /// is left out beside the model it names. An entry whose models could not be
-/// listed has none here; the agent's listing says why.
+/// listed has none here; the agent's listing says why. The models are those
+/// each entry listed last (`super::media_listings`): no vendor is waited for,
+/// and `refresh`, Settings' Refresh, lists each again in the background.
 pub async fn entry_media_models(
     services: &Services,
     user: &jush_web_api_protocol::ids::UserId,
     kind: MediaKind,
+    refresh: bool,
 ) -> Result<std::collections::HashMap<String, Vec<EntryMediaModel>>, RegistryError> {
     let routes = routes(services, user, kind).await?;
     let catalog = services.media.current();
-    let https: Vec<_> = routes.iter().map(|route| route.http(services, services.provider_registry.http())).collect();
-    let listings =
-        futures_util::future::join_all(routes.iter().zip(&https).map(|(route, http)| route.media().models(http, &catalog))).await;
     let mut entries = std::collections::HashMap::new();
-    for (route, listing) in routes.iter().zip(listings) {
-        let listed = listing.unwrap_or_default();
-        let vendors: Vec<MediaVendor> = route.media().vendor().into_iter().collect();
+    for route in &routes {
+        let shown = services.media_listings.shown(services, route, refresh);
+        let listed = shown.models;
+        let vendors: Vec<MediaVendor> = shown.vendor.into_iter().collect();
         let mut models: Vec<EntryMediaModel> = listed
             .iter()
             .filter(|model| {
@@ -328,7 +329,10 @@ async fn offerings(
     let mut first_failure = None;
     for route in routes {
         match route.media().models(&route.http(shard.services(), shard.http()), catalog).await {
-            Ok(models) => offered.push(models),
+            Ok(models) => {
+                shard.services().media_listings.listed(shard.services(), route, catalog.updated, &models);
+                offered.push(models);
+            }
             Err(failure) => {
                 let vendor = route.media().name().to_owned();
                 let manages = Vault::manages(shard.user(), &route.entry);

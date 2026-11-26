@@ -691,6 +691,7 @@ impl Services {
         self.end_lending(&lent);
         self.provider_registry.forget(&entry.id).await?;
         self.cli_installs.forget(&entry.id);
+        self.media_listings.forget(&entry.id);
         Ok(entry)
     }
 
@@ -732,9 +733,10 @@ impl Services {
             Some(refresh) => self.provider_registry.model_catalog(&entries, refresh).await,
             None => self.provider_registry.known_model_catalog(&entries).await,
         };
-        let mut images = self.entry_media_models(user, MediaKind::Image).await?;
-        let mut videos = self.entry_media_models(user, MediaKind::Video).await?;
-        let mut audio = self.entry_media_models(user, MediaKind::Audio).await?;
+        let refresh = waits == Some(true);
+        let mut images = self.entry_media_models(user, MediaKind::Image, refresh).await?;
+        let mut videos = self.entry_media_models(user, MediaKind::Video, refresh).await?;
+        let mut audio = self.entry_media_models(user, MediaKind::Audio, refresh).await?;
         for provider in &mut providers {
             provider.image_models = images.remove(provider.provider_id.as_str()).unwrap_or_default();
             provider.video_models = videos.remove(provider.provider_id.as_str()).unwrap_or_default();
@@ -745,13 +747,14 @@ impl Services {
     }
 
     /// Each entry's models of `kind` by entry id, which the model catalog
-    /// carries for the settings page.
+    /// carries for the settings page; `refresh` lists each again.
     pub async fn entry_media_models(
         &self,
         user: &UserId,
         kind: jush_shared_types::MediaKind,
+        refresh: bool,
     ) -> Result<std::collections::HashMap<String, Vec<jush_web_api_protocol::providers::EntryMediaModel>>, jush_provider_registry::registry::RegistryError> {
-        crate::shard::media::entry_media_models(self, user, kind).await
+        crate::shard::media::entry_media_models(self, user, kind, refresh).await
     }
 
     /// The models.dev models `query` matches, filled from the vendor of the
