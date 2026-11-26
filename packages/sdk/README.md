@@ -700,9 +700,9 @@ conversation already.
 
 ## Usage
 
-`core.usage.report` sums the calls of a period by hour or by day of a time
-zone, grouped by any of `conversation`, `sender`, `model`, `provider`,
-`account`, `turn` and `purpose`:
+`core.usage.report` sums the calls of a period by minute, hour or day of a
+time zone, grouped by any of `conversation`, `agent`, `sender`, `model`,
+`provider`, `account`, `turn` and `purpose`:
 
 ```ts
 const report = await core.usage.report({
@@ -726,6 +726,34 @@ tokens would cost on the vendors' APIs in dollars, leaving out the
 made calls, and a period without calls has no bucket; the first and the last
 bucket start and end with the period, so two reports of adjoining periods
 never hold the same bucket.
+
+`conversations` keeps the calls of the conversations it names, and
+`agents` those of the agents of them it names; an empty list keeps none.
+An agent is the number its conversation knows it by: 0 for the main agent,
+and a subagent's `number` in `conversation.agents`, whose `parent` names
+the agent that started it, once the conversation is open
+(`await conversation.open()`). To count what a subagent did, name it and
+the subagents below it; a call in a minute bucket falls in the minute it
+ended:
+
+```ts
+// Agent 3 and every subagent below it, by number.
+const agents = conversation.agents
+const below = (parent: string): number[] => agents.flatMap((each) =>
+  each.role.kind === 'subagent' && each.role.parent === parent ? [each.role.number, ...below(each.id)] : [])
+const reviewer = agents.find((each) => each.role.kind === 'subagent' && each.role.number === 3)!
+const review = await core.usage.report({
+  from: startedAt,
+  to: new Date(),
+  bucket: 'minute',
+  conversations: [conversation.id],
+  agents: [3, ...below(reviewer.id)],
+  groupBy: ['agent', 'model'],
+})
+```
+
+`agent` is null for a side question's call and for one no agent made, such
+as a title's, and `agents` keeps neither.
 
 A call's sender is that of the latest message that handed its agent work,
 by the `senderId` your program sent it with: a message, a steer, a side

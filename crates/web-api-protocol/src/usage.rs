@@ -35,10 +35,13 @@ pub struct UsageGroup {
     pub cache_write_tokens: u64,
 }
 
-/// `?from=&to=&bucket=&timeZone=&groupBy=` of `GET /usage/report`: the calls
-/// that ended from `from` until `to`, in buckets of an hour or a day of
-/// `time_zone`, UTC unless named, grouped by what `group_by` names, a comma
-/// between two. Queries are the backend's alone and are not emitted.
+/// `?from=&to=&bucket=&timeZone=&groupBy=&conversations=&agents=` of
+/// `GET /usage/report`: the calls that ended from `from` until `to`, in
+/// buckets of a minute, an hour or a day of `time_zone`, UTC unless named,
+/// grouped by what `group_by` names; of the conversations `conversations`
+/// names and the agents of the numbers `agents` names, every call when
+/// absent. Each list has a comma between two. Queries are the backend's
+/// alone and are not emitted.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UsageReportQuery {
@@ -49,12 +52,17 @@ pub struct UsageReportQuery {
     pub time_zone: Option<String>,
     #[serde(default)]
     pub group_by: Option<String>,
+    #[serde(default)]
+    pub conversations: Option<String>,
+    #[serde(default)]
+    pub agents: Option<String>,
 }
 
 /// How long a report's bucket is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum UsageBucketSize {
+    Minute,
     Hour,
     Day,
 }
@@ -64,6 +72,10 @@ pub enum UsageBucketSize {
 #[serde(rename_all = "snake_case")]
 pub enum UsageDimension {
     Conversation,
+    /// The number the call's conversation knows its agent by, 0 for the
+    /// main agent; none for a side question's call and one no agent made,
+    /// such as a title's.
+    Agent,
     /// Whom the call's agent worked for, by the id the program gave its
     /// sender: the sender of the latest message that handed it work, or of
     /// the work whose end opened its turn.
@@ -84,7 +96,7 @@ pub struct UsageReport {
     pub buckets: Vec<UsageBucket>,
 }
 
-/// One hour or day of a report, and its calls' groups.
+/// One minute, hour or day of a report, and its calls' groups.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct UsageBucket {
     pub start: Timestamp,
@@ -101,6 +113,10 @@ pub struct UsageReportGroup {
     #[serde(default, skip_serializing_if = "Option::is_none", with = "double_option")]
     #[schemars(with = "Option<String>")]
     pub conversation: Option<Option<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none", with = "double_option")]
+    #[schemars(with = "Option<u64>")]
+    #[garde(range(max = MAX_SAFE_INTEGER))]
+    pub agent: Option<Option<u64>>,
     #[serde(default, skip_serializing_if = "Option::is_none", with = "double_option")]
     #[schemars(with = "Option<String>")]
     pub sender: Option<Option<String>>,
