@@ -314,10 +314,9 @@ export interface StripMutation<T> {
  * Whether `records`, observed on `strip` and its tabs, hold a tab becoming
  * active, coming or going: what moves the strip's view. A tab's own content
  * changing, as a page's title does, is none of these. Nor is a node both
- * added and removed in the same batch: a render that takes a tab out and
- * puts it back, or the shallow copy of a tab that Vue's transition group puts
- * in the strip for a moment on each render to read its move class. Either
- * would pull the strip away from where the user scrolled it. `isTab` tells
+ * added and removed in the same batch, such as a render that takes a tab out
+ * and puts it back, or a copy put in the strip for a moment to measure it:
+ * it would pull the strip away from where the user scrolled it. `isTab` tells
  * an element from a text or comment node.
  */
 export function tabsChanged<T>(

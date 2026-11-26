@@ -17,6 +17,7 @@ import { useListReorder } from '../ui/useListReorder'
 import { tabIcon, windowIcon } from './taskbar-icon'
 import { taskbarMenuKey } from './taskbar-menu'
 import { t } from './locales/text'
+import ListTransition from '../ui/ListTransition'
 
 /**
  * The bar under the conversation that lists its work's windows, as an
@@ -305,7 +306,7 @@ function press(item: TaskbarItem): void {
       beside it slide rather than jump.
     -->
     <div class="taskbar-system flex shrink-0 items-center gap-0.5" :class="{ 'taskbar-system-pinned': pinned.length > 0 }">
-      <TransitionGroup :css="false" @enter="grow" @leave="shrink">
+      <ListTransition :css="false" @enter="grow" @leave="shrink">
         <!-- No tip: resting on one shows its menu at once, which its name heads. -->
         <TaskbarButton
           v-for="item in system"
@@ -322,11 +323,11 @@ function press(item: TaskbarItem): void {
           @pointerenter="rest(item, $event, true)"
           @pointerleave="leave"
         />
-      </TransitionGroup>
+      </ListTransition>
       <slot name="system" />
     </div>
     <div ref="pinnedList" class="contents">
-      <TransitionGroup :css="false" @enter="grow" @leave="shrink">
+      <ListTransition :css="false" @enter="grow" @leave="shrink">
         <TaskbarButton
           v-for="item in pinned"
           :key="item.id"
@@ -344,11 +345,11 @@ function press(item: TaskbarItem): void {
           @pointerenter="rest(item, $event)"
           @pointerleave="leave"
         />
-      </TransitionGroup>
+      </ListTransition>
     </div>
     <span class="mx-1 h-5 w-px shrink-0 bg-line" aria-hidden="true" />
     <div ref="list" class="flex min-w-0 flex-1 items-center gap-0.5 overflow-hidden">
-      <TransitionGroup :css="false" @enter="grow" @leave="shrink">
+      <ListTransition :css="false" @enter="grow" @leave="shrink">
         <TaskbarButton
           v-for="item in shown"
           :key="item.id"
@@ -366,7 +367,7 @@ function press(item: TaskbarItem): void {
           @pointerenter="rest(item, $event)"
           @pointerleave="leave"
         />
-      </TransitionGroup>
+      </ListTransition>
       <Dropdown v-if="overflow.length" :overlay-store="appOverlayStore" side="top" align="start">
         <template #trigger="{ isOpen }">
           <TaskbarButton :icon="ChevronsUp" :label="t('more')" :state="isOpen ? 'front' : undefined" fixed />

@@ -34,6 +34,7 @@ import {
 } from './stage'
 import { t } from './locales/text'
 import { moved } from '../ui/drag-order'
+import ListTransition from '../ui/ListTransition'
 
 /**
  * The conversation's area with its work's windows (`stage.ts`): the
@@ -846,7 +847,7 @@ function maximizePressed(window: StageWindow): void {
         <span aria-hidden="true" class="window-grip pointer-events-none h-1 w-10" />
       </div>
     </template>
-    <TransitionGroup :css="false" @enter="enter" @leave="leave">
+    <ListTransition :css="false" @enter="enter" @leave="leave">
       <div
         v-for="{ view, window } in shown"
         v-show="phone ? state.focused === view.id && window.placement !== 'minimized' : window.placement !== 'minimized' && (window.placement !== 'docked' || columnShown)"
@@ -905,7 +906,7 @@ function maximizePressed(window: StageWindow): void {
           />
         </template>
       </div>
-    </TransitionGroup>
+    </ListTransition>
     <!-- Under the window that moves, over the column, as a system's snap preview stands. -->
     <div
       v-if="target"

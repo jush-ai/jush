@@ -34,6 +34,7 @@ import {
 } from './tab-strip'
 import { createLanding, DRAG_START_PX, dragShift, swallowDropClick } from '../ui/drag-order'
 import { usePhone } from '../ui/phone'
+import ListTransition from '../ui/ListTransition'
 
 /** The edge fades' width; a revealed tab is scrolled clear of them. */
 const FADE_PX = 24
@@ -1026,7 +1027,7 @@ defineExpose({ el })
       ref="fades"
       class="relative isolate min-w-0 shrink grow [--fade-after:0px] [--fade-before:0px] phone:static phone:isolation-auto phone:shrink-0 phone:grow-0"
     >
-    <TransitionGroup
+    <ListTransition
       :ref="bindEl"
       :name="TAB_TRANSITION"
       :css="!still"
@@ -1059,7 +1060,7 @@ defineExpose({ el })
       >
         <slot name="end" />
       </div>
-    </TransitionGroup>
+    </ListTransition>
     <div
       v-if="moreBefore"
       aria-hidden="true"
