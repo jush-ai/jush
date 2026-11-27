@@ -1,7 +1,8 @@
-//! Finding a conversation, `GET /search?q=`, and finding in one,
-//! `GET /conversations/{id}/search?q=`, and what each answers.
+//! Finding a conversation, `GET /search?q=`, finding in one,
+//! `GET /conversations/{id}/search?q=`, and finding in every conversation's
+//! history, `GET /history/search?q=`, and what each answers.
 
-use jush_shared_types::{BlockId, Nullable, Timestamp, trim};
+use jush_shared_types::{BlockId, MAX_SAFE_INTEGER, NodeId, Nullable, Timestamp, trim};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -123,6 +124,101 @@ pub struct MessageResults {
 pub struct MessageResult {
     pub block_id: BlockId,
     pub author: MessageAuthor,
+    pub time: Timestamp,
+    pub text: String,
+    pub ranges: Vec<[u32; 2]>,
+}
+
+/// The hits one page of a history search holds by default.
+pub const HISTORY_HITS_DEFAULT: u32 = 50;
+
+/// The most hits one page of a history search holds.
+///
+/// Bounded because a page is answered whole, and the texts of a core's
+/// conversations have no end.
+pub const HISTORY_HITS_MAX: u32 = 200;
+
+/// `?q=&any=&kinds=&from=&to=&after=&limit=` of `GET /history/search`: the
+/// texts of every conversation's agents that hold every word of `q`, or any
+/// with `any`, of the kinds `kinds` names with a comma between two, every
+/// kind when absent, written at or after `from` and before `to`, newest
+/// first, after the cursor `after`, `limit` of them. Queries are the
+/// backend's alone and are not emitted.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct HistorySearchQuery {
+    pub q: SearchText,
+    #[serde(default)]
+    pub any: Option<bool>,
+    #[serde(default)]
+    pub kinds: Option<String>,
+    #[serde(default)]
+    pub from: Option<Timestamp>,
+    #[serde(default)]
+    pub to: Option<Timestamp>,
+    #[serde(default)]
+    pub after: Option<String>,
+    #[serde(default)]
+    pub limit: Option<u32>,
+}
+
+/// A kind of a block's searchable text. The product's search finds a
+/// root's messages and answers; a history search finds all three.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SearchKind {
+    /// A message or a steer of the user or of the agent's parent.
+    Message,
+    /// A text of the agent.
+    Answer,
+    /// The title of a command a `shell` call of the agent ran.
+    Command,
+}
+
+impl SearchKind {
+    /// Its name, as `?kinds=` lists it and the search index keeps it.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Message => "message",
+            Self::Answer => "answer",
+            Self::Command => "command",
+        }
+    }
+
+    /// The kind `name` names.
+    pub fn named(name: &str) -> Option<Self> {
+        [Self::Message, Self::Answer, Self::Command].into_iter().find(|kind| kind.as_str() == name)
+    }
+}
+
+/// What `GET /history/search` answers: a page of at most `limit` hits,
+/// newest first.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct HistoryHits {
+    pub hits: Vec<HistoryHit>,
+    /// Where the page ends, which `after` takes to read on with the same
+    /// query: the place of the last text the page read, a hit or one left
+    /// out; for a page that read none, the `after` given, empty without
+    /// one.
+    pub next: String,
+    /// Whether hits wait after the page.
+    pub more: bool,
+}
+
+/// A text a history search found: its conversation, its agent by the
+/// number its conversation knows it by, 0 for the main agent, and by the
+/// node a transcript is read by, its block, its kind and time, and its line
+/// around the first match with where the words are, as `SearchMatch` gives
+/// them.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct HistoryHit {
+    pub conversation: ConversationId,
+    #[garde(range(max = MAX_SAFE_INTEGER))]
+    pub agent: u64,
+    pub node: NodeId,
+    pub block_id: BlockId,
+    pub kind: SearchKind,
     pub time: Timestamp,
     pub text: String,
     pub ranges: Vec<[u32; 2]>,

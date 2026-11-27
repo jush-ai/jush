@@ -72,7 +72,7 @@ import { randomUUID } from 'node:crypto'
 import { Conversation } from './conversation'
 import { deviceFiles, type DeviceFiles } from './files'
 import { models, usage, type Models, type Usage } from './models'
-import { commands, type CoreCommands } from './commands'
+import { commands, history, type CoreCommands, type CoreHistory } from './commands'
 import { projects, workspaces, type Projects, type Workspaces } from './organize'
 import { servePlugin, type Plugin } from './plugin'
 import { portForwards, type PortForwards } from './port-forwards'
@@ -131,6 +131,8 @@ export class Core {
   readonly models: Models
   readonly usage: Usage
   readonly commands: CoreCommands
+  /** Every conversation's history, searched at once. */
+  readonly history: CoreHistory
   readonly workspaces: Workspaces
   readonly projects: Projects
   readonly portForwards: PortForwards
@@ -163,6 +165,7 @@ export class Core {
     this.models = models(this.routes)
     this.usage = usage(this.routes)
     this.commands = commands(this.routes)
+    this.history = history(this.routes)
     this.workspaces = workspaces(this.routes)
     this.projects = projects(this.routes)
     this.portForwards = portForwards(this.routes)

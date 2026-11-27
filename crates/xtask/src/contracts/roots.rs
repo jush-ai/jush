@@ -246,6 +246,7 @@ pub fn web() -> Vec<Root> {
         receives::<conversations::Conversations>(),
         receives::<search::SearchResults>(),
         receives::<search::MessageResults>(),
+        receives::<search::HistoryHits>(),
         sends::<conversations::ReadRequest>(),
         receives::<conversations::TranscriptPage>(),
         receives::<conversations::WholeBlock>(),

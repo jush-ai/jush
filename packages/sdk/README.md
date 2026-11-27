@@ -921,6 +921,57 @@ hold its scripts. Commands that ended before the core kept the history
 have none, and so do `device.exec` and a schedule's watch command, which
 no agent ran.
 
+## Searching every conversation's history
+
+`core.history.search` finds words in the history of every conversation of
+the core at once: every agent's, subagents' included, of archived
+conversations too, within a time window, page by page.
+
+```ts
+let page = await core.history.search('browser login', {
+  from: new Date('2026-10-05T00:00:00+08:00'),
+  to: new Date('2026-10-06T00:00:00+08:00'),
+})
+for (const hit of page.hits) {
+  // hit.conversation; hit.agent, 0 for the main agent, as command history
+  // and usage name it; hit.node, which history.transcript and history.block
+  // take; hit.blockId; hit.kind: 'message' | 'answer' | 'command';
+  // hit.time; hit.text, the line around the first match; hit.ranges, where
+  // the words are in it, as [start, end] UTF-16 offsets.
+  const around = await core.conversations.open(hit.conversation)
+    .history.transcript(hit.node, { around: hit.blockId })
+}
+// The next page: the same text and options, after the last.
+if (page.more) {
+  page = await core.history.search('browser login', {
+    from: new Date('2026-10-05T00:00:00+08:00'),
+    to: new Date('2026-10-06T00:00:00+08:00'),
+    after: page.next,
+  })
+}
+```
+
+It searches what the core's search index holds of each agent: a message
+or steer of the user or of the agent's parent (`message`), a text of the
+agent (`answer`), and the title of a command it ran (`command`); `kinds`
+keeps some of them. Scripts, command outputs, thinking and side questions
+are not searched. A hit holds every word of the text, or any with
+`any: true`, anywhere, case ignored, in any language. `from` keeps the
+texts written at or after a moment, `to` those before one.
+
+Hits come newest first, every hit of a conversation, at most `limit` to a
+page, 1 to 200 and 50 by default. `more` says hits wait after the page,
+and the same text and options with `after: page.next` read them: `next`
+holds where the page ends, not what the search keeps, and is opaque. A
+text of a conversation being deleted, or of a subagent whose database
+cannot be read, is left out, so a page may hold fewer hits than `limit`,
+even none while `more` is true.
+
+A text is found a moment after its turn saved it, once the index took it;
+after an upgrade builds the index again, a conversation's texts are found
+as the index reaches it. Which of your users may search what is your
+program's to decide: Jush answers every search of the core.
+
 ## Everything else a core does
 
 Every capability of a core has a method, on the object it acts on, and its
@@ -941,7 +992,7 @@ const token = await core.credentials.create({
 | --- | --- |
 | `core.conversations` | `list({ archived })`, `get(id)`, `create`, `open`, `remove(id)`, `updateMany(items)` |
 | `conversation` | `get()`, `update`, `remove()`, `fork`, `reloadPlugins()`, `search(text)`, `cost('hour' \| 'day')`, `workflows()`, `unpin(pin)`, `detach(device)` |
-| `conversation.history` | `transcript(agent, page)`, `block(agent, id)`, `turn(id)`, `commandOrigin(id)`, `commandOutput(id)` |
+| `conversation.history` | `transcript(node, page)`, `block(node, id)`, `turn(id)`, `commandOrigin(id)`, `commandOutput(id)` |
 | `conversation.sideQuestions` | `ask`, `followUp`, `retry`, `stop`, `fold`, `remove` |
 | `conversation.files` | `list`, `lists`, `read`, `readBytes`, `write`, `makeDirectory`, `remove`, `search` |
 | `conversation.changes` | `status`, `file`, `committed`, `branches`, `repositories`, `log`, `show(commit)` |
@@ -949,6 +1000,7 @@ const token = await core.credentials.create({
 | `core` | `search(text)`, `blob(sha256)`, `upload` |
 | `core.usage` | `totals()`, `report(options)` |
 | `core.commands` | `history(options)` |
+| `core.history` | `search(text, options)` |
 | `core.models` | `search(text)`, `refresh()` |
 | `core.providers` | `list`, `create`, `update`, `remove`, `catalog`, `order`, `status`, `quota`, `test`, `cli`, `installCli`, `accounts(id)`, `signIn` |
 | `core.credentials` | `list`, `create`, `update`, `remove`, `reveal(id, field)` |

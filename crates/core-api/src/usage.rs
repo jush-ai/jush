@@ -14,7 +14,7 @@ use jush_web_api_protocol::usage::{UsageDimension, UsageReport, UsageReportQuery
 
 use crate::error::ApiError;
 use crate::caller::Principal;
-use crate::query::QueryParams;
+use crate::query::{QueryParams, comma_list};
 use jush_core::services::CoreServices;
 
 pub(crate) async fn totals(
@@ -41,7 +41,7 @@ pub(crate) async fn report(
         None => TimeZone::UTC,
     };
     let mut group_by = Vec::new();
-    for name in list(query.group_by.as_deref()) {
+    for name in comma_list(query.group_by.as_deref()) {
         let grouping = match name.strip_prefix("label:") {
             Some(key) => {
                 check_label_key(key).map_err(|reason| ApiError::invalid_query(format!("groupBy: {reason}")))?;
@@ -88,9 +88,4 @@ pub(crate) async fn report(
     let ask = ReportAsk { from: query.from, to: query.to, bucket: query.bucket, zone, group_by, kept };
     let report = services.vault.stores().store_of(&user).await?.usage_report(ask).await?;
     Ok(Json(report))
-}
-
-/// The values of a comma list; `name=` is an empty one.
-fn list(names: Option<&str>) -> impl Iterator<Item = &str> {
-    names.into_iter().filter(|names| !names.is_empty()).flat_map(|names| names.split(','))
 }

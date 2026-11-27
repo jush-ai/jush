@@ -29,3 +29,8 @@ impl<S: Send + Sync, T: DeserializeOwned> FromRequestParts<S> for QueryParams<T>
         Ok(Self(value))
     }
 }
+
+/// The values of a comma list a query names; `name=` is an empty one.
+pub(crate) fn comma_list(names: Option<&str>) -> impl Iterator<Item = &str> {
+    names.into_iter().filter(|names| !names.is_empty()).flat_map(|names| names.split(','))
+}

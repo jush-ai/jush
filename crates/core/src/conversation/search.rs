@@ -39,19 +39,22 @@
 
 use jush_core_store::store::CoreStore;
 use std::cell::{Cell, RefCell};
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use std::rc::Rc;
 
 use jush_core_store::StorageError;
 use jush_core_store::conversation_index::ConversationRecord;
-use jush_core_store::{search::{HistoryQuery, IndexedConversation, SearchKind, TranscriptChange, match_line, title_ranges}};
+use jush_core_store::{search::{AllPlace, AllQuery, HistoryQuery, IndexedConversation, SearchKind, TranscriptChange, match_line, title_ranges}};
 use jush_core_store::tree;
+use jush_core_device_access::root_of;
 use jush_web_api_protocol::ids::WorkspaceId;
 use jush_core_sync::{Part, Registration};
 use jush_shared_gates::KeyedSerialGate;
+use jush_shared_types::{NodeId, Timestamp};
 use jush_web_api_protocol::ids::{ConversationId, UserId};
 use jush_web_api_protocol::search::{
-    MessageAuthor, MessageResult, MessageResults, RESULTS_MAX, SearchMatch, SearchResult, SearchText,
+    HistoryHit, HistoryHits, MessageAuthor, MessageResult, MessageResults, RESULTS_MAX, SearchMatch,
+    SearchResult, SearchText,
 };
 use tokio::sync::broadcast::error::RecvError;
 
@@ -388,6 +391,98 @@ pub async fn search(
             })
         })
         .collect())
+}
+
+/// A page of the texts of every conversation's agents that `query` finds,
+/// its subagents' and its archived conversations' included, newest first,
+/// each cut to its line around the first match as [`search`] cuts it.
+///
+/// It reads the index, the records of the page's conversations, and the
+/// databases of those whose subagents it names, once each, for their nodes:
+/// a main agent's node is its conversation's id. A text whose conversation
+/// has no record, as one being deleted, is left out, and so is a subagent's
+/// whose node is gone or whose database cannot be read, which is logged;
+/// the page's `next` still stands after them.
+pub async fn search_history(store: &CoreStore, query: AllQuery) -> Result<HistoryHits, StorageError> {
+    let limit = query.limit;
+    let words = query.words.clone();
+    let given = query.after.as_ref().map(cursor_of).unwrap_or_default();
+    // One past the page tells that more wait after it.
+    let mut found = store.search().find_all(AllQuery { limit: limit + 1, ..query }).await?;
+    let more = found.len() > limit;
+    found.truncate(limit);
+    let next = found.last().map_or(given, |last| cursor_of(&last.place));
+    // Each conversation of the page, with the numbers of its subagents.
+    let mut conversations: HashMap<ConversationId, BTreeSet<u64>> = HashMap::new();
+    for each in &found {
+        conversations.entry(each.place.conversation.clone()).or_default().extend((each.place.agent > 0).then_some(each.place.agent));
+    }
+    let mut nodes: HashMap<(ConversationId, u64), NodeId> = HashMap::new();
+    for (conversation, numbers) in conversations {
+        if store.conversation(conversation.clone()).await?.is_none() {
+            continue;
+        }
+        nodes.insert((conversation.clone(), 0), root_of(&conversation));
+        if numbers.is_empty() {
+            continue;
+        }
+        let named = store
+            .databases()
+            .read(&conversation, move |connection| {
+                numbers
+                    .into_iter()
+                    .map(|number| Ok(tree::node_numbered(connection, number)?.map(|node| (number, node))))
+                    .collect::<Result<Vec<_>, StorageError>>()
+            })
+            .await;
+        match named {
+            Ok(named) => nodes.extend(
+                named.unwrap_or_default().into_iter().flatten().map(|(number, node)| ((conversation.clone(), number), node)),
+            ),
+            Err(error) => {
+                tracing::warn!(event = "history_search.nodes_unread", %conversation, %error, "the hits of a conversation's subagents were left out");
+            }
+        }
+    }
+    let hits = found
+        .into_iter()
+        .filter_map(|found| {
+            let node = nodes.get(&(found.place.conversation.clone(), found.place.agent))?.clone();
+            let (text, ranges) = match_line(&found.text, &words);
+            Some(HistoryHit {
+                conversation: found.place.conversation,
+                agent: found.place.agent,
+                node,
+                block_id: found.block,
+                kind: found.kind,
+                time: found.place.time,
+                text,
+                ranges,
+            })
+        })
+        .collect();
+    Ok(HistoryHits { hits, next, more })
+}
+
+/// A history search's cursor at `place`: its time in milliseconds, its
+/// agent's number, its block's index and its conversation, a dot between
+/// two, which no conversation's id holds.
+fn cursor_of(place: &AllPlace) -> String {
+    format!("{}.{}.{}.{}", place.time.as_millisecond(), place.agent, place.position, place.conversation)
+}
+
+/// The place a history search's cursor stands at; none for a text no page
+/// gave.
+pub fn place_of(cursor: &str) -> Option<AllPlace> {
+    let mut parts = cursor.splitn(4, '.');
+    let time = Timestamp::from_millisecond(parts.next()?.parse().ok()?).ok()?;
+    // The index keeps both as SQLite's integers.
+    let agent: i64 = parts.next()?.parse().ok()?;
+    let position: i64 = parts.next()?.parse().ok()?;
+    let agent = u64::try_from(agent).ok()?;
+    let position = usize::try_from(position).ok()?;
+    let conversation = ConversationId::try_from(parts.next()?.to_owned()).ok()?;
+    Some(AllPlace { time, conversation, agent, position })
 }
 
 /// The messages of `conversation`'s main agent, the user's and the agent's

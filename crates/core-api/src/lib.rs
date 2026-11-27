@@ -126,6 +126,7 @@ pub fn routes() -> Router<Api> {
         .route("/providers/{id}/accounts/login", post(accounts::login_into))
         .route("/providers/{id}/accounts/{credential}", delete(accounts::remove))
         .route("/search", get(search::search))
+        .route("/history/search", get(search::history))
         .route("/usage", get(usage::totals))
         .route("/usage/report", get(usage::report))
         .route("/commands/history", get(command_history::read))

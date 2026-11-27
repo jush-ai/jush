@@ -7,6 +7,8 @@
 //!
 //! - The product's search finds titles and the root's messages and answers.
 //! - `jush conversation history search` finds an agent's own rows.
+//! - A program's search of every conversation's history finds the rows of
+//!   every agent of every conversation, within a window of their time.
 //!
 //! Without an index a search would open every conversation's database for each
 //! query.
@@ -34,6 +36,7 @@ use std::sync::Arc;
 use jush_shared_types::{Block, BlockId, Timestamp, UserContentBlock};
 use jush_web_api_protocol::ids::ConversationId;
 use jush_web_api_protocol::search::LINE_MAX;
+pub use jush_web_api_protocol::search::SearchKind;
 use tokio::sync::broadcast;
 use rusqlite::types::Value;
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params, params_from_iter};
@@ -164,32 +167,6 @@ pub struct Searchable {
     pub time: Timestamp,
 }
 
-/// The kinds of a block's searchable text. The product's search finds a
-/// root's messages and answers; an agent's history search finds all three.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SearchKind {
-    /// A `user` or `steer` block's text.
-    Message,
-    /// An agent's text.
-    Answer,
-    /// The title of a command a `shell` call ran.
-    Command,
-}
-
-impl SearchKind {
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::Message => "message",
-            Self::Answer => "answer",
-            Self::Command => "command",
-        }
-    }
-
-    fn parse(text: &str) -> Option<Self> {
-        [Self::Message, Self::Answer, Self::Command].into_iter().find(|kind| kind.as_str() == text)
-    }
-}
-
 /// What `jush conversation history search` looks for in an agent's
 /// rows.
 #[derive(Debug, Clone)]
@@ -227,6 +204,42 @@ pub struct FoundText {
 pub enum HistoryBound {
     Index(usize),
     Time(Timestamp),
+}
+
+/// What a search of every conversation's history looks for: the words a
+/// text holds every one of, or any with `any`; its kinds, every kind when
+/// empty; the window of its time, `from` on and before `to`; the texts after
+/// the place `after` in its order, newest first; `limit` of them.
+#[derive(Debug, Clone)]
+pub struct AllQuery {
+    pub words: Vec<String>,
+    pub any: bool,
+    pub kinds: Vec<SearchKind>,
+    pub from: Option<Timestamp>,
+    pub to: Option<Timestamp>,
+    pub after: Option<AllPlace>,
+    pub limit: usize,
+}
+
+/// Where a text stands in a search of every conversation's history: its
+/// time, its conversation, its agent's number and its block's index, the
+/// order of the search, newest first.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AllPlace {
+    pub time: Timestamp,
+    pub conversation: ConversationId,
+    pub agent: u64,
+    pub position: usize,
+}
+
+/// A text a search of every conversation's history found: its place, its
+/// block's id, its kind and the text whole.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FoundAll {
+    pub place: AllPlace,
+    pub block: BlockId,
+    pub kind: SearchKind,
+    pub text: String,
 }
 
 /// A conversation a query found: whether its title holds every word, and
@@ -540,27 +553,11 @@ impl SearchIndex {
     ) -> Result<Vec<FoundText>, StorageError> {
         let conversation = conversation.clone();
         self.with(move |connection| {
-            let mut matches = Vec::new();
             // `?1` and `?2` come first, so each `?` after them is the next
             // condition's, in the order the conditions are written.
             let mut values = vec![Value::Text(conversation.as_str().to_owned()), Value::Integer(integer(agent))];
-            for word in &query.words {
-                if word.chars().count() >= TRIGRAM {
-                    // The word a phrase, so FTS5 reads none of it as an
-                    // operator.
-                    matches.push("t.id IN (SELECT rowid FROM texts_fts WHERE texts_fts MATCH ?)");
-                    values.push(Value::Text(format!("\"{}\"", word.replace('"', "\"\""))));
-                } else {
-                    matches.push(r"t.text LIKE ? ESCAPE '\'");
-                    values.push(Value::Text(format!("%{}%", escape_like(word))));
-                }
-            }
-            let mut conditions = vec![format!("({})", matches.join(if query.any { " OR " } else { " AND " }))];
-            if !query.kinds.is_empty() {
-                let marks = vec!["?"; query.kinds.len()].join(", ");
-                conditions.push(format!("t.kind IN ({marks})"));
-                values.extend(query.kinds.iter().map(|kind| Value::Text(kind.as_str().to_owned())));
-            }
+            let mut conditions = Vec::new();
+            words_and_kinds(&query.words, query.any, &query.kinds, &mut conditions, &mut values);
             for (bound, index, time) in [
                 (query.after, "t.position > ?", "t.time >= ?"),
                 (query.before, "t.position < ?", "t.time < ?"),
@@ -592,9 +589,59 @@ impl SearchIndex {
                 found.push(FoundText {
                     position: decode("texts", "position", usize::try_from(row.get::<_, i64>(0)?))?,
                     block: decode("texts", "block", BlockId::try_from(row.get::<_, String>(1)?))?,
-                    kind: decode("texts", "kind", SearchKind::parse(&kind).ok_or("not a kind of text"))?,
+                    kind: decode("texts", "kind", SearchKind::named(&kind).ok_or("not a kind of text"))?,
                     time: decode("texts", "time", Timestamp::from_millisecond(row.get(3)?))?,
                     text: row.get(4)?,
+                });
+            }
+            Ok(found)
+        })
+        .await
+    }
+
+    /// The texts of every conversation's agents that hold every one of
+    /// `query`'s words, or any, of its kinds, written within its window,
+    /// newest first: those after its cursor, `limit` of them at most. A
+    /// word is found as [`SearchIndex::find_in`] finds it.
+    pub async fn find_all(&self, query: AllQuery) -> Result<Vec<FoundAll>, StorageError> {
+        self.with(move |connection| {
+            let mut conditions = vec!["t.block IS NOT NULL".to_owned()];
+            let mut values = Vec::new();
+            words_and_kinds(&query.words, query.any, &query.kinds, &mut conditions, &mut values);
+            for (moment, condition) in [(query.from, "t.time >= ?"), (query.to, "t.time < ?")] {
+                if let Some(moment) = moment {
+                    conditions.push(condition.to_owned());
+                    values.push(Value::Integer(moment.as_millisecond()));
+                }
+            }
+            if let Some(after) = &query.after {
+                conditions.push("(t.time, t.conversation, t.agent, t.position) < (?, ?, ?, ?)".to_owned());
+                values.push(Value::Integer(after.time.as_millisecond()));
+                values.push(Value::Text(after.conversation.as_str().to_owned()));
+                values.push(Value::Integer(integer(after.agent)));
+                values.push(Value::Integer(count(after.position)));
+            }
+            let mut statement = connection.prepare(&format!(
+                "SELECT t.conversation, t.agent, t.position, t.block, t.kind, t.time, t.text FROM texts t
+                 WHERE {}
+                 ORDER BY t.time DESC, t.conversation DESC, t.agent DESC, t.position DESC LIMIT {}",
+                conditions.join(" AND "),
+                query.limit,
+            ))?;
+            let mut rows = statement.query(params_from_iter(values))?;
+            let mut found = Vec::new();
+            while let Some(row) = rows.next()? {
+                let kind: String = row.get(4)?;
+                found.push(FoundAll {
+                    place: AllPlace {
+                        conversation: decode("texts", "conversation", ConversationId::try_from(row.get::<_, String>(0)?))?,
+                        agent: decode("texts", "agent", u64::try_from(row.get::<_, i64>(1)?))?,
+                        position: decode("texts", "position", usize::try_from(row.get::<_, i64>(2)?))?,
+                        time: decode("texts", "time", Timestamp::from_millisecond(row.get(5)?))?,
+                    },
+                    block: decode("texts", "block", BlockId::try_from(row.get::<_, String>(3)?))?,
+                    kind: decode("texts", "kind", SearchKind::named(&kind).ok_or("not a kind of text"))?,
+                    text: row.get(6)?,
                 });
             }
             Ok(found)
@@ -812,6 +859,36 @@ fn remove_rows(
         [conversation.as_str()],
     )?;
     Ok(())
+}
+
+/// Adds to `conditions` and `values` the conditions of a search of texts on
+/// its words, every one of them or any, and on its kinds, every kind when
+/// none: each `?` the next value's, in the order they are written. A word is
+/// a phrase of the trigram index, so FTS5 reads none of it as an operator,
+/// or a scan when it is shorter than the index matches.
+fn words_and_kinds(
+    words: &[String],
+    any: bool,
+    kinds: &[SearchKind],
+    conditions: &mut Vec<String>,
+    values: &mut Vec<Value>,
+) {
+    let mut matches = Vec::new();
+    for word in words {
+        if word.chars().count() >= TRIGRAM {
+            matches.push("t.id IN (SELECT rowid FROM texts_fts WHERE texts_fts MATCH ?)");
+            values.push(Value::Text(format!("\"{}\"", word.replace('"', "\"\""))));
+        } else {
+            matches.push(r"t.text LIKE ? ESCAPE '\'");
+            values.push(Value::Text(format!("%{}%", escape_like(word))));
+        }
+    }
+    conditions.push(format!("({})", matches.join(if any { " OR " } else { " AND " })));
+    if !kinds.is_empty() {
+        let marks = vec!["?"; kinds.len()].join(", ");
+        conditions.push(format!("t.kind IN ({marks})"));
+        values.extend(kinds.iter().map(|kind| Value::Text(kind.as_str().to_owned())));
+    }
 }
 
 /// A word as a `LIKE` pattern matches it literally.

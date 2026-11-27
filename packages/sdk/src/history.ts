@@ -28,10 +28,10 @@ export type TranscriptPageOptions =
   | { around: string }
 
 export interface ConversationHistory {
-  /** A page of the transcript of `agent`: the conversation's id for the root, a subagent's node id for one of its. */
-  transcript(agent: string, page: TranscriptPageOptions): Promise<TranscriptPage>
-  /** The block `block` of `agent`'s transcript, whole. */
-  block(agent: string, block: string): Promise<WholeBlock>
+  /** A page of the transcript of the agent whose node is `node`: the conversation's id for the root, a subagent's node id for one of its. */
+  transcript(node: string, page: TranscriptPageOptions): Promise<TranscriptPage>
+  /** The block `block` of the transcript of the agent whose node is `node`, whole. */
+  block(node: string, block: string): Promise<WholeBlock>
   /** How the turn `turn` stands. */
   turn(turn: string): Promise<TurnState>
   /** Where the shell call that started the command `command` lies: its agent and its block. */
@@ -43,7 +43,7 @@ export interface ConversationHistory {
 export function conversationHistory(routes: CoreRoutes, id: string): ConversationHistory {
   const base = `/conversations/${segment(id)}`
   return {
-    transcript: (agent, page) => {
+    transcript: (node, page) => {
       const values = 'latest' in page
         ? { latest: true, blocks: page.blocks }
         : 'around' in page
@@ -51,9 +51,9 @@ export function conversationHistory(routes: CoreRoutes, id: string): Conversatio
           : 'before' in page
             ? { before: page.before, edge: page.edge }
             : { after: page.after, edge: page.edge }
-      return routes.json('GET', `${base}/agents/${segment(agent)}/transcript${query(values)}`, transcriptPageSchema)
+      return routes.json('GET', `${base}/agents/${segment(node)}/transcript${query(values)}`, transcriptPageSchema)
     },
-    block: (agent, block) => routes.json('GET', `${base}/agents/${segment(agent)}/blocks/${segment(block)}`, wholeBlockSchema),
+    block: (node, block) => routes.json('GET', `${base}/agents/${segment(node)}/blocks/${segment(block)}`, wholeBlockSchema),
     turn: (turn) => routes.json('GET', `${base}/turns/${segment(turn)}`, turnStateSchema),
     commandOrigin: (command) => routes.json('GET', `${base}/commands/${segment(command)}`, commandOriginSchema),
     commandOutput: (command) => routes.json('GET', `${base}/commands/${segment(command)}/output`, endedOutputSchema),

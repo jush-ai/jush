@@ -70,7 +70,7 @@ export type { ConversationChanges, ConversationFiles, DeviceFiles } from './file
 export type { ConversationHistory, TranscriptPageOptions } from './history'
 export type { Input, MessageOptions } from './input'
 export type { Models, Usage, UsageReportOptions } from './models'
-export type { CommandHistoryOptions, CoreCommands } from './commands'
+export type { CommandHistoryOptions, CoreCommands, CoreHistory, HistorySearchOptions } from './commands'
 export type { Projects, Workspaces } from './organize'
 export type { PortForwards } from './port-forwards'
 export type { CorePlugins, Credentials, Instructions, Subagents } from './settings'
