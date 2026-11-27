@@ -17,7 +17,7 @@ function nextWeekday(weekday: number, hour: number): string {
 
 /**
  * The schedules of a conversation, as its Schedules window lists them: a
- * weekly report, a change watch, one that runs when another conversation
+ * weekly report, a change watch that ends, one that runs when another conversation
  * finishes, a once schedule, a paused one, and one whose last wake failed
  * because its device was offline.
  */
@@ -39,6 +39,7 @@ export function gallerySchedules(): ConversationSchedule[] {
       timeZone: 'Asia/Shanghai',
       paused: false,
       nextAt: weekly,
+      endsAt: null,
       lastRun: { at: ago(5 * DAY), state: 'done', note: null },
     },
     {
@@ -48,6 +49,8 @@ export function gallerySchedules(): ConversationSchedule[] {
       timeZone: 'Asia/Shanghai',
       paused: false,
       nextAt: null,
+      // A wait with an end: the menu says it after the trigger.
+      endsAt: ahead(26 * HOUR),
       lastRun: { at: ago(3 * MINUTE), state: 'notified', note: null },
     },
     {
@@ -58,6 +61,7 @@ export function gallerySchedules(): ConversationSchedule[] {
       timeZone: 'Asia/Shanghai',
       paused: false,
       nextAt: null,
+      endsAt: null,
       lastRun: { at: ago(42 * MINUTE), state: 'done', note: null },
     },
     {
@@ -67,6 +71,7 @@ export function gallerySchedules(): ConversationSchedule[] {
       timeZone: 'Asia/Shanghai',
       paused: false,
       nextAt: reminder,
+      endsAt: null,
       lastRun: null,
     },
     {
@@ -76,6 +81,7 @@ export function gallerySchedules(): ConversationSchedule[] {
       timeZone: 'Asia/Shanghai',
       paused: true,
       nextAt: null,
+      endsAt: null,
       lastRun: { at: ago(2 * DAY), state: 'done', note: null },
     },
     {
@@ -85,6 +91,7 @@ export function gallerySchedules(): ConversationSchedule[] {
       timeZone: 'Asia/Shanghai',
       paused: false,
       nextAt: ahead(12 * MINUTE),
+      endsAt: null,
       lastRun: { at: ago(18 * MINUTE), state: 'failed', note: { kind: 'offline', device: 'Mac mini' } },
     },
   ]

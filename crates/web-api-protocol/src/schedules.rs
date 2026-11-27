@@ -325,6 +325,8 @@ pub enum RunCause {
     Done,
     /// A run now that an agent's `jush schedule run` or a program asked for.
     Now,
+    /// Its end came: the run tells the conversation it ended.
+    End,
 }
 
 /// Where a run stands.
@@ -428,6 +430,11 @@ pub struct ScheduleDto {
     #[serde(deserialize_with = "Option::deserialize")]
     #[schemars(with = "Nullable<Timestamp>")]
     pub next_at: Option<Timestamp>,
+    /// When it ends: nothing fires it after, and its end wakes the
+    /// conversation once; null for none.
+    #[serde(deserialize_with = "Option::deserialize")]
+    #[schemars(with = "Nullable<Timestamp>")]
+    pub ends_at: Option<Timestamp>,
     pub created_at: Timestamp,
     /// The agent's turn whose `jush schedule create` made it; null for one a
     /// program made.
@@ -523,6 +530,11 @@ pub struct SchedulePatch {
     #[schemars(with = "bool")]
     #[garde(skip)]
     pub paused: Option<bool>,
+    /// When it ends, which a once trigger does not take; null removes it.
+    #[serde(default, skip_serializing_if = "Option::is_none", with = "double_option")]
+    #[schemars(with = "Nullable<Timestamp>")]
+    #[garde(skip)]
+    pub ends_at: Option<Option<Timestamp>>,
 }
 
 /// A schedule of a conversation as its Schedules menu lists it: what wakes
@@ -545,6 +557,10 @@ pub struct ConversationSchedule {
     #[serde(deserialize_with = "Option::deserialize")]
     #[schemars(with = "Nullable<Timestamp>")]
     pub next_at: Option<Timestamp>,
+    /// When it ends; null for none.
+    #[serde(deserialize_with = "Option::deserialize")]
+    #[schemars(with = "Nullable<Timestamp>")]
+    pub ends_at: Option<Timestamp>,
     /// Its last run; null before it woke the conversation.
     #[serde(deserialize_with = "Option::deserialize")]
     #[schemars(with = "Nullable<LastRun>")]

@@ -37,10 +37,10 @@ const SUMMARY: &str = "This conversation's schedules, which wake it: once, on a 
 /// The group's entry in the model's capability index.
 const ENTRY: &str = "Wakes this conversation once, on a repeating cycle, every interval, by cron, when a command's output changes, on a URL call, or when another conversation finishes.";
 
-const LIST_SUMMARY: &str = "List this conversation's schedules: id, whether it is on, its trigger's kind, its next and last run, and its name; show gives the timing and the tasks.";
+const LIST_SUMMARY: &str = "List this conversation's schedules: id, whether it is on, its trigger's kind, its next run, its end, its last run, and its name; show gives the timing and the tasks.";
 const SHOW_SUMMARY: &str = "Show one schedule: its trigger, a repeat's tasks with their ids, its prompt, state and latest runs; a URL trigger's address.";
-const CREATE_SUMMARY: &str = "Create a schedule, on at once, with the message each run sends on stdin. One trigger: --repeat with --task-at for its first task, --at, --every, --cron, --watch with --every for a change, --url, or --when-done.";
-const EDIT_SUMMARY: &str = "Change the parts the options name and keep the others. --repeat changes a repeat's cycle and keeps its tasks; another trigger option replaces the trigger. A repeat's task: --task picks one by its id (the only one by default) for --task-at, --holidays and stdin; --add-task adds one; --delete-task removes one. Without tasks, stdin replaces the message. --paused pauses it, --on turns it on.";
+const CREATE_SUMMARY: &str = "Create a schedule, on at once, with the message each run sends on stdin. One trigger: --repeat with --task-at for its first task, --at, --every, --cron, --watch with --every for a change, --url, or --when-done. --for or --until ends it: its end wakes this conversation once, saying so, and deletes it.";
+const EDIT_SUMMARY: &str = "Change the parts the options name and keep the others. --repeat changes a repeat's cycle and keeps its tasks; another trigger option replaces the trigger. A repeat's task: --task picks one by its id (the only one by default) for --task-at, --holidays and stdin; --add-task adds one; --delete-task removes one. Without tasks, stdin replaces the message. --for or --until sets a new end, --no-end removes it. --paused pauses it, --on turns it on.";
 const RUN_SUMMARY: &str = "Run a schedule now, whatever its timing, its limit or whether it is paused; --task picks a repeat's task when it has several.";
 const DELETE_SUMMARY: &str = "Delete a schedule and its runs' records.";
 
@@ -72,6 +72,10 @@ struct PartsArgs {
     when_done: Option<String>,
     max_runs_per_day: Option<u32>,
     no_limit: Option<bool>,
+    #[serde(rename = "for")]
+    for_: Option<String>,
+    until: Option<String>,
+    no_end: Option<bool>,
     if_busy: Option<String>,
     prompt: Option<String>,
 }
@@ -128,6 +132,9 @@ pub(crate) fn schedule_group(core: Weak<Core>) -> GroupBuilder {
             .describe("when-done", "Another conversation, by its id from `jush conversation list`: a run each time it finishes working, whoever asked for the work, carrying how its last turn ended and its last answer. One message's turn alone: `jush conversation send --wake-when-done`.")
             .describe("max-runs-per-day", "With --watch, --url or --when-done: at most this many runs a day, counted from midnight in --tz.")
             .describe("no-limit", "Remove the limit on runs a day.")
+            .describe("for", "Ends it this long from now, such as 30m, 24h or 7d: nothing fires it after, and its end wakes this conversation once, saying it ended, and deletes it. Not with --at.")
+            .describe("until", "Ends it at a local time in --tz, such as \"2026-10-25 18:00\", as --for does.")
+            .describe("no-end", "Remove its end.")
             .describe("if-busy", "While the conversation works: queue, the default, waits for its running turn to end; steer reaches the running turn, as the composer's Steer does.")
             .describe("prompt", "The message each run sends, a repeat's task's or a single trigger's, written as the user would write it; stdin.")
             .stdin_field("prompt")
@@ -235,13 +242,14 @@ async fn list(core: Rc<Core>, call: Call<NoArgs>, port: RpcPort) -> Result<u8, R
     if call.invocation.json {
         return print_json(&port, &schedules).await;
     }
-    let mut table = Table::new(["id", "status", "trigger", "next run", "last run", "name"]);
+    let mut table = Table::new(["id", "status", "trigger", "next run", "ends", "last run", "name"]);
     for schedule in &schedules {
         table.row::<Cell>([
             schedule.id.to_string().into(),
             status(schedule).into(),
             trigger_kind(&schedule.trigger).into(),
             schedule.next_at.into(),
+            schedule.ends_at.into(),
             schedule.runs.first().map(|run| run.at).into(),
             schedule.name.as_str().into(),
         ]);
@@ -308,6 +316,7 @@ async fn print_shown(
             IfBusy::Steer => "steer",
         })
         .field("Next run", schedule.next_at)
+        .field("Ends", schedule.ends_at)
         .field("Created", schedule.created_at);
     let mut runs = Table::new(["at", "task", "state", "line"]);
     // Ten of the runs, because the table goes into the agent's context window.
@@ -357,24 +366,25 @@ async fn show(core: Rc<Core>, call: Call<IdArgs>, port: RpcPort) -> Result<u8, R
     print_shown(&core, &port, &call.invocation.path.join(" "), call.invocation.json, schedule, None).await
 }
 
-/// The local time `text` names in `zone`: `2026-10-18 08:00`, or an
-/// instant with its offset.
-fn moment(text: &str, zone: &str) -> Result<Timestamp, RpcError> {
+/// The local time `text` names in `zone`, as the option `option` gives it:
+/// `2026-10-18 08:00`, or an instant with its offset.
+fn moment(option: &str, text: &str, zone: &str) -> Result<Timestamp, RpcError> {
     if let Ok(at) = text.parse::<jiff::Timestamp>() {
         return Ok(Timestamp::truncate(at));
     }
     let local: DateTime = text
         .replacen(' ', "T", 1)
         .parse()
-        .map_err(|_| failed(format!("--at {text:?}: give a local time such as \"2026-10-18 08:00\"")))?;
+        .map_err(|_| failed(format!("{option} {text:?}: give a local time such as \"2026-10-18 08:00\"")))?;
     let zone = super::plan::zone(zone).map_err(failed)?;
     let zoned = local.to_zoned(zone).map_err(failed)?;
     Ok(Timestamp::truncate(zoned.timestamp()))
 }
 
-/// `10m`, `2h`, `1d` or a number of minutes, in minutes.
-fn minutes(text: &str) -> Result<u32, RpcError> {
-    let usage = || failed(format!("--every {text:?}: give an interval such as 10m, 2h or 1d"));
+/// `10m`, `2h`, `1d` or a number of minutes, in minutes, as the option
+/// `option` gives it.
+fn minutes(option: &str, text: &str) -> Result<u32, RpcError> {
+    let usage = || failed(format!("{option} {text:?}: give an interval such as 10m, 2h or 1d"));
     let text = text.trim();
     let (number, unit) = match text.find(|character: char| !character.is_ascii_digit()) {
         Some(index) => text.split_at(index),
@@ -443,7 +453,7 @@ async fn patch(
     let mut chosen = Vec::new();
     if let Some(at) = &args.at {
         chosen.push(Trigger::Time {
-            timing: Timing::Once { at: moment(at, &zone)? },
+            timing: Timing::Once { at: moment("--at", at, &zone)? },
         });
     }
     if let Some(expression) = &args.cron {
@@ -456,11 +466,11 @@ async fn patch(
     match (&args.watch, &args.every) {
         (Some(command), Some(every)) => chosen.push(Trigger::Change {
             command: command.clone(),
-            every_minutes: minutes(every)?,
+            every_minutes: minutes("--every", every)?,
         }),
         (Some(_), None) => return Err(failed("--watch needs --every, how often its command runs")),
         (None, Some(every)) => chosen.push(Trigger::Time {
-            timing: Timing::Every { minutes: minutes(every)? },
+            timing: Timing::Every { minutes: minutes("--every", every)? },
         }),
         (None, None) => {}
     }
@@ -610,6 +620,17 @@ async fn patch(
         (None, true) => Some(None),
         (None, false) => None,
     };
+    let ends_at = match (args.for_, args.until, args.no_end == Some(true)) {
+        (None, None, false) => None,
+        (Some(span), None, false) => {
+            let span = jiff::SignedDuration::from_mins(i64::from(minutes("--for", &span)?));
+            let end = core.store().now().to_jiff().checked_add(span).map_err(failed)?;
+            Some(Some(Timestamp::truncate(end)))
+        }
+        (None, Some(until), false) => Some(Some(moment("--until", &until, &zone)?)),
+        (None, None, true) => Some(None),
+        _ => return Err(failed("--for, --until and --no-end contradict each other; give one")),
+    };
     let patch = SchedulePatch {
         name: args.name.map(Trimmed::from),
         trigger,
@@ -618,6 +639,7 @@ async fn patch(
         if_busy,
         prompt: schedule_prompt,
         paused: None,
+        ends_at,
     };
     patch
         .validate()

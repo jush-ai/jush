@@ -151,7 +151,7 @@ interface Helper {
 
 /** A schedule's fields the helpers share: on, in the user's time zone, run never yet. */
 function scheduled(id: string, name: string, trigger: ConversationSchedule['trigger'], nextInMinutes: number): ConversationSchedule {
-  return { id, name, trigger, timeZone: 'America/Los_Angeles', paused: false, nextAt: ago(-nextInMinutes), lastRun: null }
+  return { id, name, trigger, timeZone: 'America/Los_Angeles', paused: false, nextAt: ago(-nextInMinutes), endsAt: null, lastRun: null }
 }
 
 /** A repeat's one task, at `time` on `days`. */
@@ -662,6 +662,7 @@ export const SCENES: Record<DemoId, Scene> = {
       timeZone: 'America/Los_Angeles',
       paused: false,
       nextAt: ago(-9 * 60),
+      endsAt: null,
       lastRun: { at: ago(15 * 60), state: 'done', note: null },
     }],
     workflow: {

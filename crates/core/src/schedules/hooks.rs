@@ -190,11 +190,11 @@ impl Core {
         let delivery = header(&call, "x-github-delivery")
             .or_else(|| header(&call, "idempotency-key"))
             .map(str::to_owned);
-        // A paused schedule, or one of an archived conversation, starts nothing, as
-        // `jush schedule run` alone would; one at its daily limit counts the call in
-        // the day's skipped run.
-        let limited = schedule.on() && self.limit_reached(&schedule, now).await?.is_some();
-        let held = !schedule.on() || limited;
+        // A paused schedule, one of an archived conversation, or one whose end
+        // came, starts nothing, as `jush schedule run` alone would; one at its
+        // daily limit counts the call in the day's skipped run.
+        let limited = schedule.live(now) && self.limit_reached(&schedule, now).await?.is_some();
+        let held = !schedule.live(now) || limited;
         let since = now
             .to_jiff()
             .checked_sub(DELIVERY_MEMORY)
@@ -224,7 +224,7 @@ impl Core {
     }
 
     /// Whether a run of the schedule works now.
-    async fn schedule_working(&self, id: &ScheduleId) -> Result<bool, StorageError> {
+    pub(super) async fn schedule_working(&self, id: &ScheduleId) -> Result<bool, StorageError> {
         Ok(self
             .store().schedule_runs(id.clone(), jush_web_api_protocol::schedules::RUNS_SHOWN)
             .await?
@@ -368,7 +368,7 @@ async fn gather_until_quiet(
     }
     let store = core.store();
     let schedule = match store.schedule(id.clone()).await {
-        Ok(Some(schedule)) if schedule.on() && matches!(schedule.trigger, Trigger::Url {}) => schedule,
+        Ok(Some(schedule)) if schedule.live(store.now()) && matches!(schedule.trigger, Trigger::Url {}) => schedule,
         Ok(_) => return,
         Err(error) => {
             tracing::warn!(event = "schedule_url_run.deferred", schedule = %id, step = "read_schedule", %error, "a URL's calls started no run yet");

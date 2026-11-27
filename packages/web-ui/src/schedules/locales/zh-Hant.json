@@ -3,6 +3,7 @@
   "delete": "刪除",
   "notYet": "尚未喚醒",
   "trigger": {
+    "until": "至 {when}",
     "once": "一次 · {when}",
     "change": "輸出變更時 · {interval}",
     "url": "URL 被呼叫時",

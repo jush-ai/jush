@@ -3,6 +3,7 @@
   "delete": "Eliminar",
   "notYet": "Aún no se activó",
   "trigger": {
+    "until": "Hasta el {when}",
     "once": "Una vez · {when}",
     "change": "Cuando cambia la salida · {interval}",
     "url": "Cuando se llama a una URL",

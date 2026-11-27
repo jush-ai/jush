@@ -14,6 +14,8 @@ export interface ConversationSchedule {
   paused: boolean
   /** When it next wakes the conversation, ISO 8601; none while it is off or its conversation archived, with no time left, or for a change watch or a URL. */
   nextAt: string | null
+  /** When it ends, ISO 8601: nothing fires it after, and its end wakes the conversation once; none for never. */
+  endsAt: string | null
   /** The last wake, ISO 8601 `at`; none before it woke the conversation. */
   lastRun: LastRun | null
 }

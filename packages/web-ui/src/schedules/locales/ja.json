@@ -3,6 +3,7 @@
   "delete": "削除",
   "notYet": "まだ起こしていません",
   "trigger": {
+    "until": "{when} まで",
     "once": "1 回 · {when}",
     "change": "出力が変わったとき · {interval}",
     "url": "URL が呼ばれたとき",

@@ -24,7 +24,9 @@ const COLUMNS: &str = "id, conversation_id, name, trigger, time_zone, max_runs_p
      paused, since, secret IS NOT NULL AS has_secret,
      (SELECT archived_at IS NOT NULL FROM conversations WHERE id = schedules.conversation_id) AS conversation_archived,
      watch_stdout, watch_digest, watch_exit, watch_checked_at, created_at, updated_at,
-     created_node, created_turn, edited_node, edited_turn, created_labels, created_assignment_id";
+     created_node, created_turn, edited_node, edited_turn, created_labels, created_assignment_id, ends_at,
+     EXISTS (SELECT 1 FROM schedule_runs WHERE schedule_id = schedules.id AND cause = 'end'
+             AND at >= schedules.ends_at) AS ended";
 
 const RUN_COLUMNS: &str = "id, schedule_id, cause, at, state, note, line, turn_id, notified, task_id";
 
@@ -61,6 +63,12 @@ pub struct StoredSchedule {
     /// The agent's turn that last changed what it does; none when no agent
     /// did since it was made, or a program did last.
     pub edited_in: Option<AgentTurn>,
+    /// When it ends; none for never.
+    pub ends_at: Option<Timestamp>,
+    /// Whether a run of its end came at or after `ends_at`: its end ran,
+    /// and another end needs another time. Read from its runs, never kept
+    /// with it.
+    pub ended: bool,
 }
 
 impl StoredSchedule {
@@ -68,6 +76,17 @@ impl StoredSchedule {
     /// held back while its conversation is archived.
     pub fn on(&self) -> bool {
         !self.paused && !self.conversation_archived
+    }
+
+    /// Whether its end came by `now`: nothing fires it any more.
+    pub fn over(&self, now: Timestamp) -> bool {
+        self.ends_at.is_some_and(|end| end <= now)
+    }
+
+    /// Whether its trigger fires it at `now`: it is on and its end has not
+    /// come.
+    pub fn live(&self, now: Timestamp) -> bool {
+        self.on() && !self.over(now)
     }
 }
 
@@ -117,6 +136,7 @@ fn cause_str(cause: RunCause) -> &'static str {
         RunCause::Url => "url",
         RunCause::Done => "done",
         RunCause::Now => "now",
+        RunCause::End => "end",
     }
 }
 
@@ -127,6 +147,7 @@ fn cause_of(text: &str) -> Result<RunCause, StorageError> {
         "url" => RunCause::Url,
         "done" => RunCause::Done,
         "now" => RunCause::Now,
+        "end" => RunCause::End,
         other => {
             return Err(StorageError::Corrupt {
                 table: RUNS,
@@ -271,6 +292,11 @@ fn schedule_row(row: &Row<'_>) -> Result<StoredSchedule, StorageError> {
                 .map(|assignment| decode(TABLE, "created_assignment_id", TurnId::try_from(assignment)))
                 .transpose()?,
         },
+        ends_at: row
+            .get::<_, Option<i64>>("ends_at")?
+            .map(|at| decode(TABLE, "ends_at", Timestamp::from_millisecond(at)))
+            .transpose()?,
+        ended: row.get("ended")?,
     })
 }
 
@@ -381,11 +407,11 @@ impl CoreStore {
             transaction.execute(
                 "INSERT INTO schedules (id, conversation_id, name, trigger, time_zone, max_runs_per_day, if_busy,
                    prompt, paused, since, created_at, updated_at, created_node, created_turn, edited_node,
-                   edited_turn, created_labels, created_assignment_id)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)
+                   edited_turn, created_labels, created_assignment_id, ends_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)
                  ON CONFLICT (id) DO UPDATE SET name = ?3, trigger = ?4, time_zone = ?5,
                    max_runs_per_day = ?6, if_busy = ?7, prompt = ?8, paused = ?9,
-                   since = ?10, updated_at = ?12, edited_node = ?15, edited_turn = ?16
+                   since = ?10, updated_at = ?12, edited_node = ?15, edited_turn = ?16, ends_at = ?19
                  WHERE conversation_id = ?2",
                 params![
                     a.id.as_str(),
@@ -406,6 +432,7 @@ impl CoreStore {
                     a.edited_in.as_ref().map(|turn| turn.turn.as_str()),
                     labels_column(&a.created_for.labels),
                     a.created_for.assignment_id.as_ref().map(TurnId::as_str),
+                    a.ends_at.map(Timestamp::as_millisecond),
                 ],
             )?;
             if let Some(secret) = secret {
@@ -757,6 +784,25 @@ impl CoreStore {
                 |row| row.get(0),
             )?;
             at.map(|at| decode(RUNS, "at", Timestamp::from_millisecond(at))).transpose()
+        })
+        .await
+    }
+
+    /// How many runs of the schedule `id` woke its conversation, their
+    /// message reaching it, its end's aside, and when the last of them
+    /// fired.
+    pub async fn schedule_wakes(&self, id: ScheduleId) -> Result<(u32, Option<Timestamp>), StorageError> {
+        self.call(move |connection, _| {
+            let (count, last): (i64, Option<i64>) = connection.query_row(
+                "SELECT count(*), max(at) FROM schedule_runs
+                 WHERE schedule_id = ?1 AND turn_id IS NOT NULL AND cause != 'end'",
+                [id.as_str()],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )?;
+            Ok((
+                decode(RUNS, "count", u32::try_from(count))?,
+                last.map(|at| decode(RUNS, "at", Timestamp::from_millisecond(at))).transpose()?,
+            ))
         })
         .await
     }

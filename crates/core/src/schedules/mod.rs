@@ -8,9 +8,14 @@
 //! which is read from the conversation's archived state and never written to
 //! the schedule's own `paused`.
 //!
+//! A schedule may end. From its end nothing fires it, and a run of its end
+//! tells the conversation so, after the schedule's other runs, and deletes
+//! it; one that is off at its end is deleted without a word.
+//!
 //! The scheduler is one task per core. It reads the user's schedules when
-//! the core starts and whenever one changes, fires what is due, and sleeps
-//! until the nearest next time or the next change; nothing polls the table.
+//! the core starts and whenever one changes, fires what is due, ends what
+//! reached its end, and sleeps until the nearest next time or end, or the
+//! next change; nothing polls the table.
 
 pub(crate) mod commands;
 pub(crate) mod holidays;
@@ -128,6 +133,11 @@ pub enum ScheduleError {
     LimitNotTaken,
     #[error("Only a URL trigger has a secret.")]
     NoSecret,
+    #[error("A once schedule ends when it fires, and takes no end.")]
+    EndNotTaken,
+    /// The end, as the schedule's time zone reads it.
+    #[error("The end {0} has passed: give a later one.")]
+    EndPassed(String),
     #[error("{0}")]
     NotDoneOf(String),
     /// A run now that could not be recorded, which the log says why of.
@@ -262,6 +272,7 @@ impl Core {
                 time_zone: schedule.time_zone,
                 paused: schedule.paused,
                 next_at,
+                ends_at: schedule.ends_at,
                 last_run,
             });
         }
@@ -301,6 +312,7 @@ impl Core {
             prompt: schedule.prompt,
             paused: schedule.paused,
             next_at,
+            ends_at: schedule.ends_at,
             created_at: schedule.created_at,
             created_in: schedule.created_in,
             edited_in: schedule.edited_in,
@@ -333,13 +345,14 @@ impl Core {
         Ok(runs.into_iter().map(run_dto).collect())
     }
 
-    /// When the schedule next fires by itself, as its menu says it.
+    /// When the schedule next fires by itself, as its menu says it: before
+    /// its end, which is no firing of its trigger.
     async fn next_fire(&self, schedule: &StoredSchedule) -> Result<Option<Timestamp>, StorageError> {
-        if !schedule.on() {
+        let now = self.store().now();
+        if !schedule.live(now) {
             return Ok(None);
         }
-        let now = self.store().now();
-        Ok(match &schedule.trigger {
+        let next = match &schedule.trigger {
             Trigger::Time { timing } => {
                 let Ok(plan) = Plan::new(timing, &schedule.time_zone, schedule.since.to_jiff()) else {
                     return Ok(None);
@@ -358,7 +371,8 @@ impl Core {
             }
             // Neither fires at a time of its own.
             Trigger::Url {} | Trigger::Done { .. } => None,
-        })
+        };
+        Ok(next.filter(|next| schedule.ends_at.is_none_or(|end| *next < end)))
     }
 
     /// `jush schedule create`, and a program's: a new schedule of
@@ -426,6 +440,8 @@ impl Core {
             created_in: by,
             created_for,
             edited_in: None,
+            ends_at: None,
+            ended: false,
         };
         self.save_schedule(defaults, patch, Save::Create, None).await
     }
@@ -488,6 +504,26 @@ impl Core {
         if let Some(paused) = patch.paused {
             schedule.paused = paused;
         }
+        if let Some(ends_at) = patch.ends_at {
+            schedule.ends_at = ends_at;
+        }
+        // A new end is still to come.
+        if let Some(Some(end)) = patch.ends_at
+            && end <= now
+        {
+            let zone = plan::zone(&schedule.time_zone)?;
+            let local = end.to_jiff().to_zoned(zone).strftime("%Y-%m-%d %H:%M").to_string();
+            return Err(ScheduleError::EndPassed(format!("{local} {}", schedule.time_zone)));
+        }
+        // A once schedule ends when it fires: one given an end is refused,
+        // and a trigger changed to once drops the end it had, as a trigger
+        // changed to a time drops its daily limit.
+        if matches!(schedule.trigger, Trigger::Time { timing: Timing::Once { .. } }) && schedule.ends_at.is_some() {
+            if patch.ends_at.flatten().is_some() {
+                return Err(ScheduleError::EndNotTaken);
+            }
+            schedule.ends_at = None;
+        }
         // Each part is checked as a whole schedule needs it.
         if !only_paused {
             plan::zone(&schedule.time_zone)?;
@@ -542,10 +578,13 @@ impl Core {
             // A trigger that changed to a time drops the limit it had.
             schedule.max_runs_per_day = None;
         }
-        // A schedule counts from when it was set or turned on: what a paused
-        // one would have fired never fires.
+        // A schedule counts from when it was set or turned on, or given a
+        // new end after its end came: what it would have fired while it was
+        // off, or over, never fires.
+        let revived = before.over(now) && !schedule.over(now);
         if new || before.trigger != schedule.trigger || before.time_zone != schedule.time_zone
             || (before.paused && !schedule.paused)
+            || revived
         {
             schedule.since = now;
         }
@@ -581,11 +620,12 @@ impl Core {
         if drops {
             store.drop_pending_calls(schedule.id.clone()).await?;
         }
-        // A watch whose command changed, or that was turned on, records its
-        // output first: a change while it was off fires nothing.
+        // A watch whose command changed, or that was turned on or given a
+        // new end after its end came, records its output first: a change
+        // while it was off fires nothing.
         if let (Trigger::Change { command: old, .. }, Trigger::Change { command, .. }) =
             (&before.trigger, &schedule.trigger)
-            && (old != command || (before.paused && !schedule.paused))
+            && (old != command || (before.paused && !schedule.paused) || revived)
         {
             store.set_watch_output(schedule.id.clone(), None).await?;
         }
@@ -744,9 +784,10 @@ impl Core {
     /// closes.
     ///
     /// It settles the runs a run of the backend before left running, then fires
-    /// what is due, starts the change watches whose time came, and sleeps until
-    /// the nearest next time or a change of the schedules. A time that passed
-    /// while the backend was down fires once.
+    /// what is due, starts the change watches whose time came, ends the
+    /// schedules whose end came, and sleeps until the nearest next time or
+    /// end, or a change of the schedules. A time that passed while the backend
+    /// was down fires once, and an end that did comes after it.
     pub(crate) async fn follow_schedules(self: Rc<Self>) {
         self.settle_left_runs().await;
         self.resume_pending_calls().await;
@@ -781,61 +822,153 @@ impl Core {
         }
     }
 
-    /// Fires every schedule whose time came, and answers the nearest next
-    /// time.
+    /// Fires every schedule whose time came, ends every one whose end came,
+    /// and answers the nearest next time or end.
     async fn fire_due(&self) -> Result<Option<Timestamp>, StorageError> {
         let store = self.store();
         let now = store.now();
         let mut nearest: Option<Timestamp> = None;
         let mut keep = |at: Timestamp| nearest = Some(nearest.map_or(at, |nearest| nearest.min(at)));
         for schedule in store.schedules().await? {
-            if !schedule.on() {
+            let over = schedule.over(now);
+            // One whose end ran waits for a new end, which `edit` sets.
+            if over && schedule.ended {
                 continue;
             }
-            match &schedule.trigger {
-                Trigger::Time { timing } => {
-                    let Ok(plan) = Plan::new(timing, &schedule.time_zone, schedule.since.to_jiff())
-                    else {
-                        continue;
-                    };
-                    let last = store.schedule_last_fired(schedule.id.clone()).await?;
-                    let mut after = last.unwrap_or(schedule.since).to_jiff();
-                    // Each task due runs as its own run, once for its
-                    // latest missed time; in time order, so the last fired
-                    // is the latest.
-                    for (due, task) in plan.due(after, now.to_jiff()) {
-                        self.fire(&schedule, runs::Fired::time(Timestamp::truncate(due), task.map(str::to_owned)))
-                            .await;
-                        after = after.max(due);
-                    }
-                    if let Some(next) = plan.next_after(after) {
-                        keep(Timestamp::truncate(next));
-                    }
-                }
-                Trigger::Change { every_minutes, .. } => {
-                    if self.schedule_checking(&schedule.id) {
-                        continue;
-                    }
-                    let due = Timestamp::truncate(self.watch_due(&schedule, *every_minutes));
-                    let held = self.limit_reached(&schedule, now).await?;
-                    match held {
-                        // The limit holds back the command only once it is
-                        // due; until then nothing was skipped.
-                        Some(tomorrow) if due <= now => {
-                            self.count_held_back(&schedule, 0).await?;
-                            keep(tomorrow);
-                        }
-                        Some(_) => keep(due),
-                        None if due <= now => self.start_watch(schedule.clone()),
-                        None => keep(due),
-                    }
-                }
-                // A URL fires when it is called, a when-done trigger as its
-                // conversation rests (`fire_done`).
-                Trigger::Url {} | Trigger::Done { .. } => {}
+            if let Some(end) = schedule.ends_at
+                && !over
+            {
+                keep(end);
+            }
+            if schedule.on() {
+                self.fire_trigger(&schedule, now, &mut keep).await?;
+            }
+            if over {
+                self.end_schedule(&schedule).await?;
             }
         }
         Ok(nearest)
+    }
+
+    /// Fires what of `schedule`'s trigger is due at `now`, before its end:
+    /// a time missed before an end that passed while the core was down
+    /// fires before the end. `keep` takes the trigger's next time.
+    async fn fire_trigger(
+        &self,
+        schedule: &StoredSchedule,
+        now: Timestamp,
+        keep: &mut impl FnMut(Timestamp),
+    ) -> Result<(), StorageError> {
+        let store = self.store();
+        let over = schedule.over(now);
+        // A time at its end fires no more than a later one, as its menu's
+        // next time says.
+        let upto = match schedule.ends_at {
+            Some(end) if over => Timestamp::truncate(end.to_jiff() - jiff::SignedDuration::from_millis(1)),
+            _ => now,
+        };
+        match &schedule.trigger {
+            Trigger::Time { timing } => {
+                let Ok(plan) = Plan::new(timing, &schedule.time_zone, schedule.since.to_jiff())
+                else {
+                    return Ok(());
+                };
+                let last = store.schedule_last_fired(schedule.id.clone()).await?;
+                let mut after = last.unwrap_or(schedule.since).to_jiff();
+                // Each task due runs as its own run, once for its
+                // latest missed time; in time order, so the last fired
+                // is the latest.
+                for (due, task) in plan.due(after, upto.to_jiff()) {
+                    self.fire(schedule, runs::Fired::time(Timestamp::truncate(due), task.map(str::to_owned)))
+                        .await;
+                    after = after.max(due);
+                }
+                if !over && let Some(next) = plan.next_after(after) {
+                    keep(Timestamp::truncate(next));
+                }
+            }
+            // From its end, its watch runs no more.
+            Trigger::Change { .. } if over => {}
+            Trigger::Change { every_minutes, .. } => {
+                if self.schedule_checking(&schedule.id) {
+                    return Ok(());
+                }
+                let due = Timestamp::truncate(self.watch_due(schedule, *every_minutes));
+                let held = self.limit_reached(schedule, now).await?;
+                match held {
+                    // The limit holds back the command only once it is
+                    // due; until then nothing was skipped.
+                    Some(tomorrow) if due <= now => {
+                        self.count_held_back(schedule, 0).await?;
+                        keep(tomorrow);
+                    }
+                    Some(_) => keep(due),
+                    None if due <= now => self.start_watch(schedule.clone()),
+                    None => keep(due),
+                }
+            }
+            // A URL fires when it is called, a when-done trigger as its
+            // conversation rests (`fire_done`).
+            Trigger::Url {} | Trigger::Done { .. } => {}
+        }
+        Ok(())
+    }
+
+    /// `schedule`'s end came: what it had under way stops, and a run of its
+    /// end tells its conversation, which deletes it once its message
+    /// reached the conversation (`end_run`). One that is off at its end,
+    /// paused or held while its conversation is archived, is deleted
+    /// without waking it.
+    ///
+    /// The end's message comes after every message of the schedule's runs:
+    /// the URL's calls that came before the end, and wait for their burst's
+    /// quiet or a run's end, start their run first, and the end waits until
+    /// no run of the schedule works, whose end passes the scheduler again.
+    async fn end_schedule(&self, schedule: &StoredSchedule) -> Result<(), StorageError> {
+        let Some(end) = schedule.ends_at else {
+            return Ok(());
+        };
+        self.drop_pending(&schedule.id);
+        if !schedule.on() {
+            tracing::info!(event = "schedule.ended_off", user = %self.user(), schedule = %schedule.id, conversation = %schedule.conversation, "a schedule that was off reached its end");
+            if let Err(error) = self.delete_schedule(&schedule.conversation, &schedule.id).await {
+                tracing::warn!(event = "schedule.spent_not_deleted", conversation = %schedule.conversation, schedule = %schedule.id, %error, "a spent schedule stays");
+            }
+            return Ok(());
+        }
+        if matches!(schedule.trigger, Trigger::Url {}) {
+            let calls = self.store().take_pending_calls(schedule.id.clone()).await?;
+            if !calls.is_empty() {
+                let fired = runs::Fired {
+                    cause: RunCause::Url,
+                    at: self.store().now(),
+                    task: None,
+                    payload: runs::Payload::Calls(calls.into_iter().map(hooks::Call::from).collect()),
+                };
+                self.fire(schedule, fired).await;
+                return Ok(());
+            }
+        }
+        if self.schedule_working(&schedule.id).await? {
+            return Ok(());
+        }
+        let (woke, last) = self.store().schedule_wakes(schedule.id.clone()).await?;
+        let done_of = match &schedule.trigger {
+            Trigger::Done { conversation } => match self.store().conversation(conversation.clone()).await {
+                Ok(Some(record)) => Some(message::Finished::name_of(&record.id, record.title.as_deref())),
+                _ => None,
+            },
+            _ => None,
+        };
+        let trigger = message::trigger_words(schedule, done_of.as_deref());
+        let fired = runs::Fired {
+            cause: RunCause::End,
+            at: end,
+            task: None,
+            payload: runs::Payload::End { woke, last, trigger },
+        };
+        self.fire(schedule, fired).await;
+        Ok(())
     }
 
     /// Whether `watched` runs when `conversation` finishes, through the
@@ -892,19 +1025,19 @@ impl Core {
         error: Option<String>,
     ) -> Result<(), StorageError> {
         let control = &self.store();
+        let now = control.now();
         let waiting: Vec<StoredSchedule> = control
             .schedules()
             .await?
             .into_iter()
             .filter(|schedule| matches!(&schedule.trigger, Trigger::Done { conversation: of } if *of == conversation))
-            .filter(StoredSchedule::on)
+            .filter(|schedule| schedule.live(now))
             .collect();
         if waiting.is_empty() {
             return Ok(());
         }
         let title = control.conversation(conversation.clone()).await?.and_then(|record| record.title);
         let finished = message::Finished { conversation, title, end, error };
-        let now = control.now();
         for schedule in waiting {
             if self.limit_reached(&schedule, now).await?.is_some() {
                 self.count_held_back(&schedule, 1).await?;

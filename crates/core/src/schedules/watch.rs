@@ -191,8 +191,9 @@ impl Core {
         if self.limit_reached(schedule, now).await?.is_some() {
             return self.count_held_back(schedule, 1).await;
         }
-        // Read anew after the wait: a change since drops this check.
-        if !self.schedule_current(&schedule.id, generation) {
+        // Read anew after the wait: a change since drops this check, and so
+        // does its end, which a check that outlasted it would fire after.
+        if !self.schedule_current(&schedule.id, generation) || schedule.over(store.now()) {
             return Ok(());
         }
         store.set_watch_output(schedule.id.clone(), Some(record)).await?;

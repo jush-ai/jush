@@ -156,13 +156,20 @@ function cronWords(expression: string): string {
   return expression
 }
 
+/**
+ * A moment: within the coming week its weekday names the day, Thu 15:16;
+ * further out, or past, as the end of a schedule an offline device kept, its
+ * date does.
+ */
+function nearMoment(iso: string, zone: string, now: Date | number): string {
+  const ahead = new Date(iso).getTime() - new Date(now).getTime()
+  return ahead >= 0 && ahead < 6 * 86_400_000 ? weekMoment(iso, zone) : shortMoment(iso, zone)
+}
+
 function timingWords(timing: Timing, zone: string, now: Date | number): string {
   switch (timing.kind) {
-    case 'once': {
-      // Within a week the weekday names the day; further out, the date does.
-      const near = new Date(timing.at).getTime() - new Date(now).getTime() < 6 * 86_400_000
-      return t('trigger.once', { when: near ? weekMoment(timing.at, zone) : shortMoment(timing.at, zone) })
-    }
+    case 'once':
+      return t('trigger.once', { when: nearMoment(timing.at, zone, now) })
     case 'repeat': {
       const only = timing.tasks.length === 1 ? timing.tasks[0]! : null
       const what = only ? taskWords(only, timing.repeat.unit) : t('words.tasks', { count: timing.tasks.length }, timing.tasks.length)
@@ -176,11 +183,24 @@ function timingWords(timing: Timing, zone: string, now: Date | number): string {
 }
 
 /**
- * The trigger in words: Every week · Mon 10:00, When output changes · 5 min,
- * When “Fix the cart total” finishes. `listed` names a conversation the page
- * lists by its title now, null for one it does not, archived or deleted.
+ * The trigger in words, and its end after it: Every week · Mon 10:00, When
+ * output changes · 5 min · Until Thu 15:16, When “Fix the cart total”
+ * finishes. `listed` names a conversation the page lists by its title now,
+ * null for one it does not, archived or deleted.
  */
 export function triggerWords(
+  schedule: Pick<ConversationSchedule, 'trigger' | 'timeZone' | 'endsAt'>,
+  now: Date | number,
+  listed: (id: string) => { title: string | null } | null,
+): string {
+  const words = firingWords(schedule, now, listed)
+  return schedule.endsAt
+    ? `${words} · ${t('trigger.until', { when: nearMoment(schedule.endsAt, schedule.timeZone, now) })}`
+    : words
+}
+
+/** What fires the schedule, in words, as `triggerWords` says it. */
+function firingWords(
   schedule: Pick<ConversationSchedule, 'trigger' | 'timeZone'>,
   now: Date | number,
   listed: (id: string) => { title: string | null } | null,

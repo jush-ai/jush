@@ -3,6 +3,7 @@
   "delete": "삭제",
   "notYet": "아직 깨운 적 없음",
   "trigger": {
+    "until": "{when}까지",
     "once": "한 번 · {when}",
     "change": "출력이 바뀔 때 · {interval}",
     "url": "URL이 호출될 때",

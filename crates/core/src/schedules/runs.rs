@@ -15,8 +15,8 @@
 //! runs, or, when the schedule steers, sent into it as the composer's Steer
 //! sends a queued message. The run ends with the turn its message started, as
 //! the conversation answers where that turn stands (`Core::root_turn`), and a
-//! once schedule is deleted with it once its message reached the
-//! conversation.
+//! once schedule, or one whose end it told, is deleted with it once its
+//! message reached the conversation.
 
 use jush_core_store::schedules::{StoredRun, StoredSchedule};
 use jush_core_store::tree::RootTurn;
@@ -51,6 +51,9 @@ pub(crate) enum Payload {
     Calls(Vec<Call>),
     /// Another conversation's last turn, which ended as it finished.
     Done(message::Finished),
+    /// Its end: how many runs woke the conversation, when the last fired,
+    /// and its trigger in words.
+    End { woke: u32, last: Option<Timestamp>, trigger: String },
 }
 
 impl Fired {
@@ -248,6 +251,9 @@ impl Core {
             if let Err(message) = core.carry(&schedule, &mut run, fired).await {
                 run.state = RunState::Failed;
                 run.note = Some(RunNote::TurnFailed { message, code: None });
+                // Its message never went, so it started no turn: a schedule
+                // it would have spent stays, its menu row saying why.
+                run.turn = None;
                 core.end_run(run, &schedule.conversation).await;
             }
         });
@@ -281,6 +287,13 @@ impl Core {
             Payload::Done(finished) => {
                 message::text(schedule, prompt, fired.cause, fired.at, &message::Extra::Done(finished))
             }
+            Payload::End { woke, last, trigger } => message::text(
+                schedule,
+                prompt,
+                fired.cause,
+                fired.at,
+                &message::Extra::End { woke, last, trigger },
+            ),
         };
         self.restore_tree(&conversation).await?;
         let tree = self
@@ -317,16 +330,19 @@ impl Core {
     }
 
     /// Records the run's end, which woke `conversation`, and tells the
-    /// pages; a once schedule whose time woke the conversation is deleted, and
-    /// a URL's calls that came while it worked start the next run.
+    /// pages; a once schedule whose time woke the conversation is deleted, as
+    /// is one whose end did, and a URL's calls that came while it worked
+    /// start the next run.
     pub(crate) async fn end_run(&self, run: StoredRun, conversation: &ConversationId) {
         let schedule = run.schedule.clone();
         let id = run.id.clone();
+        let cause = run.cause;
         // A schedule that fires once is spent when its time's message reached
-        // the conversation. One the agent ran now still has its time ahead,
-        // and one whose run was skipped or failed before its message went
-        // stays, and its menu row says why.
-        let spent = run.cause == RunCause::Time && run.turn.is_some();
+        // the conversation, and one that ended when its end's did. One the
+        // agent ran now still has its time ahead, and one whose run was
+        // skipped or failed before its message went stays, and its menu row
+        // says why.
+        let spent = matches!(cause, RunCause::Time | RunCause::End) && run.turn.is_some();
         let ms = u64::try_from(self.store().now().as_millisecond() - run.at.as_millisecond()).unwrap_or(0);
         let outcome = match run.state {
             RunState::Running => "running",
@@ -349,20 +365,26 @@ impl Core {
             "a schedule's run ended"
         );
         if spent {
-            self.delete_spent_once(conversation, &schedule).await;
+            self.delete_spent(conversation, &schedule, cause).await;
         }
         self.schedules_changed(conversation);
         self.run_ended(&schedule).await;
     }
 
-    /// Deletes the schedule `id` of `conversation` when it fires once.
-    async fn delete_spent_once(&self, conversation: &ConversationId, id: &ScheduleId) {
+    /// Deletes the schedule `id` of `conversation`, whose run of `cause`
+    /// woke it, when that spent it: a time of a once schedule, or its end,
+    /// unless a new end was set since, which a run of its end has not told
+    /// yet, even one that came already.
+    async fn delete_spent(&self, conversation: &ConversationId, id: &ScheduleId, cause: RunCause) {
         let spent = match self.stored_schedule(conversation, id).await {
-            Ok(schedule) => matches!(schedule.trigger, Trigger::Time { timing: Timing::Once { .. } }),
+            Ok(schedule) => match cause {
+                RunCause::End => schedule.ended,
+                _ => matches!(schedule.trigger, Trigger::Time { timing: Timing::Once { .. } }),
+            },
             Err(_) => false,
         };
         if spent && let Err(error) = self.delete_schedule(conversation, id).await {
-            tracing::warn!(event = "schedule.once_not_deleted", %conversation, schedule = %id, %error, "a spent once schedule stays");
+            tracing::warn!(event = "schedule.spent_not_deleted", %conversation, schedule = %id, %error, "a spent schedule stays");
         }
     }
 
@@ -454,6 +476,7 @@ fn cause_name(cause: RunCause) -> &'static str {
         RunCause::Url => "url",
         RunCause::Done => "when-done",
         RunCause::Now => "now",
+        RunCause::End => "end",
     }
 }
 

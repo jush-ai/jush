@@ -261,7 +261,10 @@ CREATE TABLE schedules (
   -- runs' messages continue; null for a program's, for none, and for one
   -- made before schedules kept them.
   created_labels        TEXT,
-  created_assignment_id TEXT
+  created_assignment_id TEXT,
+  -- When it ends: nothing fires it after, and its end wakes its
+  -- conversation once; null for never.
+  ends_at               INTEGER
 ) STRICT;
 
 CREATE INDEX schedules_by_conversation ON schedules (conversation_id, created_at);
@@ -269,7 +272,7 @@ CREATE INDEX schedules_by_conversation ON schedules (conversation_id, created_at
 CREATE TABLE schedule_runs (
   id          TEXT PRIMARY KEY,
   schedule_id TEXT NOT NULL REFERENCES schedules (id) ON DELETE CASCADE,
-  cause       TEXT NOT NULL CHECK (cause IN ('time', 'change', 'url', 'done', 'now')),
+  cause       TEXT NOT NULL CHECK (cause IN ('time', 'change', 'url', 'done', 'now', 'end')),
   at          INTEGER NOT NULL,
   state       TEXT NOT NULL CHECK (state IN ('running', 'done', 'notified', 'skipped', 'failed')),
   note        TEXT,

@@ -546,6 +546,27 @@ const runs = await conversation.schedules.runs(schedule.id)
 await conversation.schedules.remove(schedule.id)
 ```
 
+A schedule may end: `endsAt` stops it at that time, and its end wakes the
+conversation once with a message that says it ended, how often it woke the
+conversation and what it waited for, then deletes it, so a wait such as
+"until the document is readable, at most 7 days" needs no second schedule
+to remove the first:
+
+```ts
+await conversation.schedules.create({
+  name: 'Design doc readable',
+  trigger: { kind: 'change', command: './can-read.sh', everyMinutes: 1 },
+  prompt: 'The design doc is readable now; go on with the review.',
+  endsAt: new Date(Date.now() + 7 * 24 * 3_600_000).toISOString(),
+})
+```
+
+Until its end, the schedule fires as one without an end does. A schedule
+that is off at its end, paused or of an archived conversation, is deleted
+without waking it, and a once schedule takes no end. `update(id, { endsAt })`
+sets a new end, and `endsAt: null` removes it. The end's run has
+`cause: 'end'`.
+
 A new schedule starts from the defaults of `jush schedule create`, every day
 at 09:00, and is on unless the patch says `paused: true`. `create` and
 `update` answer the schedule with `secret`, a URL trigger's secret when the

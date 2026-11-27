@@ -3,6 +3,7 @@
   "delete": "Delete",
   "notYet": "Not woken yet",
   "trigger": {
+    "until": "Until {when}",
     "once": "Once · {when}",
     "change": "When output changes · {interval}",
     "url": "When a URL is called",
