@@ -86,11 +86,16 @@ impl Caller for ProgramCaller {
     }
 
     fn gone(&self) -> BoxFuture<'static, Gone> {
-        let closed = self.core.closed.clone();
+        let closing = self.core.closing.clone();
         Box::pin(async move {
-            closed.cancelled().await;
+            closing.cancelled().await;
             Gone::Ended
         })
+    }
+
+    fn core_closed(&self) -> BoxFuture<'static, ()> {
+        let closed = self.core.closed.clone();
+        Box::pin(async move { closed.cancelled().await })
     }
 
     fn page(&self, _: &Core) -> Box<dyn CallerPage> {
@@ -154,6 +159,10 @@ impl Caller for PageCaller {
 
     fn gone(&self) -> BoxFuture<'static, Gone> {
         self.program.gone()
+    }
+
+    fn core_closed(&self) -> BoxFuture<'static, ()> {
+        self.program.core_closed()
     }
 
     fn page(&self, core: &Core) -> Box<dyn CallerPage> {

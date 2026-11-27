@@ -51,6 +51,13 @@ pub trait Caller: Send + Sync + 'static {
     /// never, for a caller that stays.
     fn gone(&self) -> BoxFuture<'static, Gone>;
 
+    /// Resolves once the close of the caller's core finished, which ends a
+    /// runner's channel the caller carries to it (`crate::process::devices`);
+    /// never, for a caller that carries no runner's channel.
+    fn core_closed(&self) -> BoxFuture<'static, ()> {
+        Box::pin(std::future::pending())
+    }
+
     /// The caller's page as its synchronization channel serves it, on the
     /// caller's core.
     fn page(&self, core: &Core) -> Box<dyn CallerPage>;

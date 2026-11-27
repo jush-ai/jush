@@ -46,7 +46,7 @@ use jush_web_api_protocol::ids::UserId;
 use jush_web_api_protocol::settings::InstanceMode;
 use futures_util::future::BoxFuture;
 use tokio::sync::Notify;
-use tokio_util::sync::CancellationToken;
+use tokio_util::sync::{CancellationToken, DropGuard};
 
 use super::addresses::Addresses;
 use super::program::ProgramStarter;
@@ -108,9 +108,13 @@ struct Held {
     store: CoreStore,
     /// Locked while the core is open; dropping it unlocks the directory.
     _lock: File,
-    /// Cancelled as the core closes, which ends the program's page
+    /// Cancelled as the core's close begins, which ends the program's page
     /// connections to it.
+    closing: CancellationToken,
+    /// Cancelled once the core's close finished, as the process lets go of
+    /// it, which ends the runners' channels to it (`super::devices`).
     closed: CancellationToken,
+    _closed_when_dropped: DropGuard,
     /// What the core asks of its programs.
     starter_lane: Arc<StarterLane>,
     /// The lanes of the programs' plugins.
@@ -120,6 +124,7 @@ struct Held {
 /// What a call of a serving core's routes is given of it.
 #[derive(Clone)]
 pub(crate) struct Serving {
+    pub(crate) closing: CancellationToken,
     pub(crate) closed: CancellationToken,
     pub(crate) starter_lane: Arc<StarterLane>,
     pub(crate) plugin_lanes: Arc<PluginLanes>,
@@ -148,6 +153,15 @@ impl OpenCores {
         }
     }
 
+    /// The store of the core `id`, from its take-up until its close
+    /// begins.
+    fn store_to_start(&self, id: &UserId) -> Option<CoreStore> {
+        match self.slots().get(id) {
+            Some(Slot::Held { core, phase }) if *phase != Phase::Closing => Some(core.store.clone()),
+            _ => None,
+        }
+    }
+
     /// The core `id` while it takes the program's calls.
     pub(crate) fn serving(&self, id: &UserId) -> Option<Serving> {
         match self.slots().get(id) {
@@ -155,6 +169,7 @@ impl OpenCores {
                 core,
                 phase: Phase::Serving,
             }) => Some(Serving {
+                closing: core.closing.clone(),
                 closed: core.closed.clone(),
                 starter_lane: core.starter_lane.clone(),
                 plugin_lanes: core.plugin_lanes.clone(),
@@ -295,6 +310,7 @@ impl OpenCores {
             MigrationBlobs::new(services.blobs.for_user(id), tokio::runtime::Handle::current()),
         )
         .await?;
+        let closed = CancellationToken::new();
         self.slots().insert(
             id.clone(),
             Slot::Held {
@@ -302,7 +318,9 @@ impl OpenCores {
                     directory: directory.to_owned(),
                     store: store.clone(),
                     _lock: lock,
-                    closed: CancellationToken::new(),
+                    closing: CancellationToken::new(),
+                    closed: closed.clone(),
+                    _closed_when_dropped: closed.drop_guard(),
                     starter_lane: Arc::default(),
                     plugin_lanes: Arc::default(),
                 },
@@ -332,7 +350,7 @@ impl OpenCores {
                 return Err(not_open());
             }
             *phase = Phase::Closing;
-            core.closed.cancel();
+            core.closing.cancel();
         }
         self.discard(id, services, shards).await;
         tracing::info!(event = "core.closed", core = %id, "a core closed");
@@ -517,8 +535,11 @@ pub(crate) struct ProcessOpener {
 }
 
 impl Opener for ProcessOpener {
+    /// The store of a core the program opened, which a call starts; none
+    /// once its close began, whose store closes: a runner's call on its
+    /// channel, which lasts the close, starts no core again.
     fn store<'a>(&'a self, user: &'a UserId) -> BoxFuture<'a, Result<Option<CoreStore>, StorageError>> {
-        Box::pin(async move { Ok(self.cores.store(user)) })
+        Box::pin(async move { Ok(self.cores.store_to_start(user)) })
     }
 
     fn starter(&self, user: &UserId, core: Weak<Core>) -> Rc<dyn Starter> {

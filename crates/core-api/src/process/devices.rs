@@ -10,7 +10,11 @@
 //!
 //! The channel names the device, so the runner presents no token; the
 //! runner's routes are the ones the server serves a runner whose token names
-//! its device. The channel ends with its core, as the program closes it.
+//! its device. The channel ends once its core's close finished: the close
+//! disconnects the runner first, and records its device as one the next
+//! open waits for, as a server's stop records the runners it disconnects.
+//! A channel ended as the close began would leave the runner gone before
+//! the close, and the next open would find its device offline at once.
 //!
 //! A channel on which no runner opens its socket within the hello deadline
 //! is closed, and the socket's hello then has the deadline a server's runner
@@ -75,7 +79,7 @@ pub(crate) async fn channel(
     let upgrade = hyper::upgrade::on(&mut request);
     let device = RunnerDevice { owner, id: record.id };
     let span = tracing::info_span!("runner_channel", device_id = %device.id);
-    let core_closed = caller.gone();
+    let core_closed = caller.core_closed();
     let deadline = state.services.runners.hello_deadline;
     let arrived = CancellationToken::new();
     tokio::spawn(
@@ -99,7 +103,7 @@ pub(crate) async fn channel(
                 served = serving => served,
                 // Dropping the connection ends the channel, and with it the
                 // runner, as the program's own end of it does.
-                _ = core_closed => {
+                () = core_closed => {
                     tracing::info!(event = "runner_channel.closed", "a runner's channel ended with its core");
                     return;
                 }
