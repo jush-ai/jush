@@ -3873,6 +3873,65 @@ fn test_fast_retransmission_wraps_tsn() -> Result<()> {
 }
 
 #[test]
+fn test_bundled_data_chunks_fit_in_mtu() -> Result<()> {
+    // Each bundled DATA chunk takes its 16-byte header, its user data and
+    // the padding to a 4-byte boundary in the packet.
+    let a = Association {
+        mtu: 1200,
+        ..Default::default()
+    };
+    let mtu = a.mtu as usize;
+
+    for len in 1..=40 {
+        let chunks: Vec<ChunkPayloadData> = (0..200)
+            .map(|tsn| ChunkPayloadData {
+                tsn,
+                user_data: Bytes::from(vec![0; len]),
+                ..Default::default()
+            })
+            .collect();
+
+        let packets = a.bundle_data_chunks_into_packets(chunks);
+        let bundled: usize = packets.iter().map(|p| p.chunks.len()).sum();
+        assert_eq!(bundled, 200);
+
+        let chunk_size = DATA_CHUNK_HEADER_SIZE as usize + len.next_multiple_of(4);
+        for (i, packet) in packets.iter().enumerate() {
+            let size = packet.marshal()?.len();
+            assert!(size <= mtu, "{len}-byte chunks: {size}-byte packet");
+            if i + 1 < packets.len() {
+                // Not split early: one more chunk would not have fit.
+                assert!(size + chunk_size > mtu, "{len}-byte chunks: not full");
+            }
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn test_full_size_data_chunks_are_bundled_alone() {
+    // With a max_payload_size that is not a multiple of 4, a full-size chunk
+    // and its padding come to a little more than the MTU. Each one still goes
+    // in a packet of its own, with no empty packet before it.
+    let max_payload_size = 1201;
+    let a = Association {
+        mtu: max_payload_size + COMMON_HEADER_SIZE + DATA_CHUNK_HEADER_SIZE,
+        ..Default::default()
+    };
+    let chunks = (0..3)
+        .map(|tsn| ChunkPayloadData {
+            tsn,
+            user_data: Bytes::from(vec![0; max_payload_size as usize]),
+            ..Default::default()
+        })
+        .collect();
+
+    let packets = a.bundle_data_chunks_into_packets(chunks);
+    assert_eq!(packets.len(), 3);
+    assert!(packets.iter().all(|p| p.chunks.len() == 1));
+}
+
+#[test]
 fn test_cumulative_sack_wraps_tsn() -> Result<()> {
     let now = Instant::now();
     for cumulative_tsn in [10, u32::MAX - 1, u32::MAX] {
@@ -5971,6 +6030,34 @@ fn test_fast_retry_counts_toward_timer_retransmission_limit() {
             assert!(a.outbound_queue.is_abandoned(tsn));
         }
     }
+}
+
+#[test]
+fn test_timer_retransmission_cut_short_by_window_resumes_on_next_pass() {
+    let now = Instant::now();
+    let mut a = fragmented_retransmission_fixture(10);
+    for _ in 0..3 {
+        a.send_next_data_chunk(now).unwrap();
+    }
+    let sent = |a: &Association| [1, 2, 3].map(|tsn| a.outbound_queue.get(tsn).unwrap().nsent);
+    // Before any T3-rtx timeout no chunk is marked: a pass selects nothing.
+    assert!(a.get_data_packets_to_retransmit(now).is_empty());
+
+    a.outbound_queue.mark_all_to_retransmit();
+    // The window takes the first chunk alone: the two others stay marked.
+    a.cwnd = 4;
+    assert_eq!(a.get_data_packets_to_retransmit(now).len(), 1);
+    assert_eq!(sent(&a), [2, 1, 1]);
+    a.cwnd = 100;
+    assert_eq!(a.get_data_packets_to_retransmit(now).len(), 1);
+    assert_eq!(sent(&a), [2, 2, 2]);
+    // Every marked chunk went out: a further pass has nothing left...
+    assert!(a.get_data_packets_to_retransmit(now).is_empty());
+    assert_eq!(sent(&a), [2, 2, 2]);
+    // ...until the next timeout marks them again.
+    a.outbound_queue.mark_all_to_retransmit();
+    assert_eq!(a.get_data_packets_to_retransmit(now).len(), 1);
+    assert_eq!(sent(&a), [3, 3, 3]);
 }
 
 #[test]

@@ -22,8 +22,7 @@ mod snap;
 pub use snap::SctpInitData;
 
 mod dcep;
-use dcep::DcepAck;
-use dcep::DcepOpen;
+pub(crate) use dcep::{DcepAck, DcepOpen};
 
 mod error;
 pub use error::SctpError;
@@ -405,7 +404,7 @@ impl RtcSctp {
             );
             let (handle, mut assoc) = self
                 .endpoint
-                .connect(config, self.fake_addr)
+                .connect(now, config, self.fake_addr)
                 .map_err(|e| SctpError::Proto(ProtoError::Other(e.to_string())))?;
             assoc.set_max_send_message_size(self.remote_max_message_size);
             self.handle = handle;
@@ -427,7 +426,7 @@ impl RtcSctp {
             debug!("New local association (out-of-band: false)");
             let (handle, mut assoc) = self
                 .endpoint
-                .connect(config, self.fake_addr)
+                .connect(now, config, self.fake_addr)
                 .map_err(|e| SctpError::Proto(ProtoError::Other(e.to_string())))?;
             assoc.set_max_send_message_size(self.remote_max_message_size);
             self.handle = handle;

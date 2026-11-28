@@ -785,10 +785,12 @@ pub mod rtp {
     }
     use self::rtcp::Rtcp;
 
+    pub mod dependency_descriptor;
     /// Video Layers Allocation RTP Header Extension
     pub mod vla;
-    pub use crate::rtp_::{AbsCaptureTime, ExtensionValues, UserExtensionValues};
+    pub use crate::rtp_::{AbsCaptureTime, Chromaticity, ExtensionValues, HdrMetadata};
     pub use crate::rtp_::{Extension, ExtensionMap, ExtensionSerializer};
+    pub use crate::rtp_::{UserExtensionValues, VideoColorSpace};
 
     pub use crate::packet::{
         RedBlock, RedDecoder, RedEncoder, RedundantBlock, Vp8Descriptor, Vp8DescriptorError,
@@ -1996,11 +1998,7 @@ impl Rtc {
         // Slow path: Occasionally, traffic comes in on a socket address corresponding
         // to a successful candidate pair other than the one we've currently nominated.
         // This typically happens at the beginning of the connection
-        if self.ice.has_viable_remote_candidate(r.source) {
-            return true;
-        }
-
-        false
+        self.ice.has_viable_remote_candidate(r.source)
     }
 
     /// Provide input to this `Rtc` instance. Input is either a [`Input::Timeout`] for some
@@ -2352,7 +2350,8 @@ mod test {
     #[test]
     fn event_is_reasonably_sized() {
         let n = std::mem::size_of::<Event>();
-        assert!(n < 530);
+        // The inline color-space extension includes optional HDR metadata.
+        assert!(n < 560);
     }
 }
 

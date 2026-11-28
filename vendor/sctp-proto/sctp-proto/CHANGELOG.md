@@ -1,5 +1,15 @@
 # Unreleased
 
+# 0.11.0
+
+  * Pass the current time to `Endpoint::connect` (breaking) #83
+  * Add `set_fill` to supply the random source #84
+  * Count DATA chunk headers and padding so bundled packets stay within the MTU #85
+
+# 0.10.9
+
+  * Reduce sender CPU usage by avoiding unnecessary flight queue scans and sorting #81
+
 # 0.10.8
 
   * Wait for data acknowledgements before resetting streams #80

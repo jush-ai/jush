@@ -25,7 +25,6 @@ use crate::{association::Association, chunk::Chunk};
 
 use bytes::Bytes;
 use log::{debug, trace, warn};
-use rand::{SeedableRng, rngs::StdRng};
 use rustc_hash::FxHashMap;
 use slab::Slab;
 use thiserror::Error;
@@ -36,7 +35,6 @@ use thiserror::Error;
 /// `poll_transmit`, and consumes incoming packets and association-generated events via `handle` and
 /// `handle_event`.
 pub struct Endpoint {
-    rng: StdRng,
     transmits: VecDeque<Transmit>,
     /// Identifies associations based on the INIT Dst AID the peer utilized
     ///
@@ -61,7 +59,6 @@ pub struct Endpoint {
 impl fmt::Debug for Endpoint {
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt.debug_struct("Endpoint<T>")
-            .field("rng", &self.rng)
             .field("transmits", &self.transmits)
             .field("association_ids_initial", &self.association_ids_init)
             .field("association_ids", &self.association_ids)
@@ -78,12 +75,7 @@ impl Endpoint {
     ///
     /// Returns `Err` if the configuration is invalid.
     pub fn new(config: Arc<EndpointConfig>, server_config: Option<Arc<ServerConfig>>) -> Self {
-        let rng = {
-            let mut base = rand::rng();
-            StdRng::from_rng(&mut base)
-        };
         Self {
-            rng,
             transmits: VecDeque::new(),
             association_ids_init: HashMap::default(),
             association_ids: FxHashMap::default(),
@@ -186,6 +178,11 @@ impl Endpoint {
 
     /// Initiate an association.
     ///
+    /// `now` is the current time, on the same clock as the instants later passed to
+    /// the returned [`Association`]. Without SNAP, the INIT's T1-init retransmission
+    /// timer starts from it; a SNAP association skips the handshake and does not use
+    /// it. sctp-proto does not read the system clock itself.
+    ///
     /// If SNAP tokens (INIT chunks) are provided via [`ClientConfig::with_snap`],
     /// the association will skip the SCTP 4-way handshake (RFC 4960 Section 5.1)
     /// and immediately transition to the ESTABLISHED state.
@@ -206,6 +203,7 @@ impl Endpoint {
     /// See [draft-hancke-tsvwg-snap-01](https://datatracker.ietf.org/doc/draft-hancke-tsvwg-snap/).
     pub fn connect(
         &mut self,
+        now: Instant,
         config: ClientConfig,
         remote: SocketAddr,
     ) -> Result<(AssociationHandle, Association), ConnectError> {
@@ -238,7 +236,7 @@ impl Endpoint {
                     local_aid,
                     remote,
                     None,
-                    Instant::now(),
+                    now,
                     None,
                     config.transport,
                 ))

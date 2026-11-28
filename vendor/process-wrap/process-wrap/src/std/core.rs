@@ -428,6 +428,7 @@ fn read2(
 	#[cfg(target_os = "linux")]
 	fn set_nonblocking(fd: BorrowedFd, nonblocking: bool) -> Result<()> {
 		use nix::errno::Errno;
+
 		let v = nonblocking as libc::c_int;
 		let res = unsafe { libc::ioctl(fd.as_raw_fd(), libc::FIONBIO, &v) };
 

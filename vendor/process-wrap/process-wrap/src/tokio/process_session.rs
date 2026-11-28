@@ -1,24 +1,36 @@
 use std::io::{Error, Result};
 
-use nix::unistd::{Pid, setsid};
+use nix::{
+	errno::Errno,
+	unistd::{Pid, getpid, getsid, setsid},
+};
 use tokio::process::Command;
 #[cfg(feature = "tracing")]
 use tracing::instrument;
 
 use super::{CommandWrap, CommandWrapper};
 
-/// Wrapper which creates a new session and group for the `Command`.
+/// Wrapper which creates a new session and group for the [`Command`].
 ///
 /// This wrapper is only available on Unix.
 ///
 /// It creates a new session and new process group and sets the [`Command`] as its leader.
-/// See [setsid(2)](https://pubs.opengroup.org/onlinepubs/9699919799/functions/setsid.html).
+/// See [setsid(2)](https://pubs.opengroup.org/onlinepubs/9799919799/functions/setsid.html).
 ///
 /// You may find that some programs behave differently or better when running in a session rather
 /// than a process group, or vice versa.
 ///
 /// This wrapper uses [the same child wrapper as `ProcessGroup`](super::ProcessGroupChild) and does
 /// the same setup (plus the session setup); using both together is unnecessary and may misbehave.
+///
+/// # Example
+///
+/// ```rust
+/// use process_wrap::tokio::{CommandWrap, ProcessSession};
+///
+/// let mut command = CommandWrap::with_new("ls", |command| { command.arg("-l"); });
+/// command.wrap(ProcessSession);
+/// ```
 #[derive(Clone, Copy, Debug)]
 pub struct ProcessSession;
 
@@ -26,7 +38,13 @@ impl CommandWrapper for ProcessSession {
 	#[cfg_attr(feature = "tracing", instrument(level = "debug", skip(self)))]
 	fn pre_spawn(&mut self, command: &mut Command, _core: &CommandWrap) -> Result<()> {
 		unsafe {
-			command.pre_exec(move || setsid().map_err(Error::from).map(|_| ()));
+			command.pre_exec(|| match setsid() {
+				Ok(_) => Ok(()),
+				// A command keeps its `pre_exec` hooks, so a command spawned again runs this once
+				// per spawn so far: after the first, the child already leads its session.
+				Err(Errno::EPERM) if getsid(None) == Ok(getpid()) => Ok(()),
+				Err(err) => Err(Error::from(err)),
+			});
 		}
 
 		Ok(())

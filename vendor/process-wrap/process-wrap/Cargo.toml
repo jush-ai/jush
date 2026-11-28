@@ -11,9 +11,9 @@
 
 [package]
 edition = "2024"
-rust-version = "1.87.0"
+rust-version = "1.88.0"
 name = "process-wrap"
-version = "10.0.1"
+version = "11.0.0"
 authors = ["Félix Saparelli <felix@passcod.name>"]
 build = false
 exclude = [
@@ -26,7 +26,6 @@ autoexamples = false
 autotests = false
 autobenches = false
 description = "Wrap a Command, to spawn processes in a group or session or job etc"
-homepage = "https://github.com/watchexec/process-wrap"
 documentation = "https://docs.rs/process-wrap"
 readme = "README.md"
 keywords = [
@@ -59,7 +58,6 @@ default = [
     "kill-on-drop",
     "process-group",
     "process-session",
-    "tracing",
 ]
 job-object = [
     "dep:windows",
@@ -72,11 +70,16 @@ job-object = [
 kill-on-drop = []
 process-group = []
 process-session = ["process-group"]
+propagate-thread-death = []
 reset-sigmask = []
-std = ["dep:nix"]
+std = [
+    "dep:nix",
+    "dep:indexmap",
+]
 tokio1 = [
     "dep:nix",
     "dep:futures",
+    "dep:indexmap",
     "dep:tokio",
 ]
 tracing = ["dep:tracing"]
@@ -91,6 +94,7 @@ optional = true
 
 [dependencies.indexmap]
 version = "2.9.0"
+optional = true
 
 [dependencies.tokio]
 version = "1.38.2"
@@ -125,10 +129,11 @@ features = [
 ]
 
 [target."cfg(unix)".dependencies.nix]
-version = "0.31.1"
+version = "0.32.0"
 features = [
     "fs",
     "poll",
+    "process",
     "signal",
 ]
 optional = true
@@ -141,7 +146,5 @@ optional = true
 [package.metadata.jush]
 maintainer = "jush-runner"
 patches = [
-    "A job object's wait ends when its last process has ended, not at the first message its completion port gets, such as a process starting or the leader ending; a wait that fails, as on a closed port, returns its error instead of looping on it",
-    "An import only Linux uses moves into the function that uses it, so other systems build without a warning",
     "The release's tests, repository files and logos are left out",
 ]
