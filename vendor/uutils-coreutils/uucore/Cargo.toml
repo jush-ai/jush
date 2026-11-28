@@ -235,7 +235,7 @@ name = "uucore"
 path = "src/lib/lib.rs"
 
 [dependencies.process-wrap]
-version = "10"
+version = "11"
 default-features = false
 features = ["std", "process-group", "job-object"]
 

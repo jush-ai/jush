@@ -1201,10 +1201,17 @@ impl process_wrap::std::ChildWrapper for UtilityProcess {
     fn into_inner(self: Box<Self>) -> Box<dyn process_wrap::std::ChildWrapper> {
         self.child
     }
+    // On Windows the child is its job object's, whose wait ends only when
+    // every process in the job has, so the program itself is asked, as
+    // `process::wait_leader` asks it: a program's background children
+    // outlive it on Windows as its process group's do on Unix.
     fn try_wait(&mut self) -> io::Result<Option<std::process::ExitStatus>> {
         #[cfg(unix)]
         self.count_ended(false);
+        #[cfg(unix)]
         let status = self.child.try_wait()?;
+        #[cfg(windows)]
+        let status = self.child.inner_mut().try_wait()?;
         #[cfg(windows)]
         if status.is_some() {
             self.count_ended();
@@ -1214,7 +1221,10 @@ impl process_wrap::std::ChildWrapper for UtilityProcess {
     fn wait(&mut self) -> io::Result<std::process::ExitStatus> {
         #[cfg(unix)]
         self.count_ended(true);
+        #[cfg(unix)]
         let status = self.child.wait()?;
+        #[cfg(windows)]
+        let status = self.child.inner_mut().wait()?;
         #[cfg(windows)]
         self.count_ended();
         Ok(status)

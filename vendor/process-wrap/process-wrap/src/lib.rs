@@ -4,11 +4,11 @@
 //!
 //! ```toml
 //! [dependencies]
-//! process-wrap = { version = "10.0.1", features = ["std"] }
+//! process-wrap = { version = "11.0.0", features = ["std"] }
 //! ```
 //!
-//! ```rust,no_run
-//! # fn main() -> std::io::Result<()> {
+#![cfg_attr(not(feature = "std"), doc = "```ignore")]
+#![cfg_attr(feature = "std", doc = "```rust,no_run")]
 //! use process_wrap::std::*;
 //!
 //! let mut command = CommandWrap::with_new("watch", |command| { command.arg("ls"); });
@@ -17,7 +17,7 @@
 //! let mut child = command.spawn()?;
 //! let status = child.wait()?;
 //! dbg!(status);
-//! # Ok(()) }
+//! # Ok::<(), std::io::Error>(())
 //! ```
 //!
 //! ## Migrating from command-group
@@ -36,10 +36,11 @@
 //!
 //! # Usage
 //!
-//! The core API is [`CommandWrap`](std::CommandWrap) and [`CommandWrap`](tokio::CommandWrap),
+//! The core API is [`CommandWrap`][std-CommandWrap] and [`CommandWrap`][tokio-CommandWrap],
 //! which can be constructed either directly from an existing `process::Command`:
 //!
-//! ```rust
+#![cfg_attr(not(feature = "std"), doc = "```ignore")]
+#![cfg_attr(feature = "std", doc = "```rust")]
 //! use process_wrap::std::*;
 //! use std::process::Command;
 //! let mut command = Command::new("ls");
@@ -51,7 +52,8 @@
 //!
 //! ...or with a somewhat more ergonomic closure pattern:
 //!
-//! ```rust
+#![cfg_attr(not(feature = "std"), doc = "```ignore")]
+#![cfg_attr(feature = "std", doc = "```rust")]
 //! use process_wrap::std::*;
 //! let mut command = CommandWrap::with_new("ls", |command| { command.arg("-l"); });
 //! #[cfg(unix)] { command.wrap(ProcessGroup::leader()); }
@@ -60,7 +62,11 @@
 //!
 //! If targetting a single platform, then a fluent style is possible:
 //!
-//! ```rust
+#![cfg_attr(
+	not(all(feature = "std", feature = "process-group")),
+	doc = "```ignore"
+)]
+#![cfg_attr(all(feature = "std", feature = "process-group"), doc = "```rust")]
 //! use process_wrap::std::*;
 //! CommandWrap::with_new("ls", |command| { command.arg("-l"); })
 //!    .wrap(ProcessGroup::leader());
@@ -85,9 +91,13 @@
 //!
 //! In practice:
 //!
-//! ## Instead of `.kill_on_drop(true)` (Tokio-only):
+//! ## Instead of the tokio-only `.kill_on_drop(true)`:
 //!
-//! ```rust
+#![cfg_attr(
+	not(all(feature = "tokio1", feature = "kill-on-drop")),
+	doc = "```ignore"
+)]
+#![cfg_attr(all(feature = "tokio1", feature = "kill-on-drop"), doc = "```rust")]
 //! use process_wrap::tokio::*;
 //! let mut command = CommandWrap::with_new("ls", |command| { command.arg("-l"); });
 //! command.wrap(KillOnDrop);
@@ -95,8 +105,16 @@
 //!
 //! ## Instead of `.creation_flags(CREATE_NO_WINDOW)` (Windows-only):
 //!
-//! ```rust,ignore
+#![cfg_attr(
+	not(all(target_os = "windows", feature = "creation-flags", feature = "std")),
+	doc = "```ignore"
+)]
+#![cfg_attr(
+	all(target_os = "windows", feature = "creation-flags", feature = "std"),
+	doc = "```rust,no_run"
+)]
 //! use process_wrap::std::*;
+//! use windows::Win32::System::Threading::*;
 //! let mut command = CommandWrap::with_new("ls", |command| { command.arg("-l"); });
 //! command.wrap(CreationFlags(CREATE_NO_WINDOW));
 //! ```
@@ -113,12 +131,13 @@
 //! underlying APIs. Of course you can (and should) re-use/share code wherever possible if
 //! implementing both.
 //!
-//! At minimum, you must implement [`CommandWrapper`](crate::std::CommandWrapper) and/or
-//! [`CommandWrapper`](crate::tokio::CommandWrapper). These provide the same functionality
+//! At minimum, you must implement [`CommandWrapper`][std-CommandWrapper] and/or
+//! [`CommandWrapper`][tokio-CommandWrapper]. These provide the same functionality
 //! (and indeed internally are generated using a common macro), but differ in the exact types used.
 //! Here's the most basic impl (shown for Tokio):
 //!
-//! ```rust
+#![cfg_attr(not(feature = "tokio1"), doc = "```ignore")]
+#![cfg_attr(feature = "tokio1", doc = "```rust")]
 //! use process_wrap::tokio::*;
 //! #[derive(Debug)]
 //! pub struct YourWrapper;
@@ -157,7 +176,8 @@
 //! `std::io::copy` in a background thread to non-blockingly stream that data to disk as it comes
 //! in.
 //!
-//! ```rust
+#![cfg_attr(not(feature = "std"), doc = "```ignore")]
+#![cfg_attr(feature = "std", doc = "```rust")]
 //! # use process_wrap::std::{CommandWrap, CommandWrapper};
 //! # use std::{fs::File, io, path::PathBuf, process::Command, thread};
 //! #[derive(Debug)]
@@ -192,7 +212,8 @@
 //! To fix this, we'll need to keep track of the background thread's `ThreadHandle` and `.join()` it
 //! when calling `.wait()` on the `ChildWrapper`.
 //!
-//! ```rust
+#![cfg_attr(not(feature = "std"), doc = "```ignore")]
+#![cfg_attr(feature = "std", doc = "```rust")]
 //! # use process_wrap::std::{ChildWrapper, CommandWrap, CommandWrapper};
 //! # use std::{
 //! #     fs::File,
@@ -290,7 +311,8 @@
 //! dropping `tx` from `Command` should be totally safe. We'll get `Command` to "drop" `tx` by
 //! setting its `stdin` and `stdout` to `Stdio::null()` in `CommandWrapper::post_spawn()`.
 //!
-//! ```rust
+#![cfg_attr(not(feature = "std"), doc = "```ignore")]
+#![cfg_attr(feature = "std", doc = "```rust")]
 //! # use process_wrap::std::{CommandWrap, CommandWrapper};
 //! # use std::{
 //! #     io,
@@ -322,7 +344,8 @@
 //!
 //! Finally, we can test that our new command-wrapper works:
 //!
-//! ```rust
+#![cfg_attr(not(feature = "std"), doc = "```ignore")]
+#![cfg_attr(feature = "std", doc = "```rust")]
 //! # use process_wrap::std::{ChildWrapper, CommandWrap, CommandWrapper};
 //! # use std::{
 //! #     error::Error,
@@ -462,11 +485,59 @@
 //!
 //! - `creation-flags`: **default**, enables the creation flags wrapper (Windows-only).
 //! - `job-object`: **default**, enables the job object wrapper (Windows-only).
-//! - `kill-on-drop`: **default**, enables the kill on drop wrapper (Tokio-only).
+//! - `kill-on-drop`: **default**, enables the kill on drop wrapper.
 //! - `process-group`: **default**, enables the process group wrapper (Unix-only).
 //! - `process-session`: **default**, enables the process session wrapper (Unix-only).
 //! - `reset-sigmask`: enables the sigmask reset wrapper (Unix-only).
+//! - `propagate-thread-death`: enables the propagate thread death wrapper (Linux-only).
 //!
+//!
+// Links to items of a frontend which may not be enabled: to docs.rs when it isn't.
+#![cfg_attr(feature = "std", doc = "[std-CommandWrap]: crate::std::CommandWrap")]
+#![cfg_attr(
+	not(feature = "std"),
+	doc = concat!(
+		"[std-CommandWrap]: https://docs.rs/process-wrap/",
+		env!("CARGO_PKG_VERSION"),
+		"/process_wrap/std/struct.CommandWrap.html"
+	)
+)]
+#![cfg_attr(
+	feature = "std",
+	doc = "[std-CommandWrapper]: crate::std::CommandWrapper"
+)]
+#![cfg_attr(
+	not(feature = "std"),
+	doc = concat!(
+		"[std-CommandWrapper]: https://docs.rs/process-wrap/",
+		env!("CARGO_PKG_VERSION"),
+		"/process_wrap/std/trait.CommandWrapper.html"
+	)
+)]
+#![cfg_attr(
+	feature = "tokio1",
+	doc = "[tokio-CommandWrap]: crate::tokio::CommandWrap"
+)]
+#![cfg_attr(
+	not(feature = "tokio1"),
+	doc = concat!(
+		"[tokio-CommandWrap]: https://docs.rs/process-wrap/",
+		env!("CARGO_PKG_VERSION"),
+		"/process_wrap/tokio/struct.CommandWrap.html"
+	)
+)]
+#![cfg_attr(
+	feature = "tokio1",
+	doc = "[tokio-CommandWrapper]: crate::tokio::CommandWrapper"
+)]
+#![cfg_attr(
+	not(feature = "tokio1"),
+	doc = concat!(
+		"[tokio-CommandWrapper]: https://docs.rs/process-wrap/",
+		env!("CARGO_PKG_VERSION"),
+		"/process_wrap/tokio/trait.CommandWrapper.html"
+	)
+)]
 #![doc(html_favicon_url = "https://watchexec.github.io/logo:command-group.svg")]
 #![doc(html_logo_url = "https://watchexec.github.io/logo:command-group.svg")]
 #![cfg_attr(docsrs, feature(doc_cfg))]
@@ -479,6 +550,13 @@ pub mod std;
 
 #[cfg(feature = "tokio1")]
 pub mod tokio;
+
+#[cfg(all(
+	target_os = "linux",
+	feature = "propagate-thread-death",
+	any(feature = "std", feature = "tokio1")
+))]
+mod linux;
 
 #[cfg(all(
 	windows,
