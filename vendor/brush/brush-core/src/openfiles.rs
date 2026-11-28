@@ -2,11 +2,10 @@
 
 use std::collections::HashMap;
 use std::io::IsTerminal;
-use std::process::Stdio;
+use std::sync::Arc;
 
 use crate::ShellFd;
 use crate::error;
-use crate::ioutils;
 use crate::sys;
 
 /// A trait representing a stream that can be read from and written to.
@@ -20,16 +19,26 @@ pub trait Stream: std::io::Read + std::io::Write + Send + Sync {
 
     /// Converts the stream into an `OwnedFd`. Returns an error if the operation
     /// is not supported or if it fails.
-    #[cfg(unix)]
+    #[cfg(unix)] // ast-grep-ignore: platform-cfg-outside-sys
     fn try_clone_to_owned(&self) -> Result<std::os::fd::OwnedFd, error::Error>;
 
     /// Borrows the stream as a `BorrowedFd`. Returns an error if the operation
     /// is not supported or if it fails.
-    #[cfg(unix)]
+    #[cfg(unix)] // ast-grep-ignore: platform-cfg-outside-sys
     fn try_borrow_as_fd(&self) -> Result<std::os::fd::BorrowedFd<'_>, error::Error>;
 }
 
 /// Represents a file open in a shell context.
+///
+/// File- and pipe-backed variants hold their handle behind an [`Arc`], so cloning an `OpenFile`
+/// shares the underlying descriptor by reference count. The shell opens a fresh context for each
+/// subshell, command substitution, background job, and function call and runs them as in-process
+/// tasks against one process-wide descriptor table (rather than via `fork(2)` like a traditional
+/// shell); sharing the descriptor keeps deeply nested or highly concurrent execution from
+/// exhausting that table. A descriptor is duplicated for real only when an independently owned
+/// copy is needed to hand to an external child process (see `OpenFile::try_clone_to_owned`, which
+/// the native launcher uses for a process's standard streams and other descriptors alike).
+#[non_exhaustive]
 pub enum OpenFile {
     /// The original standard input this process was started with.
     Stdin(std::io::Stdin),
@@ -38,18 +47,19 @@ pub enum OpenFile {
     /// The original standard error this process was started with.
     Stderr(std::io::Stderr),
     /// A file open for reading or writing.
-    File(std::fs::File),
+    File(Arc<std::fs::File>),
     /// A native file with embedding-owned cancellation and IO behavior.
     Controlled {
-        /// Underlying OS file; child programs inherit this handle.
-        file: std::fs::File,
+        /// Underlying OS file, shared as a `File`'s is; a child program gets a duplicate
+        /// that the control makes.
+        file: Arc<std::fs::File>,
         /// Per-execution IO control.
-        control: std::sync::Arc<dyn crate::execution_host::FileControl>,
+        control: Arc<dyn crate::execution_host::FileControl>,
     },
     /// A read end of a pipe.
-    PipeReader(std::io::PipeReader),
+    PipeReader(Arc<std::io::PipeReader>),
     /// A write end of a pipe.
-    PipeWriter(std::io::PipeWriter),
+    PipeWriter(Arc<std::io::PipeWriter>),
     /// A custom stream.
     Stream(Box<dyn Stream>),
 }
@@ -97,18 +107,26 @@ impl<'de> serde::Deserialize<'de> for OpenFile {
 /// Returns an open file that will discard all I/O.
 pub fn null() -> Result<OpenFile, error::Error> {
     let file = sys::fs::open_null_file()?;
-    Ok(OpenFile::File(file))
+    Ok(file.into())
 }
 
 impl Clone for OpenFile {
     fn clone(&self) -> Self {
-        // If we fail to clone the open file for any reason, we return a special file
-        // that discards all I/O. This allows us to avoid fatally erroring out. A
-        // controlled file's owner waits out a lack of descriptors first, so this
-        // happens only when the owner gives up, such as for a cancelled execution.
-        self.try_clone().unwrap_or_else(|_err| {
-            ioutils::FailingReaderWriter::new("failed to duplicate open file").into()
-        })
+        match self {
+            Self::Stdin(_) => std::io::stdin().into(),
+            Self::Stdout(_) => std::io::stdout().into(),
+            Self::Stderr(_) => std::io::stderr().into(),
+            // File and pipe handles are shared by reference count; cloning never issues a
+            // syscall and so cannot fail.
+            Self::File(f) => Self::File(Arc::clone(f)),
+            Self::Controlled { file, control } => Self::Controlled {
+                file: Arc::clone(file),
+                control: Arc::clone(control),
+            },
+            Self::PipeReader(r) => Self::PipeReader(Arc::clone(r)),
+            Self::PipeWriter(w) => Self::PipeWriter(Arc::clone(w)),
+            Self::Stream(s) => Self::Stream(s.clone_box()),
+        }
     }
 }
 
@@ -127,50 +145,67 @@ impl std::fmt::Display for OpenFile {
 }
 
 impl OpenFile {
-    /// Convert a Unix descriptor into its owned file; only the process's own standard
-    /// streams are duplicated.
-    #[cfg(unix)]
+    /// Converts the open file into an owned file: the file or the pipe's end itself when no
+    /// other copy shares it, or else a duplicate, which a controlled file's control makes.
     pub fn into_file(self) -> std::io::Result<std::fs::File> {
-        Ok(self.try_clone_to_owned().map_err(std::io::Error::other)?.into())
-    }
-
-    /// Convert a Windows descriptor into its owned file handle.
-    #[cfg(windows)]
-    pub fn into_file(self) -> std::io::Result<std::fs::File> {
-        use std::os::windows::io::{AsHandle, OwnedHandle};
-        let handle = match self {
-            Self::File(file) | Self::Controlled { file, .. } => return Ok(file),
-            Self::PipeReader(reader) => OwnedHandle::from(reader),
-            Self::PipeWriter(writer) => OwnedHandle::from(writer),
-            Self::Stdin(file) => file.as_handle().try_clone_to_owned()?,
-            Self::Stdout(file) => file.as_handle().try_clone_to_owned()?,
-            Self::Stderr(file) => file.as_handle().try_clone_to_owned()?,
-            Self::Stream(_) => return Err(std::io::Error::other("stream has no OS handle")),
-        };
-        Ok(handle.into())
-    }
-
-    /// Tries to duplicate the open file.
-    pub fn try_clone(&self) -> Result<Self, std::io::Error> {
-        let result = match self {
-            Self::Stdin(_) => std::io::stdin().into(),
-            Self::Stdout(_) => std::io::stdout().into(),
-            Self::Stderr(_) => std::io::stderr().into(),
-            Self::File(f) => f.try_clone()?.into(),
-            Self::Controlled { file, control } => Self::Controlled {
-                file: control.duplicate(file)?,
-                control: control.clone(),
+        match self {
+            Self::File(file) => Arc::try_unwrap(file).or_else(|file| file.try_clone()),
+            Self::Controlled { file, control } => {
+                Arc::try_unwrap(file).or_else(|file| control.duplicate(&file))
+            }
+            #[cfg(unix)]
+            Self::PipeReader(reader) => match Arc::try_unwrap(reader) {
+                Ok(reader) => Ok(std::os::fd::OwnedFd::from(reader).into()),
+                Err(reader) => Ok(Self::PipeReader(reader)
+                    .try_clone_to_owned()
+                    .map_err(std::io::Error::other)?
+                    .into()),
             },
-            Self::PipeReader(f) => f.try_clone()?.into(),
-            Self::PipeWriter(f) => f.try_clone()?.into(),
-            Self::Stream(s) => Self::Stream(s.clone_box()),
-        };
-
-        Ok(result)
+            #[cfg(unix)]
+            Self::PipeWriter(writer) => match Arc::try_unwrap(writer) {
+                Ok(writer) => Ok(std::os::fd::OwnedFd::from(writer).into()),
+                Err(writer) => Ok(Self::PipeWriter(writer)
+                    .try_clone_to_owned()
+                    .map_err(std::io::Error::other)?
+                    .into()),
+            },
+            #[cfg(windows)]
+            Self::PipeReader(reader) => match Arc::try_unwrap(reader) {
+                Ok(reader) => Ok(std::os::windows::io::OwnedHandle::from(reader).into()),
+                Err(reader) => {
+                    use std::os::windows::io::AsHandle as _;
+                    Ok(reader.as_handle().try_clone_to_owned()?.into())
+                }
+            },
+            #[cfg(windows)]
+            Self::PipeWriter(writer) => match Arc::try_unwrap(writer) {
+                Ok(writer) => Ok(std::os::windows::io::OwnedHandle::from(writer).into()),
+                Err(writer) => {
+                    use std::os::windows::io::AsHandle as _;
+                    Ok(writer.as_handle().try_clone_to_owned()?.into())
+                }
+            },
+            #[cfg(unix)]
+            other => Ok(other.try_clone_to_owned().map_err(std::io::Error::other)?.into()),
+            #[cfg(windows)]
+            other => {
+                use std::os::windows::io::AsHandle as _;
+                let handle = match &other {
+                    Self::Stdin(file) => file.as_handle().try_clone_to_owned()?,
+                    Self::Stdout(file) => file.as_handle().try_clone_to_owned()?,
+                    Self::Stderr(file) => file.as_handle().try_clone_to_owned()?,
+                    _ => return Err(std::io::Error::other("stream has no OS handle")),
+                };
+                Ok(handle.into())
+            }
+            #[cfg(not(any(unix, windows)))]
+            _ => Err(std::io::Error::other("no OS handle")),
+        }
     }
 
-    /// Converts the open file into an `OwnedFd`.
-    #[cfg(unix)]
+    /// Converts the open file into an `OwnedFd`. For shared file/pipe handles this materializes
+    /// a real duplicate via `dup(2)` so the caller receives an independently owned descriptor.
+    #[cfg(unix)] // ast-grep-ignore: platform-cfg-outside-sys
     pub(crate) fn try_clone_to_owned(self) -> Result<std::os::fd::OwnedFd, error::Error> {
         use std::os::fd::AsFd as _;
 
@@ -178,9 +213,11 @@ impl OpenFile {
             Self::Stdin(f) => Ok(f.as_fd().try_clone_to_owned()?),
             Self::Stdout(f) => Ok(f.as_fd().try_clone_to_owned()?),
             Self::Stderr(f) => Ok(f.as_fd().try_clone_to_owned()?),
-            Self::File(f) | Self::Controlled { file: f, .. } => Ok(f.into()),
-            Self::PipeReader(r) => Ok(std::os::fd::OwnedFd::from(r)),
-            Self::PipeWriter(w) => Ok(std::os::fd::OwnedFd::from(w)),
+            Self::File(f) => Ok(f.as_fd().try_clone_to_owned()?),
+            // The control makes the duplicate, waiting out a lack of descriptors.
+            Self::Controlled { file, control } => Ok(control.duplicate(&file)?.into()),
+            Self::PipeReader(r) => Ok(r.as_fd().try_clone_to_owned()?),
+            Self::PipeWriter(w) => Ok(w.as_fd().try_clone_to_owned()?),
             Self::Stream(s) => s.try_clone_to_owned(),
         }
     }
@@ -190,7 +227,7 @@ impl OpenFile {
     /// # Errors
     ///
     /// Returns an error if the operation is not supported for the underlying file type.
-    #[cfg(unix)]
+    #[cfg(unix)] // ast-grep-ignore: platform-cfg-outside-sys
     pub fn try_borrow_as_fd(&self) -> Result<std::os::fd::BorrowedFd<'_>, error::Error> {
         use std::os::fd::AsFd as _;
 
@@ -250,35 +287,19 @@ impl From<std::io::Stderr> for OpenFile {
 
 impl From<std::fs::File> for OpenFile {
     fn from(file: std::fs::File) -> Self {
-        Self::File(file)
+        Self::File(Arc::new(file))
     }
 }
 
 impl From<std::io::PipeReader> for OpenFile {
     fn from(reader: std::io::PipeReader) -> Self {
-        Self::PipeReader(reader)
+        Self::PipeReader(Arc::new(reader))
     }
 }
 
 impl From<std::io::PipeWriter> for OpenFile {
     fn from(writer: std::io::PipeWriter) -> Self {
-        Self::PipeWriter(writer)
-    }
-}
-
-impl From<OpenFile> for Stdio {
-    fn from(open_file: OpenFile) -> Self {
-        match open_file {
-            OpenFile::Stdin(_) => Self::inherit(),
-            OpenFile::Stdout(_) => Self::inherit(),
-            OpenFile::Stderr(_) => Self::inherit(),
-            OpenFile::File(f) | OpenFile::Controlled { file: f, .. } => f.into(),
-            OpenFile::PipeReader(f) => f.into(),
-            OpenFile::PipeWriter(f) => f.into(),
-            // NOTE: Custom streams cannot be converted to `Stdio`; we do our best here
-            // and return a null device instead.
-            OpenFile::Stream(_) => Self::null(),
-        }
+        Self::PipeWriter(Arc::new(writer))
     }
 }
 
@@ -292,9 +313,11 @@ impl std::io::Read for OpenFile {
             Self::Stderr(_) => Err(std::io::Error::other(
                 error::ErrorKind::OpenFileNotReadable("stderr"),
             )),
-            Self::File(f) => f.read(buf),
+            // The handle is shared behind an `Arc`; read through a shared reference (`&File`
+            // and `&PipeReader` both implement `Read`).
+            Self::File(f) => f.as_ref().read(buf),
             Self::Controlled { file, control } => control.read(file, buf),
-            Self::PipeReader(reader) => reader.read(buf),
+            Self::PipeReader(reader) => reader.as_ref().read(buf),
             Self::PipeWriter(_) => Err(std::io::Error::other(
                 error::ErrorKind::OpenFileNotReadable("pipe writer"),
             )),
@@ -311,12 +334,14 @@ impl std::io::Write for OpenFile {
             )),
             Self::Stdout(f) => f.write(buf),
             Self::Stderr(f) => f.write(buf),
-            Self::File(f) => f.write(buf),
+            // The handle is shared behind an `Arc`; write through a shared reference (`&File`
+            // and `&PipeWriter` both implement `Write`).
+            Self::File(f) => f.as_ref().write(buf),
             Self::Controlled { file, control } => control.write(file, buf),
             Self::PipeReader(_) => Err(std::io::Error::other(
                 error::ErrorKind::OpenFileNotWritable("pipe reader"),
             )),
-            Self::PipeWriter(writer) => writer.write(buf),
+            Self::PipeWriter(writer) => writer.as_ref().write(buf),
             Self::Stream(s) => s.write(buf),
         }
     }
@@ -326,9 +351,9 @@ impl std::io::Write for OpenFile {
             Self::Stdin(_) => Ok(()),
             Self::Stdout(f) => f.flush(),
             Self::Stderr(f) => f.flush(),
-            Self::File(f) | Self::Controlled { file: f, .. } => f.flush(),
+            Self::File(f) | Self::Controlled { file: f, .. } => f.as_ref().flush(),
             Self::PipeReader(_) => Ok(()),
-            Self::PipeWriter(writer) => writer.flush(),
+            Self::PipeWriter(writer) => writer.as_ref().flush(),
             Self::Stream(s) => s.flush(),
         }
     }

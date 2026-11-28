@@ -34,10 +34,11 @@ impl<SE: extensions::ShellExtensions> crate::Shell<SE> {
         params: &crate::interp::ExecutionParameters,
         command: S,
     ) {
-        // Expand the PS4 prompt variable to get our prefix.
+        // Expand the PS4 prompt variable to get our prefix; any error it reports goes to the
+        // command's stderr, as in bash.
         let mut prefix = self
             .as_mut()
-            .expand_prompt_var("PS4", "")
+            .expand_prompt_var("PS4", "", params)
             .await
             .unwrap_or_default();
 
@@ -64,9 +65,7 @@ impl<SE: extensions::ShellExtensions> crate::Shell<SE> {
         };
 
         // If we have a valid trace file, write to it.
-        if let Some(trace_file) = trace_file
-            && let Ok(mut trace_file) = trace_file.try_clone()
-        {
+        if let Some(mut trace_file) = trace_file {
             let line = std::format!("{prefix}{}\n", command.as_ref());
             let _ = trace_file.write_all(&crate::bytes::encode(&line));
         }
@@ -85,8 +84,32 @@ impl<SE: extensions::ShellExtensions> crate::Shell<SE> {
     ) -> Result<(), error::Error> {
         use crate::extensions::ErrorFormatter as _;
         let str = self.error_formatter.format_error(err, self);
-        write!(file, "{str}")?;
+        // The bytes the message's text stands for, whatever writer it goes to.
+        file.write_all(&crate::bytes::encode(&str))?;
 
         Ok(())
+    }
+
+    /// Ends a subshell (a `( … )` command, or a pipeline stage that runs in a
+    /// shell of its own) with its body's result, returning what leaves it:
+    /// its exit status, and nothing else. An error is reported on the
+    /// standard error `stderr` returns, if it's open, and its exit code is the
+    /// status. Whatever else the result would do to a shell (exit it, return
+    /// from a function, break a loop) ends the subshell alone.
+    pub(crate) fn end_subshell<W: std::io::Write>(
+        &self,
+        result: Result<crate::ExecutionResult, error::Error>,
+        stderr: impl FnOnce() -> Option<W>,
+    ) -> crate::ExecutionResult {
+        let exit_code = match result {
+            Ok(result) => result.exit_code,
+            Err(error) => {
+                if let Some(mut stderr) = stderr() {
+                    let _ = self.display_error(&mut stderr, &error);
+                }
+                crate::ExecutionExitCode::from(&error)
+            }
+        };
+        crate::ExecutionResult::from(exit_code)
     }
 }

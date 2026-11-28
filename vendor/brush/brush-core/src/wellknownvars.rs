@@ -67,8 +67,11 @@ pub(crate) fn init_well_known_vars(
         shell
             .env_mut()
             .set_global("BASH", ShellVariable::new(shell_name.clone()))?;
-        // Initialize $_ to the shell name ($0).
-        shell.update_last_arg_variable(Some(shell_name));
+        // Initialize $_ to the shell name ($0), unless the shell inherited one: as
+        // in bash, that one stays exported until $_ is next updated.
+        if shell.env_str("_").is_none() {
+            shell.update_last_arg_variable(Some(shell_name));
+        }
     }
 
     // BASHOPTS
@@ -80,7 +83,7 @@ pub(crate) fn init_well_known_vars(
     shell.env_mut().set_global("BASHOPTS", bashopts_var)?;
 
     // BASHPID
-    #[cfg(not(target_family = "wasm"))]
+    #[cfg(not(target_family = "wasm"))] // ast-grep-ignore: platform-cfg-outside-sys
     {
         let mut bashpid_var = ShellVariable::new(ShellValue::String(
             shell
@@ -250,7 +253,15 @@ pub(crate) fn init_well_known_vars(
                 let since_epoch = now
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap_or_default();
-                since_epoch.as_secs_f64().to_string().into()
+                // Match bash: seconds with exactly six fractional (microsecond) digits,
+                // zero-padded. Tools strip the dot and do integer math on the result
+                // (atuin computes command durations this way), so the width must be fixed.
+                std::format!(
+                    "{}.{:06}",
+                    since_epoch.as_secs(),
+                    since_epoch.subsec_micros()
+                )
+                .into()
             },
             setter: |_| (),
         }),
@@ -639,9 +650,10 @@ fn get_bash_source_value(shell: &dyn ShellState) -> variables::ShellValue {
     let stack = shell.call_stack();
 
     if stack.iter_function_calls().next().is_none() {
-        let top_frame = stack.iter_script_calls().next();
-        top_frame
-            .map_or_else(Vec::new, |frame| vec![frame.source_info.source.clone()])
+        stack
+            .iter_script_calls()
+            .map(|frame| frame.source_info.source.clone())
+            .collect::<Vec<_>>()
             .into()
     } else {
         // When in a function, include both functions and sourced scripts in the stack
@@ -671,49 +683,74 @@ fn get_bash_source_value(shell: &dyn ShellState) -> variables::ShellValue {
     }
 }
 
+/// Returns the positional arguments that the given call-stack frame contributes
+/// to `BASH_ARGC`/`BASH_ARGV`, or `None` if the frame contributes nothing.
+///
+/// Even without extended debugging mode, bash tracks script-level frames (the
+/// top-level invocation plus `source`/`.` calls); only *function* frames are
+/// gated behind extended debugging mode. A sourced script invoked without
+/// explicit positional arguments contributes its own name (the path passed to
+/// `.`/`source`) as a single argument, matching bash.
+fn frame_bash_args(
+    frame: &crate::callstack::Frame,
+    extdebug: bool,
+) -> Option<std::borrow::Cow<'_, [String]>> {
+    use std::borrow::Cow;
+    match &frame.frame_type {
+        crate::callstack::FrameType::Script(call) => {
+            if matches!(call.call_type, crate::callstack::ScriptCallType::Source)
+                && frame.args.is_empty()
+            {
+                Some(Cow::Owned(vec![call.name().into_owned()]))
+            } else {
+                Some(Cow::Borrowed(frame.args.as_slice()))
+            }
+        }
+        crate::callstack::FrameType::CommandString
+        | crate::callstack::FrameType::InteractiveSession => {
+            Some(Cow::Borrowed(frame.args.as_slice()))
+        }
+        crate::callstack::FrameType::Function(..) => {
+            extdebug.then_some(Cow::Borrowed(frame.args.as_slice()))
+        }
+        crate::callstack::FrameType::TrapHandler(_) | crate::callstack::FrameType::Eval => None,
+    }
+}
+
+/// Returns `true` if `BASH_ARGC`/`BASH_ARGV` should report an empty stack.
+///
+/// Without extended debugging mode, bash leaves these arrays empty whenever a
+/// function is active on the call stack.
+fn bash_args_suppressed(shell: &dyn ShellState) -> bool {
+    !shell.options().enable_debugger && shell.call_stack().in_function()
+}
+
 fn get_bash_argc_value(shell: &dyn ShellState) -> variables::ShellValue {
-    if !shell.options().enable_debugger {
+    if bash_args_suppressed(shell) {
         return ShellValue::indexed_array_from_strs(&[]);
     }
 
-    let stack = shell.call_stack();
-    stack
+    let extdebug = shell.options().enable_debugger;
+    shell
+        .call_stack()
         .iter()
-        .filter_map(|frame| match &frame.frame_type {
-            crate::callstack::FrameType::Function(..)
-            | crate::callstack::FrameType::Script(..)
-            | crate::callstack::FrameType::CommandString
-            | crate::callstack::FrameType::InteractiveSession => Some(frame.args.len().to_string()),
-            crate::callstack::FrameType::TrapHandler(_) | crate::callstack::FrameType::Eval => None,
-        })
+        .filter_map(|frame| frame_bash_args(frame, extdebug).map(|args| args.len().to_string()))
         .collect::<Vec<_>>()
         .into()
 }
 
 fn get_bash_argv_value(shell: &dyn ShellState) -> variables::ShellValue {
-    if !shell.options().enable_debugger {
+    if bash_args_suppressed(shell) {
         return ShellValue::indexed_array_from_strs(&[]);
     }
 
-    let stack = shell.call_stack();
+    let extdebug = shell.options().enable_debugger;
     let mut argv = Vec::new();
 
-    for frame in stack.iter() {
-        let include = match &frame.frame_type {
-            crate::callstack::FrameType::Function(..)
-            | crate::callstack::FrameType::Script(..)
-            | crate::callstack::FrameType::CommandString
-            | crate::callstack::FrameType::InteractiveSession => true,
-            crate::callstack::FrameType::TrapHandler(_) | crate::callstack::FrameType::Eval => {
-                false
-            }
-        };
-
-        if include {
+    for frame in shell.call_stack().iter() {
+        if let Some(args) = frame_bash_args(frame, extdebug) {
             // Push args in reverse order per frame (last arg at lowest index = top of stack)
-            for arg in frame.args.iter().rev() {
-                argv.push(arg.clone());
-            }
+            argv.extend(args.iter().cloned().rev());
         }
     }
 

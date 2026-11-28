@@ -12,14 +12,14 @@ doctest = false
 bench = false
 
 [dependencies]
-brush-core = "0.5"
-brush-builtins = "0.2"
+brush-core = "0.6"
+brush-builtins = "0.3"
 jush-command-protocol = { path = "../command-protocol" }
 jush-command-sdk = { path = "../command-sdk" }
 jush-runner-process = { path = "../runner-process" }
 jush-runner-protocol = { path = "../runner-protocol" }
+brush-winnow-args-adapter = "0.1"
 bytes.workspace = true
-clap = { version = "4", features = ["derive"] }
 futures-util.workspace = true
 # `std` for the utilities' child programs (uucore's `context::Control::spawn`).
 process-wrap = { workspace = true, features = ["std"] }
@@ -31,6 +31,7 @@ tokio.workspace = true
 tokio-util.workspace = true
 tracing.workspace = true
 uuid = { version = "1", features = ["v4"] }
+winnow-args = { version = "0.6", default-features = false, features = ["derive", "help-text"] }
 
 uucore = { version = "0.13", features = ["fs", "mode"] }
 uu_cp = "0.13"

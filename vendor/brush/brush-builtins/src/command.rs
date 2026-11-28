@@ -1,133 +1,109 @@
-use clap::Parser;
-use std::{fmt::Display, io::Write, path::Path};
+use std::io::Write;
+use std::path::PathBuf;
 
-use brush_core::{
-    ExecutionResult, builtins, commands, pathsearch,
-    sys::{self, fs::PathExt},
-};
+use brush_core::{ExecutionResult, builtins, commands, sys};
+
+use crate::lookup::{self, Resolved};
+use crate::write_alias_definition;
 
 /// Directly invokes an external command, without going through typical search order.
-#[derive(Default, Parser)]
+#[derive(Default, winnow_args::Args)]
+#[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct CommandCommand {
     /// Use default PATH value.
     #[arg(short = 'p')]
-    pub use_default_path: bool,
-
-    /// Display a short description of the command.
-    #[arg(short = 'v')]
-    pub print_description: bool,
+    pub(crate) use_default_path: bool,
 
     /// Display a more verbose description of the command.
-    #[arg(short = 'V')]
-    pub print_verbose_description: bool,
+    #[arg(short = 'V', overrides = "-v")]
+    pub(crate) print_verbose_description: bool,
+
+    /// Display a short description of the command.
+    #[arg(short = 'v', overrides = "-V")]
+    pub(crate) print_description: bool,
 
     /// Command and arguments.
-    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-    pub command_and_args: Vec<String>,
+    #[arg(positional, double_dash = "automatic")]
+    pub(crate) command_and_args: Vec<String>,
 }
+
+brush_winnow_args_adapter::impl_parse_args!(CommandCommand);
 
 impl CommandCommand {
-    fn command(&self) -> Option<&String> {
-        self.command_and_args.first()
+    fn command_word(&self) -> Option<&str> {
+        self.command_and_args.first().map(|s| s.as_str())
     }
-}
 
-impl builtins::Command for CommandCommand {
-    type Error = brush_core::Error;
+    fn path_dirs(&self) -> Option<Vec<PathBuf>> {
+        self.use_default_path
+            .then(sys::fs::get_default_standard_utils_paths)
+    }
 
-    async fn execute<SE: brush_core::ShellExtensions>(
+    /// Describes every name given, as `-v`/`-V` do; succeeds if any name was found.
+    fn describe_names<SE: brush_core::ShellExtensions>(
         &self,
-        context: brush_core::ExecutionContext<'_, SE>,
-    ) -> Result<ExecutionResult, Self::Error> {
-        // Silently exit if no command was provided.
-        if let Some(command_name) = self.command() {
-            if self.print_description || self.print_verbose_description {
-                if let Some(found_cmd) = Self::try_find_command(
-                    context.shell,
-                    command_name.as_str(),
-                    self.use_default_path,
-                ) {
-                    if self.print_description {
-                        writeln!(context.stdout(), "{found_cmd}")?;
-                    } else {
-                        match found_cmd {
-                            FoundCommand::Builtin(_name) => {
-                                writeln!(context.stdout(), "{command_name} is a shell builtin")?;
-                            }
-                            FoundCommand::External(path) => {
-                                writeln!(context.stdout(), "{command_name} is {path}")?;
-                            }
-                        }
+        context: &brush_core::ExecutionContext<'_, SE>,
+    ) -> Result<ExecutionResult, brush_core::Error> {
+        // With no names to look up there is nothing to fail to find, so this still succeeds.
+        if self.command_and_args.is_empty() {
+            return Ok(ExecutionResult::success());
+        }
+
+        let options = lookup::Options {
+            path_dirs: self.path_dirs(),
+            ..Default::default()
+        };
+
+        let mut any_found = false;
+        for name in &self.command_and_args {
+            let Some(mut found) = lookup::resolve(context.shell, name, &options)
+                .into_iter()
+                .next()
+            else {
+                if self.print_verbose_description {
+                    writeln!(context.stderr(), "command: {name}: not found")?;
+                }
+                continue;
+            };
+
+            any_found = true;
+            if self.print_description {
+                // Display in a form that could be reused as shell input.
+                match &found {
+                    Resolved::Alias(target) => {
+                        write_alias_definition(context.stdout(), name, target, true, false)?;
                     }
-                    Ok(ExecutionResult::success())
-                } else {
-                    if self.print_verbose_description {
-                        writeln!(context.stderr(), "command: {command_name}: not found")?;
+                    Resolved::Keyword | Resolved::Function(_) | Resolved::Builtin => {
+                        writeln!(context.stdout(), "{name}")?;
                     }
-                    Ok(ExecutionResult::general_error())
+                    Resolved::File { path, .. } => {
+                        writeln!(context.stdout(), "{}", brush_core::bytes::from_os(path.as_os_str()))?;
+                    }
                 }
             } else {
-                self.execute_command(context, command_name, self.use_default_path)
-                    .await
+                // A command found by searching PATH is reported with an absolute path, even
+                // when the PATH entry it came from was relative. Explicit paths and hashed
+                // entries are reported exactly as they were given. Like bash, this only
+                // prefixes the working directory; it doesn't otherwise normalize the path,
+                // except to drop the leading `./` a `.` entry in PATH contributes.
+                if let Resolved::File {
+                    path,
+                    hashed: false,
+                } = &mut found
+                    && !sys::fs::contains_path_separator(name)
+                {
+                    let relative = path.strip_prefix(".").unwrap_or(&*path);
+                    *path = context.shell.absolute_path(relative);
+                }
+
+                lookup::describe(context.stdout(), name, &found)?;
             }
-        } else {
+        }
+
+        if any_found {
             Ok(ExecutionResult::success())
-        }
-    }
-}
-
-enum FoundCommand {
-    Builtin(String),
-    External(String),
-}
-
-impl Display for FoundCommand {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Builtin(name) => write!(f, "{name}"),
-            Self::External(path) => write!(f, "{path}"),
-        }
-    }
-}
-
-impl CommandCommand {
-    fn try_find_command(
-        shell: &mut brush_core::Shell<impl brush_core::ShellExtensions>,
-        command_name: &str,
-        use_default_path: bool,
-    ) -> Option<FoundCommand> {
-        // Look in path.
-        if sys::fs::contains_path_separator(command_name) {
-            let candidate_path = shell.absolute_path(Path::new(command_name));
-            if candidate_path.executable() {
-                Some(FoundCommand::External(
-                    brush_core::bytes::from_os(candidate_path.as_os_str()).into_owned(),
-                ))
-            } else {
-                None
-            }
         } else {
-            // A program the host runs itself is found as the system's file of that name where
-            // there is one, as the system's `command -v` finds it.
-            if let Some(builtin_cmd) = shell.builtins().get(command_name)
-                && !builtin_cmd.disabled
-                && !(shell.host_stands_in_for(command_name)
-                    && shell.find_executables_in_path(command_name).next().is_some())
-            {
-                return Some(FoundCommand::Builtin(command_name.to_owned()));
-            }
-
-            if use_default_path {
-                let dirs = sys::fs::get_default_standard_utils_paths();
-
-                pathsearch::search_for_executable(dirs.iter(), command_name)
-                    .next()
-                    .map(|path| FoundCommand::External(brush_core::bytes::from_os(path.as_os_str()).into_owned()))
-            } else {
-                shell
-                    .find_first_executable_in_path_using_cache(command_name)
-                    .map(|path| FoundCommand::External(brush_core::bytes::from_os(path.as_os_str()).into_owned()))
-            }
+            Ok(ExecutionResult::general_error())
         }
     }
 
@@ -135,16 +111,12 @@ impl CommandCommand {
         &self,
         mut context: brush_core::ExecutionContext<'_, impl brush_core::ShellExtensions>,
         command_name: &str,
-        use_default_path: bool,
     ) -> Result<ExecutionResult, brush_core::Error> {
         command_name.clone_into(&mut context.command_name);
-        let command_and_args = self.command_and_args.iter().map(|arg| arg.into()).collect();
-
-        let path_dirs = if use_default_path {
-            Some(sys::fs::get_default_standard_utils_paths())
-        } else {
-            None
-        };
+        let command_and_args = self
+            .command_and_args
+            .iter()
+            .map(brush_core::CommandArg::from);
 
         let mut cmd = commands::SimpleCommand::new(
             commands::ShellForCommand::ParentShell(context.shell),
@@ -153,11 +125,31 @@ impl CommandCommand {
             command_and_args,
         );
         cmd.use_functions = false;
-        cmd.path_dirs = path_dirs;
+        cmd.path_dirs = self.path_dirs();
 
         let spawn_result = cmd.execute().await?;
         let wait_result = spawn_result.wait().await?;
 
         Ok(wait_result.into())
+    }
+}
+
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for CommandCommand {
+    type Error = brush_core::Error;
+
+    async fn execute(
+        self,
+        context: brush_core::ExecutionContext<'_, SE>,
+    ) -> Result<ExecutionResult, Self::Error> {
+        if self.print_description || self.print_verbose_description {
+            return self.describe_names(&context);
+        }
+
+        // Silently exit if no command was provided.
+        let Some(command_name) = self.command_word() else {
+            return Ok(ExecutionResult::success());
+        };
+
+        self.execute_command(context, command_name).await
     }
 }
