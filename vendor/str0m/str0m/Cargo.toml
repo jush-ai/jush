@@ -105,7 +105,7 @@ version = "0.12.0"
 default-features = false
 
 [dependencies.sctp-proto]
-version = "0.10.8"
+version = "0.11.0"
 
 [dependencies.serde]
 version = "1.0.152"
@@ -187,5 +187,6 @@ optional = true
 maintainer = "jush-runner-direct"
 patches = [
     "RtcConfig takes the SCTP association's retransmission timeouts and a floor for its congestion window (set_sctp_rto, set_sctp_congestion_window_floor), passed to sctp-proto's TransportConfig, so a live view's peer runs without SCTP's congestion window (upstream through 0.25.0 sets only the message size)",
+    "sctp-proto 0.11, the version the runner links, in place of 0.10: its Endpoint::connect takes the time, which init passes",
     "The release's tests, examples, CI files and logo are left out",
 ]

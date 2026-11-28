@@ -34,13 +34,14 @@ use crate::queue::outbound_queue::OutboundQueue;
 use crate::queue::payload_queue::PayloadQueue;
 use crate::queue::reassembly_queue::ReassemblyQueue;
 use crate::shared::{AssociationEventInner, AssociationId, EndpointEvent, EndpointEventInner};
-use crate::util::{sna16lt, sna32gt, sna32gte, sna32lt, sna32lte};
+use crate::util::{get_padding_size, sna16lt, sna32gt, sna32gte, sna32lt, sna32lte};
 use crate::{AssociationEvent, Payload, Side, Transmit};
 use stream::DataChannelStats;
 use stream::{ReliabilityType, Stream, StreamEvent, StreamId, StreamResetError, StreamState};
 use timer::{ACK_INTERVAL, RtoManager, Timer, TimerTable};
 
 use crate::association::stream::RecvSendState;
+use crate::random::random_nonzero_u32;
 use alloc::boxed::Box;
 use alloc::collections::VecDeque;
 use alloc::string::String;
@@ -49,11 +50,9 @@ use alloc::vec;
 use alloc::vec::Vec;
 use bytes::Bytes;
 use core::net::{IpAddr, SocketAddr};
-use core::num::NonZeroU32;
 use core::str::FromStr;
 use core::time::Duration;
 use log::{debug, error, trace, warn};
-use rand::random;
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::collections::HashMap;
 use std::time::Instant;
@@ -512,7 +511,7 @@ impl Association {
             Side::Client
         };
 
-        let tsn = random::<NonZeroU32>().get();
+        let tsn = random_nonzero_u32().get();
 
         let mut this = Self::new_common(
             config,
@@ -3981,6 +3980,11 @@ impl Association {
     /// or abandoned yet.
     fn get_data_packets_to_retransmit(&mut self, now: Instant) -> Vec<Packet> {
         self.expire_inflight_messages(now);
+        // Only a T3-rtx timeout marks chunks: until one does, the walk below
+        // over every chunk in flight would select none.
+        if !self.outbound_queue.has_marked_retransmits() {
+            return vec![];
+        }
         let awnd = core::cmp::min(self.cwnd, self.rwnd);
         let mut chunks: Vec<ChunkPayloadData> = vec![];
         let mut bytes_to_send = 0;
@@ -4014,6 +4018,9 @@ impl Association {
 
                 bytes_to_send += c.user_data.len();
             } else {
+                // Every chunk in flight was visited: the ones still marked
+                // are in `chunks`, unmarked below.
+                self.outbound_queue.retransmits_visited();
                 break; // end of pending data
             }
 
@@ -4115,13 +4122,18 @@ impl Association {
             //   single packet.  Furthermore, DATA chunks being retransmitted MAY be
             //   bundled with new DATA chunks, as long as the resulting packet size
             //   does not exceed the path MTU.
-            if bytes_in_packet + c.user_data.len() as u32 > self.mtu {
+            //
+            // Count the whole chunk: its header, user data and the padding to a
+            // 4-byte boundary that Packet::marshal_to adds after it.
+            let len = c.user_data.len();
+            let data_chunk_size = DATA_CHUNK_HEADER_SIZE + (len + get_padding_size(len)) as u32;
+            if !chunks_to_send.is_empty() && bytes_in_packet + data_chunk_size > self.mtu {
                 packets.push(self.create_packet(chunks_to_send));
                 chunks_to_send = vec![];
                 bytes_in_packet = COMMON_HEADER_SIZE;
             }
 
-            bytes_in_packet += DATA_CHUNK_HEADER_SIZE + c.user_data.len() as u32;
+            bytes_in_packet += data_chunk_size;
             chunks_to_send.push(Box::new(c));
         }
 
