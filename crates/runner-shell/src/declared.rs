@@ -12,7 +12,27 @@ use jush_runner_process::{
 };
 use std::{collections::BTreeMap, io, sync::Arc};
 
-pub(super) fn execute(
+/// A command the job declares.
+pub(crate) struct Declared;
+
+impl crate::builtin::RunnerBuiltin for Declared {
+    fn run(
+        context: ExecutionContext<'_>,
+        args: Vec<CommandArg>,
+    ) -> builtins::BoxFuture<'_, Result<ExecutionResult, brush_core::Error>> {
+        execute(context, args)
+    }
+
+    fn content(
+        name: &str,
+        _: builtins::ContentType,
+        _: &builtins::ContentOptions,
+    ) -> Result<String, brush_core::Error> {
+        Ok(format!("{name}: use {name} --help for command options"))
+    }
+}
+
+fn execute(
     context: ExecutionContext<'_>,
     args: Vec<CommandArg>,
 ) -> builtins::BoxFuture<'_, Result<ExecutionResult, brush_core::Error>> {

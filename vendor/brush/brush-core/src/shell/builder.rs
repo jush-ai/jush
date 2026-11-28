@@ -23,7 +23,8 @@ impl<SE: extensions::ShellExtensions, S: shell_builder::IsComplete> ShellBuilder
         // Construct the shell.
         let mut shell = Shell::new(options)?;
 
-        // Load profiles/configuration, unless skipped.
+        // Load profiles/configuration (and then history), unless skipped. Callers that skip
+        // both are expected to call `load_config` themselves before needing history.
         if !profile.skip() || !rc.skip() {
             shell.load_config(&profile, &rc).await?;
         }
@@ -85,18 +86,22 @@ impl<SE: extensions::ShellExtensions, S: shell_builder::State> ShellBuilder<SE, 
         self
     }
 
-    /// Add a single builtin registration
+    /// Registers a builtin under `name`, replacing any registered under it
+    /// (see [`builtins::Registry::register`]).
     pub fn builtin(mut self, name: impl Into<String>, reg: builtins::Registration<SE>) -> Self {
-        self.builtins.insert(name.into(), reg);
+        self.builtins.register(name, reg);
         self
     }
 
-    /// Add many builtin registrations
+    /// Registers each builtin under its name, in turn, replacing any registered
+    /// under it (see [`builtins::Registry::register`]).
     pub fn builtins(
         mut self,
         builtins: impl IntoIterator<Item = (String, builtins::Registration<SE>)>,
     ) -> Self {
-        self.builtins.extend(builtins);
+        for (name, reg) in builtins {
+            self.builtins.register(name, reg);
+        }
         self
     }
 
@@ -136,9 +141,10 @@ pub struct CreateOptions<SE: extensions::ShellExtensions = extensions::DefaultSh
     /// Enabled shopt options.
     #[builder(field)]
     pub enabled_shopt_options: Vec<String>,
-    /// Registered builtins.
+    /// The builtins the shell starts with; it keeps them as its own
+    /// ([`Shell::builtins`]).
     #[builder(field)]
-    pub builtins: HashMap<String, builtins::Registration<SE>>,
+    pub builtins: builtins::Registry<SE>,
     /// Provides a set of variables to be initialized in the shell. If present, they
     /// are assigned *after* inherited or well-known variables are set (when applicable).
     #[builder(field)]
@@ -148,6 +154,12 @@ pub struct CreateOptions<SE: extensions::ShellExtensions = extensions::DefaultSh
     /// Error behavior implementation.
     #[builder(default)]
     pub error_formatter: SE::ErrorFormatter,
+    /// Launches the processes the shell runs.
+    #[builder(default)]
+    pub process_launcher: SE::ProcessLauncher,
+    /// Starts the tasks the shell runs concurrently with itself.
+    #[builder(default)]
+    pub task_spawner: SE::TaskSpawner,
     /// Disallow overwriting regular files via output redirection.
     #[builder(default)]
     pub disallow_overwriting_regular_files_via_output_redirection: bool,
@@ -184,6 +196,12 @@ pub struct CreateOptions<SE: extensions::ShellExtensions = extensions::DefaultSh
     /// Whether to launch external commands as session leaders.
     #[builder(default)]
     pub external_cmd_leads_session: bool,
+    /// Whether externally spawned commands should be killed when their spawning
+    /// shell is dropped. Defaults to `false` (children outlive the shell, as a
+    /// real shell requires); enable for embedded shells, where a surviving child
+    /// leaks and can hold the shell's output pipe open past teardown.
+    #[builder(default)]
+    pub kill_external_commands_on_drop: bool,
     /// Initial working dir for the shell. If left unspecified, will be populated from
     /// the host environment.
     pub working_dir: Option<PathBuf>,
@@ -238,6 +256,9 @@ impl<SE: extensions::ShellExtensions> Default for Shell<SE> {
             child_attributes: crate::execution_host::ChildAttributes::default(),
             loop_depth: 0,
             error_formatter: SE::ErrorFormatter::default(),
+            process_launcher: SE::ProcessLauncher::default(),
+            task_spawner: SE::TaskSpawner::default(),
+            builtin_states: builtins::BuiltinStates::default(),
             traps: traps::TrapHandlerConfig::default(),
             open_files: openfiles::OpenFiles::default(),
             working_dir: PathBuf::default(),
@@ -250,14 +271,15 @@ impl<SE: extensions::ShellExtensions> Default for Shell<SE> {
             last_exit_status_change_count: 0,
             last_pipeline_statuses: vec![0],
             depth: 0,
+            command_number: 1,
             name: None,
             args: vec![],
             version: None,
             product_display_str: None,
             call_stack: callstack::CallStack::new(),
             directory_stack: vec![],
-            completion_config: completion::Config::default(),
-            builtins: HashMap::default(),
+            completion: completion::State::default(),
+            builtins: builtins::Registry::default(),
             program_location_cache: pathcache::PathCache::default(),
             last_stopwatch_time: std::time::SystemTime::now(),
             last_stopwatch_offset: 0,

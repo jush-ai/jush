@@ -43,96 +43,246 @@
 use std::{
     collections::{BTreeMap, HashMap},
     io::Write,
+    sync::OnceLock,
 };
 
 use futures_util::{FutureExt as _, StreamExt as _, stream::FuturesUnordered};
 
-use crate::work::Work;
+use crate::{
+    builtin::{self, RunnerBuiltin},
+    work::Work,
+};
 
 use brush_core::{
     CommandArg, ExecutionContext, ExecutionControlFlow, ExecutionExitCode, ExecutionResult,
-    Shell, ShellExtensions,
-    builtins::{self, BoxFuture, Registration},
+    Shell,
+    builtins::{self, BoxFuture, ContentOptions, ContentType, Registration},
     commands::{ShellForCommand, SimpleCommand},
     extensions::DefaultShellExtensions,
 };
 
+/// The builtins of brush's that the runner's of the same name replace.
+const REPLACED: [&str; 6] = ["fg", "wait", "kill", "suspend", "ulimit", "umask"];
+
+/// Brush's builtins of the names in `REPLACED`, as brush registered them:
+/// the runner's run them for what they leave to them (`wait`'s options, `kill
+/// -l`), and keep their help.
+static BRUSH: OnceLock<HashMap<&'static str, Registration<DefaultShellExtensions>>> =
+    OnceLock::new();
+
 /// Puts the runner's builtins in place of brush's of the same name, and
 /// adds those brush lacks on a system, as it lacks `kill`, `suspend`,
-/// `ulimit` and `umask` on Windows. Help text and a builtin's special status stay brush's.
+/// `ulimit` and `umask` on Windows. Help text stays brush's.
 pub(crate) fn register(registrations: &mut HashMap<String, Registration<DefaultShellExtensions>>) {
-    registrations.insert("exec".into(), builtins::builtin::<Exec, _>().special());
-    registrations.insert(
-        "disown".into(),
-        Registration {
-            execute_func: disown,
-            content_func: |name, _, _| {
-                Ok(format!("{name}: removes jobs from the table of the script's jobs"))
-            },
-            disabled: false,
-            special_builtin: false,
-            declaration_builtin: false,
-        },
+    // Setting it again fails, which is fine: brush's are the same every time.
+    let _already_set = BRUSH.set(
+        REPLACED
+            .into_iter()
+            .filter_map(|name| Some((name, registrations.get(name)?.clone())))
+            .collect(),
     );
-    replace(registrations, "fg", fg);
-    // Statics hold brush's own builtins, which the runner's run for what they
-    // leave to them and which a registration's plain function pointer cannot
-    // capture. Setting one again fails, which is fine: brush's is the same
-    // function every time.
-    if let Some(brush_wait) = registrations.get("wait").map(|wait| wait.execute_func) {
-        let _already_set = BRUSH_WAIT.set(brush_wait);
-        replace(registrations, "wait", wait);
-    }
-    #[cfg(unix)]
-    if let Some(brush_kill) = registrations.get("kill").map(|kill| kill.execute_func) {
-        let _already_set = BRUSH_KILL.set(brush_kill);
-    }
-    replace(registrations, "kill", kill);
-    registrations.insert(
-        crate::timeout::NAME.into(),
-        Registration {
-            execute_func: timeout,
-            content_func: |name, _, _| Ok(format!("{name}: use {name} --help for its options")),
-            disabled: false,
-            special_builtin: false,
-            declaration_builtin: false,
-        },
-    );
-    registrations.insert(
-        crate::nohup::NAME.into(),
-        Registration {
-            execute_func: nohup,
-            content_func: |name, _, _| Ok(format!("{name}: use {name} --help for its options")),
-            disabled: false,
-            special_builtin: false,
-            declaration_builtin: false,
-        },
-    );
-    replace(registrations, "suspend", suspend);
-    #[cfg(unix)]
-    replace(registrations, "ulimit", unix::ulimit);
-    #[cfg(windows)]
-    replace(registrations, "ulimit", windows::ulimit);
-    replace(registrations, "umask", umask);
+    registrations.insert("exec".into(), Registration::of::<Exec>().special());
+    registrations.insert("disown".into(), builtin::registration::<Disown>());
+    registrations.insert("fg".into(), builtin::registration::<Fg>());
+    registrations.insert("wait".into(), builtin::registration::<WaitFor>());
+    registrations.insert("kill".into(), builtin::registration::<Kill>());
+    registrations.insert(crate::timeout::NAME.into(), builtin::registration::<Timeout>());
+    registrations.insert(crate::nohup::NAME.into(), builtin::registration::<Nohup>());
+    registrations.insert("suspend".into(), builtin::registration::<Suspend>());
+    registrations.insert("ulimit".into(), builtin::registration::<Ulimit>());
+    registrations.insert("umask".into(), builtin::registration::<Umask>());
 }
 
-/// Runs `name` with `execute`, keeping the rest of brush's registration;
-/// a builtin brush lacks on this system gets one of its own.
-fn replace(
-    registrations: &mut HashMap<String, Registration<DefaultShellExtensions>>,
+/// Brush's builtin `name`, which the runner's of that name replaces.
+fn brush(name: &str) -> Option<&'static Registration<DefaultShellExtensions>> {
+    BRUSH.get()?.get(name)
+}
+
+/// The help of the runner's builtin `name` that replaces brush's: brush's, or
+/// a line of its own where brush lacks the builtin on this system.
+fn replaced_content(
     name: &str,
-    execute: builtins::CommandExecuteFunc<DefaultShellExtensions>,
-) {
-    registrations
-        .entry(name.to_owned())
-        .and_modify(|registration| registration.execute_func = execute)
-        .or_insert(Registration {
-            execute_func: execute,
-            content_func: |name, _, _| Ok(format!("{name}: as bash's {name}, for the job's shell")),
-            disabled: false,
-            special_builtin: false,
-            declaration_builtin: false,
-        });
+    content_type: ContentType,
+    options: &ContentOptions,
+) -> Result<String, brush_core::Error> {
+    match brush(name) {
+        Some(registration) => registration.content(name, content_type, options),
+        None => Ok(format!("{name}: as bash's {name}, for the job's shell")),
+    }
+}
+
+struct Disown;
+
+impl RunnerBuiltin for Disown {
+    fn run(
+        context: ExecutionContext<'_>,
+        args: Vec<CommandArg>,
+    ) -> BoxFuture<'_, Result<ExecutionResult, brush_core::Error>> {
+        disown(context, args)
+    }
+
+    fn content(
+        name: &str,
+        _: ContentType,
+        _: &ContentOptions,
+    ) -> Result<String, brush_core::Error> {
+        Ok(format!("{name}: removes jobs from the table of the script's jobs"))
+    }
+}
+
+struct Fg;
+
+impl RunnerBuiltin for Fg {
+    fn run(
+        context: ExecutionContext<'_>,
+        args: Vec<CommandArg>,
+    ) -> BoxFuture<'_, Result<ExecutionResult, brush_core::Error>> {
+        fg(context, args)
+    }
+
+    fn content(
+        name: &str,
+        content_type: ContentType,
+        options: &ContentOptions,
+    ) -> Result<String, brush_core::Error> {
+        replaced_content(name, content_type, options)
+    }
+}
+
+struct WaitFor;
+
+impl RunnerBuiltin for WaitFor {
+    fn run(
+        context: ExecutionContext<'_>,
+        args: Vec<CommandArg>,
+    ) -> BoxFuture<'_, Result<ExecutionResult, brush_core::Error>> {
+        wait(context, args)
+    }
+
+    fn content(
+        name: &str,
+        content_type: ContentType,
+        options: &ContentOptions,
+    ) -> Result<String, brush_core::Error> {
+        replaced_content(name, content_type, options)
+    }
+}
+
+struct Kill;
+
+impl RunnerBuiltin for Kill {
+    fn run(
+        context: ExecutionContext<'_>,
+        args: Vec<CommandArg>,
+    ) -> BoxFuture<'_, Result<ExecutionResult, brush_core::Error>> {
+        kill(context, args)
+    }
+
+    fn content(
+        name: &str,
+        content_type: ContentType,
+        options: &ContentOptions,
+    ) -> Result<String, brush_core::Error> {
+        replaced_content(name, content_type, options)
+    }
+}
+
+struct Timeout;
+
+impl RunnerBuiltin for Timeout {
+    fn run(
+        context: ExecutionContext<'_>,
+        args: Vec<CommandArg>,
+    ) -> BoxFuture<'_, Result<ExecutionResult, brush_core::Error>> {
+        timeout(context, args)
+    }
+
+    fn content(
+        name: &str,
+        _: ContentType,
+        _: &ContentOptions,
+    ) -> Result<String, brush_core::Error> {
+        Ok(format!("{name}: use {name} --help for its options"))
+    }
+}
+
+struct Nohup;
+
+impl RunnerBuiltin for Nohup {
+    fn run(
+        context: ExecutionContext<'_>,
+        args: Vec<CommandArg>,
+    ) -> BoxFuture<'_, Result<ExecutionResult, brush_core::Error>> {
+        nohup(context, args)
+    }
+
+    fn content(
+        name: &str,
+        _: ContentType,
+        _: &ContentOptions,
+    ) -> Result<String, brush_core::Error> {
+        Ok(format!("{name}: use {name} --help for its options"))
+    }
+}
+
+struct Suspend;
+
+impl RunnerBuiltin for Suspend {
+    fn run(
+        context: ExecutionContext<'_>,
+        args: Vec<CommandArg>,
+    ) -> BoxFuture<'_, Result<ExecutionResult, brush_core::Error>> {
+        suspend(context, args)
+    }
+
+    fn content(
+        name: &str,
+        content_type: ContentType,
+        options: &ContentOptions,
+    ) -> Result<String, brush_core::Error> {
+        replaced_content(name, content_type, options)
+    }
+}
+
+struct Ulimit;
+
+impl RunnerBuiltin for Ulimit {
+    fn run(
+        context: ExecutionContext<'_>,
+        args: Vec<CommandArg>,
+    ) -> BoxFuture<'_, Result<ExecutionResult, brush_core::Error>> {
+        #[cfg(unix)]
+        return unix::ulimit(context, args);
+        #[cfg(windows)]
+        return windows::ulimit(context, args);
+    }
+
+    fn content(
+        name: &str,
+        content_type: ContentType,
+        options: &ContentOptions,
+    ) -> Result<String, brush_core::Error> {
+        replaced_content(name, content_type, options)
+    }
+}
+
+struct Umask;
+
+impl RunnerBuiltin for Umask {
+    fn run(
+        context: ExecutionContext<'_>,
+        args: Vec<CommandArg>,
+    ) -> BoxFuture<'_, Result<ExecutionResult, brush_core::Error>> {
+        umask(context, args)
+    }
+
+    fn content(
+        name: &str,
+        content_type: ContentType,
+        options: &ContentOptions,
+    ) -> Result<String, brush_core::Error> {
+        replaced_content(name, content_type, options)
+    }
 }
 
 /// A builtin that refuses: why on standard error, and a general failure.
@@ -148,7 +298,8 @@ fn refused(
 /// shell (a subshell's, or the job's) then ends with its status; bash would
 /// replace the process, which here is the runner. With only redirections,
 /// they stay with the shell, as in bash.
-#[derive(clap::Parser)]
+#[derive(winnow_args::Args)]
+#[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 struct Exec {
     /// Pass NAME to the command as its zeroth argument.
     #[arg(short = 'a', value_name = "NAME")]
@@ -160,17 +311,16 @@ struct Exec {
     #[arg(short = 'l')]
     login: bool,
     /// The command and its arguments.
-    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    #[arg(positional, stop_flags)]
     command: Vec<String>,
 }
 
-impl builtins::Command for Exec {
+brush_winnow_args_adapter::impl_parse_args!(Exec);
+
+impl builtins::Builtin<DefaultShellExtensions> for Exec {
     type Error = brush_core::Error;
 
-    async fn execute<SE: ShellExtensions>(
-        &self,
-        context: ExecutionContext<'_, SE>,
-    ) -> Result<ExecutionResult, Self::Error> {
+    async fn execute(self, context: ExecutionContext<'_>) -> Result<ExecutionResult, Self::Error> {
         let Some(program) = self.command.first() else {
             let files: Vec<_> = context.iter_fds().collect();
             context.shell.replace_open_files(files.into_iter());
@@ -199,8 +349,7 @@ impl builtins::Command for Exec {
         let args = self
             .command
             .iter()
-            .map(|arg| CommandArg::String(arg.clone()))
-            .collect();
+            .map(|arg| CommandArg::String(arg.clone()));
         // As `command` runs it: a standard utility or builtin in the runner,
         // a program through the job's process start.
         let mut command = SimpleCommand::new(shell, context.params, program.clone(), args);
@@ -326,15 +475,6 @@ fn disown(
     })
 }
 
-/// Brush's `kill`, which lists signals for the runner's.
-#[cfg(unix)]
-static BRUSH_KILL: std::sync::OnceLock<builtins::CommandExecuteFunc<DefaultShellExtensions>> =
-    std::sync::OnceLock::new();
-
-/// Brush's `wait`, which takes the options of the runner's.
-static BRUSH_WAIT: std::sync::OnceLock<builtins::CommandExecuteFunc<DefaultShellExtensions>> =
-    std::sync::OnceLock::new();
-
 /// `wait`, as bash's (`crates/runner-shell/src/work.rs`): `wait
 /// <id>` waits for a background task or a process the job started and gives
 /// its status, the task's last or 128 plus the signal that ended it; `wait`
@@ -348,10 +488,8 @@ fn wait(
         .first()
         .is_some_and(|word| word.starts_with('-') && word != "--" && word.parse::<i32>().is_err());
     if option {
-        let brush_wait = BRUSH_WAIT
-            .get()
-            .expect("the runner's wait is registered only over brush's");
-        return brush_wait(context, args);
+        let brush_wait = brush("wait").expect("brush has wait on every system");
+        return brush_wait.execute(context, args);
     }
     if words.first().is_some_and(|word| word == "--") {
         words.remove(0);
@@ -546,10 +684,8 @@ fn kill(
     if words.iter().take_while(|word| *word != "--").any(|word| word == "-l" || word == "-L") {
         #[cfg(unix)]
         {
-            let brush_kill = BRUSH_KILL
-                .get()
-                .expect("the runner's kill is registered only over brush's");
-            return brush_kill(context, args);
+            let brush_kill = brush("kill").expect("brush has kill on Unix");
+            return brush_kill.execute(context, args);
         }
         #[cfg(windows)]
         return Box::pin(async move { windows::list_signals(&context, &words) });
@@ -741,8 +877,7 @@ fn timeout(
             options
                 .command
                 .iter()
-                .map(|arg| CommandArg::String(arg.clone()))
-                .collect(),
+                .map(|arg| CommandArg::String(arg.clone())),
         );
         command.use_functions = false;
         let run = async move {
@@ -802,10 +937,7 @@ fn nohup(
             },
             context.params,
             program.clone(),
-            command
-                .iter()
-                .map(|arg| CommandArg::String(arg.clone()))
-                .collect(),
+            command.iter().map(|arg| CommandArg::String(arg.clone())),
         );
         simple.use_functions = false;
         let status = match simple.execute().await {

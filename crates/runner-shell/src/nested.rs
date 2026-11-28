@@ -283,8 +283,7 @@ pub(crate) async fn run(invocation: Invocation, options: Options) -> Result<u8, 
     // The shell's text, with the bytes it holds written as bytes.
     let mut stderr = brush_core::bytes::ByteWriter::new(
         fds.get(&2)
-            .map(OpenFile::try_clone)
-            .transpose()?
+            .cloned()
             .ok_or_else(|| io::Error::other("closed descriptor 2"))?,
     );
     let invalid = options
@@ -432,18 +431,21 @@ pub(crate) async fn run(invocation: Invocation, options: Options) -> Result<u8, 
         let mut input = shell
             .open_files()
             .try_stdin()
-            .map(OpenFile::try_clone)
-            .transpose()?
+            .cloned()
             .ok_or_else(|| io::Error::other("closed descriptor 0"))?;
         input.read_to_end(&mut text)?;
-        let result = shell
+        let mut result = shell
             .run_string_incrementally(
                 &brush_core::bytes::decode(&text),
                 &SourceInfo::default(),
                 &shell.default_exec_params(),
             )
             .await;
-        let _ended = shell.on_exit().await;
+        // An `exit` in the EXIT trap sets the shell's status, as for a script
+        // or a `-c` string.
+        if let (Ok(Some(status)), Ok(result)) = (shell.run_exit_trap().await, &mut result) {
+            result.exit_code = status.into();
+        }
         result
     };
     // What the shell started in the background runs on when it ends, as a
@@ -503,16 +505,27 @@ fn function_name(variable: &str) -> Option<&str> {
 /// `sh` and `bash` as builtins of the job's shell.
 pub(crate) fn register(registrations: &mut HashMap<String, Registration<DefaultShellExtensions>>) {
     for name in [SH, BASH] {
-        registrations.insert(
-            name.into(),
-            Registration {
-                execute_func: shell,
-                content_func: |name, _, _| Ok(format!("{name}: a new shell of the job's own, as bash's")),
-                disabled: false,
-                special_builtin: false,
-                declaration_builtin: false,
-            },
-        );
+        registrations.insert(name.into(), crate::builtin::registration::<NestedShell>());
+    }
+}
+
+/// `sh` and `bash`.
+struct NestedShell;
+
+impl crate::builtin::RunnerBuiltin for NestedShell {
+    fn run(
+        context: ExecutionContext<'_>,
+        args: Vec<CommandArg>,
+    ) -> BoxFuture<'_, Result<ExecutionResult, brush_core::Error>> {
+        shell(context, args)
+    }
+
+    fn content(
+        name: &str,
+        _: brush_core::builtins::ContentType,
+        _: &brush_core::builtins::ContentOptions,
+    ) -> Result<String, brush_core::Error> {
+        Ok(format!("{name}: a new shell of the job's own, as bash's"))
     }
 }
 
@@ -537,7 +550,12 @@ fn shell(
             env: exported(context.shell),
             cwd: context.shell.working_dir().to_owned(),
             fds: context.iter_fds().collect(),
-            builtins: context.shell.builtins().clone(),
+            builtins: context
+                .shell
+                .builtins()
+                .iter()
+                .map(|(name, registration)| (name.to_owned(), registration.clone()))
+                .collect(),
             attributes: context.shell.child_attributes().clone(),
         };
         // On a thread of its own, as a child program's shell is: a shell run
@@ -598,7 +616,7 @@ pub(crate) fn start(
         };
         let controlled = |file: &Arc<std::fs::File>| -> Result<OpenFile, String> {
             Ok(OpenFile::Controlled {
-                file: scope.duplicate(file).map_err(|error| error.to_string())?,
+                file: Arc::new(scope.duplicate(file).map_err(|error| error.to_string())?),
                 control: Arc::new(scope.clone()),
             })
         };

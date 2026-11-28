@@ -11,7 +11,7 @@ use crate::{Shell, ShellFd, extensions, results, sys};
 pub struct Error {
     /// The kind of error.
     #[source]
-    kind: ErrorKind,
+    kind: Box<ErrorKind>,
 
     /// Whether or not the error should be considered a "fatal" error that would
     /// result in abnormal exit of a non-interactive shell.
@@ -20,6 +20,7 @@ pub struct Error {
 
 /// Monolithic error type for the shell
 #[derive(thiserror::Error, Debug)]
+#[non_exhaustive]
 pub enum ErrorKind {
     /// A tilde expression was used without a valid HOME variable
     #[error("cannot expand tilde expression with HOME not set")]
@@ -40,6 +41,14 @@ pub enum ErrorKind {
     /// An error occurred while sourcing the indicated script file.
     #[error("{path}: {reason}", path = .0.display(), reason = uucore::error::strip_errno(.1))]
     FailedSourcingFile(PathBuf, #[source] std::io::Error),
+
+    /// The process or process group does not exist.
+    #[error("no such process")]
+    NoSuchProcess,
+
+    /// The process or process group exists, but cannot be signaled.
+    #[error("operation not permitted")]
+    PermissionDenied,
 
     /// The shell failed to send a signal to a process.
     #[error("failed to send signal to process")]
@@ -85,11 +94,6 @@ pub enum ErrorKind {
     /// The requested functionality has not yet been implemented in this shell.
     #[error("not yet implemented: {0}")]
     Unimplemented(&'static str),
-
-    /// The requested functionality has not yet been implemented in this shell; it is tracked in a
-    /// GitHub issue.
-    #[error("not yet implemented: {0}; see https://github.com/reubeno/brush/issues/{1}")]
-    UnimplementedAndTracked(&'static str, u32),
 
     /// An expected environment scope could not be found.
     #[error("missing environment scope")]
@@ -214,13 +218,17 @@ pub enum ErrorKind {
     #[error("invalid test command")]
     TestCommandParseError(#[from] crate::parser::TestCommandParseError),
 
+    /// An operand of an arithmetic comparison in a test command isn't an integer.
+    #[error("{0}: integer expression expected")]
+    IntegerExpressionExpected(String),
+
     /// Unable to parse a key binding specification.
     #[error(transparent)]
     BindingParseError(#[from] crate::parser::BindingParseError),
 
-    /// A threading error occurred.
-    #[error("threading error")]
-    ThreadingError(#[from] tokio::task::JoinError),
+    /// A task the shell started couldn't run to completion (e.g., it panicked).
+    #[error("task error")]
+    TaskError(#[source] Box<dyn std::error::Error + Send + Sync>),
 
     /// An invalid signal was referenced.
     #[error("{0}: invalid signal specification")]
@@ -294,6 +302,10 @@ pub enum ErrorKind {
     #[error("internal shell error: {0}")]
     InternalError(String),
 
+    /// A position to complete at isn't a char boundary in the line being completed.
+    #[error("completion position {0} isn't a char boundary in the input line")]
+    InvalidCompletionPosition(usize),
+
     /// Attempted to perform an operation that requires an interactive session.
     #[error("operation requires an interactive session")]
     NotInInteractiveSession,
@@ -354,7 +366,7 @@ impl BuiltinError for Error {
     }
 
     fn names_builtin(&self) -> bool {
-        !matches!(self.kind, ErrorKind::FailedSourcingFile(..))
+        !matches!(*self.kind, ErrorKind::FailedSourcingFile(..))
     }
 }
 
@@ -377,9 +389,7 @@ impl From<&ErrorKind> for results::ExecutionExitCode {
     fn from(value: &ErrorKind) -> Self {
         match value {
             ErrorKind::CommandNotFound(..) => Self::NotFound,
-            ErrorKind::Unimplemented(..) | ErrorKind::UnimplementedAndTracked(..) => {
-                Self::Unimplemented
-            }
+            ErrorKind::Unimplemented(..) => Self::Unimplemented,
             ErrorKind::ParseError(..) => Self::InvalidUsage,
             ErrorKind::FunctionParseError(..) => Self::InvalidUsage,
             ErrorKind::TestCommandParseError(..) => Self::InvalidUsage,
@@ -388,6 +398,7 @@ impl From<&ErrorKind> for results::ExecutionExitCode {
             {
                 Self::NotFound
             }
+            ErrorKind::IntegerExpressionExpected(..) => Self::InvalidUsage,
             ErrorKind::FailedToExecuteCommand(..) => Self::CannotExecute,
             ErrorKind::FunctionNameShadowsSpecialBuiltin { .. } => Self::InvalidUsage,
             ErrorKind::IoError(io_err) => io_err.into(),
@@ -409,7 +420,7 @@ impl From<&std::io::Error> for results::ExecutionExitCode {
 
 impl From<&Error> for results::ExecutionExitCode {
     fn from(error: &Error) -> Self {
-        Self::from(&error.kind)
+        Self::from(&*error.kind)
     }
 }
 
@@ -419,7 +430,7 @@ where
 {
     fn from(convertible_to_kind: T) -> Self {
         Self {
-            kind: convertible_to_kind.into(),
+            kind: Box::new(convertible_to_kind.into()),
             fatal: false,
         }
     }
@@ -443,7 +454,7 @@ impl Error {
     /// `cd: ./browse: No such file or directory`.
     #[must_use]
     pub fn for_operand(self, operand: &std::path::Path) -> Self {
-        let error = match self.kind {
+        let error = match *self.kind {
             ErrorKind::IoError(error) => error,
             ErrorKind::NotADirectory(_) => {
                 std::io::Error::new(std::io::ErrorKind::NotADirectory, "Not a directory")
@@ -451,16 +462,16 @@ impl Error {
             _ => return self,
         };
         Self {
-            kind: ErrorKind::OperandFailed(operand.to_owned(), error),
+            kind: Box::new(ErrorKind::OperandFailed(operand.to_owned(), error)),
             fatal: self.fatal,
         }
     }
 
     /// Whether bash words this error itself, as `<name>: <reason>`, rather
     /// than the shell's own `error: ` line.
-    pub(crate) const fn worded_as_bash(&self) -> bool {
+    pub(crate) fn worded_as_bash(&self) -> bool {
         matches!(
-            self.kind,
+            *self.kind,
             ErrorKind::BuiltinError(..)
                 | ErrorKind::CommandNotFound(..)
                 | ErrorKind::FailedToExecuteCommand(..)
@@ -470,13 +481,13 @@ impl Error {
     }
 
     /// Returns a reference to the error kind.
-    pub const fn kind(&self) -> &ErrorKind {
+    pub fn kind(&self) -> &ErrorKind {
         &self.kind
     }
 
     /// Try to extract a reference to the underlying `std::io::Error`, if any.
     pub fn as_io_error(&self) -> Option<&std::io::Error> {
-        match &self.kind {
+        match &*self.kind {
             ErrorKind::IoError(io_err) => Some(io_err),
             ErrorKind::BuiltinError(inner, _) => inner.as_io_error(),
             _ => None,
@@ -489,7 +500,7 @@ impl Error {
     /// # Arguments
     ///
     /// * `shell` - The shell instance, used to check interactive mode and script call stack.
-    pub fn to_control_flow(
+    pub(crate) fn to_control_flow(
         &self,
         shell: &Shell<impl extensions::ShellExtensions>,
     ) -> results::ExecutionControlFlow {
@@ -505,7 +516,7 @@ impl Error {
     /// # Arguments
     ///
     /// * `shell` - The shell instance, used to determine control flow.
-    pub fn into_result(
+    pub(crate) fn into_result(
         self,
         shell: &Shell<impl extensions::ShellExtensions>,
     ) -> results::ExecutionResult {
@@ -526,14 +537,4 @@ impl Error {
 /// * `msg` - The message to include in the error
 pub fn unimp<T>(msg: &'static str) -> Result<T, Error> {
     Err(ErrorKind::Unimplemented(msg).into())
-}
-
-/// Convenience function for returning an error for *tracked*, unimplemented functionality.
-///
-/// # Arguments
-///
-/// * `msg` - The message to include in the error
-/// * `project_issue_id` - The GitHub issue ID where the implementation is tracked.
-pub fn unimp_with_issue<T>(msg: &'static str, project_issue_id: u32) -> Result<T, Error> {
-    Err(ErrorKind::UnimplementedAndTracked(msg, project_issue_id).into())
 }

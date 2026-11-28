@@ -1,11 +1,10 @@
 //! Execution support for shell.
 
-use std::{io::Read, path::Path};
+use std::{io::Read as _, path::Path};
 
 use crate::{
     ExecutionControlFlow, ExecutionParameters, ExecutionResult, ProcessGroupPolicy, SourceInfo,
     arithmetic::Evaluatable as _, callstack, error, interp::Execute as _, openfiles,
-    trace_categories,
 };
 
 impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
@@ -29,7 +28,12 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
     ) -> Result<bool, error::Error> {
         let path = path.as_ref();
         if path.exists() {
-            self.source_script(path, std::iter::empty::<String>(), params)
+            // TODO(startup): an `exit` in a startup file should end the shell, but
+            // `load_config` has no way to tell its caller to stop; until it does, the
+            // file's result is dropped. Tracked by the compat case "exit in an rc file
+            // ends the shell".
+            let _ = self
+                .source_script(path, std::iter::empty::<String>(), params)
                 .await?;
             Ok(true)
         } else {
@@ -60,6 +64,38 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         .await
     }
 
+    /// Source an already parsed program, as [`Self::source_script`] sources a file: in a
+    /// script's call frame, with `args` as its positional parameters. A library sourced by
+    /// many scripts then needs parsing only once.
+    ///
+    /// Parsing is the caller's job. A parse error never reaches this function, so it is not
+    /// reported as fatal the way [`Self::source_script`] reports one. The program also keeps
+    /// the [`Self::parser_options`] it was parsed with (e.g., extended globbing), so a cache
+    /// of parsed programs should be keyed on them.
+    ///
+    /// # Arguments
+    ///
+    /// * `program` - The parsed program to run.
+    /// * `source_info` - Where the program came from, for its call frame and errors.
+    /// * `args` - The arguments to pass to the script as positional parameters.
+    /// * `params` - Execution parameters.
+    pub async fn source_program<S: Into<String>, I: Iterator<Item = S>>(
+        &mut self,
+        program: &brush_parser::ast::Program,
+        source_info: &crate::SourceInfo,
+        args: I,
+        params: &ExecutionParameters,
+    ) -> Result<ExecutionResult, error::Error> {
+        self.run_in_script_frame(
+            callstack::ScriptCallType::Source,
+            source_info,
+            args,
+            Ok(program),
+            params,
+        )
+        .await
+    }
+
     /// Parse and execute the given file as a shell script, returning the execution result.
     ///
     /// # Arguments
@@ -82,24 +118,13 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         let path = path.as_ref();
         tracing::debug!("sourcing: {}", path.display());
         let opened_file = self.open_script_file(path, params)?;
+        let text = Self::read_script_text(opened_file, path)?;
 
         let source_info = crate::SourceInfo::from(path.to_owned());
+        let parse_result = self.parse(text.as_bytes());
 
-        let mut result = self
-            .source_file(opened_file, &source_info, args, params, call_type)
-            .await?;
-
-        // Handle control flow at script execution boundary. If execution completed
-        // with a `return`, we need to clear it since it's already been "used". All
-        // other control flow types are preserved.
-        if matches!(
-            result.next_control_flow,
-            ExecutionControlFlow::ReturnFromFunctionOrScript
-        ) {
-            result.next_control_flow = ExecutionControlFlow::Normal;
-        }
-
-        Ok(result)
+        self.run_in_script_frame(call_type, &source_info, args, parse_result, params)
+            .await
     }
 
     /// Opens the file a script is read from.
@@ -126,48 +151,57 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         Ok(opened_file)
     }
 
-    /// Source the given file as a shell script, returning the execution result.
+    /// Reads the text of the script file `path`, opened as `file`: its bytes as the shell's
+    /// text (`bytes::decode`), which the parser reads as UTF-8.
+    fn read_script_text(
+        mut file: openfiles::OpenFile,
+        path: &Path,
+    ) -> Result<String, error::Error> {
+        let mut bytes = Vec::new();
+        file.read_to_end(&mut bytes)
+            .map_err(|e| error::ErrorKind::FailedSourcingFile(path.to_owned(), e))?;
+        Ok(crate::bytes::decode_cow(&bytes).into_owned())
+    }
+
+    /// Runs a script's program in a new call frame for the script, as every way of running
+    /// a script file or a parsed program as a script does: enters the frame, runs the
+    /// program (or reports why it failed to parse), reports any error, and ends the
+    /// script's `return` at the script's boundary.
     ///
     /// # Arguments
     ///
-    /// * `file` - The file to source.
-    /// * `source_info` - Information about the source of the script.
-    /// * `args` - The arguments to pass to the script as positional parameters.
-    /// * `params` - Execution parameters.
     /// * `call_type` - The type of script call being made.
-    async fn source_file<F: Read, S: Into<String>, I: Iterator<Item = S>>(
+    /// * `source_info` - Where the script came from, for its call frame and errors.
+    /// * `args` - The arguments to pass to the script as positional parameters.
+    /// * `parse_result` - The script's parsed program, or the error parsing it failed with.
+    /// * `params` - Execution parameters.
+    async fn run_in_script_frame<
+        S: Into<String>,
+        I: Iterator<Item = S>,
+        P: std::borrow::Borrow<brush_parser::ast::Program>,
+    >(
         &mut self,
-        file: F,
+        call_type: callstack::ScriptCallType,
         source_info: &crate::SourceInfo,
         args: I,
+        parse_result: Result<P, brush_parser::ParseError>,
         params: &ExecutionParameters,
-        call_type: callstack::ScriptCallType,
     ) -> Result<ExecutionResult, error::Error> {
-        // The script's bytes as the shell's text (`bytes::decode`), which the
-        // parser reads as UTF-8.
-        let mut bytes = Vec::new();
-        { file }
-            .read_to_end(&mut bytes)
-            .map_err(|e| error::ErrorKind::FailedSourcingFile(source_info.source.clone().into(), e))?;
-        let text = crate::bytes::decode_cow(&bytes);
-        let mut reader = std::io::BufReader::new(text.as_bytes());
-        let mut parser = brush_parser::Parser::new(&mut reader, &self.parser_options());
-
-        tracing::debug!(target: trace_categories::PARSE, "Parsing sourced file: {}", source_info.source);
-        let parse_result = parser.parse_program();
-
-        let script_positional_args = args.map(Into::into);
-
-        self.call_stack
-            .push_script(call_type, source_info, script_positional_args);
-
-        let result = self
+        let mut result = self
+            .enter_script(call_type, source_info, args.map(Into::into))
             .run_parsed_result(parse_result, source_info, params)
-            .await;
+            .await?;
 
-        self.call_stack.pop();
+        // A `return` that ended the script has been used up at the script's boundary. All
+        // other control flow is preserved.
+        if matches!(
+            result.next_control_flow,
+            ExecutionControlFlow::ReturnFromFunctionOrScript
+        ) {
+            result.next_control_flow = ExecutionControlFlow::Normal;
+        }
 
-        result
+        Ok(result)
     }
 
     /// Executes the given string as a shell program, returning the resulting exit status.
@@ -207,12 +241,15 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         // Execute the command string.
         let params = self.default_exec_params();
         let source_info = SourceInfo::from("-c");
-        let result = self.run_string(command, &source_info, &params).await?;
+        let mut result = self.run_string(command, &source_info, &params).await?;
 
         self.end_command_string_mode()?;
 
-        // Give the shell a chance to run on-exit tasks, but ignore the result.
-        let _ = self.on_exit().await;
+        // Give the shell a chance to run on-exit tasks. An `exit` there sets the shell's
+        // status; a failure there doesn't change the command's outcome.
+        if let Ok(Some(status)) = self.run_exit_trap().await {
+            result.exit_code = status.into();
+        }
 
         Ok(result)
     }
@@ -233,7 +270,7 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         args: I,
     ) -> Result<ExecutionResult, error::Error> {
         let params = self.default_exec_params();
-        let result = self
+        let mut result = self
             .parse_and_execute_script_file(
                 script_path.as_ref(),
                 args,
@@ -242,8 +279,11 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
             )
             .await?;
 
-        // Give the shell a chance to run on-exit tasks, but ignore the result.
-        let _ = self.on_exit().await;
+        // Give the shell a chance to run on-exit tasks. An `exit` there sets the shell's
+        // status; a failure there doesn't change the script's outcome.
+        if let Ok(Some(status)) = self.run_exit_trap().await {
+            result.exit_code = status.into();
+        }
 
         Ok(result)
     }
@@ -296,7 +336,11 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
                 Err(error) if Self::is_incomplete(&error) => {}
                 Err(error) => {
                     return self
-                        .run_parsed_result(Err(error), source_info, params)
+                        .run_parsed_result::<brush_parser::ast::Program>(
+                            Err(error),
+                            source_info,
+                            params,
+                        )
                         .await;
                 }
             }
@@ -329,6 +373,7 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
                     | TokenizerError::UnterminatedExpansion
                     | TokenizerError::UnterminatedHereDocuments(..)
             ),
+            _ => false,
         }
     }
 
@@ -347,23 +392,18 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
     ) -> Result<ExecutionResult, error::Error> {
         let params = self.default_exec_params();
         let path = script_path.as_ref();
-        let mut file = self.open_script_file(path, &params)?;
-        let mut bytes = Vec::new();
-        file.read_to_end(&mut bytes)
-            .map_err(|e| error::ErrorKind::FailedSourcingFile(path.to_owned(), e))?;
-        let text = crate::bytes::decode_cow(&bytes);
+        let file = self.open_script_file(path, &params)?;
+        let text = Self::read_script_text(file, path)?;
         let source_info = crate::SourceInfo::from(path.to_owned());
 
-        self.call_stack.push_script(
-            callstack::ScriptCallType::Run,
-            &source_info,
-            args.map(Into::into),
-        );
-        let result = self
+        let mut result = self
+            .enter_script(
+                callstack::ScriptCallType::Run,
+                &source_info,
+                args.map(Into::into),
+            )
             .run_string_incrementally(&text, &source_info, &params)
-            .await;
-        self.call_stack.pop();
-        let mut result = result?;
+            .await?;
         if matches!(
             result.next_control_flow,
             ExecutionControlFlow::ReturnFromFunctionOrScript
@@ -371,8 +411,11 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
             result.next_control_flow = ExecutionControlFlow::Normal;
         }
 
-        // Give the shell a chance to run on-exit tasks, but ignore the result.
-        let _ = self.on_exit().await;
+        // Give the shell a chance to run on-exit tasks. An `exit` there sets the shell's
+        // status; a failure there doesn't change the script's outcome.
+        if let Ok(Some(status)) = self.run_exit_trap().await {
+            result.exit_code = status.into();
+        }
 
         Ok(result)
     }
@@ -390,23 +433,25 @@ impl<SE: crate::extensions::ShellExtensions> crate::Shell<SE> {
         self.start_command_string_mode();
         let params = self.default_exec_params();
         let source_info = SourceInfo::from("-c");
-        let result = self
+        let mut result = self
             .run_string_incrementally(command, &source_info, &params)
             .await?;
         self.end_command_string_mode()?;
-        let _ = self.on_exit().await;
+        if let Ok(Some(status)) = self.run_exit_trap().await {
+            result.exit_code = status.into();
+        }
         Ok(result)
     }
 
-    pub(crate) async fn run_parsed_result(
+    pub(crate) async fn run_parsed_result<P: std::borrow::Borrow<brush_parser::ast::Program>>(
         &mut self,
-        parse_result: Result<brush_parser::ast::Program, brush_parser::ParseError>,
+        parse_result: Result<P, brush_parser::ParseError>,
         source_info: &crate::SourceInfo,
         params: &ExecutionParameters,
     ) -> Result<ExecutionResult, error::Error> {
         // If parsing succeeded, run the program. If there's a parse error, it's fatal (per spec).
         let result = match parse_result {
-            Ok(prog) => self.run_program(prog, params).await,
+            Ok(prog) => prog.borrow().execute(self, params).await,
             Err(parse_err) => Err(error::Error::from(error::ErrorKind::ParseError(
                 parse_err,
                 source_info.clone(),

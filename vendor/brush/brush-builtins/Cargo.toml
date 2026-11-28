@@ -13,7 +13,7 @@
 edition = "2024"
 rust-version = "1.88.0"
 name = "brush-builtins"
-version = "0.2.0"
+version = "0.3.0"
 build = false
 autolib = false
 autobins = false
@@ -56,7 +56,7 @@ repository = "https://github.com/reubeno/brush"
 "builtin.echo" = []
 "builtin.enable" = []
 "builtin.eval" = []
-"builtin.exec" = []
+"builtin.exec" = ["builtin.command"]
 "builtin.exit" = []
 "builtin.export" = []
 "builtin.false" = []
@@ -151,38 +151,41 @@ name = "brush_builtins"
 path = "src/lib.rs"
 bench = false
 
+[[test]]
+name = "process_launcher_tests"
+path = "tests/process_launcher_tests.rs"
+
+[[test]]
+name = "registration_tests"
+path = "tests/registration_tests.rs"
+
+[[test]]
+name = "source_program_tests"
+path = "tests/source_program_tests.rs"
+
+[[test]]
+name = "task_spawner_tests"
+path = "tests/task_spawner_tests.rs"
+
 [dependencies.brush-core]
-version = "^0.5.0"
+version = "^0.6.0"
 
 [dependencies.brush-parser]
-version = "^0.4.0"
+version = "^0.5.0"
+
+[dependencies.brush-winnow-args-adapter]
+version = "^0.1.0"
 
 [dependencies.cfg-if]
 version = "1.0.4"
 
-[dependencies.chrono]
-version = "0.4.44"
-
-[dependencies.clap]
-version = "4.6.0"
-features = [
-    "derive",
-    "wrap_help",
-]
-
 [dependencies.fancy-regex]
 version = "0.19.1"
 
-[dependencies.futures]
-version = "0.3.32"
-
 [dependencies.itertools]
-version = "0.14.0"
+version = "0.15.0"
 
 [dependencies.strum]
-version = "0.28.0"
-
-[dependencies.strum_macros]
 version = "0.28.0"
 
 [dependencies.thiserror]
@@ -190,6 +193,14 @@ version = "2.0.18"
 
 [dependencies.tracing]
 version = "0.1.44"
+
+[dependencies.winnow-args]
+version = "0.6.0"
+features = [
+    "derive",
+    "help-text",
+]
+default-features = false
 
 [dev-dependencies.anyhow]
 version = "1.0.102"
@@ -200,9 +211,10 @@ features = ["unstable"]
 
 [target.'cfg(any(target_os = "linux", target_os = "android"))'.dependencies.procfs]
 version = "0.18.0"
+default-features = false
 
 [target."cfg(any(unix, windows))".dependencies.tokio]
-version = "1.50.0"
+version = "1.52.3"
 features = [
     "io-util",
     "macros",
@@ -215,16 +227,24 @@ features = [
 
 [target."cfg(any(unix, windows))".dependencies.uucore]
 version = "0.13.0"
-features = ["format"]
+features = [
+    "format",
+    "signals",
+]
 default-features = false
 
 [target.'cfg(target_family = "wasm")'.dependencies.tokio]
-version = "1.52.1"
+version = "1.52.3"
 features = [
     "io-util",
     "macros",
     "rt",
 ]
+
+[target.'cfg(target_os = "wasi")'.dependencies.uucore]
+version = "0.13.0"
+features = ["format"]
+default-features = false
 
 [target."cfg(unix)".dependencies.nix]
 version = "0.31.2"
@@ -245,6 +265,7 @@ bool_to_int_with_if = "allow"
 cognitive_complexity = "allow"
 collapsible_else_if = "allow"
 collapsible_if = "allow"
+empty_enums = "allow"
 expect_used = "deny"
 format_push_string = "deny"
 if_not_else = "allow"
@@ -329,18 +350,18 @@ priority = -1
 [package.metadata.jush]
 maintainer = "jush-runner"
 patches = [
-    "fancy-regex 0.19 and uucore 0.13, the versions the runner and the other utilities link, in place of 0.17 and 0.8: one copy of each",
+    "fancy-regex 0.19 and uucore 0.13, the versions the runner and the other utilities link, in place of 0.20 and 0.12: one copy of each",
     "printf formats inside a uucore invocation context (uucore::context::with) made of the shell's exported variables, its directory, printf's own streams and the host's control (ExecutionHost::utility_control), since uucore 0.13 as the runner patches it reads the environment and writes diagnostics only through one: %q reads the locale, and a value that is no number warns on standard error, which the control records when it is a file; a diagnostic that meets a pipe whose reader has gone ends printf with 141, as it ends a utility",
-    "printf reads its arguments and quotes as bash's does, where upstream left them to uucore, which follows GNU's printf: its numbers through uucore's FormatArguments::as_bash_reads (an empty one is 0, one out of range warns with status 0, one that is no number is printf: 12abc: invalid number with status 1), and %q in every format and with any number of arguments with the shell's backslash quoting in its locale (escape::quote_if_needed_in, from LC_ALL, LC_CTYPE and LANG), where upstream did so only for a format of %q or ~%q alone",
+    "printf reads its arguments and quotes as bash's does, where upstream left them to uucore, which follows GNU's printf: its numbers through uucore's FormatArguments::as_bash_reads (an empty one is 0, one out of range warns with status 0, one that is no number is printf: 12abc: invalid number with status 1), and %q with the shell's backslash quoting in its locale (QuoteOptions::ascii_only, from LC_ALL, LC_CTYPE and LANG), where upstream quoted as in a UTF-8 locale",
     "cd and pushd word their failures as bash does: cd: ./browse: No such file or directory, cd: too many arguments with status 2, cd: OLDPWD not set",
     "popd words an empty stack as bash does: popd: directory stack empty",
     "getopts words its two messages as bash does, with the script's name, $0, in front: ./tool: illegal option -- w",
     "jobs lists the jobs its job specs name, and words a spec that names none as bash does: jobs: %9: no such job with status 1; upstream refused job specs as unimplemented",
     "cd takes an empty operand and stays where it is, as bash's does (`cd \"\"`); upstream's path parser refused it",
-    "command -v and type name the system's file of a program the host runs itself where there is one (Shell::host_stands_in_for)",
+    "command -v and type name the system's file of a program the host runs itself where there is one (lookup::resolve, Shell::host_stands_in_for)",
     "break and continue outside a loop warn and return 0, as bash's do, where upstream ended the script (autoconf's configure ends a block with a break that is in no loop)",
     "local and return word their errors as bash does: local: can only be used in a function, return: can only `return' from a function or sourced script",
-    "read reads a character whole in a UTF-8 locale (Shell::utf8_locale), and a byte a character in another, as bash's does: `-n` and `-N` count characters, `-d` ends at its argument's first character, and the line's bytes become text once it ends (brush_core::bytes::decode); upstream took each byte for a character, so 中 read as three Latin-1 characters; a timeout applies to every byte",
+    "read reads a character whole in a UTF-8 locale (Shell::utf8_locale), and a byte a character in another, as bash's does: `-n` and `-N` count characters, `-d` ends at its argument's first character, and the line's bytes become text once it ends (brush_core::bytes::decode); upstream read UTF-8 in every locale and made the bytes of a sequence that is none Latin-1 characters; a timeout applies to every byte; read reads its bytes itself, so upstream's UTF-8 reader (utf8-chars) and its wait for a pipe on wasm that is not ready are left out",
     "printf asks the shell whether its locale is UTF-8 (Shell::utf8_locale)",
     "echo -e, mapfile, printf -v and read keep the bytes that are no UTF-8 (brush_core::bytes), where upstream made them U+FFFD or failed; mapfile's and read's -d take the byte a held byte stands for; pwd, dirs, command -v, type and hash print a path's own bytes",
     "printf formats the bytes its format and arguments stand for and writes them to its standard output itself, so a byte that is no UTF-8 is one byte to %c, %.1s and a width, as bash's",

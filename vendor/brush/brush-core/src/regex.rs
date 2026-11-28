@@ -6,9 +6,15 @@ use std::cell::RefCell;
 use crate::error;
 use cached::Cached;
 
+/// Cache mapping a (pattern, case-insensitive, multiline, UTF-8) key to a compiled regex.
+type RegexCache = cached::LruCache<(String, bool, bool, bool), fancy_regex::Regex>;
+
 thread_local! {
-    static REGEX_CACHE: RefCell<cached::SizedCache<(String, bool, bool, bool), fancy_regex::Regex>> =
-        RefCell::new(cached::SizedCache::with_size(64));
+    // Wrapped in `Option` so that if cache construction ever fails we gracefully
+    // degrade to compiling regexes uncached rather than panicking. (With a fixed
+    // positive `max_size` this always succeeds, but `build()` is fallible.)
+    static REGEX_CACHE: RefCell<Option<RegexCache>> =
+        RefCell::new(cached::LruCache::builder().max_size(64).build().ok());
 }
 
 /// The size a compiled regular expression may take. The `regex` crate's
@@ -69,9 +75,9 @@ impl Regex {
         self
     }
 
-    /// Enables (or disables) multiline support for this pattern.
-    /// This enables matching across lines as well as enables `.`
-    /// to match newline characters.
+    /// Enables (or disables) multiline support for this pattern: `.` then also matches
+    /// newline characters. `^` and `$` always anchor to the whole string, as in POSIX
+    /// regular expressions, which have no line anchors.
     ///
     /// # Arguments
     ///
@@ -120,7 +126,12 @@ pub(crate) fn compile_regex(
     // Move regex_str into the key to avoid cloning on cache-hit path.
     let key = (regex_str, case_insensitive, multiline, utf8);
 
-    let cached_regex = REGEX_CACHE.with(|cache| cache.borrow_mut().cache_get(&key).cloned());
+    let cached_regex = REGEX_CACHE.with(|cache| {
+        cache
+            .borrow_mut()
+            .as_mut()
+            .and_then(|c| c.cache_get(&key).cloned())
+    });
     if let Some(re) = cached_regex {
         return Ok(re);
     }
@@ -137,7 +148,7 @@ pub(crate) fn compile_regex(
         // The fancy_regex crate internally seems to have flags that can be used
         // to enable multiline support, but they're not exposed via its
         // RegexBuilder. We instead just prefix with the right flags.
-        let updated_str = std::format!("(?ms){regex_str}");
+        let updated_str = std::format!("(?s){regex_str}");
         regex_str = updated_str.into();
     }
 
@@ -154,7 +165,9 @@ pub(crate) fn compile_regex(
     drop(regex_str);
 
     REGEX_CACHE.with(|cache| {
-        cache.borrow_mut().cache_set(key, re.clone());
+        if let Some(c) = cache.borrow_mut().as_mut() {
+            c.cache_set(key, re.clone());
+        }
     });
 
     Ok(re)
@@ -165,18 +178,35 @@ fn add_missing_escape_chars_to_regex(s: &str) -> Cow<'_, str> {
     // to escape that character.
     let mut in_escape = false;
     let mut in_brackets = false;
+    // A ']' in the first member position of a bracket expression (immediately after the
+    // opening '[' or after the leading '^' that negates it) is a member of the
+    // expression, not its terminator.
+    let mut at_first_member = false;
     let mut insertion_positions = vec![];
 
     let mut peekable = s.char_indices().peekable();
     while let Some((byte_offset, c)) = peekable.next() {
         let next_is_colon = peekable.peek().is_some_and(|(_, c)| *c == ':');
+        let was_at_first_member = at_first_member;
+        at_first_member = false;
 
         match c {
             '[' if !in_escape && !in_brackets => {
                 in_brackets = true;
+                // A '^' here negates the expression; it isn't a member itself, so the
+                // first member position is the one after it. Any later '^' is an
+                // ordinary member.
+                let _ = peekable.next_if(|(_, c)| *c == '^');
+                at_first_member = true;
             }
             '[' if !in_escape && in_brackets && !next_is_colon => {
                 // Need to escape.
+                insertion_positions.push(byte_offset);
+            }
+            ']' if !in_escape && in_brackets && was_at_first_member => {
+                // `fancy_regex` doesn't implement the rule that this ']' is a member;
+                // escape it so it's a member there too, and so it can be the low end
+                // of a range (e.g. `[]-a]`).
                 insertion_positions.push(byte_offset);
             }
             ']' if !in_escape && in_brackets => {
@@ -307,5 +337,32 @@ mod tests {
         // Positive case -- where we need to escape.
         assert_eq!(add_missing_escape_chars_to_regex(r"a[b[]"), r"a[b\[]");
         assert_eq!(add_missing_escape_chars_to_regex(r"a[[]"), r"a[\[]");
+    }
+
+    #[test]
+    fn test_leading_close_bracket_in_bracket_expression() {
+        // A ']' in the first member position (after any '^') is a member of the bracket
+        // expression, not its terminator, so the expression is still open after it.
+        // It's escaped as well, since `fancy_regex` doesn't implement that rule; that
+        // also makes it the low end of a range in `[]-a]`, as it is in a shell pattern.
+        assert_eq!(add_missing_escape_chars_to_regex("[]]"), r"[\]]");
+        assert_eq!(add_missing_escape_chars_to_regex("[^]]"), r"[^\]]");
+        assert_eq!(add_missing_escape_chars_to_regex("[][]"), r"[\]\[]");
+        assert_eq!(add_missing_escape_chars_to_regex("[^][]"), r"[^\]\[]");
+        assert_eq!(add_missing_escape_chars_to_regex("[]a[]"), r"[\]a\[]");
+        assert_eq!(add_missing_escape_chars_to_regex("[]-a]"), r"[\]-a]");
+
+        // The rule only applies in the first member position: the ']' in `[a]` and the
+        // already-escaped one in `[\]]` both close their expressions.
+        assert_eq!(add_missing_escape_chars_to_regex("[a][]x]"), r"[a][\]x]");
+        assert_eq!(add_missing_escape_chars_to_regex(r"[\]][]x]"), r"[\]][\]x]");
+
+        // Only the '^' that negates the expression is skipped over; a later one is an
+        // ordinary member, so the ']' after it terminates the expression.
+        assert_eq!(add_missing_escape_chars_to_regex("[^^][ab]"), "[^^][ab]");
+        assert_eq!(add_missing_escape_chars_to_regex("[^^][b[]"), r"[^^][b\[]");
+
+        // A '^' outside a bracket expression doesn't open one.
+        assert_eq!(add_missing_escape_chars_to_regex("^[a[]"), r"^[a\[]");
     }
 }

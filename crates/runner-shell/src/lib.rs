@@ -64,6 +64,7 @@
 //! standard utilities, and nothing below the executable depends on it, so a
 //! change elsewhere recompiles none of them.
 
+mod builtin;
 mod declared;
 mod git_paths;
 mod holds;

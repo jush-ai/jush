@@ -872,7 +872,12 @@ impl ExecutionHost for Scope {
         });
         Ok(ChildProcess::managed(
             pid,
-            Box::pin(async move { receiver.await.map_err(io::Error::other)? }),
+            Box::pin(async move {
+                receiver
+                    .await
+                    .map_err(io::Error::other)?
+                    .map(brush_core::ExecutionResult::from)
+            }),
         ))
     }
 }

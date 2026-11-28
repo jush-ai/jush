@@ -13,7 +13,7 @@
 edition = "2024"
 rust-version = "1.88.0"
 name = "brush-core"
-version = "0.5.0"
+version = "0.6.0"
 build = false
 autolib = false
 autobins = false
@@ -43,7 +43,7 @@ serde = [
     "dep:serde",
     "brush-parser/serde",
     "rpds/serde",
-    "chrono/serde",
+    "jiff/serde",
 ]
 
 [lib]
@@ -56,8 +56,32 @@ name = "call-func"
 path = "examples/call-func.rs"
 
 [[example]]
-name = "custom-builtin"
-path = "examples/custom-builtin.rs"
+name = "readme"
+path = "examples/readme.rs"
+
+[[test]]
+name = "builtin_contract_tests"
+path = "tests/builtin_contract_tests.rs"
+
+[[test]]
+name = "builtin_state_tests"
+path = "tests/builtin_state_tests.rs"
+
+[[test]]
+name = "cancellation_tests"
+path = "tests/cancellation_tests.rs"
+
+[[test]]
+name = "history_tests"
+path = "tests/history_tests.rs"
+
+[[test]]
+name = "kill_on_drop_tests"
+path = "tests/kill_on_drop_tests.rs"
+
+[[test]]
+name = "readme_snippet"
+path = "tests/readme_snippet.rs"
 
 [dependencies.async-recursion]
 version = "1.1.1"
@@ -69,23 +93,13 @@ version = "0.1.89"
 version = "3.9.1"
 
 [dependencies.brush-parser]
-version = "^0.4.0"
+version = "^0.5.0"
 
 [dependencies.cached]
-version = "0.59.0"
+version = "2.0.2"
 
 [dependencies.cfg-if]
 version = "1.0.4"
-
-[dependencies.chrono]
-version = "0.4.44"
-
-[dependencies.clap]
-version = "4.6.0"
-features = [
-    "derive",
-    "wrap_help",
-]
 
 [dependencies.color-print]
 version = "0.3.7"
@@ -100,7 +114,10 @@ version = "0.3.32"
 version = "1.0.13"
 
 [dependencies.itertools]
-version = "0.14.0"
+version = "0.15.0"
+
+[dependencies.jiff]
+version = "0.2.43"
 
 [dependencies.normalize-path]
 version = "0.2.1"
@@ -147,7 +164,7 @@ version = "3.27.0"
 version = "0.4.2"
 
 [target."cfg(any(unix, windows))".dependencies.tokio]
-version = "1.50.0"
+version = "1.52.3"
 features = [
     "io-util",
     "macros",
@@ -160,7 +177,7 @@ features = [
 ]
 
 [target.'cfg(target_family = "wasm")'.dependencies.tokio]
-version = "1.52.1"
+version = "1.52.3"
 features = [
     "io-util",
     "macros",
@@ -189,6 +206,9 @@ features = [
 [target."cfg(unix)".dependencies.rlimit]
 version = "0.11"
 
+[target."cfg(unix)".dependencies.terminal_size]
+version = "0.4.4"
+
 [target."cfg(unix)".dependencies.terminfo]
 version = "0.9.0"
 
@@ -196,7 +216,7 @@ version = "0.9.0"
 version = "0.12.2"
 
 [target."cfg(windows)".dependencies.check_elevation]
-version = "0.2.7"
+version = "0.3.0"
 
 [target."cfg(windows)".dependencies.whoami]
 version = "2.1.1"
@@ -205,8 +225,12 @@ version = "2.1.1"
 version = "0.4.2"
 features = ["wasm_js"]
 
+[target.wasm32-unknown-unknown.dependencies.jiff]
+version = "0.2.43"
+features = ["js"]
+
 [target.wasm32-unknown-unknown.dependencies.uuid]
-version = "1.23.1"
+version = "1"
 features = ["js"]
 
 [lints.clippy]
@@ -214,6 +238,7 @@ bool_to_int_with_if = "allow"
 cognitive_complexity = "allow"
 collapsible_else_if = "allow"
 collapsible_if = "allow"
+empty_enums = "allow"
 expect_used = "deny"
 format_push_string = "deny"
 if_not_else = "allow"
@@ -298,32 +323,31 @@ priority = -1
 [package.metadata.jush]
 maintainer = "jush-runner"
 patches = [
-    "fancy-regex 0.19, the version the runner links, in place of 0.17",
+    "fancy-regex 0.19, the version the runner links, in place of 0.20",
     "Embedding hooks (src/execution_host.rs, added): opening files, creating pipes and temporary files, starting external commands and forwarding their redirected output go through the runner's job, which records edits, waits out a lack of open files and stops the work when the job is cancelled",
     "Descriptors, pipes and blocking reads and writes go through the job's file control, and every execution step checks the job's cancellation first",
-    "Every descriptor the shell makes (a pipe, a here-document's temporary file, a background list's null device, which no longer falls back to the job's input) belongs to the job's file control from the start, so each copy of it, for a subshell, a pipeline stage, a builtin's stream or `n>&m`, is made by the control (FileControl::duplicate) and waits out a lack of open files",
-    "Subshells, command substitutions, shell functions and compound pipeline stages run on blocking tasks under an execution guard, so they run beside their consumers and the job waits for them",
+    "Every descriptor the shell makes (a pipe, a here-document's temporary file, a background list's null device, which no longer falls back to the job's input) belongs to the job's file control from the start (OpenFile::Controlled, which its copies share as a File's do), so each descriptor the system needs of its own, for a program's standard streams, its other descriptors or OpenFile::into_file, is made by the control (FileControl::duplicate) and waits out a lack of open files",
+    "Subshells, command substitutions, background lists, coprocesses, process substitutions, shell functions and compound pipeline stages start under an execution host on a thread of their own that holds the host's execution guard until they return (Shell::task_starter, TaskStarter), so they run beside their consumers and the job waits for them; the shell's task spawner starts them otherwise; a compound pipeline stage opens its redirections in its own task",
     "Builtins use uucore::context for their files, streams and environment",
-    "Quoting (escape.rs) follows bash's: a word's leading # and a ~ at its start or after = or : are quoted, every control character, U+0080 to U+009F included, takes ANSI C quoting with each of its UTF-8 bytes in octal, as does any character beyond ASCII in a locale of one byte a character (quote_if_needed_in), where upstream quoted neither # nor ~, took only ASCII control characters for unprintable and wrote one byte of each",
+    "Quoting (escape.rs) follows bash's: every control character, U+0080 to U+009F included, takes ANSI C quoting with each of its UTF-8 bytes in octal, as does any character beyond ASCII in a locale of one byte a character (QuoteOptions::ascii_only), where upstream took only ASCII control characters for unprintable and wrote one byte of each",
     "ExecutionHost::utility_control gives a builtin that runs uucore's own code, as printf does, the control the host's utilities open, read and write through",
     "A shell embedded in a host process never changes that process's umask or resource limits: the shell keeps what its `umask` and `ulimit` set (ChildAttributes, which a subshell copies), the host applies them to each process the shell starts (ExecutionHost::spawn), and the shell's redirections create files with the mode its umask allows",
-    "Errors bash words itself are printed as bash prints them, without the shell's error: prefix: a builtin's as <builtin>: <reason>, nosuch: command not found with status 127, ./nosuch: No such file or directory with status 127, ./file: Permission denied with status 126, a file Windows cannot run as ./file: cannot execute binary file: Exec format error with status 126, a script source cannot read as <file>: <reason>; a command that does not start is reported the same with or without an execution host (spawn_failure); reasons drop the operating system's error number with uucore's strip_errno, so brush-core depends on uucore 0.13",
+    "Errors bash words itself are printed as bash prints them, without the shell's error: prefix: a builtin's as <builtin>: <reason>, nosuch: command not found with status 127, ./nosuch: No such file or directory with status 127, ./file: Permission denied with status 126, a file Windows cannot run as ./file: cannot execute binary file: Exec format error with status 126, a script source cannot read as <file>: <reason>; a command that does not start is reported the same with or without an execution host (spawn_failure, in place of upstream's spawn_error); reasons drop the operating system's error number with uucore's strip_errno, so brush-core depends on uucore 0.13",
     "The host environment as the shell inherits it (sys::env::get_host_env_vars, on Windows with the well-known names in their POSIX spelling, such as Path as PATH) is public, so the runner gives its jobs and programs the same environment when it builds their environment itself",
-    "On Windows an external command starts by its path with backslashes (compose_std_command), since a program's command line begins with that path and cmd.exe reads the slashes of C:/Windows/System32/cmd.exe as switches",
+    "On Windows an external command starts by its path with backslashes (sys::tokio_process::compose_std_command), since a program's command line begins with that path and cmd.exe reads the slashes of C:/Windows/System32/cmd.exe as switches",
+    "Under an execution host the host starts an external command (ExecutionHost::spawn) from the std::process::Command the default launcher would start (sys::tokio_process::compose_std_command, crate-public), in place of the shell's process launcher, and the process it gives back keeps its process ID, which job control, $! and kill use (ChildProcess::managed)",
     "A background task, a list after & or a coprocess, may run under a host of its own (ExecutionHost::background_task, BackgroundTask): the task's shell moves to that host (Shell::set_execution_host, which moves every controlled descriptor of the shell and of its execution parameters to the host's file control), and the job goes by the id the host gave it (Job::task_id), which representative_pid gives when the job has no process, so $!, jobs -p and a coprocess's NAME_PID name it; $! is the last background job's id even after the job is gone, and a subshell keeps it (JobManager::last_background_pid)",
     "Redirected external output forwards one writer for every stream the host says is one file (ExecutionHost::shares_output, where `2>&1` shares it by the descriptor's control), so `prog >> f 2>> f` on Windows writes one handle's position rather than two handles overwriting each other; and the forwarded writer is kept whether or not the host returned a completion with it (forward_external_outputs)",
     "A host runs a script file, or a program at an absolute path, as one of its builtins, a shell: ExecutionHost::script_interpreter is asked on every system, and ScriptInterpreter::Builtin makes the command run the builtin as `NAME [options] script args`, in place of the system's start of the file or of a Windows-only copy of the shell (execute_via_external); ExecutionHost::builtin_at names the builtin for a program at a path, whether or not the file exists, so `/bin/bash -c` runs the host's `bash`",
     "The number `$$` and BASHPID give is the host's (ExecutionHost::process_id) when it has one for the shell it owns, in place of the process's id, so that a shell the host runs as a builtin has an id of its own",
     "A non-interactive shell outside POSIX mode sources $BASH_ENV, and a file that is not there is no error, where upstream failed with \"not yet implemented\" (Shell::load_config)",
-    "A script or a `-c` string runs command by command as it is read (Shell::run_string_incrementally, run_script_incrementally, run_dash_c_incrementally), so the commands before a syntax error, or before an `exit` that precedes text that is not a program, have run when it is reported or the shell ends, as in bash; and a trap's handler can be invoked by the host (Shell::invoke_trap_handler)",
-    "An IFS that is unset, as `local IFS; unset IFS` leaves it in a function, splits words by the default, a space, a tab and a newline, as in bash (Shell::ifs); before, the placeholder it leaves hid the default and nothing was split, so `man`'s script ran `/usr/bin/zcat -f` as one word",
+    "A script or a `-c` string runs command by command as it is read (Shell::run_string_incrementally, run_script_incrementally, run_dash_c_incrementally), so the commands before a syntax error, or before an `exit` that precedes text that is not a program, have run when it is reported or the shell ends, as in bash; and a trap's handler can be invoked by the host (Shell::invoke_trap_handler, Shell::run_exit_trap)",
     "A host may read a path of the script otherwise than the system does (ExecutionHost::map_path, Shell::mapped_path), such as `/tmp` and `/c/…` on Windows, as Git Bash does: Shell::absolute_path and the listing of a glob pattern below such a path ask it, and the matches keep the pattern's own prefix",
     "A host may run the program a bare name stands for itself (ExecutionHost::stands_in_for), so that command -v and type answer with the system's file of that name where there is one",
-    "The text of a backquoted command has its backslashes read as bash reads them before it runs: `\\\\` is `\\`, `\\$` is `$`, and between double quotes `\\\"` is `\"` (autoconf's configure and libtool write their quoting so)",
     "On Windows the test builtin and [[ ]] read the null device (the path the host maps /dev/null to) as an existing, readable, writable character device, where its metadata is an error",
     "The shell tells whether its locale is UTF-8 (Shell::utf8_locale), by the first of LC_ALL, LC_CTYPE and LANG that is set, as bash does",
     "${#v} and ${v:offset:length} count characters in a UTF-8 locale and bytes in another, as bash's do; upstream counted bytes for ${#v} and characters for ${v:offset}",
     "In a UTF-8 locale a named class, such as [:alpha:], in a pattern, a glob or =~, holds what glibc's C.UTF-8 puts in it, every letter and not only ASCII's (regex::UNICODE_CLASSES); fancy_regex's classes are ASCII's, as they stay in another locale; a compiled expression may take 256 MiB (regex::SIZE_LIMIT), since Unicode's classes repeated outgrow the regex crate's 10 MiB",
     "The shell's text keeps the bytes that are no UTF-8, each of 0x80 to 0xFF held as the character U+10FF00 plus the byte, and a character of that range read as UTF-8 held as its bytes (bytes.rs), as bash keeps bytes: a command substitution, a script run or sourced, $'…', ${v@E}, the names a glob lists, the working directory, a path found or printed and the inherited environment decode them; a builtin's output (bytes::ByteWriter), the trace of set -x, a program's path, arguments and environment (compose_std_command), a path the shell opens or tests (Shell::absolute_path), a directory of PATH it searches and a here-document write the bytes; $a$b and += make held bytes that meet one character again (bytes::normalize, bytes::append); %q and @Q quote one as $'\\377'; upstream failed a command substitution and a sourced script and made the others U+FFFD",
-    "${v:offset:length} reads a negative length as an offset from the end, and fails with `<length>: substring expression < 0` where that end is before the offset or the value is an array's, as bash does; an offset outside the value gives nothing whatever the length; upstream added the length to the value's",
+    "${v:offset:length} fails on a negative length that ends before the offset with `<length>: substring expression < 0`, the length as written, as bash words it, where upstream gave the shell's expansion error with the length's value",
 ]

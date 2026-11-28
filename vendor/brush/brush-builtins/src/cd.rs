@@ -1,19 +1,18 @@
 use std::io::Write;
 use std::path::PathBuf;
 
-use clap::Parser;
-
 use brush_core::{ExecutionResult, builtins, error};
 
 /// Change the current shell working directory.
-#[derive(Parser)]
+#[derive(winnow_args::Args)]
+#[arg(disable_help_short, disable_version_flag, disable_help_subcommand)]
 pub(crate) struct CdCommand {
     /// Force following symlinks.
-    #[arg(short = 'L', overrides_with = "use_physical_dir")]
+    #[arg(short = 'L', overrides = "-P")]
     force_follow_symlinks: bool,
 
     /// Use physical dir structure without following symlinks.
-    #[arg(short = 'P', overrides_with = "force_follow_symlinks")]
+    #[arg(short = 'P', overrides = "-L")]
     use_physical_dir: bool,
 
     /// Exit with non zero exit status if current working directory resolution fails.
@@ -27,16 +26,18 @@ pub(crate) struct CdCommand {
 
     /// By default it is the value of the HOME shell variable. If `TARGET_DIR` is "-", it is
     /// converted to $OLDPWD. bash takes one; more are an error it words itself.
-    /// An empty name is a word like any, which clap's path parser would refuse.
-    #[arg(value_parser = clap::value_parser!(std::ffi::OsString))]
-    target_dirs: Vec<std::ffi::OsString>,
+    /// An empty name is a word like any, and stays where it is.
+    #[arg(positional)]
+    target_dirs: Vec<String>,
 }
 
-impl builtins::Command for CdCommand {
+brush_winnow_args_adapter::impl_parse_args!(CdCommand);
+
+impl<SE: brush_core::ShellExtensions> builtins::Builtin<SE> for CdCommand {
     type Error = brush_core::Error;
 
-    async fn execute<SE: brush_core::ShellExtensions>(
-        &self,
+    async fn execute(
+        self,
         context: brush_core::ExecutionContext<'_, SE>,
     ) -> Result<ExecutionResult, Self::Error> {
         // TODO(cd): implement 'cd -@'

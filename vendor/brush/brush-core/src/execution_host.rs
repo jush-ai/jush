@@ -86,6 +86,70 @@ pub trait Timing: Send + Sync {
     fn uncounted(&self) -> Option<&'static str>;
 }
 
+/// What starts a shell's interpreter tasks (`Shell::task_starter`): its task spawner, or,
+/// under an embedding host, a thread of each task's own that holds the host's execution guard
+/// (`ExecutionHost::task_guard`) until the task returns, since a task may block, as on a pipe
+/// whose consumer runs beside it, and the host's job waits for it.
+pub(crate) struct TaskStarter<TS> {
+    pub(crate) spawner: TS,
+    pub(crate) guard: Option<Box<dyn Send + Sync>>,
+}
+
+impl<TS: crate::extensions::TaskSpawner> TaskStarter<TS> {
+    /// Starts `future` beside its caller (`TaskSpawner::spawn`).
+    pub(crate) fn spawn<F>(self, future: F) -> crate::tasks::TaskHandle<F::Output>
+    where
+        F: Future + Send + 'static,
+        F::Output: Send + 'static,
+    {
+        match self.guard {
+            Some(guard) => Self::guarded(guard, future),
+            None => self.spawner.spawn(future),
+        }
+    }
+
+    /// Starts `future`, which may block the thread it runs on (`TaskSpawner::spawn_blocking`).
+    pub(crate) fn spawn_blocking<F>(
+        self,
+        future: F,
+    ) -> impl Future<Output = crate::tasks::TaskHandle<F::Output>> + Send + use<TS, F>
+    where
+        F: Future + Send + 'static,
+        F::Output: Send + Sync + 'static,
+    {
+        match self.guard {
+            Some(guard) => futures::future::Either::Left(std::future::ready(Self::guarded(
+                guard, future,
+            ))),
+            None => futures::future::Either::Right(self.spawner.spawn_blocking(future)),
+        }
+    }
+
+    #[cfg(any(unix, windows))]
+    fn guarded<F>(guard: Box<dyn Send + Sync>, future: F) -> crate::tasks::TaskHandle<F::Output>
+    where
+        F: Future + Send + 'static,
+        F::Output: Send + 'static,
+    {
+        crate::sys::tokio_tasks::spawn_blocking_now(async move {
+            let _guard = guard;
+            future.await
+        })
+    }
+
+    #[cfg(not(any(unix, windows)))]
+    fn guarded<F>(guard: Box<dyn Send + Sync>, future: F) -> crate::tasks::TaskHandle<F::Output>
+    where
+        F: Future + Send + 'static,
+        F::Output: Send + 'static,
+    {
+        TS::default().spawn(async move {
+            let _guard = guard;
+            future.await
+        })
+    }
+}
+
 /// Ownership hooks shared by a shell and every cloned subshell.
 pub trait ExecutionHost: Any + Send + Sync {
     /// Starts a background task's ownership. With none, the task runs under this host and goes
@@ -221,13 +285,9 @@ impl OpenFile {
         let file = match self {
             Self::Controlled { .. } | Self::Stream(_) => return Ok(self),
             Self::File(file) => file,
-            #[cfg(unix)]
-            other => {
-                let descriptor = other.try_clone_to_owned().map_err(io::Error::other)?;
-                descriptor.into()
-            }
-            #[cfg(windows)]
-            other => other.into_file()?,
+            // A pipe's end the shell just made moves; only a standard stream is duplicated.
+            #[cfg(any(unix, windows))]
+            other => Arc::new(other.into_file()?),
             #[cfg(not(any(unix, windows)))]
             other => return Ok(other),
         };

@@ -55,21 +55,21 @@ pub async fn execute(
         (
             0,
             OpenFile::Controlled {
-                file: options.stdin,
+                file: Arc::new(options.stdin),
                 control: control.clone(),
             },
         ),
         (
             1,
             OpenFile::Controlled {
-                file: options.stdout,
+                file: Arc::new(options.stdout),
                 control: Arc::new(JobOutput(control.clone())),
             },
         ),
         (
             2,
             OpenFile::Controlled {
-                file: options.stderr,
+                file: Arc::new(options.stderr),
                 control: Arc::new(JobOutput(control)),
             },
         ),
@@ -122,15 +122,7 @@ pub(crate) fn job_builtins(
         for name in &commands.roots {
             registrations.insert(
                 name.clone(),
-                builtins::Registration {
-                    execute_func: crate::declared::execute,
-                    content_func: |name, _, _| {
-                        Ok(format!("{name}: use {name} --help for command options"))
-                    },
-                    disabled: false,
-                    special_builtin: false,
-                    declaration_builtin: false,
-                },
+                crate::builtin::registration::<crate::declared::Declared>(),
             );
         }
     }
@@ -146,20 +138,29 @@ pub(crate) fn registrations()
     crate::process_builtins::register(&mut registrations);
     crate::nested::register(&mut registrations);
     for (name, _) in crate::utilities::UTILITIES {
-        registrations.insert(
-            (*name).to_owned(),
-            builtins::Registration {
-                execute_func: execute_utility,
-                content_func: |name, _, _| {
-                    Ok(format!("{name}: use {name} --help for utility options"))
-                },
-                disabled: false,
-                special_builtin: false,
-                declaration_builtin: false,
-            },
-        );
+        registrations.insert((*name).to_owned(), crate::builtin::registration::<Utility>());
     }
     registrations
+}
+
+/// A standard utility, which runs in the runner's process.
+struct Utility;
+
+impl crate::builtin::RunnerBuiltin for Utility {
+    fn run(
+        context: ExecutionContext<'_>,
+        args: Vec<CommandArg>,
+    ) -> builtins::BoxFuture<'_, Result<ExecutionResult, brush_core::Error>> {
+        execute_utility(context, args)
+    }
+
+    fn content(
+        name: &str,
+        _: builtins::ContentType,
+        _: &builtins::ContentOptions,
+    ) -> Result<String, brush_core::Error> {
+        Ok(format!("{name}: use {name} --help for utility options"))
+    }
 }
 
 /// The job that owns `shell`: its execution host is the job's scope.
