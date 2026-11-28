@@ -4537,9 +4537,9 @@ dependencies = [
 
 [[package]]
 name = "is"
-version = "0.12.0"
+version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "72dd0494853a6c3769c87adc610e8b228fd8c65c41cc4d2717ff6151ee2d6c73"
+checksum = "04258fe9dc0a6452010c36db2fd2bb63ab98554aaaac46bd9daa3696ccbfbc00"
 dependencies = [
  "crc",
  "serde",
@@ -9949,7 +9949,7 @@ checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
 name = "str0m"
-version = "0.25.0"
+version = "0.26.0"
 dependencies = [
  "arrayvec",
  "base64ct",
